@@ -1,0 +1,56 @@
+gateway:
+  listen: ":8787"
+
+admin:
+  listen: "127.0.0.1:8788"
+  passwordHash: ""          # generate with: llm-gw hash-password < password.txt
+  sessionTTL: 12h
+
+stats:
+  path: "stats.sqlite"
+  retainRequests: 168h
+  retainRollups: 2160h
+  storeBody: false
+
+effort:
+  lowThreshold: 1024
+  mediumThreshold: 4096
+  highThreshold: 16384
+
+aliases:
+  - match: "claude-opus*"
+    model: strong
+  - match: "gpt-5.5*"
+    model: strong
+  - match: "claude-sonnet*"
+    model: fast
+  - match: "gpt-4.5*"
+    model: fast
+  - match: "claude-haiku*"
+    model: fast
+  - match: "*"
+    model: fast
+
+providers:
+  - name: deepseek
+    baseURL: https://api.deepseek.com
+    protocol: openai
+    keys:
+      - ${DEEPSEEK_API_KEY}
+    pathMap:
+      /v1/chat/completions: /chat/completions
+      /v1/responses: /chat/completions
+    models:
+      strong: deepseek-v4-pro
+      fast: deepseek-v4-flash
+      "*": deepseek-v4-flash
+    health:
+      path: /models
+      interval: 30s
+      timeout: 5s
+
+routes:
+  - name: default
+    providers: [deepseek]
+    match:
+      model: "*"

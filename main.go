@@ -1,0 +1,131 @@
+package main
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	"github.com/go-gost/x/logger"
+
+	"github.com/go-gost/llm-gw/internal/admin"
+	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/gateway"
+)
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "llm-gw:", err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	if len(args) > 0 && args[0] == "hash-password" {
+		return runHashPassword()
+	}
+
+	configPath, err := parseServeArgs(args)
+	if err != nil {
+		return err
+	}
+
+	log := logger.NewLogger()
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return err
+	}
+
+	gw, err := gateway.New(cfg, log)
+	if err != nil {
+		return err
+	}
+	if err := gw.Start(); err != nil {
+		return err
+	}
+	defer gw.Close()
+
+	var adminSrv *http.Server
+	if cfg.Admin.PasswordHash != "" {
+		ln, err := net.Listen("tcp", cfg.Admin.Listen)
+		if err != nil {
+			return err
+		}
+		adminSrv = &http.Server{
+			Handler: admin.New(configPath, cfg, gw, log).Handler(),
+		}
+		go func() {
+			if err := adminSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Errorf("admin server: %v", err)
+			}
+		}()
+		log.Infof("admin API listening on %s", ln.Addr())
+	} else {
+		log.Warnf("admin.passwordHash is empty; management API disabled")
+	}
+	defer func() {
+		if adminSrv != nil {
+			adminSrv.Close()
+		}
+	}()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+
+	for s := range sig {
+		if s != syscall.SIGHUP {
+			log.Infof("signal %v, shutting down", s)
+			return nil
+		}
+
+		newCfg, err := config.Load(configPath)
+		if err != nil {
+			log.Errorf("reload: %v", err)
+			continue
+		}
+		if err := gw.Reload(newCfg); err != nil {
+			log.Errorf("reload: %v", err)
+			continue
+		}
+		log.Infof("config reloaded")
+	}
+	return nil
+}
+
+func runHashPassword() error {
+	b, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return err
+	}
+	password := strings.TrimRight(string(b), "\r\n")
+	if password == "" {
+		return errors.New("empty password")
+	}
+	hash, err := config.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	fmt.Println(hash)
+	return nil
+}
+
+func parseServeArgs(args []string) (string, error) {
+	if len(args) == 0 || args[0] != "serve" {
+		return "", errors.New("usage: llm-gw serve -c <config>")
+	}
+
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	var path string
+	fs.StringVar(&path, "c", "llm-gw.yaml", "config file")
+	fs.StringVar(&path, "config", "llm-gw.yaml", "config file")
+	if err := fs.Parse(args[1:]); err != nil {
+		return "", err
+	}
+	return path, nil
+}
