@@ -55,13 +55,17 @@ func matrixConfig(upstreamURL, protocol string, pathMap map[string]string) *gwco
 			Protocol: protocol,
 			Keys:     []string{"sk-test"},
 			PathMap:  pathMap,
+		}},
+		Nodes: []gwconfig.Node{{
+			Name:     "up",
+			Provider: "up",
 			Models: map[string]string{
 				"strong": "deepseek-v4-pro",
 				"fast":   "deepseek-v4-flash",
 				"*":      "deepseek-v4-flash",
 			},
 		}},
-		Routes: []gwconfig.Route{{Name: "r", Providers: []string{"up"}}},
+		Routes: []gwconfig.Route{{Name: "r", Nodes: []string{"up"}}},
 	}
 }
 
@@ -200,7 +204,7 @@ func TestProtocolMatrix(t *testing.T) {
 		up, got := captureUpstream(t)
 		cfg := matrixConfig(up.URL, "openai", openAIPaths())
 		cfg.Aliases = nil
-		cfg.Providers[0].Models = nil
+		cfg.Nodes[0].Models = nil
 		gw := startGateway(t, cfg)
 
 		body := `{"model":"gpt-4.5","messages":[{"role":"user","content":"hi"}]}`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-gost/core/logger"
@@ -28,6 +29,28 @@ func NewRecorder(store *Store, facts *Facts, log logger.Logger) *Recorder {
 }
 
 // Record implements recorder.Recorder.
+// parseNodeName splits <route>/<provider>/<tier|base>/<node>[/<keyIndex>].
+func parseNodeName(name string) (route, provider, node, tier string) {
+	parts := strings.Split(name, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "", name, "", ""
+	}
+	if len(parts) == 1 {
+		return "", parts[0], "", ""
+	}
+	route, provider = parts[0], parts[1]
+	if len(parts) >= 3 {
+		tier = parts[2]
+		if tier == "base" {
+			tier = ""
+		}
+	}
+	if len(parts) >= 4 {
+		node = parts[3]
+	}
+	return route, provider, node, tier
+}
+
 func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.RecordOption) error {
 	if r == nil || r.store == nil {
 		return nil
@@ -42,11 +65,15 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 	if ro.HTTP != nil {
 		status = ro.HTTP.StatusCode
 	}
+	route, provider, node, tier := parseNodeName(ro.Node)
 	req := Request{
 		ID:         ro.SID,
 		SID:        ro.SID,
 		TS:         ro.Time,
-		Provider:   ro.Node,
+		Provider:   provider,
+		Route:      route,
+		Node:       node,
+		Tier:       tier,
 		Status:     status,
 		Error:      ro.Err,
 		DurationMS: ro.Duration.Milliseconds(),
@@ -62,6 +89,8 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 			req.Provider = fact.Provider
 		}
 		req.Protocol = fact.Protocol
+		req.ClientModel = fact.ClientModel
+		req.LogicalModel = fact.LogicalModel
 		req.Model = fact.Model
 		req.Effort = fact.Effort
 		req.InputTokens = int64(fact.InputTokens)

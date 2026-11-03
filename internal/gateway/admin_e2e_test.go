@@ -87,7 +87,10 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	if code := do(http.MethodPost, "/api/providers", provider); code != http.StatusCreated {
 		t.Fatalf("create provider = %d", code)
 	}
-	if code := do(http.MethodPost, "/api/routes", `{"name":"r","providers":["p"]}`); code != http.StatusCreated {
+	if code := do(http.MethodPost, "/api/nodes", `{"name":"p","provider":"p"}`); code != http.StatusCreated {
+		t.Fatalf("create node = %d", code)
+	}
+	if code := do(http.MethodPost, "/api/routes", `{"name":"r","nodes":["p"]}`); code != http.StatusCreated {
 		t.Fatalf("create route = %d", code)
 	}
 
@@ -110,7 +113,7 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(saved.Providers) != 1 || saved.Providers[0].Name != "p" || len(saved.Routes) != 1 {
+	if len(saved.Providers) != 1 || saved.Providers[0].Name != "p" || len(saved.Nodes) != 1 || len(saved.Routes) != 1 {
 		t.Fatalf("persisted config mismatch: %+v", saved)
 	}
 	info, err := os.Stat(cfgPath)

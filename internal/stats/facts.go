@@ -14,6 +14,7 @@ type Fact struct {
 	Provider     string
 	Protocol     string
 	ClientModel  string
+	LogicalModel string
 	Model        string
 	Effort       string
 	InputTokens  int
@@ -53,6 +54,9 @@ func (f *Facts) Add(sid, provider, protocol string, res engine.Result) {
 	}
 	if res.ClientModel != "" {
 		fact.ClientModel = res.ClientModel
+	}
+	if res.LogicalModel != "" {
+		fact.LogicalModel = res.LogicalModel
 	}
 	if res.TargetModel != "" {
 		fact.Model = res.TargetModel

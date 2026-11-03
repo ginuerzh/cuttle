@@ -32,9 +32,12 @@ providers:
       prefix: "Bearer "
     pathMap:
       /v1/chat/completions: /chat/completions
+nodes:
+  - name: deepseek
+    provider: deepseek
 routes:
   - name: default
-    providers: [deepseek]
+    nodes: [deepseek]
     match:
       model: "*"
 `))
@@ -54,9 +57,12 @@ func TestLoadAppliesDefaults(t *testing.T) {
 providers:
   - name: a
     baseURL: https://a.example
+nodes:
+  - name: n
+    provider: a
 routes:
   - name: r
-    providers: [a]
+    nodes: [n]
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -79,9 +85,12 @@ providers:
     baseURL: https://a.example
     auth:
       header: x-api-key
+nodes:
+  - name: n
+    provider: a
 routes:
   - name: r
-    providers: [a]
+    nodes: [n]
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +104,8 @@ func TestValidateRejectsUnknownProvider(t *testing.T) {
 	c := &Config{
 		Gateway:   Gateway{Listen: ":8787"},
 		Providers: []Provider{{Name: "a", BaseURL: "https://a.example"}},
-		Routes:    []Route{{Name: "r", Providers: []string{"missing"}}},
+		Nodes:     []Node{{Name: "n", Provider: "missing"}},
+		Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
 	}
 	if err := Validate(c); err == nil {
 		t.Fatal("want error for unknown provider")
@@ -120,9 +130,12 @@ providers:
   - name: a
     baseURL: https://a.example
     keys: ["${THIS_ENV_DOES_NOT_EXIST}"]
+nodes:
+  - name: n
+    provider: a
 routes:
   - name: r
-    providers: [a]
+    nodes: [n]
 `))
 	if err == nil || !strings.Contains(err.Error(), "keys[0]") {
 		t.Fatalf("err = %v, want empty key error", err)
@@ -136,8 +149,10 @@ func TestResolveAliasAndEffectiveModel(t *testing.T) {
 			{Match: "gpt-5.5*", Model: "strong"},
 			{Match: "*", Model: "fast"},
 		},
-		Providers: []Provider{{
-			Name: "p",
+		Providers: []Provider{{Name: "p"}},
+		Nodes: []Node{{
+			Name:     "n",
+			Provider: "p",
 			Models: map[string]string{
 				"strong": "deepseek-v4-pro",
 				"fast":   "deepseek-v4-flash",
@@ -161,17 +176,17 @@ func TestResolveAliasAndEffectiveModel(t *testing.T) {
 		}
 	}
 
-	p := c.Providers[0]
-	if got := p.EffectiveModel("strong", "high"); got != "deepseek-v4-pro" {
+	n := c.Nodes[0]
+	if got := n.EffectiveModel("strong", "high"); got != "deepseek-v4-pro" {
 		t.Fatalf("strong/high = %q", got)
 	}
-	if got := p.EffectiveModel("fast", "high"); got != "deepseek-v4-pro" {
+	if got := n.EffectiveModel("fast", "high"); got != "deepseek-v4-pro" {
 		t.Fatalf("fast/high = %q, want effort override", got)
 	}
-	if got := p.EffectiveModel("fast", "low"); got != "deepseek-v4-flash" {
+	if got := n.EffectiveModel("fast", "low"); got != "deepseek-v4-flash" {
 		t.Fatalf("fast/low = %q", got)
 	}
-	if got := p.EffectiveModel("missing", "high"); got != "deepseek-v4-flash" {
+	if got := n.EffectiveModel("missing", "high"); got != "deepseek-v4-flash" {
 		t.Fatalf("missing/high = %q, want * fallback", got)
 	}
 }
@@ -198,9 +213,12 @@ stats:
 providers:
   - name: a
     baseURL: https://a.example
+nodes:
+  - name: n
+    provider: a
 routes:
   - name: r
-    providers: [a]
+    nodes: [n]
 `))
 	if err != nil {
 		t.Fatal(err)

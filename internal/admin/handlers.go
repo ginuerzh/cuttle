@@ -15,21 +15,17 @@ import (
 )
 
 type providerView struct {
-	Name         string                       `json:"name"`
-	BaseURL      string                       `json:"baseURL"`
-	Protocol     string                       `json:"protocol"`
-	KeysSet      int                          `json:"keysSet"`
-	KeyPreviews  []string                     `json:"keyPreviews"`
-	Auth         config.Auth                  `json:"auth"`
-	PathMap      map[string]string            `json:"pathMap,omitempty"`
-	Models       map[string]string            `json:"models,omitempty"`
-	EffortModels map[string]map[string]string `json:"effortModels,omitempty"`
-	Health       config.Health                `json:"health"`
-	TLS          config.TLS                   `json:"tls"`
-	Backup       bool                         `json:"backup"`
-	Weight       int                          `json:"weight"`
-	Enabled      *bool                        `json:"enabled,omitempty"`
-	Probe        *probeResult                 `json:"probe,omitempty"`
+	Name        string            `json:"name"`
+	BaseURL     string            `json:"baseURL"`
+	Protocol    string            `json:"protocol"`
+	KeysSet     int               `json:"keysSet"`
+	KeyPreviews []string          `json:"keyPreviews"`
+	Auth        config.Auth       `json:"auth"`
+	PathMap     map[string]string `json:"pathMap,omitempty"`
+	Health      config.Health     `json:"health"`
+	TLS         config.TLS        `json:"tls"`
+	Enabled     *bool             `json:"enabled,omitempty"`
+	Probe       *probeResult      `json:"probe,omitempty"`
 }
 
 type configView struct {
@@ -44,25 +40,22 @@ type configView struct {
 	Effort    config.Effort  `json:"effort"`
 	Aliases   []config.Alias `json:"aliases"`
 	Providers []providerView `json:"providers"`
+	Nodes     []config.Node  `json:"nodes"`
 	Routes    []config.Route `json:"routes"`
 }
 
 func (s *Server) viewProvider(p config.Provider) providerView {
 	v := providerView{
-		Name:         p.Name,
-		BaseURL:      p.BaseURL,
-		Protocol:     p.Protocol,
-		KeysSet:      len(p.Keys),
-		KeyPreviews:  make([]string, 0, len(p.Keys)),
-		Auth:         p.Auth,
-		PathMap:      p.PathMap,
-		Models:       p.Models,
-		EffortModels: p.EffortModels,
-		Health:       p.Health,
-		TLS:          p.TLS,
-		Backup:       p.Backup,
-		Weight:       p.Weight,
-		Enabled:      p.Enabled,
+		Name:        p.Name,
+		BaseURL:     p.BaseURL,
+		Protocol:    p.Protocol,
+		KeysSet:     len(p.Keys),
+		KeyPreviews: make([]string, 0, len(p.Keys)),
+		Auth:        p.Auth,
+		PathMap:     p.PathMap,
+		Health:      p.Health,
+		TLS:         p.TLS,
+		Enabled:     p.Enabled,
 	}
 	for _, k := range p.Keys {
 		v.KeyPreviews = append(v.KeyPreviews, preview(k))
@@ -131,6 +124,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	v.Stats = s.cfg.Stats
 	v.Effort = s.cfg.Effort
 	v.Aliases = s.cfg.Aliases
+	v.Nodes = s.cfg.Nodes
 	v.Routes = s.cfg.Routes
 	for _, p := range s.cfg.Providers {
 		v.Providers = append(v.Providers, s.viewProvider(p))
@@ -242,11 +236,9 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	err := s.mutate(func(c *config.Config) error {
-		for _, rt := range c.Routes {
-			for _, ref := range rt.Providers {
-				if ref == name {
-					return fmt.Errorf("provider %q is used by route %q", name, rt.Name)
-				}
+		for _, n := range c.Nodes {
+			if n.Provider == name {
+				return fmt.Errorf("provider %q is used by node %q", name, n.Name)
 			}
 		}
 		out := c.Providers[:0]
@@ -291,9 +283,6 @@ func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := probeProvider(r.Context(), p)
-	s.mu.Lock()
-	s.probes[name] = res
-	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -535,4 +524,93 @@ func applyAuth(req *http.Request, p config.Provider, key string) {
 	for k, v := range p.Auth.Extra {
 		req.Header.Set(k, v)
 	}
+}
+
+func (s *Server) handleRouteOrder(w http.ResponseWriter, r *http.Request) {
+	var names []string
+	if err := decode(w, r, &names); err != nil {
+		return
+	}
+
+	err := s.mutate(func(c *config.Config) error {
+		if len(names) != len(c.Routes) {
+			return fmt.Errorf("order must list every route (got %d, want %d)", len(names), len(c.Routes))
+		}
+		byName := make(map[string]config.Route, len(c.Routes))
+		for _, rt := range c.Routes {
+			byName[rt.Name] = rt
+		}
+		out := make([]config.Route, 0, len(names))
+		for _, name := range names {
+			rt, ok := byName[name]
+			if !ok {
+				return fmt.Errorf("unknown route %q", name)
+			}
+			out = append(out, rt)
+			delete(byName, name)
+		}
+		if len(byName) != 0 {
+			return fmt.Errorf("order is missing routes")
+		}
+		c.Routes = out
+		return nil
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		OldPassword string `json:"oldPassword"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		return
+	}
+	if !config.VerifyPassword(s.passwordHash, in.OldPassword) {
+		writeError(w, http.StatusUnauthorized, "old password is incorrect")
+		return
+	}
+	if len(in.NewPassword) < 8 {
+		writeError(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+
+	hash, err := config.HashPassword(in.NewPassword)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c := s.clone()
+	c.Admin.PasswordHash = hash
+	config.ApplyDefaults(c)
+	if err := config.Validate(c); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.reloader.Reload(c); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := config.Write(s.cfgPath, c); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.cfg = c
+	s.passwordHash = hash
+	s.sessions = make(map[string]time.Time)
+	if s.stats != nil {
+		if err := s.stats.DeleteAllSessions(r.Context()); err != nil {
+			s.log.Warnf("clear sessions: %v", err)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

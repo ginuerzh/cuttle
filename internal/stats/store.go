@@ -17,7 +17,12 @@ type Request struct {
 	SID          string    `json:"sid"`
 	TS           time.Time `json:"ts"`
 	Model        string    `json:"model"`
+	ClientModel  string    `json:"clientModel,omitempty"`
+	LogicalModel string    `json:"logicalModel,omitempty"`
 	Provider     string    `json:"provider"`
+	Route        string    `json:"route,omitempty"`
+	Node         string    `json:"node,omitempty"`
+	Tier         string    `json:"tier,omitempty"`
 	Protocol     string    `json:"protocol"`
 	Effort       string    `json:"effort"`
 	Status       int       `json:"status"`
@@ -33,13 +38,17 @@ type Request struct {
 
 // Filter selects requests.
 type Filter struct {
-	From     time.Time
-	To       time.Time
-	Provider string
-	Model    string
-	Status   int
-	Limit    int
-	Offset   int
+	From        time.Time
+	To          time.Time
+	Provider    string
+	Model       string
+	ClientModel string
+	Route       string
+	Tier        string
+	Status      int
+	OnlyErrors  bool
+	Limit       int
+	Offset      int
 }
 
 // Group is an aggregated bucket.
@@ -101,6 +110,7 @@ func (s *Store) migrate() error {
 			ts INTEGER NOT NULL,
 			model TEXT NOT NULL DEFAULT '',
 			provider TEXT NOT NULL DEFAULT '',
+			node TEXT NOT NULL DEFAULT '',
 			protocol TEXT NOT NULL DEFAULT '',
 			effort TEXT NOT NULL DEFAULT '',
 			status INTEGER NOT NULL DEFAULT 0,
@@ -115,6 +125,18 @@ func (s *Store) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts)`,
 		`CREATE INDEX IF NOT EXISTS idx_requests_provider_ts ON requests(provider, ts)`,
+		`CREATE TABLE IF NOT EXISTS probe_results (
+			ts INTEGER NOT NULL,
+			provider TEXT NOT NULL DEFAULT '',
+			ok INTEGER NOT NULL DEFAULT 0,
+			status INTEGER NOT NULL DEFAULT 0,
+			latency_ms INTEGER NOT NULL DEFAULT 0,
+			err TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			token_hash TEXT PRIMARY KEY,
+			expires INTEGER NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS rollups (
 			bucket TEXT NOT NULL,
 			provider TEXT NOT NULL DEFAULT '',
@@ -131,7 +153,88 @@ func (s *Store) migrate() error {
 			return err
 		}
 	}
+	return s.ensureColumns("requests", map[string]string{
+		"route":         "TEXT NOT NULL DEFAULT ''",
+		"client_model":  "TEXT NOT NULL DEFAULT ''",
+		"logical_model": "TEXT NOT NULL DEFAULT ''",
+		"tier":          "TEXT NOT NULL DEFAULT ''",
+		"node":          "TEXT NOT NULL DEFAULT ''",
+	})
+}
+
+// ensureColumns adds missing columns to an existing table (SQLite has no
+// IF NOT EXISTS for ALTER TABLE).
+func (s *Store) ensureColumns(table string, cols map[string]string) error {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]bool)
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	rows.Close()
+
+	for name, decl := range cols {
+		if existing[name] {
+			continue
+		}
+		if _, err := s.db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + name + ` ` + decl); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// PutSession stores (or refreshes) a persistent session.
+func (s *Store) PutSession(ctx context.Context, tokenHash string, expires time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions(token_hash, expires) VALUES(?, ?)
+		 ON CONFLICT(token_hash) DO UPDATE SET expires=excluded.expires`,
+		tokenHash, expires.Unix())
+	return err
+}
+
+// DeleteSession removes one persistent session.
+func (s *Store) DeleteSession(ctx context.Context, tokenHash string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, tokenHash)
+	return err
+}
+
+// DeleteAllSessions removes every persistent session (used on password change).
+func (s *Store) DeleteAllSessions(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions`)
+	return err
+}
+
+// LoadSessions returns non-expired persistent sessions and prunes the rest.
+func (s *Store) LoadSessions(ctx context.Context, now time.Time) (map[string]time.Time, error) {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires <= ?`, now.Unix()); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT token_hash, expires FROM sessions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]time.Time)
+	for rows.Next() {
+		var hash string
+		var exp int64
+		if err := rows.Scan(&hash, &exp); err != nil {
+			return nil, err
+		}
+		out[hash] = time.Unix(exp, 0)
+	}
+	return out, rows.Err()
 }
 
 // Close closes the database.
@@ -161,12 +264,13 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO requests
-		(request_id, sid, ts, model, provider, protocol, effort, status, error, duration_ms,
+		(request_id, sid, ts, model, client_model, logical_model, provider, route, node, tier,
+		 protocol, effort, status, error, duration_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.Provider, r.Protocol, r.Effort,
-		r.Status, r.Error, r.DurationMS, r.InputTokens, r.OutputTokens, r.CachedTokens,
-		boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut))
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.LogicalModel, r.Provider, r.Route, r.Node, r.Tier,
+		r.Protocol, r.Effort, r.Status, r.Error, r.DurationMS,
+		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut))
 	if err != nil {
 		return err
 	}
@@ -198,7 +302,8 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	q := `SELECT request_id, sid, ts, model, provider, protocol, effort, status, error,
+	q := `SELECT request_id, sid, ts, model, client_model, logical_model, provider, route, node, tier,
+		protocol, effort, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, max(f.Offset, 0))
@@ -213,7 +318,8 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 
 // Get returns one request by id.
 func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
-	q := `SELECT request_id, sid, ts, model, provider, protocol, effort, status, error,
+	q := `SELECT request_id, sid, ts, model, client_model, logical_model, provider, route, node, tier,
+		protocol, effort, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
 		FROM requests WHERE request_id = ?`
 	rows, err := s.db.QueryContext(ctx, q, id)
@@ -239,7 +345,8 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var ts int64
 		var stream int
 		var bytesIn, bytesOut int64
-		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.Provider, &r.Protocol, &r.Effort,
+		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel, &r.LogicalModel,
+			&r.Provider, &r.Route, &r.Node, &r.Tier, &r.Protocol, &r.Effort,
 			&r.Status, &r.Error, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut); err != nil {
 			return nil, err
@@ -383,6 +490,21 @@ func (f Filter) where() (string, []any) {
 	if f.Model != "" {
 		conds = append(conds, "model = ?")
 		args = append(args, f.Model)
+	}
+	if f.ClientModel != "" {
+		conds = append(conds, "client_model LIKE ?")
+		args = append(args, "%"+f.ClientModel+"%")
+	}
+	if f.Route != "" {
+		conds = append(conds, "route = ?")
+		args = append(args, f.Route)
+	}
+	if f.Tier != "" {
+		conds = append(conds, "tier = ?")
+		args = append(args, f.Tier)
+	}
+	if f.OnlyErrors {
+		conds = append(conds, "(status >= 400 OR error != '')")
 	}
 	if f.Status > 0 {
 		conds = append(conds, "status = ?")

@@ -23,9 +23,13 @@ func testConfig(upstreamURL string, pathMap map[string]string) *gwconfig.Config 
 			Auth:     gwconfig.Auth{Header: "Authorization", Prefix: "Bearer "},
 			PathMap:  pathMap,
 		}},
+		Nodes: []gwconfig.Node{{
+			Name:     "up",
+			Provider: "up",
+		}},
 		Routes: []gwconfig.Route{{
-			Name:      "default",
-			Providers: []string{"up"},
+			Name:  "default",
+			Nodes: []string{"up"},
 		}},
 	}
 }

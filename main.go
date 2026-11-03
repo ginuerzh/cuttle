@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -57,9 +58,11 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		adminSrv = &http.Server{
-			Handler: admin.New(configPath, cfg, gw, log).Handler(),
-		}
+		adm := admin.New(configPath, cfg, gw, log)
+		adminSrv = &http.Server{Handler: adm.Handler()}
+		probeCtx, probeCancel := context.WithCancel(context.Background())
+		defer probeCancel()
+		adm.StartProbes(probeCtx)
 		go func() {
 			if err := adminSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Errorf("admin server: %v", err)

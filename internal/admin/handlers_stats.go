@@ -30,12 +30,16 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 	from, to := parseRange(r)
 	q := r.URL.Query()
 	f := stats.Filter{
-		From:     from,
-		To:       to,
-		Provider: q.Get("provider"),
-		Model:    q.Get("model"),
-		Limit:    atoi(q.Get("limit")),
-		Offset:   atoi(q.Get("offset")),
+		From:        from,
+		To:          to,
+		Provider:    q.Get("provider"),
+		Model:       q.Get("model"),
+		ClientModel: q.Get("clientModel"),
+		Route:       q.Get("route"),
+		Tier:        q.Get("tier"),
+		OnlyErrors:  q.Get("errors") == "1",
+		Limit:       atoi(q.Get("limit")),
+		Offset:      atoi(q.Get("offset")),
 	}
 	if v := q.Get("status"); v != "" {
 		f.Status = atoi(v)
@@ -86,4 +90,18 @@ func parseRange(r *http.Request) (time.Time, time.Time) {
 func atoi(s string) int {
 	n, _ := strconv.Atoi(s)
 	return n
+}
+
+func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	if s.stats == nil {
+		writeError(w, http.StatusServiceUnavailable, "stats disabled")
+		return
+	}
+	from, to := parseRange(r)
+	g, err := s.stats.Graph(r.Context(), from, to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
 }

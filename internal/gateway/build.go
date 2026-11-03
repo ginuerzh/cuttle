@@ -42,7 +42,7 @@ func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) 
 		if err != nil {
 			return nil, fmt.Errorf("route %q: %w", r.Name, err)
 		}
-		m, err := buildMatcher(r.Match)
+		m, err := buildMatcher(cfg, r.Match)
 		if err != nil {
 			return nil, fmt.Errorf("route %q: matcher: %w", r.Name, err)
 		}
@@ -58,63 +58,36 @@ func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) 
 }
 
 func buildRouteHop(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger) (hop.Hop, error) {
-	byName := make(map[string]gwconfig.Provider, len(cfg.Providers))
+	providers := make(map[string]gwconfig.Provider, len(cfg.Providers))
 	for _, p := range cfg.Providers {
-		byName[p.Name] = p
+		providers[p.Name] = p
+	}
+	bindings := make(map[string]gwconfig.Node, len(cfg.Nodes))
+	for _, n := range cfg.Nodes {
+		bindings[n.Name] = n
 	}
 
 	var nodes []*xconfig.NodeConfig
-	for _, ref := range r.Providers {
-		p, ok := byName[ref]
+	for _, ref := range r.Nodes {
+		n, ok := bindings[ref]
 		if !ok {
-			return nil, fmt.Errorf("unknown provider %q", ref)
+			return nil, fmt.Errorf("unknown node %q", ref)
+		}
+		if !n.EnabledValue() {
+			continue
+		}
+		p, ok := providers[n.Provider]
+		if !ok {
+			return nil, fmt.Errorf("node %q: unknown provider %q", n.Name, n.Provider)
 		}
 		if !p.EnabledValue() {
 			continue
 		}
-		ns, err := buildNodes(p)
+		ns, err := buildNodes(p, n, r.Name, cfg.Effort)
 		if err != nil {
-			return nil, fmt.Errorf("provider %q: %w", p.Name, err)
+			return nil, fmt.Errorf("node %q: %w", n.Name, err)
 		}
 		nodes = append(nodes, ns...)
-	}
-
-	// Effort overrides add tier-specific nodes. Higher tiers get a higher
-	// priority so a broad band (>= medium) cannot shadow the high tier.
-	for _, tier := range []struct {
-		name     string
-		priority int
-	}{
-		{"high", 3},
-		{"medium", 2},
-		{"low", 1},
-	} {
-		refs := r.Effort[tier.name]
-		if len(refs) == 0 {
-			continue
-		}
-		rule := effortRule(tier.name, cfg.Effort)
-		for _, ref := range refs {
-			p, ok := byName[ref]
-			if !ok {
-				return nil, fmt.Errorf("unknown provider %q in effort.%s", ref, tier.name)
-			}
-			if !p.EnabledValue() {
-				continue
-			}
-			ns, err := buildNodes(p)
-			if err != nil {
-				return nil, fmt.Errorf("provider %q: %w", p.Name, err)
-			}
-			for _, n := range ns {
-				n.Name += "/" + tier.name
-				n.Matcher = &xconfig.NodeMatcherConfig{
-					Rule:     rule,
-					Priority: tier.priority,
-				}
-			}
-			nodes = append(nodes, ns...)
-		}
 	}
 
 	strategy := r.Strategy
@@ -130,7 +103,7 @@ func buildRouteHop(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger) (h
 	}, log)
 }
 
-func buildNodes(p gwconfig.Provider) ([]*xconfig.NodeConfig, error) {
+func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, effort gwconfig.Effort) ([]*xconfig.NodeConfig, error) {
 	u, err := url.Parse(strings.TrimSpace(p.BaseURL))
 	if err != nil || u.Host == "" {
 		return nil, fmt.Errorf("invalid base_url %q", p.BaseURL)
@@ -180,28 +153,32 @@ func buildNodes(p gwconfig.Provider) ([]*xconfig.NodeConfig, error) {
 			}
 		}
 
-		name := p.Name
+		tier := strings.ToLower(strings.TrimSpace(n.Tier))
+		if tier == "" {
+			tier = "base"
+		}
+		name := fmt.Sprintf("%s/%s/%s/%s", route, p.Name, tier, n.Name)
 		if len(keys) > 1 {
-			name = fmt.Sprintf("%s/%d", p.Name, i)
+			name = fmt.Sprintf("%s/%d", name, i)
 		}
 
 		bodyRewrites := []xconfig.HTTPBodyRewriteConfig{{
-			Rewriter: "p:" + p.Name,
+			Rewriter: "n:" + n.Name,
 			Type:     "*",
 		}}
 
 		var metadata map[string]any
-		if p.Backup {
+		if n.Backup {
 			metadata = map[string]any{"backup": true}
 		}
-		if p.Weight > 0 {
+		if n.Weight > 0 {
 			if metadata == nil {
 				metadata = make(map[string]any)
 			}
-			metadata["weight"] = p.Weight
+			metadata["weight"] = n.Weight
 		}
 
-		nodes = append(nodes, &xconfig.NodeConfig{
+		nodeCfg := &xconfig.NodeConfig{
 			Name:     name,
 			Addr:     addr,
 			TLS:      tlsCfg,
@@ -214,7 +191,24 @@ func buildNodes(p gwconfig.Provider) ([]*xconfig.NodeConfig, error) {
 				RewriteResponseBody: bodyRewrites,
 				FailCodes:           "429,5xx",
 			},
-		})
+		}
+		if tier != "base" {
+			priority := 0
+			switch tier {
+			case "high":
+				priority = 3
+			case "medium":
+				priority = 2
+			case "low":
+				priority = 1
+			}
+			nodeCfg.Matcher = &xconfig.NodeMatcherConfig{
+				Rule:     effortRule(tier, effort),
+				Priority: priority,
+			}
+		}
+
+		nodes = append(nodes, nodeCfg)
 	}
 	return nodes, nil
 }
@@ -240,10 +234,30 @@ func buildRewrites(basePath string, pathMap map[string]string) []xconfig.HTTPURL
 	return out
 }
 
-func buildMatcher(m gwconfig.Match) (corerouting.Matcher, error) {
+func buildMatcher(cfg *gwconfig.Config, m gwconfig.Match) (corerouting.Matcher, error) {
 	var rules []string
 	if m.Model != "" {
-		rules = append(rules, fmt.Sprintf("BodyJSON(%q, %q)", "model", globToRegexp(m.Model)))
+		pattern := globToRegexp(m.Model)
+		// A route's model is a logical model: compile the union of the alias
+		// globs that resolve to it. Fall back to a literal glob when no alias
+		// targets this logical model (keeps older configs working).
+		var globs []string
+		for _, a := range cfg.Aliases {
+			if strings.EqualFold(strings.TrimSpace(a.Model), strings.TrimSpace(m.Model)) {
+				globs = append(globs, a.Match)
+			}
+		}
+		if len(globs) > 0 {
+			inner := make([]string, 0, len(globs))
+			for _, g := range globs {
+				rgx := globToRegexp(g)
+				rgx = strings.TrimPrefix(rgx, "^")
+				rgx = strings.TrimSuffix(rgx, "$")
+				inner = append(inner, rgx)
+			}
+			pattern = "^(" + strings.Join(inner, "|") + ")$"
+		}
+		rules = append(rules, fmt.Sprintf("BodyJSON(%q, %q)", "model", pattern))
 	}
 	if m.Path != "" {
 		rules = append(rules, fmt.Sprintf("PathPrefix(%q)", m.Path))
@@ -272,36 +286,44 @@ func globToRegexp(glob string) string {
 	return b.String()
 }
 
-// registerRewriters installs one in-process rewriter per provider. Called
-// before ParseHop because node parsing resolves rewriters from the registry.
+// registerRewriters installs one in-process rewriter per node. Called before
+// ParseHop because node parsing resolves rewriters from the registry.
 func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) error {
+	providers := make(map[string]gwconfig.Provider, len(cfg.Providers))
 	for _, p := range cfg.Providers {
-		name := "p:" + p.Name
+		providers[p.Name] = p
+	}
+	for _, n := range cfg.Nodes {
+		p, ok := providers[n.Provider]
+		if !ok {
+			continue
+		}
+		name := "n:" + n.Name
 		registry.RewriterRegistry().Unregister(name)
-		if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newProviderEngine(cfg, p), p.Name, p.Protocol, facts)); err != nil {
+		if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(cfg, p, n), p.Name, p.Protocol, facts)); err != nil {
 			return fmt.Errorf("register rewriter %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-func newProviderEngine(cfg *gwconfig.Config, p gwconfig.Provider) *engine.Engine {
-	fallback := p.EffectiveModel("", "")
-	provider := p
+func newNodeEngine(cfg *gwconfig.Config, p gwconfig.Provider, n gwconfig.Node) *engine.Engine {
+	fallback := n.EffectiveModel("", "")
+	binding := n
 	return engine.New(engine.Options{
 		Model:     fallback,
 		MaxTokens: 8192,
 		Cache:     "memory",
-		ResolveModel: func(clientModel, effort string) (string, string) {
+		ResolveModel: func(clientModel, effort string) (string, string, string) {
 			logical := cfg.ResolveAlias(clientModel)
 			if logical == "" {
-				return "", ""
+				return "", "", ""
 			}
-			model := provider.EffectiveModel(logical, effort)
+			model := binding.EffectiveModel(logical, effort)
 			if model == "" {
-				return "", ""
+				return "", "", logical
 			}
-			return model, provider.Protocol
+			return model, p.Protocol, logical
 		},
 	})
 }

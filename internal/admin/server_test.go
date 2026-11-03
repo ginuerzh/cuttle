@@ -191,14 +191,23 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 		t.Fatalf("keys were cleared by an update without keys: %+v", rel.cfg.Providers[0].Keys)
 	}
 
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"r1","providers":["p1"]}`, csrf); resp.StatusCode != http.StatusCreated {
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n1","provider":"p1"}`, csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create node status = %d", resp.StatusCode)
+	}
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"r1","nodes":["n1"]}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create route status = %d", resp.StatusCode)
 	}
 	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/p1", "", csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("delete referenced provider status = %d, want 400", resp.StatusCode)
 	}
+	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/n1", "", csrf); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("delete referenced node status = %d, want 400", resp.StatusCode)
+	}
 	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/routes/r1", "", csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete route status = %d", resp.StatusCode)
+	}
+	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/n1", "", csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete node status = %d", resp.StatusCode)
 	}
 	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/p1", "", csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete provider status = %d", resp.StatusCode)
@@ -313,5 +322,143 @@ func TestStatsAPI(t *testing.T) {
 	}
 	if one.ID != "r1" || one.InputTokens != 1 {
 		t.Fatalf("request = %+v", one)
+	}
+}
+
+func TestWebServesSPAFallback(t *testing.T) {
+	_, _, _, ts := newTestAdmin(t)
+
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("GET / = %d, want 200 or 503", resp.StatusCode)
+	}
+	if resp.StatusCode == http.StatusOK {
+		if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+			t.Fatalf("content-type = %q", resp.Header.Get("Content-Type"))
+		}
+		if !strings.Contains(string(body), "<html") {
+			t.Fatalf("body = %q", body)
+		}
+		if resp2, err := http.Get(ts.URL + "/providers"); err != nil || resp2.StatusCode != http.StatusOK {
+			t.Fatalf("SPA fallback = %v, want 200", err)
+		}
+	}
+
+	if resp, err := http.Get(ts.URL + "/api/does-not-exist"); err != nil ||
+		(resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusUnauthorized) {
+		t.Fatalf("unknown api = %v, want 401/404", err)
+	}
+}
+
+func newSessionTestServer(t *testing.T, store *stats.Store, hash string) *httptest.Server {
+	t.Helper()
+	cfg := &config.Config{}
+	cfg.Admin.PasswordHash = hash
+	cfg.Admin.SessionTTL = config.Duration(time.Hour)
+	config.ApplyDefaults(cfg)
+	s := New("", cfg, &recordingReloader{store: store}, xlogger.Nop())
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func TestRememberMeSurvivesRestart(t *testing.T) {
+	store, err := stats.Open(filepath.Join(t.TempDir(), "stats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	hash, err := config.HashPassword("pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+
+	first := newSessionTestServer(t, store, hash)
+	resp := doJSON(t, client, http.MethodPost, first.URL+"/api/login", `{"password":"pass","remember":true}`, "")
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("login status = %d", resp.StatusCode)
+	}
+	// The jar drops cookie attributes; inspect the Set-Cookie header instead.
+	for _, ck := range resp.Cookies() {
+		if ck.Name == sessionCookie && ck.MaxAge <= 0 {
+			t.Fatalf("remembered session cookie MaxAge = %d, want > 0", ck.MaxAge)
+		}
+	}
+
+	// A fresh Server instance has an empty in-memory map; the session must be
+	// restored from SQLite.
+	second := newSessionTestServer(t, store, hash)
+	if resp := doJSON(t, client, http.MethodGet, second.URL+"/api/config", "", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("restored session status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestSessionWithoutRememberIsNotPersisted(t *testing.T) {
+	store, err := stats.Open(filepath.Join(t.TempDir(), "stats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	hash, _ := config.HashPassword("pass")
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+
+	first := newSessionTestServer(t, store, hash)
+	if resp := doJSON(t, client, http.MethodPost, first.URL+"/api/login", `{"password":"pass"}`, ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("login status = %d", resp.StatusCode)
+	}
+
+	second := newSessionTestServer(t, store, hash)
+	if resp := doJSON(t, client, http.MethodGet, second.URL+"/api/config", "", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("session after restart = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestLogoutDeletesPersistedSession(t *testing.T) {
+	store, err := stats.Open(filepath.Join(t.TempDir(), "stats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	hash, _ := config.HashPassword("pass")
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+
+	first := newSessionTestServer(t, store, hash)
+	if resp := doJSON(t, client, http.MethodPost, first.URL+"/api/login", `{"password":"pass","remember":true}`, ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("login status = %d", resp.StatusCode)
+	}
+	u, _ := url.Parse(first.URL)
+	var csrf string
+	for _, ck := range jar.Cookies(u) {
+		if ck.Name == csrfCookie {
+			csrf = ck.Value
+		}
+	}
+	if resp := doJSON(t, client, http.MethodPost, first.URL+"/api/logout", "", csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("logout status = %d", resp.StatusCode)
+	}
+
+	second := newSessionTestServer(t, store, hash)
+	if resp := doJSON(t, &http.Client{}, http.MethodGet, second.URL+"/api/config", "", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d, want 401", resp.StatusCode)
+	}
+	saved, err := store.LoadSessions(context.Background(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 0 {
+		t.Fatalf("persisted sessions = %d, want 0", len(saved))
 	}
 }

@@ -22,6 +22,7 @@ type Config struct {
 	Effort    Effort     `yaml:"effort" json:"effort"`
 	Aliases   []Alias    `yaml:"aliases" json:"aliases"`
 	Providers []Provider `yaml:"providers" json:"providers"`
+	Nodes     []Node     `yaml:"nodes" json:"nodes"`
 	Routes    []Route    `yaml:"routes" json:"routes"`
 }
 
@@ -35,6 +36,9 @@ type Admin struct {
 	Listen       string   `yaml:"listen" json:"listen"`
 	PasswordHash string   `yaml:"passwordHash" json:"-"`
 	SessionTTL   Duration `yaml:"sessionTTL" json:"sessionTTL"`
+	// RememberTTL bounds a session created with "remember me"; it is
+	// persisted across restarts, unlike a normal session.
+	RememberTTL Duration `yaml:"rememberTTL" json:"rememberTTL"`
 }
 
 // Stats holds statistics storage settings (used from P4).
@@ -58,21 +62,33 @@ type Alias struct {
 	Model string `yaml:"model" json:"model"`
 }
 
-// Provider is an upstream LLM endpoint.
+// Provider is an upstream LLM endpoint: how to connect and authenticate. It
+// carries no model mapping and no routing policy; those belong to a Node.
 type Provider struct {
+	Name     string            `yaml:"name" json:"name"`
+	BaseURL  string            `yaml:"baseURL" json:"baseURL"`
+	Protocol string            `yaml:"protocol" json:"protocol"`
+	Keys     []string          `yaml:"keys,omitempty" json:"keys,omitempty"`
+	Auth     Auth              `yaml:"auth,omitempty" json:"auth,omitempty"`
+	PathMap  map[string]string `yaml:"pathMap,omitempty" json:"pathMap,omitempty"`
+	Health   Health            `yaml:"health,omitempty" json:"health,omitempty"`
+	TLS      TLS               `yaml:"tls,omitempty" json:"tls,omitempty"`
+	Enabled  *bool             `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// Node is one concrete use of a provider: the model mapping and the local
+// routing policy (tier, backup, weight). The same provider can back several
+// nodes with different mappings.
+type Node struct {
 	Name         string                       `yaml:"name" json:"name"`
-	BaseURL      string                       `yaml:"baseURL" json:"baseURL"`
-	Protocol     string                       `yaml:"protocol" json:"protocol"`
-	Keys         []string                     `yaml:"keys,omitempty" json:"keys,omitempty"`
-	Auth         Auth                         `yaml:"auth,omitempty" json:"auth,omitempty"`
-	PathMap      map[string]string            `yaml:"pathMap,omitempty" json:"pathMap,omitempty"`
+	Provider     string                       `yaml:"provider" json:"provider"`
 	Models       map[string]string            `yaml:"models,omitempty" json:"models,omitempty"`
 	EffortModels map[string]map[string]string `yaml:"effortModels,omitempty" json:"effortModels,omitempty"`
-	Health       Health                       `yaml:"health,omitempty" json:"health,omitempty"`
-	TLS          TLS                          `yaml:"tls,omitempty" json:"tls,omitempty"`
-	Backup       bool                         `yaml:"backup,omitempty" json:"backup,omitempty"`
-	Weight       int                          `yaml:"weight,omitempty" json:"weight,omitempty"`
-	Enabled      *bool                        `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Tier is "", "high", "medium" or "low". Empty means the default pool.
+	Tier    string `yaml:"tier,omitempty" json:"tier,omitempty"`
+	Backup  bool   `yaml:"backup,omitempty" json:"backup,omitempty"`
+	Weight  int    `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 // Auth describes how the provider key is injected into upstream requests.
@@ -104,11 +120,10 @@ type TLS struct {
 
 // Route maps client requests to a set of providers.
 type Route struct {
-	Name      string              `yaml:"name" json:"name"`
-	Providers []string            `yaml:"providers" json:"providers"`
-	Strategy  string              `yaml:"strategy,omitempty" json:"strategy,omitempty"`
-	Effort    map[string][]string `yaml:"effort,omitempty" json:"effort,omitempty"`
-	Match     Match               `yaml:"match" json:"match"`
+	Name     string   `yaml:"name" json:"name"`
+	Nodes    []string `yaml:"nodes" json:"nodes"`
+	Strategy string   `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	Match    Match    `yaml:"match" json:"match"`
 }
 
 // Match filters requests. An empty Match is a catch-all.
@@ -287,21 +302,26 @@ func (c *Config) expandEnv() {
 		for k, v := range p.PathMap {
 			p.PathMap[ExpandEnv(k)] = ExpandEnv(v)
 		}
-		for k, v := range p.Models {
-			p.Models[ExpandEnv(k)] = ExpandEnv(v)
+	}
+	for i := range c.Nodes {
+		n := &c.Nodes[i]
+		n.Name = ExpandEnv(n.Name)
+		n.Provider = ExpandEnv(n.Provider)
+		for k, v := range n.Models {
+			n.Models[ExpandEnv(k)] = ExpandEnv(v)
 		}
-		for logical, byEffort := range p.EffortModels {
+		for logical, byEffort := range n.EffortModels {
 			for effort, model := range byEffort {
 				byEffort[effort] = ExpandEnv(model)
 			}
-			p.EffortModels[logical] = byEffort
+			n.EffortModels[logical] = byEffort
 		}
 	}
 	for i := range c.Routes {
 		r := &c.Routes[i]
 		r.Name = ExpandEnv(r.Name)
-		for j := range r.Providers {
-			r.Providers[j] = ExpandEnv(r.Providers[j])
+		for j := range r.Nodes {
+			r.Nodes[j] = ExpandEnv(r.Nodes[j])
 		}
 		r.Match.Model = ExpandEnv(r.Match.Model)
 		r.Match.Path = ExpandEnv(r.Match.Path)
@@ -318,6 +338,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Admin.SessionTTL == 0 {
 		c.Admin.SessionTTL = Duration(12 * time.Hour)
+	}
+	if c.Admin.RememberTTL == 0 {
+		c.Admin.RememberTTL = Duration(720 * time.Hour)
 	}
 	if c.Stats.Path == "" {
 		c.Stats.Path = "stats.sqlite"
@@ -353,8 +376,10 @@ func (c *Config) applyDefaults() {
 		if p.Health.Timeout == 0 {
 			p.Health.Timeout = Duration(5 * time.Second)
 		}
-		if p.Weight == 0 {
-			p.Weight = 1
+	}
+	for i := range c.Nodes {
+		if c.Nodes[i].Weight == 0 {
+			c.Nodes[i].Weight = 1
 		}
 	}
 	for i := range c.Routes {
@@ -390,6 +415,9 @@ func Validate(c *Config) error {
 		if name == "" {
 			return fmt.Errorf("providers[%d]: name is required", i)
 		}
+		if strings.Contains(name, "/") {
+			return fmt.Errorf("provider %q: name must not contain '/'", name)
+		}
 		if seen[name] {
 			return fmt.Errorf("providers[%d]: duplicate name %q", i, name)
 		}
@@ -407,9 +435,6 @@ func Validate(c *Config) error {
 		default:
 			return fmt.Errorf("provider %q: protocol must be openai, anthropic or gemini", name)
 		}
-		if p.Weight < 0 {
-			return fmt.Errorf("provider %q: weight must be >= 0", name)
-		}
 		if p.Health.Path != "" && !strings.HasPrefix(p.Health.Path, "/") {
 			return fmt.Errorf("provider %q: health.path must start with /", name)
 		}
@@ -420,6 +445,38 @@ func Validate(c *Config) error {
 		}
 	}
 
+	nodeNames := make(map[string]bool, len(c.Nodes))
+	for i := range c.Nodes {
+		n := &c.Nodes[i]
+		name := strings.TrimSpace(n.Name)
+		if name == "" {
+			return fmt.Errorf("nodes[%d]: name is required", i)
+		}
+		if strings.Contains(name, "/") {
+			return fmt.Errorf("node %q: name must not contain '/'", name)
+		}
+		if nodeNames[name] {
+			return fmt.Errorf("nodes[%d]: duplicate name %q", i, name)
+		}
+		nodeNames[name] = true
+
+		provider := strings.TrimSpace(n.Provider)
+		if provider == "" {
+			return fmt.Errorf("node %q: provider is required", name)
+		}
+		if !seen[provider] {
+			return fmt.Errorf("node %q: unknown provider %q", name, provider)
+		}
+		switch strings.ToLower(strings.TrimSpace(n.Tier)) {
+		case "", "high", "medium", "low":
+		default:
+			return fmt.Errorf("node %q: tier must be high, medium or low", name)
+		}
+		if n.Weight < 0 {
+			return fmt.Errorf("node %q: weight must be >= 0", name)
+		}
+	}
+
 	routes := make(map[string]bool, len(c.Routes))
 	for i := range c.Routes {
 		r := &c.Routes[i]
@@ -427,36 +484,24 @@ func Validate(c *Config) error {
 		if name == "" {
 			return fmt.Errorf("routes[%d]: name is required", i)
 		}
+		if strings.Contains(name, "/") {
+			return fmt.Errorf("route %q: name must not contain '/'", name)
+		}
 		if routes[name] {
 			return fmt.Errorf("routes[%d]: duplicate name %q", i, name)
 		}
 		routes[name] = true
-		if len(r.Providers) == 0 {
-			return fmt.Errorf("route %q: providers is required", name)
+		if len(r.Nodes) == 0 {
+			return fmt.Errorf("route %q: nodes is required (providers/effort were replaced by provider + node definitions)", name)
 		}
 		switch strings.ToLower(r.Strategy) {
 		case "", "fifo", "round", "random":
 		default:
 			return fmt.Errorf("route %q: strategy must be fifo, round or random", name)
 		}
-		for tier, refs := range r.Effort {
-			switch tier {
-			case "high", "medium", "low":
-			default:
-				return fmt.Errorf("route %q: effort tier %q must be high, medium or low", name, tier)
-			}
-			if len(refs) == 0 {
-				return fmt.Errorf("route %q: effort.%s is empty", name, tier)
-			}
-			for _, ref := range refs {
-				if !seen[strings.TrimSpace(ref)] {
-					return fmt.Errorf("route %q: unknown provider %q in effort.%s", name, ref, tier)
-				}
-			}
-		}
-		for _, ref := range r.Providers {
-			if !seen[strings.TrimSpace(ref)] {
-				return fmt.Errorf("route %q: unknown provider %q", name, ref)
+		for _, ref := range r.Nodes {
+			if !nodeNames[strings.TrimSpace(ref)] {
+				return fmt.Errorf("route %q: unknown node %q", name, ref)
 			}
 		}
 	}
@@ -476,16 +521,21 @@ func (c *Config) ResolveAlias(clientModel string) string {
 
 // EffectiveModel resolves the provider model for a logical model and effort:
 // effort-specific override, then logical model, then the "*" fallback.
-func (p Provider) EffectiveModel(logical, effort string) string {
-	if byEffort, ok := p.EffortModels[logical]; ok {
+func (n Node) EffectiveModel(logical, effort string) string {
+	if byEffort, ok := n.EffortModels[logical]; ok {
 		if model := strings.TrimSpace(byEffort[effort]); model != "" {
 			return model
 		}
 	}
-	if model := strings.TrimSpace(p.Models[logical]); model != "" {
+	if model := strings.TrimSpace(n.Models[logical]); model != "" {
 		return model
 	}
-	return strings.TrimSpace(p.Models["*"])
+	return strings.TrimSpace(n.Models["*"])
+}
+
+// EnabledValue reports whether the node is enabled (default true).
+func (n Node) EnabledValue() bool {
+	return n.Enabled == nil || *n.Enabled
 }
 
 // EnabledValue reports whether the provider is enabled (default true).

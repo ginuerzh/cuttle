@@ -74,7 +74,7 @@ func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 	}
 
 	bad := testConfig(upB.URL, nil)
-	bad.Routes[0].Providers = []string{"missing"}
+	bad.Routes[0].Nodes = []string{"missing"}
 	if err := gw.Reload(bad); err == nil {
 		t.Fatal("reload with an unknown provider should fail")
 	}

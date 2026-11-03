@@ -1,7 +1,9 @@
 package admin
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -25,9 +27,16 @@ func newToken(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// hashToken keeps raw session tokens out of the database.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Password string `json:"password"`
+		Remember bool   `json:"remember"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -41,11 +50,28 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	token := newToken(32)
 	csrf := newToken(32)
-	maxAge := int(s.ttl.Seconds())
+
+	ttl := s.ttl
+	if in.Remember {
+		ttl = s.rememberTTL
+	}
+	expires := time.Now().Add(ttl)
+	// A non-remembered session is a browser-session cookie (MaxAge 0); a
+	// remembered one survives both browser restarts and llm-gw restarts.
+	maxAge := 0
+	if in.Remember {
+		maxAge = int(ttl.Seconds())
+	}
 
 	s.mu.Lock()
-	s.sessions[token] = time.Now().Add(s.ttl)
+	s.sessions[hashToken(token)] = expires
 	s.mu.Unlock()
+
+	if in.Remember && s.stats != nil {
+		if err := s.stats.PutSession(context.Background(), hashToken(token), expires); err != nil {
+			s.log.Warnf("persist session: %v", err)
+		}
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: token, Path: "/",
@@ -61,8 +87,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		s.mu.Lock()
-		delete(s.sessions, c.Value)
+		delete(s.sessions, hashToken(c.Value))
 		s.mu.Unlock()
+		if s.stats != nil {
+			if err := s.stats.DeleteSession(context.Background(), hashToken(c.Value)); err != nil {
+				s.log.Warnf("delete session: %v", err)
+			}
+		}
 	}
 	for _, name := range []string{sessionCookie, csrfCookie} {
 		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1})
@@ -98,12 +129,13 @@ func (s *Server) validSession(token string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	exp, ok := s.sessions[token]
+	key := hashToken(token)
+	exp, ok := s.sessions[key]
 	if !ok {
 		return false
 	}
 	if time.Now().After(exp) {
-		delete(s.sessions, token)
+		delete(s.sessions, key)
 		return false
 	}
 	return true

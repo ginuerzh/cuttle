@@ -32,10 +32,14 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 		BaseURL:  upstreamURL,
 		Protocol: "openai",
 		Keys:     []string{"sk-secret"},
-		Models:   map[string]string{"fast": "deepseek-v4-flash"},
 		PathMap:  map[string]string{"/v1/chat/completions": "/chat/completions"},
 	}}
-	cfg.Routes = []config.Route{{Name: "r", Providers: []string{"p"}}}
+	cfg.Nodes = []config.Node{{
+		Name:     "p",
+		Provider: "p",
+		Models:   map[string]string{"fast": "deepseek-v4-flash"},
+	}}
+	cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"p"}}}
 	return cfg
 }
 
@@ -87,6 +91,9 @@ func TestStatsRecordsNonStreaming(t *testing.T) {
 
 	row := waitRow(t, gw)
 	if row.Provider != "p" || row.Model != "deepseek-v4-flash" || row.Effort != "high" {
+		t.Fatalf("row = %+v", row)
+	}
+	if row.Route != "r" || row.ClientModel != "gpt-4.5" || row.LogicalModel != "fast" || row.Tier != "" {
 		t.Fatalf("row = %+v", row)
 	}
 	if row.InputTokens != 10 || row.OutputTokens != 5 {

@@ -2,6 +2,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -21,6 +22,7 @@ type Reloader interface {
 
 type probeResult struct {
 	OK        bool   `json:"ok"`
+	Status    int    `json:"status,omitempty"`
 	LatencyMS int64  `json:"latencyMs"`
 	Error     string `json:"error,omitempty"`
 	CheckedAt string `json:"checkedAt,omitempty"`
@@ -33,6 +35,7 @@ type Server struct {
 	log          logger.Logger
 	passwordHash string
 	ttl          time.Duration
+	rememberTTL  time.Duration
 
 	mu       sync.Mutex
 	cfg      *config.Config
@@ -51,18 +54,32 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 	if ttl <= 0 {
 		ttl = 12 * time.Hour
 	}
+	rememberTTL := time.Duration(cfg.Admin.RememberTTL)
+	if rememberTTL <= 0 {
+		rememberTTL = 30 * 24 * time.Hour
+	}
 	s := &Server{
 		cfgPath:      cfgPath,
 		reloader:     r,
 		log:          log,
 		passwordHash: cfg.Admin.PasswordHash,
 		ttl:          ttl,
+		rememberTTL:  rememberTTL,
 		cfg:          cfg,
 		sessions:     make(map[string]time.Time),
 		probes:       make(map[string]probeResult),
 	}
 	if sp, ok := r.(interface{ Stats() *stats.Store }); ok {
 		s.stats = sp.Stats()
+	}
+	if s.stats != nil {
+		if saved, err := s.stats.LoadSessions(context.Background(), time.Now()); err != nil {
+			log.Warnf("load sessions: %v", err)
+		} else {
+			for token, exp := range saved {
+				s.sessions[token] = exp
+			}
+		}
 	}
 	return s
 }
@@ -85,6 +102,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/providers/{name}", s.handleDeleteProvider)
 	api.HandleFunc("POST /api/providers/{name}/test", s.handleTestProvider)
 	api.HandleFunc("GET /api/providers/{name}/models", s.handleProviderModels)
+	api.HandleFunc("GET /api/nodes", s.handleListNodes)
+	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
+	api.HandleFunc("GET /api/nodes/{name}", s.handleGetNode)
+	api.HandleFunc("PUT /api/nodes/{name}", s.handleUpdateNode)
+	api.HandleFunc("DELETE /api/nodes/{name}", s.handleDeleteNode)
 	api.HandleFunc("GET /api/routes", s.handleListRoutes)
 	api.HandleFunc("POST /api/routes", s.handleCreateRoute)
 	api.HandleFunc("PUT /api/routes/{name}", s.handleUpdateRoute)
@@ -94,8 +116,12 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/stats/summary", s.handleSummary)
 	api.HandleFunc("GET /api/requests", s.handleRequests)
 	api.HandleFunc("GET /api/requests/{id}", s.handleRequest)
+	api.HandleFunc("GET /api/stats/graph", s.handleGraph)
+	api.HandleFunc("PUT /api/routes/order", s.handleRouteOrder)
+	api.HandleFunc("PUT /api/admin/password", s.handlePassword)
 
 	mux.Handle("/api/", s.requireAuth(api))
+	mux.HandleFunc("/", s.handleWeb)
 	return mux
 }
 

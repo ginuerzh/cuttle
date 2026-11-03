@@ -1,3 +1,5 @@
 /stats.sqlite
 /stats.sqlite-*
 /llm-gw
+/internal/admin/dist/*
+!/internal/admin/dist/.gitkeep

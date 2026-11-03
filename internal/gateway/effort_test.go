@@ -29,15 +29,19 @@ func TestEffortTierRouting(t *testing.T) {
 	strongSrv, strongHit := captureUpstream(t)
 
 	cfg := matrixConfig(fastSrv.URL, "openai", nil)
-	cfg.Providers[0].Models = map[string]string{"*": "fast-model"}
+	cfg.Nodes[0].Models = map[string]string{"*": "fast-model"}
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
 		Name:     "strong",
 		BaseURL:  strongSrv.URL,
 		Protocol: "openai",
-		Models:   map[string]string{"*": "strong-model"},
 	})
-	cfg.Routes[0].Providers = []string{"up"}
-	cfg.Routes[0].Effort = map[string][]string{"high": {"strong"}}
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
+		Name:     "strong",
+		Provider: "strong",
+		Models:   map[string]string{"*": "strong-model"},
+		Tier:     "high",
+	})
+	cfg.Routes[0].Nodes = []string{"up", "strong"}
 
 	gw := startGateway(t, cfg)
 
@@ -94,9 +98,10 @@ func TestRoutePrioritySpecificBeforeCatchAll(t *testing.T) {
 		BaseURL:  specificSrv.URL,
 		Protocol: "openai",
 	})
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "specific", Provider: "specific"})
 	cfg.Routes = []gwconfig.Route{
-		{Name: "specific", Providers: []string{"specific"}, Match: gwconfig.Match{Model: "gpt-5.5"}},
-		{Name: "default", Providers: []string{"up"}},
+		{Name: "specific", Nodes: []string{"specific"}, Match: gwconfig.Match{Model: "gpt-5.5"}},
+		{Name: "default", Nodes: []string{"up"}},
 	}
 	gw := startGateway(t, cfg)
 
@@ -133,7 +138,7 @@ func TestMultiKey429Rotation(t *testing.T) {
 
 	cfg := matrixConfig(upstream.URL, "openai", nil)
 	cfg.Providers[0].Keys = []string{"k1", "k2"}
-	cfg.Providers[0].Models = nil
+	cfg.Nodes[0].Models = nil
 	cfg.Aliases = nil
 	cfg.Routes[0].Strategy = "round"
 	gw := startGateway(t, cfg)
@@ -179,15 +184,15 @@ func TestBackupProviderUsedOnlyAfterPrimaryFails(t *testing.T) {
 	defer backup.Close()
 
 	cfg := matrixConfig(primary.URL, "openai", nil)
-	cfg.Providers[0].Models = nil
+	cfg.Nodes[0].Models = nil
 	cfg.Aliases = nil
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
 		Name:     "backup",
 		BaseURL:  backup.URL,
 		Protocol: "openai",
-		Backup:   true,
 	})
-	cfg.Routes[0].Providers = []string{"up", "backup"}
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "backup", Provider: "backup", Backup: true})
+	cfg.Routes[0].Nodes = []string{"up", "backup"}
 	gw := startGateway(t, cfg)
 
 	first := postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[]}`)
@@ -214,15 +219,15 @@ func TestEffortFallbackWhenTierFails(t *testing.T) {
 	defer strong.Close()
 
 	cfg := matrixConfig(fastSrv.URL, "openai", nil)
-	cfg.Providers[0].Models = nil
+	cfg.Nodes[0].Models = nil
 	cfg.Aliases = nil
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
 		Name:     "strong",
 		BaseURL:  strong.URL,
 		Protocol: "openai",
 	})
-	cfg.Routes[0].Providers = []string{"up"}
-	cfg.Routes[0].Effort = map[string][]string{"high": {"strong"}}
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "strong", Provider: "strong", Tier: "high"})
+	cfg.Routes[0].Nodes = []string{"up", "strong"}
 	gw := startGateway(t, cfg)
 
 	body := `{"model":"gpt-4.5","reasoning_effort":"high","messages":[]}`

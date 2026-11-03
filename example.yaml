@@ -31,6 +31,7 @@ aliases:
   - match: "*"
     model: fast
 
+# A provider is only the endpoint: how to connect and authenticate.
 providers:
   - name: deepseek
     baseURL: https://api.deepseek.com
@@ -40,17 +41,35 @@ providers:
     pathMap:
       /v1/chat/completions: /chat/completions
       /v1/responses: /chat/completions
-    models:
-      strong: deepseek-v4-pro
-      fast: deepseek-v4-flash
-      "*": deepseek-v4-flash
     health:
       path: /models
       interval: 30s
       timeout: 5s
 
+# A node is one concrete use of a provider: model mapping + routing policy.
+# The same provider can back several nodes with different mappings.
+nodes:
+  - name: deepseek-fast
+    provider: deepseek
+    models:
+      fast: deepseek-v4-flash
+      "*": deepseek-v4-flash
+
+  # Optional: same provider, but high-effort requests get the stronger model.
+  # tier=high nodes win over the base pool via the matcher priority.
+  - name: deepseek-strong
+    provider: deepseek
+    tier: high
+    models:
+      fast: deepseek-v4-pro
+      strong: deepseek-v4-pro
+
 routes:
-  - name: default
-    providers: [deepseek]
+  - name: strong
+    nodes: [deepseek-strong]
     match:
-      model: "*"
+      model: strong
+  - name: fast
+    nodes: [deepseek-fast, deepseek-strong]
+    match:
+      model: fast
