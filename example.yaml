@@ -40,6 +40,11 @@ providers:
       api: chat
       interval: 30s
       timeout: 5s
+    # Local per-model overrides. A disabled model stays in the catalog, but the
+    # Node model picker hides it and routes targeting it skip this node.
+    # models:
+    #   deepseek-v4-flash:
+    #     disabled: true
 
 # A node is one concrete use of a provider: model mapping + routing policy.
 # The same provider can back several nodes with different mappings.
