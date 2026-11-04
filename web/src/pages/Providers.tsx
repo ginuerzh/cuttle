@@ -200,6 +200,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       <Modal
         title={models ? `${models.name} 的模型` : ''}
         open={!!models}
+        width={isMobile ? '94%' : 640}
         footer={
           <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.name, true)}>
             刷新
@@ -207,50 +208,51 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
         }
         onCancel={() => setModels(null)}
       >
-        <Space direction="vertical" size={8} style={{ width: '100%', maxHeight: 480, overflowY: 'auto' }}>
+        <div style={{ width: '100%', maxHeight: 480, overflowY: 'auto' }}>
           {models?.list.map((m) => {
             const apis = modelApiLabel(m);
             const meta = modelMeta(m);
-            const name = m.name && m.name !== m.id ? m.name : '';
             return (
-              <div
-                key={m.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 8,
-                  opacity: m.disabled ? 0.55 : 1,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Space wrap size={4}>
-                    {name ? <Typography.Text strong>{name}</Typography.Text> : null}
-                    <Typography.Text type={name ? 'secondary' : undefined} strong={!name}>
-                      {m.id}
-                    </Typography.Text>
-                    {apis ? <Tag color="blue">{apis}</Tag> : null}
-                    {m.disabled ? <Tag>已禁用</Tag> : null}
-                  </Space>
-                  {meta.length > 0 ? (
-                    <div>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {meta.join(' · ')}
+              <div key={m.id} style={{ opacity: m.disabled ? 0.55 : 1 }}>
+                <MobileCard
+                  title={m.name || m.id}
+                  subtitle={
+                    <>
+                      <Typography.Text type="secondary" style={{ wordBreak: 'break-all' }}>
+                        {m.id}
                       </Typography.Text>
-                    </div>
-                  ) : null}
-                </div>
-                <Switch
-                  size="small"
-                  checked={!m.disabled}
-                  disabled={modelsBusy}
-                  onChange={(checked) => void toggleModel(m, checked)}
-                  aria-label={`切换 ${m.id}`}
+                      {apis ? (
+                        <div style={{ marginTop: 4 }}>
+                          <Tag color="blue" style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+                            {apis}
+                          </Tag>
+                        </div>
+                      ) : null}
+                      {meta.map((line) => (
+                        <div key={line} style={{ color: 'var(--gw-text-muted)', fontSize: 12 }}>
+                          {line}
+                        </div>
+                      ))}
+                    </>
+                  }
+                  tags={
+                    <Space direction="vertical" align="end" size={4}>
+                      {m.disabled ? <Tag style={{ marginInlineEnd: 0 }}>已禁用</Tag> : null}
+                      <Switch
+                        size="small"
+                        checked={!m.disabled}
+                        disabled={modelsBusy}
+                        onChange={(checked) => void toggleModel(m, checked)}
+                        aria-label={`切换 ${m.id}`}
+                      />
+                    </Space>
+                  }
                 />
               </div>
             );
           })}
           {models && models.list.length === 0 ? <Typography.Text type="secondary">供应商没有返回模型</Typography.Text> : null}
-        </Space>
+        </div>
       </Modal>
     </div>
   );
