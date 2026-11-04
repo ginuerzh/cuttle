@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -11,6 +12,12 @@ import (
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/provider"
 )
+
+// errModelDisabled marks a node whose compiled target model is locally disabled
+// by its provider. Routes skip such nodes instead of failing the whole
+// configuration, matching the existing disabled-provider and disabled-node
+// behavior.
+var errModelDisabled = errors.New("target model is disabled")
 
 // upstreamTarget is the result of compiling one route against one provider: a
 // single base URL, wire API and provider model. A route has exactly one
@@ -34,6 +41,9 @@ func compileRouteNode(p gwconfig.Provider, n gwconfig.Node, r gwconfig.Route) (u
 		return upstreamTarget{}, err
 	}
 	targetModel := n.EffectiveModel(r.Match.Model)
+	if p.ModelDisabled(targetModel) {
+		return upstreamTarget{}, fmt.Errorf("%w: %s", errModelDisabled, targetModel)
+	}
 	api, _, err := selectAPI(context.Background(), prov, targetModel)
 	if err != nil {
 		return upstreamTarget{}, err

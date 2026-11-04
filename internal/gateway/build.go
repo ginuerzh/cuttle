@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -85,6 +86,10 @@ func buildRouteHop(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger) (h
 		}
 		target, err := compileRouteNode(p, n, r)
 		if err != nil {
+			if errors.Is(err, errModelDisabled) {
+				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
+				continue
+			}
 			return nil, fmt.Errorf("node %q: %w", n.Name, err)
 		}
 		ns, err := buildNodes(p, n, r.Name, target)
@@ -294,6 +299,10 @@ func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Fac
 			name := rewriterName(r.Name, n.Name)
 			target, err := compileRouteNode(p, n, r)
 			if err != nil {
+				if errors.Is(err, errModelDisabled) {
+					registry.RewriterRegistry().Unregister(name)
+					continue
+				}
 				return fmt.Errorf("register rewriter %s: %w", name, err)
 			}
 			// Record the same API that built the node's path rewrites,
