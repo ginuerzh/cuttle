@@ -46,6 +46,9 @@ type Model struct {
 	Efforts   []string `json:"efforts,omitempty"`
 	Free      bool     `json:"free,omitempty"`
 	Price     *Price   `json:"price,omitempty"`
+	// Disabled marks a model that local configuration disables. Catalog
+	// adapters never set it; the admin layer merges the provider override.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // Provider is the control-plane interface of one configured upstream.

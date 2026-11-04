@@ -72,6 +72,16 @@ type Provider struct {
 	Health    Health   `yaml:"health,omitempty" json:"health,omitempty"`
 	TLS       TLS      `yaml:"tls,omitempty" json:"tls,omitempty"`
 	Enabled   *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Models holds local per-model overrides keyed by model ID. The upstream
+	// catalog stays authoritative; overrides only add local policy such as
+	// disabling a model. Unknown model IDs are allowed because the catalog can
+	// change at any time.
+	Models map[string]ModelOverride `yaml:"models,omitempty" json:"models,omitempty"`
+}
+
+// ModelOverride holds local policy for one model from a provider's catalog.
+type ModelOverride struct {
+	Disabled bool `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 }
 
 // providerTypes is the canonical set of provider adapter names accepted by
@@ -320,6 +330,13 @@ func (c *Config) expandEnv() {
 			p.Auth.KeyHeaders[j].Header = ExpandEnv(p.Auth.KeyHeaders[j].Header)
 			p.Auth.KeyHeaders[j].Prefix = ExpandEnv(p.Auth.KeyHeaders[j].Prefix)
 		}
+		if len(p.Models) > 0 {
+			models := make(map[string]ModelOverride, len(p.Models))
+			for id, override := range p.Models {
+				models[ExpandEnv(id)] = override
+			}
+			p.Models = models
+		}
 	}
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
@@ -369,6 +386,24 @@ func (c *Config) applyDefaults() {
 		}
 		if p.Health.Timeout == 0 {
 			p.Health.Timeout = Duration(5 * time.Second)
+		}
+		if len(p.Models) > 0 {
+			models := make(map[string]ModelOverride, len(p.Models))
+			for id, override := range p.Models {
+				id = strings.TrimSpace(id)
+				// A false override carries no information; drop it so the
+				// config file stays minimal and the map only lists disabled
+				// models.
+				if id == "" || !override.Disabled {
+					continue
+				}
+				models[id] = override
+			}
+			if len(models) == 0 {
+				p.Models = nil
+			} else {
+				p.Models = models
+			}
 		}
 	}
 	for i := range c.Nodes {
@@ -575,6 +610,12 @@ func (n Node) EnabledValue() bool {
 // EnabledValue reports whether the provider is enabled (default true).
 func (p Provider) EnabledValue() bool {
 	return p.Enabled == nil || *p.Enabled
+}
+
+// ModelDisabled reports whether the provider locally disables the model with
+// the given ID. Surrounding space is ignored; unknown IDs are not disabled.
+func (p Provider) ModelDisabled(id string) bool {
+	return p.Models[strings.TrimSpace(id)].Disabled
 }
 
 // globMatch matches s against a pattern with "*" wildcards, case-insensitively.

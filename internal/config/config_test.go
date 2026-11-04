@@ -270,6 +270,9 @@ providers:
   - name: a
     type: generic
     chat: https://a.example/v1
+    models:
+      m1:
+        disabled: true
 nodes:
   - name: n
     provider: a
@@ -304,6 +307,9 @@ routes:
 	}
 	if again.Providers[0].Name != "a" || again.Routes[0].Name != "r" {
 		t.Fatalf("round trip mismatch: %+v", again)
+	}
+	if !again.Providers[0].ModelDisabled("m1") {
+		t.Fatalf("model override lost in round trip: %+v", again.Providers[0].Models)
 	}
 }
 
@@ -482,5 +488,72 @@ func TestProviderAPIRejectsUnknownType(t *testing.T) {
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "bogus") {
 		t.Fatalf("err = %v, want unknown type error", err)
+	}
+}
+
+func TestProviderModelOverrides(t *testing.T) {
+	t.Setenv("MODEL_ID", "glm-5.3")
+	c, err := Load(writeConfig(t, `
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+    models:
+      " ${MODEL_ID} ":
+        disabled: true
+      empty:
+        disabled: false
+nodes:
+  - name: n
+    provider: p
+routes:
+  - name: r
+    nodes: [n]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Providers[0]
+	if !p.ModelDisabled("glm-5.3") {
+		t.Fatalf("models = %+v", p.Models)
+	}
+	if _, ok := p.Models["empty"]; ok {
+		t.Fatalf("disabled:false should be dropped: %+v", p.Models)
+	}
+	if p.ModelDisabled("missing") {
+		t.Fatal("unknown model must not be disabled")
+	}
+}
+
+func TestProviderModelOverrideUnknownField(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+    models:
+      m1:
+        enabled: true
+`))
+	if err == nil || !strings.Contains(err.Error(), "enabled") {
+		t.Fatalf("err = %v, want unknown field error", err)
+	}
+}
+
+func TestProviderModelOverridesDropEmptyID(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+    models:
+      " ${MODEL_ID_NOT_SET} ":
+        disabled: true
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models := c.Providers[0].Models; len(models) != 0 {
+		t.Fatalf("models = %+v, want empty after dropping empty IDs", models)
 	}
 }
