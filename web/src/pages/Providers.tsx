@@ -13,7 +13,7 @@ import { ProviderForm } from './Edit';
 import {
   configuredAPIs,
   modelApiLabel,
-  modelMeta,
+  modelDirectionRows,
   normalizedModalities,
   providerPayload,
   toggleModelOverride,
@@ -28,23 +28,31 @@ const MODALITY_ICONS: Record<string, { icon: ReactNode; label: string; color: st
   video: { icon: <VideoCameraOutlined />, label: '视频', color: '#db2777' },
 };
 
-function ModalityIcons({ label, values }: { label: string; values?: string[] }) {
+function DirectionRow({
+  text,
+  direction,
+  values,
+}: {
+  text: string | null;
+  direction: string;
+  values?: string[];
+}) {
   const kinds = normalizedModalities(values);
-  if (kinds.length === 0) return null;
+  if (!text && kinds.length === 0) return null;
   return (
-    <Space size={2} style={{ fontSize: 10 }}>
-      <span style={{ color: 'var(--gw-text-muted)' }}>{label}</span>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, fontSize: 10, marginTop: 2 }}>
+      {text ? <span>{text}</span> : null}
       {kinds.map((kind) => {
         const item = MODALITY_ICONS[kind];
         return item ? (
-          <Tooltip key={kind} title={`${label}：${item.label}`}>
-            <span aria-label={`${label} ${item.label}`} style={{ color: item.color, display: 'inline-flex', fontSize: 11 }}>
+          <Tooltip key={kind} title={`${direction}：${item.label}`}>
+            <span aria-label={`${direction} ${item.label}`} style={{ color: item.color, display: 'inline-flex', fontSize: 11 }}>
               {item.icon}
             </span>
           </Tooltip>
         ) : null;
       })}
-    </Space>
+    </div>
   );
 }
 
@@ -247,60 +255,52 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           </Button>
         }
         onCancel={() => setModels(null)}
+        styles={{ body: { maxHeight: 'min(480px, 60dvh)', overflowY: 'auto', paddingRight: 4 } }}
       >
-        <div style={{ width: '100%', maxHeight: 'min(480px, 60dvh)', overflowY: 'auto' }}>
-          {models?.list.map((m) => {
-            const apis = modelApiLabel(m);
-            const meta = modelMeta(m);
-            return (
-              <div key={m.id} style={{ opacity: m.disabled ? 0.55 : 1 }}>
-                <MobileCard
-                  dense
-                  title={m.name || m.id}
-                  subtitle={
-                    <>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
-                        <Typography.Text type="secondary" style={{ fontSize: 10, wordBreak: 'break-all' }}>
-                          {m.id}
-                        </Typography.Text>
-                        {apis ? (
-                          <Tag
-                            color="blue"
-                            style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '15px', paddingInline: 4 }}
-                          >
-                            {apis}
-                          </Tag>
-                        ) : null}
-                      </div>
-                      {meta.length > 0 ? (
-                        <div style={{ fontSize: 10, marginTop: 2 }}>{meta.join(' · ')}</div>
+        {models?.list.map((m) => {
+          const apis = modelApiLabel(m);
+          const rows = modelDirectionRows(m);
+          return (
+            <div key={m.id} style={{ opacity: m.disabled ? 0.55 : 1 }}>
+              <MobileCard
+                dense
+                title={m.name || m.id}
+                subtitle={
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 10, wordBreak: 'break-all' }}>
+                        {m.id}
+                      </Typography.Text>
+                      {apis ? (
+                        <Tag
+                          color="blue"
+                          style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '15px', paddingInline: 4 }}
+                        >
+                          {apis}
+                        </Tag>
                       ) : null}
-                      {normalizedModalities(m.inputs).length + normalizedModalities(m.outputs).length > 0 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 }}>
-                          <ModalityIcons label="入" values={m.inputs} />
-                          <ModalityIcons label="出" values={m.outputs} />
-                        </div>
-                      ) : null}
-                    </>
-                  }
-                  tags={
-                    <Space direction="vertical" align="end" size={2}>
-                      {m.disabled ? <Tag style={{ marginInlineEnd: 0, fontSize: 10 }}>已禁用</Tag> : null}
-                      <Switch
-                        size="small"
-                        checked={!m.disabled}
-                        disabled={modelsBusy}
-                        onChange={(checked) => void toggleModel(m, checked)}
-                        aria-label={`切换 ${m.id}`}
-                      />
-                    </Space>
-                  }
-                />
-              </div>
-            );
-          })}
-          {models && models.list.length === 0 ? <Typography.Text type="secondary">供应商没有返回模型</Typography.Text> : null}
-        </div>
+                    </div>
+                    <DirectionRow text={rows.output} direction="输出" values={m.outputs} />
+                    <DirectionRow text={rows.input} direction="输入" values={m.inputs} />
+                  </>
+                }
+                tags={
+                  <Space direction="vertical" align="end" size={2}>
+                    {m.disabled ? <Tag style={{ marginInlineEnd: 0, fontSize: 10 }}>已禁用</Tag> : null}
+                    <Switch
+                      size="small"
+                      checked={!m.disabled}
+                      disabled={modelsBusy}
+                      onChange={(checked) => void toggleModel(m, checked)}
+                      aria-label={`切换 ${m.id}`}
+                    />
+                  </Space>
+                }
+              />
+            </div>
+          );
+        })}
+        {models && models.list.length === 0 ? <Typography.Text type="secondary">供应商没有返回模型</Typography.Text> : null}
       </Modal>
     </div>
   );

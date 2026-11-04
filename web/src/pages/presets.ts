@@ -137,23 +137,48 @@ export function formatPrice(price?: ProviderModel['price']): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-/** Display lines for a catalog entry: size limits and price. */
-export function modelMeta(model: ProviderModel): string[] {
-  const out: string[] = [];
+/** Per-direction card rows: output first, then input, each combining size and price. */
+export interface ModelDirectionRows {
+  output: string | null;
+  input: string | null;
+}
 
-  const sizes: string[] = [];
+/** One side of the USD price, omitting an unreported zero. */
+function priceSide(value: number | undefined, free: boolean): string | null {
+  if (typeof value !== 'number') return null;
+  if (free) return '免费';
+  if (value === 0) return null;
+  return `$${value.toFixed(2)}/M`;
+}
+
+/**
+ * Build the two compact model-card rows. Output-related fields share one line
+ * and input-related fields the next. `limit.input` falls back to the context
+ * window; when both differ, the context window is shown alongside the input.
+ */
+export function modelDirectionRows(model: ProviderModel): ModelDirectionRows {
   const context = formatContextSize(model.context);
-  if (context) sizes.push(`上下文 ${context}`);
-  const input = formatContextSize(model.input);
-  if (input) sizes.push(`输入 ${input}`);
-  const output = formatContextSize(model.output);
-  if (output) sizes.push(`输出 ${output}`);
-  if (sizes.length > 0) out.push(sizes.join(' · '));
+  const inputSize = formatContextSize(model.input);
+  const outputSize = formatContextSize(model.output);
+  const price = model.price;
+  const free = !!price && price.input === 0 && price.output === 0;
 
-  const price = formatPrice(model.price);
-  if (price) out.push(`价格 ${price}`);
+  const inputParts: string[] = [];
+  if (inputSize) inputParts.push(`入 ${inputSize}`);
+  else if (context) inputParts.push(`入 ${context}`);
+  if (context && inputSize && inputSize !== context) inputParts.push(`上下文 ${context}`);
+  const inputPrice = priceSide(price?.input, free);
+  if (inputPrice) inputParts.push(inputPrice);
 
-  return out;
+  const outputParts: string[] = [];
+  if (outputSize) outputParts.push(`出 ${outputSize}`);
+  const outputPrice = priceSide(price?.output, free);
+  if (outputPrice) outputParts.push(outputPrice);
+
+  return {
+    output: outputParts.length > 0 ? outputParts.join(' · ') : null,
+    input: inputParts.length > 0 ? inputParts.join(' · ') : null,
+  };
 }
 
 /** AutoComplete option for one model, showing its name and supported APIs. */

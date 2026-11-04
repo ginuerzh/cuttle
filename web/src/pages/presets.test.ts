@@ -11,7 +11,7 @@ import {
   genericCanonicalNote,
   isBaseURLLocked,
   modelApiLabel,
-  modelMeta,
+  modelDirectionRows,
   modelOption,
   normalizedModalities,
   presetFormValues,
@@ -273,10 +273,10 @@ describe('formatPrice', () => {
   });
 });
 
-describe('modelMeta', () => {
-  it('reports context, input, output and price when present', () => {
+describe('modelDirectionRows', () => {
+  it('groups output fields first and input fields second', () => {
     expect(
-      modelMeta({
+      modelDirectionRows({
         id: 'm1',
         context: 1_000_000,
         input: 1_000_000,
@@ -285,23 +285,51 @@ describe('modelMeta', () => {
         outputs: ['text'],
         price: { input: 0.15, output: 0.6 },
       }),
-    ).toEqual(['上下文 1M · 输入 1M · 输出 384K', '价格 输入 $0.15/M · 输出 $0.60/M']);
+    ).toEqual({
+      output: '出 384K · $0.60/M',
+      input: '入 1M · $0.15/M',
+    });
   });
 
-  it('shows only the metadata lines that have data', () => {
+  it('shows the context window when it differs from the input limit', () => {
     expect(
-      modelMeta({
+      modelDirectionRows({
+        id: 'm1',
+        context: 200_000,
+        input: 160_000,
+        output: 32_000,
+        price: { input: 0.15, output: 0.6 },
+      }),
+    ).toEqual({
+      output: '出 32K · $0.60/M',
+      input: '入 160K · 上下文 200K · $0.15/M',
+    });
+  });
+
+  it('falls back to the context window when limit.input is absent', () => {
+    expect(modelDirectionRows({ id: 'm1', context: 1_000_000, output: 384_000 })).toEqual({
+      output: '出 384K',
+      input: '入 1M',
+    });
+  });
+
+  it('marks both sides free when both prices are zero', () => {
+    expect(
+      modelDirectionRows({
         id: 'm1',
         context: 32_000,
         input: 32_000,
-        inputs: ['text'],
+        output: 8_000,
         price: { input: 0, output: 0 },
       }),
-    ).toEqual(['上下文 32K · 输入 32K', '价格 免费']);
+    ).toEqual({
+      output: '出 8K · 免费',
+      input: '入 32K · 免费',
+    });
   });
 
-  it('is empty when the catalog has no metadata', () => {
-    expect(modelMeta({ id: 'm1' })).toEqual([]);
+  it('is empty when the catalog has no size or price data', () => {
+    expect(modelDirectionRows({ id: 'm1' })).toEqual({ output: null, input: null });
   });
 });
 
