@@ -17,8 +17,9 @@ import {
   message,
 } from 'antd';
 import {
-  ApartmentOutlined,
   ApiOutlined,
+  BranchesOutlined,
+  CloudServerOutlined,
   DatabaseOutlined,
   DesktopOutlined,
   MenuOutlined,
@@ -26,8 +27,7 @@ import {
   PartitionOutlined,
   SettingOutlined,
   SunOutlined,
-  SwapOutlined,
-  UnorderedListOutlined,
+  TagOutlined,
 } from '@ant-design/icons';
 import { getConfig, getGraph, logout, UnauthorizedError } from './api/client';
 import type { ConfigResponse, EdgeMetrics, ErrorRow, GraphMetrics, NodeMetrics } from './api/types';
@@ -46,10 +46,10 @@ const { Header, Sider, Content } = Layout;
 
 const NAV_ITEMS = [
   { key: 'topology', icon: <PartitionOutlined />, label: '拓扑' },
-  { key: 'providers', icon: <ApiOutlined />, label: 'Providers' },
-  { key: 'nodes', icon: <ApartmentOutlined />, label: 'Nodes' },
-  { key: 'routes', icon: <SwapOutlined />, label: 'Routes' },
-  { key: 'aliases', icon: <UnorderedListOutlined />, label: 'Aliases' },
+  { key: 'providers', icon: <CloudServerOutlined />, label: 'Providers' },
+  { key: 'nodes', icon: <ApiOutlined />, label: 'Nodes' },
+  { key: 'routes', icon: <BranchesOutlined />, label: 'Routes' },
+  { key: 'aliases', icon: <TagOutlined />, label: 'Aliases' },
   { key: 'requests', icon: <DatabaseOutlined />, label: 'Requests' },
   { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
 ];
