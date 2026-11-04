@@ -4,6 +4,8 @@ import {
   Button,
   Descriptions,
   Divider,
+  Drawer,
+  Grid,
   Layout,
   Menu,
   Segmented,
@@ -17,6 +19,7 @@ import {
   ApartmentOutlined,
   ApiOutlined,
   DatabaseOutlined,
+  MenuOutlined,
   PartitionOutlined,
   SettingOutlined,
   SwapOutlined,
@@ -35,6 +38,16 @@ import { Edit } from './pages/Edit';
 import { Topology, type Selection } from './pages/Topology';
 
 const { Header, Sider, Content } = Layout;
+
+const NAV_ITEMS = [
+  { key: 'topology', icon: <PartitionOutlined />, label: '拓扑' },
+  { key: 'providers', icon: <ApiOutlined />, label: 'Providers' },
+  { key: 'nodes', icon: <ApartmentOutlined />, label: 'Nodes' },
+  { key: 'routes', icon: <SwapOutlined />, label: 'Routes' },
+  { key: 'aliases', icon: <UnorderedListOutlined />, label: 'Aliases' },
+  { key: 'requests', icon: <DatabaseOutlined />, label: 'Requests' },
+  { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
+];
 
 type Mode = 'monitor' | 'edit';
 type Page = 'topology' | 'providers' | 'nodes' | 'routes' | 'aliases' | 'requests' | 'settings';
@@ -132,6 +145,9 @@ export default function App() {
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
   const [mode, setMode] = useState<Mode>('monitor');
   const [range, setRange] = useState('1h');
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
+  const [navOpen, setNavOpen] = useState(false);
   const [page, setPage] = useState<Page>('topology');
   const [selection, setSelection] = useState<Selection>(null);
   const [stale, setStale] = useState(false);
@@ -220,12 +236,19 @@ export default function App() {
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 16,
+          flexWrap: 'wrap',
+          gap: isMobile ? 8 : 16,
+          height: 'auto',
+          lineHeight: 'normal',
+          paddingBlock: 8,
           background: '#fff',
           borderBottom: '1px solid #e2e8f0',
-          paddingInline: 20,
+          paddingInline: isMobile ? 12 : 20,
         }}
       >
+        {isMobile ? (
+          <Button icon={<MenuOutlined />} onClick={() => setNavOpen(true)} aria-label="menu" />
+        ) : null}
         <Typography.Text strong style={{ fontSize: 16 }}>
           llm-gw
         </Typography.Text>
@@ -246,10 +269,12 @@ export default function App() {
               options={RANGES.map(({ label, value }) => ({ label, value }))}
               style={{ width: 140 }}
             />
-            <Badge
-              status={stale ? 'warning' : 'success'}
-              text={stale ? '数据延迟' : updatedAt ? `更新 ${updatedAt}` : '等待数据'}
-            />
+            {!isMobile ? (
+              <Badge
+                status={stale ? 'warning' : 'success'}
+                text={stale ? '数据延迟' : updatedAt ? `更新 ${updatedAt}` : '等待数据'}
+              />
+            ) : null}
           </Space>
         ) : (
           <Tag color="orange">编辑模式 · 统计已暂停</Tag>
@@ -268,23 +293,36 @@ export default function App() {
       </Header>
 
       <Layout>
-        <Sider width={190} style={{ background: '#fff', borderRight: '1px solid #e2e8f0' }}>
-          <Menu
-            mode="inline"
-            selectedKeys={[page]}
-            style={{ borderInlineEnd: 'none' }}
-            onClick={(e) => setPage(e.key as Page)}
-            items={[
-              { key: 'topology', icon: <PartitionOutlined />, label: '拓扑' },
-              { key: 'providers', icon: <ApiOutlined />, label: 'Providers' },
-              { key: 'nodes', icon: <ApartmentOutlined />, label: 'Nodes' },
-              { key: 'routes', icon: <SwapOutlined />, label: 'Routes' },
-              { key: 'aliases', icon: <UnorderedListOutlined />, label: 'Aliases' },
-              { key: 'requests', icon: <DatabaseOutlined />, label: 'Requests' },
-              { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
-            ]}
-          />
-        </Sider>
+        {isMobile ? (
+          <Drawer
+            placement="left"
+            open={navOpen}
+            onClose={() => setNavOpen(false)}
+            width={220}
+            styles={{ body: { padding: 0 } }}
+          >
+            <Menu
+              mode="inline"
+              selectedKeys={[page]}
+              style={{ borderInlineEnd: 'none' }}
+              onClick={(e) => {
+                setPage(e.key as Page);
+                setNavOpen(false);
+              }}
+              items={NAV_ITEMS}
+            />
+          </Drawer>
+        ) : (
+          <Sider width={190} style={{ background: '#fff', borderRight: '1px solid #e2e8f0' }}>
+            <Menu
+              mode="inline"
+              selectedKeys={[page]}
+              style={{ borderInlineEnd: 'none' }}
+              onClick={(e) => setPage(e.key as Page)}
+              items={NAV_ITEMS}
+            />
+          </Sider>
+        )}
 
         <Content style={{ display: 'flex', minWidth: 0 }}>
           <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
@@ -320,25 +358,45 @@ export default function App() {
           </div>
 
           {page === 'topology' && mode === 'monitor' && selection ? (
-            <aside
-              style={{
-                width: 320,
-                borderLeft: '1px solid #e2e8f0',
-                background: '#fff',
-                padding: 16,
-                overflow: 'auto',
-              }}
-            >
-              {selection.kind === 'node' ? (
-                <NodePanel
-                  id={selection.id}
-                  metrics={metrics?.nodes[selection.id]}
-                  errors={metrics?.errors ?? []}
-                />
-              ) : (
-                <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
-              )}
-            </aside>
+            isMobile ? (
+              <Drawer
+                placement="right"
+                open
+                onClose={() => setSelection(null)}
+                width="92%"
+                styles={{ body: { padding: 16 } }}
+              >
+                {selection.kind === 'node' ? (
+                  <NodePanel
+                    id={selection.id}
+                    metrics={metrics?.nodes[selection.id]}
+                    errors={metrics?.errors ?? []}
+                  />
+                ) : (
+                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
+                )}
+              </Drawer>
+            ) : (
+              <aside
+                style={{
+                  width: 320,
+                  borderLeft: '1px solid #e2e8f0',
+                  background: '#fff',
+                  padding: 16,
+                  overflow: 'auto',
+                }}
+              >
+                {selection.kind === 'node' ? (
+                  <NodePanel
+                    id={selection.id}
+                    metrics={metrics?.nodes[selection.id]}
+                    errors={metrics?.errors ?? []}
+                  />
+                ) : (
+                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
+                )}
+              </aside>
+            )
           ) : null}
         </Content>
       </Layout>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Background,
   Controls,
@@ -9,6 +9,7 @@ import {
   type Edge,
   type EdgeMouseHandler,
   type NodeMouseHandler,
+  useNodesState,
   type OnNodeDrag,
   type XYPosition,
 } from '@xyflow/react';
@@ -39,33 +40,21 @@ function edgeColor(m?: { requests: number; errors: number }): string {
   return '#16a34a';
 }
 
-function withMetrics(
-  nodes: GraphNode[],
-  edges: Edge[],
-  metrics: GraphMetrics | null,
-): { nodes: GraphNode[]; edges: Edge[] } {
-  const ns = nodes.map((n) => ({
-    ...n,
-    data: { ...n.data, metrics: metrics?.nodes[n.id] },
-  }));
-  const es = edges.map((e) => {
-    const m = metrics?.edges[e.id];
-    const data = e.data as { color?: string; tier?: string } | undefined;
-    const prefix = data?.tier && data.tier !== 'base' ? `${data.tier} · ` : '';
-    const label = m ? `${prefix}${m.requests}${m.errors ? ` · ${m.errors} err` : ''}` : prefix || undefined;
-    const width = m ? Math.min(4, 1.5 + Math.log10(m.requests + 1)) : 1.5;
-    const color = m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
-    return {
-      ...e,
-      label,
-      type: 'dot',
-      style: { ...e.style, stroke: color, strokeWidth: width },
-      markerEnd: undefined,
-      labelStyle: { fontSize: 10, fill: '#475569' },
-      labelBgStyle: { fill: '#f8fafc', fillOpacity: 0.9 },
-    } as Edge;
-  });
-  return { nodes: ns, edges: es };
+function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
+  const m = metrics?.edges[e.id];
+  const data = e.data as { color?: string } | undefined;
+  const label = m ? `${m.requests}${m.errors ? ` · ${m.errors} err` : ''}` : undefined;
+  const width = m ? Math.min(4, 1.5 + Math.log10(m.requests + 1)) : 1.5;
+  const color = m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
+  return {
+    ...e,
+    label,
+    type: 'dot',
+    style: { ...e.style, stroke: color, strokeWidth: width },
+    markerEnd: undefined,
+    labelStyle: { fontSize: 10, fill: '#475569' },
+    labelBgStyle: { fill: '#f8fafc', fillOpacity: 0.9 },
+  } as Edge;
 }
 
 const POSITIONS_KEY = 'llm-gw.positions';
@@ -90,12 +79,35 @@ function savePositions(p: Record<string, XYPosition>) {
 export function Topology({ config, metrics, onSelect, editable, onConnect }: Props) {
   const [positions, setPositions] = useState<Record<string, XYPosition>>(loadPositions);
 
-  const graph = useMemo(() => {
+  // Structure (positions from dagre or the saved layout) only changes with the
+  // config; metrics must not rebuild it, otherwise a poll resets the node
+  // React Flow is currently dragging.
+  const structure = useMemo(() => {
     const raw = buildGraph(config);
     const laid = layoutGraph(raw.nodes, raw.edges);
-    const placed = laid.map((n) => ({ ...n, position: positions[n.id] ?? n.position }));
-    return withMetrics(placed, raw.edges, metrics);
-  }, [config, metrics, positions]);
+    return {
+      nodes: laid.map((n) => ({ ...n, position: positions[n.id] ?? n.position })),
+      edges: raw.edges,
+    };
+  }, [config, positions]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>(structure.nodes);
+  const [edges, setEdges] = useState<Edge[]>(structure.edges.map((e) => decorateEdge(e, metrics)));
+
+  useEffect(() => {
+    setNodes(structure.nodes);
+    setEdges(structure.edges.map((e) => decorateEdge(e, metrics)));
+    // metrics is intentionally read once per structure change; the metrics
+    // effect below keeps labels fresh without touching positions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structure]);
+
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((n) => (n.data.metrics === metrics?.nodes[n.id] ? n : { ...n, data: { ...n.data, metrics: metrics?.nodes[n.id] } })),
+    );
+    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics)));
+  }, [metrics, setNodes]);
 
   const onNodeClick: NodeMouseHandler = (_event, node) => {
     onSelect({ kind: 'node', id: node.id });
@@ -118,8 +130,9 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
   return (
     <div style={{ width: '100%', height: '100%' }}>
       <ReactFlow
-        nodes={graph.nodes}
-        edges={graph.edges}
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={onNodeClick}

@@ -9,16 +9,15 @@ const cfg: Pick<ConfigResponse, 'aliases' | 'routes' | 'providers' | 'nodes'> = 
     { match: 'gpt-4.5*', model: 'fast' },
   ],
   providers: [
-    { name: 'p1', baseURL: 'https://a', protocol: 'openai', keysSet: 1, keyPreviews: [] },
-    { name: 'p2', baseURL: 'https://b', protocol: 'anthropic', keysSet: 2, keyPreviews: [] },
+    { name: 'p1', type: 'deepseek', chat: 'https://a/v1', keysSet: 1, keyPreviews: [] },
+    { name: 'p2', type: 'generic', anthropic: 'https://b', keysSet: 2, keyPreviews: [] },
   ],
   nodes: [
     { name: 'p1', provider: 'p1', models: { fast: 'm1' } },
-    { name: 'p1-high', provider: 'p1', tier: 'high', models: { fast: 'm2' } },
     { name: 'p2', provider: 'p2' },
   ],
   routes: [
-    { name: 'strong', nodes: ['p1', 'p1-high', 'p2'], strategy: 'round', match: { model: 'strong' } },
+    { name: 'strong', nodes: ['p1', 'p2'], strategy: 'round', match: { model: 'strong' } },
     { name: 'fast', nodes: ['p1'], strategy: 'fifo', match: { model: 'fast' } },
   ],
 };
@@ -34,19 +33,9 @@ describe('buildGraph', () => {
   it('emits route -> node and node -> provider edges', () => {
     const { edges } = buildGraph(cfg);
     expect(edges.some((e) => e.id === 'route:strong|node:p1')).toBe(true);
-    expect(edges.some((e) => e.id === 'route:strong|node:p1-high')).toBe(true);
     expect(edges.some((e) => e.id === 'route:fast|node:p1')).toBe(true);
     expect(edges.some((e) => e.id === 'node:p1|provider:p1')).toBe(true);
     expect(edges.some((e) => e.id === 'node:p2|provider:p2')).toBe(true);
-  });
-
-  it('marks tier edges with a dash pattern', () => {
-    const { edges } = buildGraph(cfg);
-    const high = edges.find((e) => e.id === 'route:strong|node:p1-high');
-    expect((high?.data as { tier?: string } | undefined)?.tier).toBe('high');
-    expect(high?.style?.strokeDasharray).toBe('8 4');
-    const base = edges.find((e) => e.id === 'route:strong|node:p1');
-    expect(base?.style?.strokeDasharray).toBeUndefined();
   });
 
   it('falls back to a catch-all route for unknown logical models', () => {

@@ -22,7 +22,6 @@ type Request struct {
 	Provider     string    `json:"provider"`
 	Route        string    `json:"route,omitempty"`
 	Node         string    `json:"node,omitempty"`
-	Tier         string    `json:"tier,omitempty"`
 	Protocol     string    `json:"protocol"`
 	Effort       string    `json:"effort"`
 	Status       int       `json:"status"`
@@ -44,7 +43,6 @@ type Filter struct {
 	Model       string
 	ClientModel string
 	Route       string
-	Tier        string
 	Status      int
 	OnlyErrors  bool
 	Limit       int
@@ -157,7 +155,6 @@ func (s *Store) migrate() error {
 		"route":         "TEXT NOT NULL DEFAULT ''",
 		"client_model":  "TEXT NOT NULL DEFAULT ''",
 		"logical_model": "TEXT NOT NULL DEFAULT ''",
-		"tier":          "TEXT NOT NULL DEFAULT ''",
 		"node":          "TEXT NOT NULL DEFAULT ''",
 	})
 }
@@ -264,11 +261,11 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO requests
-		(request_id, sid, ts, model, client_model, logical_model, provider, route, node, tier,
+		(request_id, sid, ts, model, client_model, logical_model, provider, route, node,
 		 protocol, effort, status, error, duration_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.LogicalModel, r.Provider, r.Route, r.Node, r.Tier,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.LogicalModel, r.Provider, r.Route, r.Node,
 		r.Protocol, r.Effort, r.Status, r.Error, r.DurationMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut))
 	if err != nil {
@@ -302,7 +299,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	q := `SELECT request_id, sid, ts, model, client_model, logical_model, provider, route, node, tier,
+	q := `SELECT request_id, sid, ts, model, client_model, logical_model, provider, route, node,
 		protocol, effort, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
@@ -318,7 +315,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 
 // Get returns one request by id.
 func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
-	q := `SELECT request_id, sid, ts, model, client_model, logical_model, provider, route, node, tier,
+	q := `SELECT request_id, sid, ts, model, client_model, logical_model, provider, route, node,
 		protocol, effort, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
 		FROM requests WHERE request_id = ?`
@@ -346,7 +343,7 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var stream int
 		var bytesIn, bytesOut int64
 		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel, &r.LogicalModel,
-			&r.Provider, &r.Route, &r.Node, &r.Tier, &r.Protocol, &r.Effort,
+			&r.Provider, &r.Route, &r.Node, &r.Protocol, &r.Effort,
 			&r.Status, &r.Error, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut); err != nil {
 			return nil, err
@@ -498,10 +495,6 @@ func (f Filter) where() (string, []any) {
 	if f.Route != "" {
 		conds = append(conds, "route = ?")
 		args = append(args, f.Route)
-	}
-	if f.Tier != "" {
-		conds = append(conds, "tier = ?")
-		args = append(args, f.Tier)
 	}
 	if f.OnlyErrors {
 		conds = append(conds, "(status >= 400 OR error != '')")

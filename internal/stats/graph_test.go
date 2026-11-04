@@ -11,7 +11,7 @@ func TestGraphAggregates(t *testing.T) {
 	base := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
 
 	rows := []Request{
-		{ID: "1", TS: base, Route: "strong", Node: "n1", Tier: "high", Provider: "p", Status: 200, DurationMS: 10, InputTokens: 1, OutputTokens: 2},
+		{ID: "1", TS: base, Route: "strong", Node: "n1", Provider: "p", Status: 200, DurationMS: 10, InputTokens: 1, OutputTokens: 2},
 		{ID: "2", TS: base.Add(time.Minute), Route: "strong", Node: "n2", Provider: "p", Status: 500, Error: "boom", DurationMS: 30},
 		{ID: "3", TS: base.Add(2 * time.Minute), Provider: "q", Status: 200, DurationMS: 20},
 	}
@@ -64,21 +64,20 @@ func TestGraphAggregates(t *testing.T) {
 
 func TestParseNodeName(t *testing.T) {
 	cases := []struct {
-		in                          string
-		route, provider, node, tier string
+		in                    string
+		route, provider, node string
 	}{
-		{"r/p/base/n1", "r", "p", "n1", ""},
-		{"r/p/high/n1", "r", "p", "n1", "high"},
-		{"r/p/medium/n1/2", "r", "p", "n1", "medium"},
-		{"r/p", "r", "p", "", ""},
-		{"p", "", "p", "", ""},
-		{"", "", "", "", ""},
+		{"r/p/n1", "r", "p", "n1"},
+		{"r/p/n1/2", "r", "p", "n1"},
+		{"r/p", "r", "p", ""},
+		{"p", "", "p", ""},
+		{"", "", "", ""},
 	}
 	for _, tc := range cases {
-		route, provider, node, tier := parseNodeName(tc.in)
-		if route != tc.route || provider != tc.provider || node != tc.node || tier != tc.tier {
-			t.Fatalf("parseNodeName(%q) = %q/%q/%q/%q, want %q/%q/%q/%q",
-				tc.in, route, provider, node, tier, tc.route, tc.provider, tc.node, tc.tier)
+		route, provider, node := parseNodeName(tc.in)
+		if route != tc.route || provider != tc.provider || node != tc.node {
+			t.Fatalf("parseNodeName(%q) = %q/%q/%q, want %q/%q/%q",
+				tc.in, route, provider, node, tc.route, tc.provider, tc.node)
 		}
 	}
 }

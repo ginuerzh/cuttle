@@ -19,7 +19,6 @@ type Config struct {
 	Gateway   Gateway    `yaml:"gateway" json:"gateway"`
 	Admin     Admin      `yaml:"admin" json:"admin"`
 	Stats     Stats      `yaml:"stats" json:"stats"`
-	Effort    Effort     `yaml:"effort" json:"effort"`
 	Aliases   []Alias    `yaml:"aliases" json:"aliases"`
 	Providers []Provider `yaml:"providers" json:"providers"`
 	Nodes     []Node     `yaml:"nodes" json:"nodes"`
@@ -49,46 +48,60 @@ type Stats struct {
 	StoreBody      bool     `yaml:"storeBody" json:"storeBody"`
 }
 
-// Effort holds the thinking-budget thresholds.
-type Effort struct {
-	LowThreshold    int `yaml:"lowThreshold" json:"lowThreshold"`
-	MediumThreshold int `yaml:"mediumThreshold" json:"mediumThreshold"`
-	HighThreshold   int `yaml:"highThreshold" json:"highThreshold"`
-}
-
 // Alias maps a client-facing model glob to a logical model.
 type Alias struct {
 	Match string `yaml:"match" json:"match"`
 	Model string `yaml:"model" json:"model"`
 }
 
-// Provider is an upstream LLM endpoint: how to connect and authenticate. It
-// carries no model mapping and no routing policy; those belong to a Node.
+// Provider is an upstream LLM endpoint: which APIs it serves, how to connect
+// and how to authenticate. It carries no model mapping and no routing policy;
+// those belong to a Node.
+//
+// Type selects the adapter. Each non-empty API base URL advertises one wire
+// API; an empty field means the provider does not serve that API.
 type Provider struct {
-	Name     string            `yaml:"name" json:"name"`
-	BaseURL  string            `yaml:"baseURL" json:"baseURL"`
-	Protocol string            `yaml:"protocol" json:"protocol"`
-	Keys     []string          `yaml:"keys,omitempty" json:"keys,omitempty"`
-	Auth     Auth              `yaml:"auth,omitempty" json:"auth,omitempty"`
-	PathMap  map[string]string `yaml:"pathMap,omitempty" json:"pathMap,omitempty"`
-	Health   Health            `yaml:"health,omitempty" json:"health,omitempty"`
-	TLS      TLS               `yaml:"tls,omitempty" json:"tls,omitempty"`
-	Enabled  *bool             `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Name      string   `yaml:"name" json:"name"`
+	Type      string   `yaml:"type" json:"type"`
+	Chat      string   `yaml:"chat,omitempty" json:"chat,omitempty"`
+	Responses string   `yaml:"responses,omitempty" json:"responses,omitempty"`
+	Anthropic string   `yaml:"anthropic,omitempty" json:"anthropic,omitempty"`
+	Gemini    string   `yaml:"gemini,omitempty" json:"gemini,omitempty"`
+	Keys      []string `yaml:"keys,omitempty" json:"keys,omitempty"`
+	Auth      Auth     `yaml:"auth,omitempty" json:"auth,omitempty"`
+	Health    Health   `yaml:"health,omitempty" json:"health,omitempty"`
+	TLS       TLS      `yaml:"tls,omitempty" json:"tls,omitempty"`
+	Enabled   *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// providerTypes is the canonical set of provider adapter names accepted by
+// the configuration. internal/provider keeps its factory in sync through
+// IsProviderType so validation and construction cannot diverge.
+var providerTypes = map[string]struct{}{
+	"deepseek":     {},
+	"opencode-go":  {},
+	"opencode-zen": {},
+	"commandcode":  {},
+	"generic":      {},
+}
+
+// IsProviderType reports whether typ, ignoring case and surrounding space,
+// names a registered provider type.
+func IsProviderType(typ string) bool {
+	_, ok := providerTypes[strings.ToLower(strings.TrimSpace(typ))]
+	return ok
 }
 
 // Node is one concrete use of a provider: the model mapping and the local
-// routing policy (tier, backup, weight). The same provider can back several
-// nodes with different mappings.
+// routing policy (backup, weight). The same provider can back several nodes
+// with different mappings.
 type Node struct {
-	Name         string                       `yaml:"name" json:"name"`
-	Provider     string                       `yaml:"provider" json:"provider"`
-	Models       map[string]string            `yaml:"models,omitempty" json:"models,omitempty"`
-	EffortModels map[string]map[string]string `yaml:"effortModels,omitempty" json:"effortModels,omitempty"`
-	// Tier is "", "high", "medium" or "low". Empty means the default pool.
-	Tier    string `yaml:"tier,omitempty" json:"tier,omitempty"`
-	Backup  bool   `yaml:"backup,omitempty" json:"backup,omitempty"`
-	Weight  int    `yaml:"weight,omitempty" json:"weight,omitempty"`
-	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Name     string            `yaml:"name" json:"name"`
+	Provider string            `yaml:"provider" json:"provider"`
+	Models   map[string]string `yaml:"models,omitempty" json:"models,omitempty"`
+	Backup   bool              `yaml:"backup,omitempty" json:"backup,omitempty"`
+	Weight   int               `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Enabled  *bool             `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 // Auth describes how the provider key is injected into upstream requests.
@@ -107,12 +120,15 @@ type KeyHeader struct {
 
 // Health describes the provider health probe (used from P5).
 type Health struct {
+	// API is the API whose base URL the probe targets. Empty means the first
+	// configured API in chat, responses, anthropic, gemini order.
+	API      string   `yaml:"api,omitempty" json:"api,omitempty"`
 	Path     string   `yaml:"path,omitempty" json:"path,omitempty"`
 	Interval Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
 	Timeout  Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
-// TLS overrides the TLS settings derived from BaseURL.
+// TLS overrides the TLS settings derived from the API base URL.
 type TLS struct {
 	ServerName string `yaml:"serverName,omitempty" json:"serverName,omitempty"`
 	Secure     *bool  `yaml:"secure,omitempty" json:"secure,omitempty"`
@@ -285,7 +301,12 @@ func (c *Config) expandEnv() {
 	for i := range c.Providers {
 		p := &c.Providers[i]
 		p.Name = ExpandEnv(p.Name)
-		p.BaseURL = ExpandEnv(p.BaseURL)
+		p.Type = ExpandEnv(p.Type)
+		p.Chat = ExpandEnv(p.Chat)
+		p.Responses = ExpandEnv(p.Responses)
+		p.Anthropic = ExpandEnv(p.Anthropic)
+		p.Gemini = ExpandEnv(p.Gemini)
+		p.Health.API = ExpandEnv(p.Health.API)
 		p.Health.Path = ExpandEnv(p.Health.Path)
 		for j := range p.Keys {
 			p.Keys[j] = ExpandEnv(p.Keys[j])
@@ -299,9 +320,6 @@ func (c *Config) expandEnv() {
 			p.Auth.KeyHeaders[j].Header = ExpandEnv(p.Auth.KeyHeaders[j].Header)
 			p.Auth.KeyHeaders[j].Prefix = ExpandEnv(p.Auth.KeyHeaders[j].Prefix)
 		}
-		for k, v := range p.PathMap {
-			p.PathMap[ExpandEnv(k)] = ExpandEnv(v)
-		}
 	}
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
@@ -309,12 +327,6 @@ func (c *Config) expandEnv() {
 		n.Provider = ExpandEnv(n.Provider)
 		for k, v := range n.Models {
 			n.Models[ExpandEnv(k)] = ExpandEnv(v)
-		}
-		for logical, byEffort := range n.EffortModels {
-			for effort, model := range byEffort {
-				byEffort[effort] = ExpandEnv(model)
-			}
-			n.EffortModels[logical] = byEffort
 		}
 	}
 	for i := range c.Routes {
@@ -345,27 +357,9 @@ func (c *Config) applyDefaults() {
 	if c.Stats.Path == "" {
 		c.Stats.Path = "stats.sqlite"
 	}
-	if c.Effort.LowThreshold == 0 {
-		c.Effort.LowThreshold = 1024
-	}
-	if c.Effort.MediumThreshold == 0 {
-		c.Effort.MediumThreshold = 4096
-	}
-	if c.Effort.HighThreshold == 0 {
-		c.Effort.HighThreshold = 16384
-	}
-
 	for i := range c.Providers {
 		p := &c.Providers[i]
-		if p.Auth.Header == "" {
-			p.Auth.Header = "Authorization"
-			if p.Auth.Prefix == "" {
-				p.Auth.Prefix = "Bearer "
-			}
-		}
-		if p.Protocol == "" {
-			p.Protocol = "openai"
-		}
+		p.Health.API = strings.ToLower(strings.TrimSpace(p.Health.API))
 		if p.TLS.Secure == nil {
 			secure := true
 			p.TLS.Secure = &secure
@@ -389,6 +383,45 @@ func (c *Config) applyDefaults() {
 	}
 }
 
+type apiBaseField struct {
+	api   string
+	value string
+}
+
+func providerAPIBaseURLs(p *Provider) []apiBaseField {
+	return []apiBaseField{
+		{api: "chat", value: p.Chat},
+		{api: "responses", value: p.Responses},
+		{api: "anthropic", value: p.Anthropic},
+		{api: "gemini", value: p.Gemini},
+	}
+}
+
+func providerAPIBase(p *Provider, api string) string {
+	switch strings.ToLower(strings.TrimSpace(api)) {
+	case "chat":
+		return p.Chat
+	case "responses":
+		return p.Responses
+	case "anthropic":
+		return p.Anthropic
+	case "gemini":
+		return p.Gemini
+	}
+	return ""
+}
+
+func validateProviderBaseURL(name, field, raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("provider %q: invalid %s %q", name, field, raw)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("provider %q: %s scheme must be http or https", name, field)
+	}
+	return nil
+}
+
 // Validate checks structural and reference errors.
 func Validate(c *Config) error {
 	if c == nil {
@@ -397,11 +430,6 @@ func Validate(c *Config) error {
 	if strings.TrimSpace(c.Gateway.Listen) == "" {
 		return fmt.Errorf("gateway.listen is required")
 	}
-	if c.Effort.LowThreshold >= c.Effort.MediumThreshold ||
-		c.Effort.MediumThreshold >= c.Effort.HighThreshold {
-		return fmt.Errorf("effort thresholds must satisfy low < medium < high")
-	}
-
 	for i, a := range c.Aliases {
 		if strings.TrimSpace(a.Match) == "" || strings.TrimSpace(a.Model) == "" {
 			return fmt.Errorf("aliases[%d]: match and model are required", i)
@@ -423,17 +451,33 @@ func Validate(c *Config) error {
 		}
 		seen[name] = true
 
-		u, err := url.Parse(strings.TrimSpace(p.BaseURL))
-		if err != nil || u.Host == "" {
-			return fmt.Errorf("provider %q: invalid baseURL %q", name, p.BaseURL)
+		if typ := strings.TrimSpace(p.Type); typ == "" {
+			return fmt.Errorf("provider %q: type is required", name)
+		} else if !IsProviderType(typ) {
+			return fmt.Errorf("provider %q: unknown type %q", name, typ)
 		}
-		if u.Scheme != "http" && u.Scheme != "https" {
-			return fmt.Errorf("provider %q: baseURL scheme must be http or https", name)
+		var hasAPI bool
+		for _, b := range providerAPIBaseURLs(p) {
+			if strings.TrimSpace(b.value) == "" {
+				continue
+			}
+			hasAPI = true
+			if err := validateProviderBaseURL(name, b.api, b.value); err != nil {
+				return err
+			}
 		}
-		switch strings.ToLower(strings.TrimSpace(p.Protocol)) {
-		case "", "openai", "anthropic", "gemini":
-		default:
-			return fmt.Errorf("provider %q: protocol must be openai, anthropic or gemini", name)
+		if !hasAPI {
+			return fmt.Errorf("provider %q: at least one API base URL is required", name)
+		}
+		if api := strings.TrimSpace(p.Health.API); api != "" {
+			switch strings.ToLower(api) {
+			case "chat", "responses", "anthropic", "gemini":
+			default:
+				return fmt.Errorf("provider %q: health.api must be chat, responses, anthropic or gemini", name)
+			}
+			if strings.TrimSpace(providerAPIBase(p, api)) == "" {
+				return fmt.Errorf("provider %q: health.api %q has no matching base URL", name, api)
+			}
 		}
 		if p.Health.Path != "" && !strings.HasPrefix(p.Health.Path, "/") {
 			return fmt.Errorf("provider %q: health.path must start with /", name)
@@ -467,11 +511,6 @@ func Validate(c *Config) error {
 		if !seen[provider] {
 			return fmt.Errorf("node %q: unknown provider %q", name, provider)
 		}
-		switch strings.ToLower(strings.TrimSpace(n.Tier)) {
-		case "", "high", "medium", "low":
-		default:
-			return fmt.Errorf("node %q: tier must be high, medium or low", name)
-		}
 		if n.Weight < 0 {
 			return fmt.Errorf("node %q: weight must be >= 0", name)
 		}
@@ -492,7 +531,7 @@ func Validate(c *Config) error {
 		}
 		routes[name] = true
 		if len(r.Nodes) == 0 {
-			return fmt.Errorf("route %q: nodes is required (providers/effort were replaced by provider + node definitions)", name)
+			return fmt.Errorf("route %q: nodes is required", name)
 		}
 		switch strings.ToLower(r.Strategy) {
 		case "", "fifo", "round", "random":
@@ -519,14 +558,9 @@ func (c *Config) ResolveAlias(clientModel string) string {
 	return ""
 }
 
-// EffectiveModel resolves the provider model for a logical model and effort:
-// effort-specific override, then logical model, then the "*" fallback.
-func (n Node) EffectiveModel(logical, effort string) string {
-	if byEffort, ok := n.EffortModels[logical]; ok {
-		if model := strings.TrimSpace(byEffort[effort]); model != "" {
-			return model
-		}
-	}
+// EffectiveModel resolves the provider model for a logical model: the exact
+// mapping first, then the "*" fallback.
+func (n Node) EffectiveModel(logical string) string {
 	if model := strings.TrimSpace(n.Models[logical]); model != "" {
 		return model
 	}

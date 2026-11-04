@@ -4,11 +4,13 @@ import type { ColumnsType } from 'antd/es/table';
 import { deleteRoute, reorderRoutes } from '../api/client';
 import type { ConfigResponse, Route } from '../api/types';
 import { RouteForm } from './Edit';
+import { useIsMobile } from '../components/useIsMobile';
+import { MobileCard } from '../components/MobileCard';
 
 export function RoutesPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
+  const isMobile = useIsMobile();
   const [editing, setEditing] = useState<Route | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const nodesByName = new Map(config.nodes.map((n) => [n.name, n]));
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
@@ -55,27 +57,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
         </Space>
       ),
     },
-    { title: 'strategy', dataIndex: 'strategy', width: 90 },
-    {
-      title: 'tiers',
-      width: 160,
-      render: (_, r) => {
-        const tiers = (r.nodes ?? [])
-          .map((name) => nodesByName.get(name)?.tier)
-          .filter((t): t is string => !!t);
-        return tiers.length ? (
-          <Space wrap size={2}>
-            {[...new Set(tiers)].map((t) => (
-              <Tag key={t} color="orange">
-                {t}
-              </Tag>
-            ))}
-          </Space>
-        ) : (
-          <Typography.Text type="secondary">base</Typography.Text>
-        );
-      },
-    },
+    { title: 'strategy', dataIndex: 'strategy', width: 90, responsive: ['lg'] },
     {
       title: '操作',
       width: 140,
@@ -95,11 +77,36 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
   ];
 
   return (
-    <div style={{ padding: 20, width: '100%', overflow: 'auto' }}>
+    <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
         Routes
       </Typography.Title>
-      <Typography.Paragraph type="secondary">拖动行调整顺序：顺序即 FIFO 优先级，catch-all 应放在最后。</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">
+        {isMobile ? '用 ↑ ↓ 调整顺序；顺序即 FIFO 优先级，catch-all 应放在最后。' : '拖动行调整顺序：顺序即 FIFO 优先级，catch-all 应放在最后。'}
+      </Typography.Paragraph>
+      {isMobile ? (
+        <div>
+          {config.routes.map((r, i) => {
+            return (
+              <MobileCard
+                key={r.name}
+                title={`${i + 1}. ${r.name}`}
+                subtitle={`${r.match?.model || 'catch-all'} · ${r.strategy || 'round'} · ${(r.nodes ?? []).join(', ') || 'no nodes'}`}
+                actions={
+                  <>
+                    <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
+                    <Button size="small" disabled={i === config.routes.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
+                    <Button size="small" onClick={() => setEditing(r)}>编辑</Button>
+                    <Popconfirm title={`删除 ${r.name}?`} onConfirm={() => void remove(r.name)}>
+                      <Button size="small" danger>删除</Button>
+                    </Popconfirm>
+                  </>
+                }
+              />
+            );
+          })}
+        </div>
+      ) : (
       <Table
         rowKey="name"
         size="small"
@@ -117,6 +124,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
           style: { cursor: 'grab' },
         })}
       />
+      )}
 
       <Drawer width={420} title={editing ? `编辑 ${editing.name}` : ''} open={!!editing} onClose={() => setEditing(null)} destroyOnClose>
         {editing ? (

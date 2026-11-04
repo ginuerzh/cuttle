@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/provider"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
@@ -58,9 +59,9 @@ func (s *Server) ProbeOnce(ctx context.Context) {
 }
 
 func probeHTTP(ctx context.Context, p config.Provider) probeResult {
-	path := p.Health.Path
-	if path == "" {
-		path = "/"
+	base, api, auth, ok := probeTarget(p)
+	if !ok {
+		return probeResult{Error: "no provider base URL configured"}
 	}
 	timeout := time.Duration(p.Health.Timeout)
 	if timeout <= 0 {
@@ -69,16 +70,19 @@ func probeHTTP(ctx context.Context, p config.Provider) probeResult {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(p.BaseURL, "/")+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL(p, api, base), nil)
 	if err != nil {
 		return probeResult{Error: err.Error()}
 	}
+	key := ""
 	if len(p.Keys) > 0 {
-		applyAuth(req, p, p.Keys[0])
+		key = p.Keys[0]
 	}
+	applyAuthConfig(req, auth, key)
+	provider.ApplyAnthropicVersion(req, api)
 
 	start := time.Now()
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	resp, err := provider.NewHTTPClient(p.TLS, timeout).Do(req)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
 		return probeResult{LatencyMS: latency, Error: err.Error()}
@@ -96,4 +100,37 @@ func probeHTTP(ctx context.Context, p config.Provider) probeResult {
 	}
 	res.OK = true
 	return res
+}
+
+// probeTarget returns the base URL, API and auth used for a provider health
+// check: health.api when set, otherwise the first configured API in canonical
+// order.
+func probeTarget(p config.Provider) (string, provider.API, config.Auth, bool) {
+	prov, err := provider.New(p)
+	if err != nil {
+		return "", "", config.Auth{}, false
+	}
+	if raw := strings.TrimSpace(p.Health.API); raw != "" {
+		api := provider.API(strings.ToLower(raw))
+		if base, ok := prov.BaseURL(api); ok {
+			return base, api, prov.Auth(api), true
+		}
+	}
+	for _, api := range []provider.API{provider.Chat, provider.Responses, provider.Anthropic, provider.Gemini} {
+		if base, ok := prov.BaseURL(api); ok {
+			return base, api, prov.Auth(api), true
+		}
+	}
+	return "", "", config.Auth{}, false
+}
+
+// probeURL builds the health-check URL. A configured health.path is appended
+// to the selected base; otherwise the model-list URL builder is used so the
+// Anthropic /v1 rule (including bases already ending in /v1) stays consistent
+// with the catalog endpoint.
+func probeURL(p config.Provider, api provider.API, base string) string {
+	if path := p.Health.Path; path != "" {
+		return strings.TrimSuffix(base, "/") + path
+	}
+	return provider.ModelsURL(base, api)
 }

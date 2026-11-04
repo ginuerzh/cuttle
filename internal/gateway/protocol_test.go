@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/provider"
 )
 
 type capturedRequest struct {
@@ -30,7 +31,7 @@ func captureUpstream(t *testing.T) (*httptest.Server, *capturedRequest) {
 		got.body = string(b)
 
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/messages" {
+		if strings.HasSuffix(r.URL.Path, "/messages") {
 			io.WriteString(w, anthropicResponse)
 			return
 		}
@@ -40,7 +41,18 @@ func captureUpstream(t *testing.T) (*httptest.Server, *capturedRequest) {
 	return srv, got
 }
 
-func matrixConfig(upstreamURL, protocol string, pathMap map[string]string) *gwconfig.Config {
+func matrixConfig(upstreamURL string, api provider.API) *gwconfig.Config {
+	p := gwconfig.Provider{
+		Name: "up",
+		Type: "generic",
+		Keys: []string{"sk-test"},
+	}
+	switch api {
+	case provider.Anthropic:
+		p.Anthropic = upstreamURL
+	default:
+		p.Chat = upstreamURL
+	}
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Aliases: []gwconfig.Alias{
@@ -49,13 +61,7 @@ func matrixConfig(upstreamURL, protocol string, pathMap map[string]string) *gwco
 			{Match: "gpt-4.5*", Model: "fast"},
 			{Match: "*", Model: "fast"},
 		},
-		Providers: []gwconfig.Provider{{
-			Name:     "up",
-			BaseURL:  upstreamURL,
-			Protocol: protocol,
-			Keys:     []string{"sk-test"},
-			PathMap:  pathMap,
-		}},
+		Providers: []gwconfig.Provider{p},
 		Nodes: []gwconfig.Node{{
 			Name:     "up",
 			Provider: "up",
@@ -66,22 +72,6 @@ func matrixConfig(upstreamURL, protocol string, pathMap map[string]string) *gwco
 			},
 		}},
 		Routes: []gwconfig.Route{{Name: "r", Nodes: []string{"up"}}},
-	}
-}
-
-func openAIPaths() map[string]string {
-	return map[string]string{
-		"/v1/messages":         "/chat/completions",
-		"/v1/chat/completions": "/chat/completions",
-		"/v1/responses":        "/chat/completions",
-	}
-}
-
-func anthropicPaths() map[string]string {
-	return map[string]string{
-		"/v1/messages":         "/messages",
-		"/v1/chat/completions": "/messages",
-		"/v1/responses":        "/messages",
 	}
 }
 
@@ -115,7 +105,7 @@ func TestProtocolMatrix(t *testing.T) {
 
 	t.Run("anthropic client to openai wire", func(t *testing.T) {
 		up, got := captureUpstream(t)
-		gw := startGateway(t, matrixConfig(up.URL, "openai", openAIPaths()))
+		gw := startGateway(t, matrixConfig(up.URL, provider.Chat))
 
 		postThroughGateway(t, gw, "/v1/messages", anthropicBody)
 
@@ -123,8 +113,8 @@ func TestProtocolMatrix(t *testing.T) {
 			t.Fatalf("path = %q", got.path)
 		}
 		v := decodeBody(t, got.body)
-		if v["model"] != "deepseek-v4-pro" {
-			t.Fatalf("model = %v, want deepseek-v4-pro", v["model"])
+		if v["model"] != "deepseek-v4-flash" {
+			t.Fatalf("model = %v, want deepseek-v4-flash (catch-all * mapping)", v["model"])
 		}
 		if _, ok := v["messages"]; !ok {
 			t.Fatalf("want OpenAI chat body, got %s", got.body)
@@ -133,16 +123,16 @@ func TestProtocolMatrix(t *testing.T) {
 
 	t.Run("anthropic client to anthropic wire", func(t *testing.T) {
 		up, got := captureUpstream(t)
-		gw := startGateway(t, matrixConfig(up.URL, "anthropic", anthropicPaths()))
+		gw := startGateway(t, matrixConfig(up.URL, provider.Anthropic))
 
 		postThroughGateway(t, gw, "/v1/messages", anthropicBody)
 
-		if got.path != "/messages" {
+		if got.path != "/v1/messages" {
 			t.Fatalf("path = %q", got.path)
 		}
 		v := decodeBody(t, got.body)
-		if v["model"] != "deepseek-v4-pro" {
-			t.Fatalf("model = %v, want deepseek-v4-pro even on passthrough", v["model"])
+		if v["model"] != "deepseek-v4-flash" {
+			t.Fatalf("model = %v, want deepseek-v4-flash even on passthrough", v["model"])
 		}
 		if _, ok := v["max_tokens"]; !ok {
 			t.Fatalf("want Anthropic body, got %s", got.body)
@@ -151,11 +141,11 @@ func TestProtocolMatrix(t *testing.T) {
 
 	t.Run("openai client to anthropic wire", func(t *testing.T) {
 		up, got := captureUpstream(t)
-		gw := startGateway(t, matrixConfig(up.URL, "anthropic", anthropicPaths()))
+		gw := startGateway(t, matrixConfig(up.URL, provider.Anthropic))
 
 		postThroughGateway(t, gw, "/v1/chat/completions", openAIBody)
 
-		if got.path != "/messages" {
+		if got.path != "/v1/messages" {
 			t.Fatalf("path = %q", got.path)
 		}
 		v := decodeBody(t, got.body)
@@ -169,7 +159,7 @@ func TestProtocolMatrix(t *testing.T) {
 
 	t.Run("responses client to openai wire", func(t *testing.T) {
 		up, got := captureUpstream(t)
-		gw := startGateway(t, matrixConfig(up.URL, "openai", openAIPaths()))
+		gw := startGateway(t, matrixConfig(up.URL, provider.Chat))
 
 		postThroughGateway(t, gw, "/v1/responses", responsesBody)
 
@@ -177,8 +167,8 @@ func TestProtocolMatrix(t *testing.T) {
 			t.Fatalf("path = %q", got.path)
 		}
 		v := decodeBody(t, got.body)
-		if v["model"] != "deepseek-v4-pro" {
-			t.Fatalf("model = %v, want deepseek-v4-pro", v["model"])
+		if v["model"] != "deepseek-v4-flash" {
+			t.Fatalf("model = %v, want deepseek-v4-flash (catch-all * mapping)", v["model"])
 		}
 		if _, ok := v["messages"]; !ok {
 			t.Fatalf("want Chat Completions body (input converted), got %s", got.body)
@@ -187,7 +177,7 @@ func TestProtocolMatrix(t *testing.T) {
 
 	t.Run("count_tokens is not converted", func(t *testing.T) {
 		up, got := captureUpstream(t)
-		gw := startGateway(t, matrixConfig(up.URL, "openai", openAIPaths()))
+		gw := startGateway(t, matrixConfig(up.URL, provider.Chat))
 
 		body := `{"model":"claude-opus-4-5","messages":[{"role":"user","content":"hi"}]}`
 		postThroughGateway(t, gw, "/v1/messages/count_tokens", body)
@@ -202,7 +192,7 @@ func TestProtocolMatrix(t *testing.T) {
 
 	t.Run("provider without models keeps the client model", func(t *testing.T) {
 		up, got := captureUpstream(t)
-		cfg := matrixConfig(up.URL, "openai", openAIPaths())
+		cfg := matrixConfig(up.URL, provider.Chat)
 		cfg.Aliases = nil
 		cfg.Nodes[0].Models = nil
 		gw := startGateway(t, cfg)

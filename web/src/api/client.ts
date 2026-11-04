@@ -1,4 +1,4 @@
-import type { Alias, ConfigResponse, GraphMetrics, Node, Preset, ProbeResult, Provider, RequestRow, Route } from './types';
+import type { Alias, ConfigResponse, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -132,8 +132,9 @@ export function testProvider(name: string): Promise<ProbeResult> {
   return request<ProbeResult>('POST', `/api/providers/${encodeURIComponent(name)}/test`);
 }
 
-export function getProviderModels(name: string): Promise<string[]> {
-  return request<string[]>('GET', `/api/providers/${encodeURIComponent(name)}/models`);
+export function getProviderModels(name: string, refresh = false): Promise<ProviderModel[]> {
+  const query = refresh ? '?refresh=1' : '';
+  return request<ProviderModel[]>('GET', `/api/providers/${encodeURIComponent(name)}/models${query}`);
 }
 
 export interface RequestQuery {

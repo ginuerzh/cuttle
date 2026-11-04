@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   AutoComplete,
   Button,
   Divider,
+  Drawer,
+  Grid,
   Form,
   Input,
   InputNumber,
@@ -25,13 +27,17 @@ import {
   deleteProvider,
   deleteRoute,
   getPresets,
+  getProviderModels,
   putAliases,
   reorderRoutes,
   updateProvider,
   updateNode,
   updateRoute,
 } from '../api/client';
-import type { Alias, ConfigResponse, Node as BindNode, Preset, Provider, Route } from '../api/types';
+import type { Alias, ConfigResponse, Node as BindNode, Preset, Provider, ProviderModel, Route } from '../api/types';
+import { aliasFromNodeId, splitId } from './selection';
+import { configuredAPIs, derivedTargetAPI, genericCanonicalNote, modelOption, presetFormValues, PROVIDER_TYPES, unknownModels } from './presets';
+import { MapField, mapToRows, rowsToMap, type MapRow } from '../components/MapFields';
 import { Topology, type Selection } from './Topology';
 
 interface Props {
@@ -39,24 +45,109 @@ interface Props {
   onReload: () => Promise<void>;
 }
 
-function splitId(id: string): [string, string] {
-  const i = id.indexOf(':');
-  if (i < 0) return [id, ''];
-  return [id.slice(0, i), id.slice(i + 1)];
-}
-
 function logicalModels(config: ConfigResponse): string[] {
   return config.routes.map((r) => r.match?.model || '').filter(Boolean);
 }
 
-function parseJSON<T>(text: string, fallback: T): T {
-  const s = text.trim();
-  if (!s) return fallback;
-  return JSON.parse(s) as T;
-}
-
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Load a provider's model catalog; failures are non-blocking. */
+function useProviderModels(providerName?: string) {
+  const [models, setModels] = useState<ProviderModel[]>([]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setModels([]);
+    setError('');
+    if (!providerName) return;
+    getProviderModels(providerName)
+      .then((list) => {
+        if (active) setModels(list);
+      })
+      .catch((err) => {
+        if (active) setError(errorText(err));
+      });
+    return () => {
+      active = false;
+    };
+  }, [providerName]);
+
+  return { models, error };
+}
+
+/** Warning shown below the model mapping field. */
+function ModelCatalogHint({
+  models,
+  error,
+  rows,
+}: {
+  models: ProviderModel[];
+  error: string;
+  rows: MapRow[] | undefined;
+}) {
+  const missing = unknownModels(rows, models);
+  return (
+    <>
+      {error ? (
+        <Typography.Paragraph type="warning" style={{ fontSize: 12, marginBottom: 8 }}>
+          无法加载模型目录：{error}（仍可手动输入）
+        </Typography.Paragraph>
+      ) : null}
+      {missing.length > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={`未知模型或 API 待定：${missing.join(', ')}`}
+          description="目录中没有该模型，或目录尚未提供它的 API。仍可保存，网关会按默认 API 顺序解析。"
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** Read-only APIs the gateway will use for each model mapping. */
+function DerivedTargetAPIHint({
+  provider,
+  models,
+  rows,
+}: {
+  provider?: Provider;
+  models: ProviderModel[];
+  rows: MapRow[] | undefined;
+}) {
+  if (!provider) return null;
+  const apis = configuredAPIs(provider);
+  const byID = new Map(models.map((m) => [m.id, m]));
+  const targets = (rows ?? [])
+    .map((row) => ({ logical: (row?.key ?? '').trim(), model: (row?.value ?? '').trim() }))
+    .filter((t) => t.model)
+    .map((t) => ({
+      ...t,
+      api: derivedTargetAPI(provider.type, apis, byID.get(t.model)?.apis),
+    }));
+  const note = genericCanonicalNote(provider.type, apis);
+  if (targets.length === 0 && !note) return null;
+  return (
+    <>
+      {targets.length > 0 ? (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+          目标 API：
+          {targets
+            .map((t) => `${t.logical || '?'} → ${t.model}: ${t.api === 'unknown' ? '未知（无可用 base URL）' : t.api}`)
+            .join('；')}
+        </Typography.Paragraph>
+      ) : null}
+      {note ? (
+        <Typography.Paragraph type="warning" style={{ fontSize: 12, marginBottom: 8 }}>
+          {note}
+        </Typography.Paragraph>
+      ) : null}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------- forms
@@ -71,9 +162,11 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
     try {
       const payload: Record<string, unknown> = {
         name: provider.name,
-        baseURL: v.baseURL,
-        protocol: v.protocol,
-        pathMap: parseJSON(v.pathMap, {}),
+        type: v.type,
+        chat: String(v.chat ?? '').trim(),
+        responses: String(v.responses ?? '').trim(),
+        anthropic: String(v.anthropic ?? '').trim(),
+        gemini: String(v.gemini ?? '').trim(),
         auth: provider.auth ?? {},
         health: provider.health ?? {},
         tls: provider.tls ?? {},
@@ -88,8 +181,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       message.success('已保存');
       await onSaved();
     } catch (err) {
-      if (err instanceof SyntaxError) message.error(`JSON 格式错误：${err.message}`);
-      else message.error(errorText(err));
+      message.error(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -114,10 +206,12 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       layout="vertical"
       size="small"
       initialValues={{
-        baseURL: provider.baseURL,
-        protocol: provider.protocol,
+        type: provider.type || 'generic',
+        chat: provider.chat ?? '',
+        responses: provider.responses ?? '',
+        anthropic: provider.anthropic ?? '',
+        gemini: provider.gemini ?? '',
         keys: '',
-        pathMap: JSON.stringify(provider.pathMap ?? {}, null, 2),
         enabled: provider.enabled !== false,
       }}
     >
@@ -129,23 +223,45 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         <Tag key={k}>{k}</Tag>
       ))}
       <Divider />
-      <Form.Item name="baseURL" label="baseURL" rules={[{ required: true }]}>
-        <Input />
+      <Form.Item name="type" label="type" rules={[{ required: true }]}>
+        <Select options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
       </Form.Item>
-      <Form.Item name="protocol" label="protocol">
-        <Select options={['openai', 'anthropic', 'gemini'].map((v) => ({ value: v, label: v }))} />
+      <Form.Item
+        name="chat"
+        label="chat base URL"
+        extra="OpenAI Chat Completions 端点，通常以 /v1 结尾；留空表示不提供。"
+      >
+        <Input placeholder="https://api.example.com/v1" />
+      </Form.Item>
+      <Form.Item
+        name="responses"
+        label="responses base URL"
+        extra="OpenAI Responses 端点，通常以 /v1 结尾；留空表示不提供。"
+      >
+        <Input placeholder="https://api.example.com/v1" />
+      </Form.Item>
+      <Form.Item
+        name="anthropic"
+        label="anthropic base URL"
+        extra="Anthropic Messages 端点，通常是根路径；留空表示不提供。"
+      >
+        <Input placeholder="https://api.example.com/anthropic" />
+      </Form.Item>
+      <Form.Item
+        name="gemini"
+        label="gemini base URL"
+        extra="Gemini API 端点，通常以 /v1beta 结尾；留空表示不提供。"
+      >
+        <Input placeholder="https://generativelanguage.googleapis.com/v1beta" />
       </Form.Item>
       <Form.Item name="keys" label="keys（留空保持不变，每行一个）">
         <Input.TextArea rows={2} placeholder="sk-..." />
-      </Form.Item>
-      <Form.Item name="pathMap" label="pathMap (JSON)">
-        <Input.TextArea rows={3} />
       </Form.Item>
       <Form.Item name="enabled" label="enabled" valuePropName="checked">
         <Switch size="small" />
       </Form.Item>
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        模型映射与 backup/weight 在 Node 上配置；同一个 Provider 可以被多个 Node 引用。
+        至少填写一个 API base URL。模型映射与 backup/weight 在 Node 上配置；同一个 Provider 可以被多个 Node 引用。
       </Typography.Paragraph>
       <Divider />
       <Space>
@@ -198,7 +314,7 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
 
   const nodeOptions = config.nodes.map((n) => ({
     value: n.name,
-    label: `${n.name} (${n.provider}${n.tier ? ` · ${n.tier}` : ''})`,
+    label: `${n.name} (${n.provider})`,
   }));
 
   return (
@@ -257,18 +373,15 @@ export function NodeForm({
       await updateNode(node.name, {
         name: node.name,
         provider: v.provider,
-        tier: v.tier ?? '',
         backup: v.backup,
         weight: v.weight,
         enabled: v.enabled,
-        models: parseJSON(v.models, {}),
-        effortModels: parseJSON(v.effortModels, {}),
+        models: rowsToMap(v.models, '逻辑模型'),
       });
       message.success('已保存');
       await onSaved();
     } catch (err) {
-      if (err instanceof SyntaxError) message.error(`JSON 格式错误：${err.message}`);
-      else message.error(errorText(err));
+      message.error(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -288,6 +401,10 @@ export function NodeForm({
   };
 
   const providerOptions = config.providers.map((p) => ({ value: p.name, label: p.name }));
+  const providerName = Form.useWatch('provider', form) as string | undefined;
+  const provider = config.providers.find((p) => p.name === providerName);
+  const { models, error: modelsError } = useProviderModels(providerName);
+  const modelRows = Form.useWatch('models', form) as MapRow[] | undefined;
 
   return (
     <Form
@@ -296,9 +413,7 @@ export function NodeForm({
       size="small"
       initialValues={{
         provider: node.provider,
-        tier: node.tier || '',
-        models: JSON.stringify(node.models ?? {}, null, 2),
-        effortModels: JSON.stringify(node.effortModels ?? {}, null, 2),
+        models: mapToRows(node.models),
         backup: node.backup,
         weight: node.weight ?? 1,
         enabled: node.enabled !== false,
@@ -312,23 +427,18 @@ export function NodeForm({
       <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
         <Select options={providerOptions} />
       </Form.Item>
-      <Form.Item name="tier" label="effort tier">
-        <Select
-          allowClear
-          options={[
-            { value: 'high', label: 'high' },
-            { value: 'medium', label: 'medium' },
-            { value: 'low', label: 'low' },
-          ]}
-          placeholder="base（默认池）"
-        />
-      </Form.Item>
-      <Form.Item name="models" label="models（逻辑模型 → 供应商模型）">
-        <Input.TextArea rows={4} />
-      </Form.Item>
-      <Form.Item name="effortModels" label="effortModels (JSON)">
-        <Input.TextArea rows={2} />
-      </Form.Item>
+      <MapField
+        name="models"
+        label="models（逻辑模型 → 供应商模型）"
+        hint='用 * 作为兜底；未命中的逻辑模型会走 * 或直接透传。'
+        keyPlaceholder="快速 / *"
+        valuePlaceholder="deepseek-v4-flash"
+        suggestions={[...logicalModels(config), '*']}
+        valueOptions={models.map(modelOption)}
+        addLabel="添加模型映射"
+      />
+      <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
+      <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
       <Space>
         <Form.Item name="backup" label="backup" valuePropName="checked" noStyle>
           <Switch size="small" />
@@ -470,10 +580,10 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
         </Typography.Title>
         <Typography.Paragraph>
           {routeName} → {nodeName}
-          {node ? `（${node.provider}${node.tier ? ` · ${node.tier}` : ''}）` : ''}
+          {node ? `（${node.provider}）` : ''}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          tier、模型映射和 backup/weight 都在 Node 面板里改。
+          模型映射和 backup/weight 都在 Node 面板里改。
         </Typography.Paragraph>
         <Button danger loading={busy} onClick={remove} disabled={!route}>
           断开
@@ -513,6 +623,7 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
 // ---------------------------------------------------------------- page
 
 export function Edit({ config, onReload }: Props) {
+  const isMobile = !Grid.useBreakpoint().md;
   const [selection, setSelection] = useState<Selection>(null);
   const [addOpen, setAddOpen] = useState<null | 'provider' | 'node' | 'route' | 'alias'>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -545,7 +656,9 @@ export function Edit({ config, onReload }: Props) {
           await updateRoute(route.name, { ...route, nodes: [...route.nodes, tname] });
         }
       } else if (skind === 'alias' && tkind === 'route') {
-        const index = Number(sname);
+        const found = aliasFromNodeId(config.aliases, c.source);
+        if (!found) throw new Error('alias not found');
+        const index = found.index;
         const target = config.routes.find((r) => r.name === tname);
         if (!target?.match?.model) throw new Error('catch-all 路由不能作为别名目标');
         const next = config.aliases.map((a, i) => (i === index ? { ...a, model: target.match.model! } : a));
@@ -580,9 +693,16 @@ export function Edit({ config, onReload }: Props) {
       return n ? <NodeForm key={n.name} node={n} config={config} onSaved={onReload} /> : null;
     }
     if (kind === 'alias') {
-      const i = Number(name);
-      const a = config.aliases[i];
-      return a ? <AliasForm key={i} alias={a} index={i} config={config} onSaved={onReload} /> : null;
+      const found = aliasFromNodeId(config.aliases, selection.id);
+      return found ? (
+        <AliasForm
+          key={found.index}
+          alias={found.alias}
+          index={found.index}
+          config={config}
+          onSaved={onReload}
+        />
+      ) : null;
     }
     return null;
   }, [selection, config, onReload]);
@@ -591,7 +711,7 @@ export function Edit({ config, onReload }: Props) {
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
       <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
         <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 5 }}>
-          <Space>
+          <Space wrap>
             <Button icon={<PlusOutlined />} onClick={() => void openAdd('provider')}>
               Provider
             </Button>
@@ -613,9 +733,29 @@ export function Edit({ config, onReload }: Props) {
         <Topology config={config} metrics={null} onSelect={setSelection} editable onConnect={connect} />
       </div>
 
-      <aside style={{ width: 340, borderLeft: '1px solid #e2e8f0', background: '#fff', padding: 16, overflow: 'auto' }}>
-        {panel}
-      </aside>
+      {isMobile ? (
+        <Drawer
+          placement="right"
+          open={!!selection}
+          onClose={() => setSelection(null)}
+          width="92%"
+          styles={{ body: { padding: 16 } }}
+        >
+          {panel}
+        </Drawer>
+      ) : (
+        <aside
+          style={{
+            width: 340,
+            borderLeft: '1px solid #e2e8f0',
+            background: '#fff',
+            padding: 16,
+            overflow: 'auto',
+          }}
+        >
+          {panel}
+        </aside>
+      )}
 
       <AddProviderModal
         open={addOpen === 'provider'}
@@ -681,7 +821,6 @@ function AddProviderModal({
 
   const submit = async () => {
     const v = await form.validateFields();
-    const preset = presets.find((p) => p.name === v.preset);
     setBusy(true);
     try {
       const keys = String(v.keys ?? '')
@@ -690,11 +829,11 @@ function AddProviderModal({
         .filter(Boolean);
       await createProvider({
         name: v.name,
-        baseURL: preset?.baseURL ?? v.baseURL,
-        protocol: preset?.protocol ?? v.protocol,
-        pathMap: preset?.pathMap ?? {},
-        auth: preset?.auth ?? {},
-        health: preset?.healthPath ? { path: preset.healthPath } : {},
+        type: v.type,
+        chat: String(v.chat ?? '').trim(),
+        responses: String(v.responses ?? '').trim(),
+        anthropic: String(v.anthropic ?? '').trim(),
+        gemini: String(v.gemini ?? '').trim(),
         keys,
       });
       form.resetFields();
@@ -708,22 +847,63 @@ function AddProviderModal({
 
   return (
     <Modal open={open} title="添加 Provider" onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
-      <Form form={form} layout="vertical" size="small">
+      <Form form={form} layout="vertical" size="small" initialValues={{ type: 'generic' }}>
         <Form.Item name="preset" label="预设">
           <Select
             allowClear
-            options={presets.map((p) => ({ value: p.name, label: `${p.name} (${p.wire})` }))}
+            options={presets.map((p) => ({ value: p.name, label: `${p.name} (${p.type})` }))}
             placeholder="可选"
+            onChange={(name?: string) => {
+              const p = presets.find((x) => x.name === name);
+              if (!p) return;
+              form.setFieldsValue(presetFormValues(p));
+              void form.validateFields(['name', 'type', 'chat', 'responses', 'anthropic', 'gemini']).catch(() => undefined);
+            }}
           />
         </Form.Item>
         <Form.Item name="name" label="名称" rules={[{ required: true }]}>
           <Input placeholder="opencode-go" />
         </Form.Item>
-        <Form.Item name="baseURL" label="baseURL（未选预设时必填）">
-          <Input placeholder="https://api.example.com" />
+        <Form.Item name="type" label="type" rules={[{ required: true }]}>
+          <Select options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
         </Form.Item>
-        <Form.Item name="protocol" label="protocol">
-          <Select options={['openai', 'anthropic', 'gemini'].map((v) => ({ value: v, label: v }))} />
+        <Form.Item name="chat" label="chat base URL" extra="留空表示不提供该 API。">
+          <Input placeholder="https://api.example.com/v1" />
+        </Form.Item>
+        <Form.Item name="responses" label="responses base URL" extra="留空表示不提供该 API。">
+          <Input placeholder="https://api.example.com/v1" />
+        </Form.Item>
+        <Form.Item name="anthropic" label="anthropic base URL" extra="留空表示不提供该 API。">
+          <Input placeholder="https://api.example.com/anthropic" />
+        </Form.Item>
+        <Form.Item name="gemini" label="gemini base URL" extra="留空表示不提供该 API。">
+          <Input placeholder="https://generativelanguage.googleapis.com/v1beta" />
+        </Form.Item>
+        <Form.Item
+          noStyle
+          shouldUpdate={(prev, cur) =>
+            (['chat', 'responses', 'anthropic', 'gemini'] as const).some((k) => prev[k] !== cur[k])
+          }
+        >
+          {({ getFieldsValue }) => {
+            const values = getFieldsValue() as Partial<Provider>;
+            const apis = configuredAPIs(values);
+            return (
+              <Form.Item label="已配置 API">
+                {apis.length > 0 ? (
+                  <Space wrap size={2}>
+                    {apis.map((api) => (
+                      <Tag key={api} color="blue">
+                        {api}
+                      </Tag>
+                    ))}
+                  </Space>
+                ) : (
+                  <Typography.Text type="warning">至少填写一个 API base URL</Typography.Text>
+                )}
+              </Form.Item>
+            );
+          }}
         </Form.Item>
         <Form.Item name="keys" label="keys（每行一个）">
           <Input.TextArea rows={2} />
@@ -760,8 +940,7 @@ function AddNodeModal({
       await createNode({
         name: v.name,
         provider: v.provider,
-        tier: v.tier ?? '',
-        models: parseJSON(v.models, {}),
+        models: rowsToMap(v.models, '逻辑模型'),
       });
       form.resetFields();
       await onDone();
@@ -773,30 +952,32 @@ function AddNodeModal({
   };
 
   const providerOptions = config.providers.map((p) => ({ value: p.name, label: p.name }));
+  const providerName = Form.useWatch('provider', form) as string | undefined;
+  const provider = config.providers.find((p) => p.name === providerName);
+  const { models, error: modelsError } = useProviderModels(providerName);
+  const modelRows = Form.useWatch('models', form) as MapRow[] | undefined;
 
   return (
     <Modal open={open} title="添加 Node" onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
-      <Form form={form} layout="vertical" size="small">
+      <Form form={form} layout="vertical" size="small" initialValues={{ models: [] }}>
         <Form.Item name="name" label="名称" rules={[{ required: true }]}>
           <Input placeholder="deepseek-fast" />
         </Form.Item>
         <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
           <Select options={providerOptions} />
         </Form.Item>
-        <Form.Item name="tier" label="effort tier">
-          <Select
-            allowClear
-            options={[
-              { value: 'high', label: 'high' },
-              { value: 'medium', label: 'medium' },
-              { value: 'low', label: 'low' },
-            ]}
-            placeholder="base（默认池）"
-          />
-        </Form.Item>
-        <Form.Item name="models" label="models（逻辑模型 → 供应商模型）">
-          <Input.TextArea rows={3} placeholder='{"fast":"deepseek-v4-flash","*":"deepseek-v4-flash"}' />
-        </Form.Item>
+        <MapField
+          name="models"
+          label="models（逻辑模型 → 供应商模型）"
+          hint="用 * 作为兜底。"
+          keyPlaceholder="fast / *"
+          valuePlaceholder="deepseek-v4-flash"
+          suggestions={[...logicalModels(config), '*']}
+          valueOptions={models.map(modelOption)}
+          addLabel="添加模型映射"
+        />
+        <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
+        <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
       </Form>
     </Modal>
   );

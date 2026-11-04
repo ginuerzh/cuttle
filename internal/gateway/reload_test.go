@@ -39,7 +39,7 @@ func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 	}))
 	defer upB.Close()
 
-	gw := startGateway(t, testConfig(upA.URL, nil))
+	gw := startGateway(t, testConfig(upA.URL))
 
 	resp, err := http.Get("http://" + gw.Addr().String() + "/stream")
 	if err != nil {
@@ -56,7 +56,7 @@ func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 		t.Fatalf("first event = %q, want data: A-0", first)
 	}
 
-	if err := gw.Reload(testConfig(upB.URL, nil)); err != nil {
+	if err := gw.Reload(testConfig(upB.URL)); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 
@@ -73,7 +73,7 @@ func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 		t.Fatalf("new request body = %q, want B", body)
 	}
 
-	bad := testConfig(upB.URL, nil)
+	bad := testConfig(upB.URL)
 	bad.Routes[0].Nodes = []string{"missing"}
 	if err := gw.Reload(bad); err == nil {
 		t.Fatal("reload with an unknown provider should fail")

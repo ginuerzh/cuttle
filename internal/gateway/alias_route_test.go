@@ -5,18 +5,19 @@ import (
 	"testing"
 
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/provider"
 )
 
 func TestRouteMatchesAliasUnion(t *testing.T) {
 	strongSrv, strongHit := captureUpstream(t)
 	fastSrv, fastHit := captureUpstream(t)
 
-	cfg := matrixConfig(fastSrv.URL, "openai", nil)
+	cfg := matrixConfig(fastSrv.URL, provider.Chat)
 	cfg.Nodes[0].Models = map[string]string{"*": "fast-model"}
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name:     "strong",
-		BaseURL:  strongSrv.URL,
-		Protocol: "openai",
+		Name: "strong",
+		Type: "generic",
+		Chat: strongSrv.URL,
 	})
 	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
 		Name:     "strong",
@@ -60,7 +61,7 @@ func TestRouteMatchesAliasUnion(t *testing.T) {
 
 func TestRouteFallsBackToLiteralGlobWithoutAlias(t *testing.T) {
 	up, hit := captureUpstream(t)
-	cfg := matrixConfig(up.URL, "openai", nil)
+	cfg := matrixConfig(up.URL, provider.Chat)
 	cfg.Aliases = nil
 	cfg.Routes[0].Match = gwconfig.Match{Model: "gpt-4.5"}
 	gw := startGateway(t, cfg)

@@ -2,30 +2,31 @@ package admin
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/provider"
 )
 
 type providerView struct {
-	Name        string            `json:"name"`
-	BaseURL     string            `json:"baseURL"`
-	Protocol    string            `json:"protocol"`
-	KeysSet     int               `json:"keysSet"`
-	KeyPreviews []string          `json:"keyPreviews"`
-	Auth        config.Auth       `json:"auth"`
-	PathMap     map[string]string `json:"pathMap,omitempty"`
-	Health      config.Health     `json:"health"`
-	TLS         config.TLS        `json:"tls"`
-	Enabled     *bool             `json:"enabled,omitempty"`
-	Probe       *probeResult      `json:"probe,omitempty"`
+	Name        string        `json:"name"`
+	Type        string        `json:"type"`
+	Chat        string        `json:"chat,omitempty"`
+	Responses   string        `json:"responses,omitempty"`
+	Anthropic   string        `json:"anthropic,omitempty"`
+	Gemini      string        `json:"gemini,omitempty"`
+	KeysSet     int           `json:"keysSet"`
+	KeyPreviews []string      `json:"keyPreviews"`
+	Auth        config.Auth   `json:"auth"`
+	Health      config.Health `json:"health"`
+	TLS         config.TLS    `json:"tls"`
+	Enabled     *bool         `json:"enabled,omitempty"`
+	Probe       *probeResult  `json:"probe,omitempty"`
 }
 
 type configView struct {
@@ -37,7 +38,6 @@ type configView struct {
 		SessionTTL config.Duration `json:"sessionTTL"`
 	} `json:"admin"`
 	Stats     config.Stats   `json:"stats"`
-	Effort    config.Effort  `json:"effort"`
 	Aliases   []config.Alias `json:"aliases"`
 	Providers []providerView `json:"providers"`
 	Nodes     []config.Node  `json:"nodes"`
@@ -47,12 +47,14 @@ type configView struct {
 func (s *Server) viewProvider(p config.Provider) providerView {
 	v := providerView{
 		Name:        p.Name,
-		BaseURL:     p.BaseURL,
-		Protocol:    p.Protocol,
+		Type:        p.Type,
+		Chat:        p.Chat,
+		Responses:   p.Responses,
+		Anthropic:   p.Anthropic,
+		Gemini:      p.Gemini,
 		KeysSet:     len(p.Keys),
 		KeyPreviews: make([]string, 0, len(p.Keys)),
 		Auth:        p.Auth,
-		PathMap:     p.PathMap,
 		Health:      p.Health,
 		TLS:         p.TLS,
 		Enabled:     p.Enabled,
@@ -98,6 +100,7 @@ func (s *Server) replaceLocked(c *config.Config) error {
 	if err := config.Write(s.cfgPath, c); err != nil {
 		return err
 	}
+	s.invalidateModelsLocked(c)
 	s.cfg = c
 	return nil
 }
@@ -122,7 +125,6 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	v.Admin.Listen = s.cfg.Admin.Listen
 	v.Admin.SessionTTL = s.cfg.Admin.SessionTTL
 	v.Stats = s.cfg.Stats
-	v.Effort = s.cfg.Effort
 	v.Aliases = s.cfg.Aliases
 	v.Nodes = s.cfg.Nodes
 	v.Routes = s.cfg.Routes
@@ -282,33 +284,25 @@ func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := probeProvider(r.Context(), p)
+	res := probeHTTP(r.Context(), p)
 	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	refresh := r.URL.Query().Get("refresh") == "1"
 
-	s.mu.Lock()
-	var p config.Provider
-	found := false
-	for _, candidate := range s.cfg.Providers {
-		if candidate.Name == name {
-			p, found = candidate, true
-			break
-		}
-	}
-	s.mu.Unlock()
-
-	if !found {
-		writeError(w, http.StatusNotFound, "provider not found")
-		return
-	}
-
-	models, err := fetchModels(r.Context(), p)
+	models, fetchedAt, err := s.providerModels(r.Context(), name, refresh)
 	if err != nil {
+		if errors.Is(err, errProviderNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	if at := formatFetchedAt(fetchedAt); at != "" {
+		w.Header().Set("X-Models-Fetched-At", at)
 	}
 	writeJSON(w, http.StatusOK, models)
 }
@@ -430,98 +424,31 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 
-func probeProvider(ctx context.Context, p config.Provider) probeResult {
-	u, err := url.Parse(p.BaseURL)
-	if err != nil || u.Host == "" {
-		return probeResult{Error: "invalid baseURL"}
-	}
-
-	port := u.Port()
-	if port == "" {
-		if u.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-	addr := net.JoinHostPort(u.Hostname(), port)
-
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	start := time.Now()
-	d := net.Dialer{}
-	conn, err := d.DialContext(ctx, "tcp", addr)
+// fetchModels returns the provider catalog through its adapter.
+func fetchModels(ctx context.Context, p config.Provider) ([]provider.Model, error) {
+	prov, err := provider.New(p)
 	if err != nil {
-		return probeResult{Error: err.Error()}
+		return nil, err
 	}
-	defer conn.Close()
-
-	if u.Scheme == "https" {
-		insecure := p.TLS.Secure != nil && !*p.TLS.Secure
-		tc := tls.Client(conn, &tls.Config{ServerName: u.Hostname(), InsecureSkipVerify: insecure})
-		if err := tc.HandshakeContext(ctx); err != nil {
-			return probeResult{Error: err.Error()}
-		}
-	}
-	return probeResult{
-		OK:        true,
-		LatencyMS: time.Since(start).Milliseconds(),
-		CheckedAt: time.Now().Format(time.RFC3339),
-	}
+	return prov.Models(ctx)
 }
 
-func fetchModels(ctx context.Context, p config.Provider) ([]string, error) {
-	path := p.Health.Path
-	if path == "" {
-		path = "/models"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(p.BaseURL, "/")+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(p.Keys) > 0 {
-		applyAuth(req, p, p.Keys[0])
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("models endpoint returned %d", resp.StatusCode)
-	}
-
-	var body struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(body.Data))
-	for _, m := range body.Data {
-		if m.ID != "" {
-			out = append(out, m.ID)
+// applyAuthConfig injects key into req according to a. Extra headers are
+// applied even for keyless providers; key-derived headers are skipped when
+// key is empty.
+func applyAuthConfig(req *http.Request, a config.Auth, key string) {
+	if key != "" {
+		if a.Header != "" {
+			req.Header.Set(a.Header, a.Prefix+key)
+		}
+		for _, kh := range a.KeyHeaders {
+			if kh.Header == "" {
+				continue
+			}
+			req.Header.Set(kh.Header, kh.Prefix+key)
 		}
 	}
-	return out, nil
-}
-
-func applyAuth(req *http.Request, p config.Provider, key string) {
-	if key == "" {
-		return
-	}
-	if p.Auth.Header != "" {
-		req.Header.Set(p.Auth.Header, p.Auth.Prefix+key)
-	}
-	for _, kh := range p.Auth.KeyHeaders {
-		req.Header.Set(kh.Header, kh.Prefix+key)
-	}
-	for k, v := range p.Auth.Extra {
+	for k, v := range a.Extra {
 		req.Header.Set(k, v)
 	}
 }

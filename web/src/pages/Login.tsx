@@ -27,7 +27,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         background: '#f1f5f9',
       }}
     >
-      <Card style={{ width: 360 }}>
+      <Card style={{ width: '100%', maxWidth: 360, margin: '0 16px' }}>
         <Typography.Title level={4} style={{ marginTop: 0 }}>
           llm-gw
         </Typography.Title>

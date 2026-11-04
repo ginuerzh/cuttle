@@ -2,12 +2,17 @@ import { useState } from 'react';
 import { Button, Drawer, Modal, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteProvider, getProviderModels, testProvider } from '../api/client';
-import type { ConfigResponse, Provider } from '../api/types';
+import type { ConfigResponse, Provider, ProviderModel } from '../api/types';
 import { ProviderForm } from './Edit';
+import { configuredAPIs, modelApiLabel, modelMeta } from './presets';
+import { useIsMobile } from '../components/useIsMobile';
+import { MobileCard } from '../components/MobileCard';
 
 export function ProvidersPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
+  const isMobile = useIsMobile();
   const [editing, setEditing] = useState<Provider | null>(null);
-  const [models, setModels] = useState<{ name: string; list: string[] } | null>(null);
+  const [models, setModels] = useState<{ name: string; list: ProviderModel[] } | null>(null);
+  const [modelsBusy, setModelsBusy] = useState(false);
 
   const test = async (name: string) => {
     try {
@@ -19,11 +24,14 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     }
   };
 
-  const showModels = async (name: string) => {
+  const showModels = async (name: string, refresh = false) => {
+    setModelsBusy(true);
     try {
-      setModels({ name, list: await getProviderModels(name) });
+      setModels({ name, list: await getProviderModels(name, refresh) });
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModelsBusy(false);
     }
   };
 
@@ -37,20 +45,39 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     }
   };
 
+  const apiTags = (p: Provider) => {
+    const apis = configuredAPIs(p);
+    if (apis.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;
+    return (
+      <Space wrap size={2}>
+        {apis.map((api) => (
+          <Tag key={api}>{api}</Tag>
+        ))}
+      </Space>
+    );
+  };
+
   const columns: ColumnsType<Provider> = [
     { title: '名称', dataIndex: 'name', width: 180, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
-    { title: 'protocol', dataIndex: 'protocol', width: 100 },
-    { title: 'baseURL', dataIndex: 'baseURL', ellipsis: true },
+    { title: 'type', dataIndex: 'type', width: 120, responsive: ['md'] },
+    {
+      title: 'APIs',
+      key: 'apis',
+      responsive: ['lg'],
+      render: (_, p) => apiTags(p),
+    },
     {
       title: 'keys',
       dataIndex: 'keysSet',
       width: 70,
+      responsive: ['lg'],
       render: (v: number) => <Tag>{v}</Tag>,
     },
     {
       title: '探测',
       dataIndex: 'probe',
       width: 150,
+      responsive: ['xl'],
       render: (p?: Provider['probe']) =>
         p ? (
           <Tag color={p.ok ? 'green' : 'red'}>{p.ok ? `${p.latencyMs}ms` : p.error || 'fail'}</Tag>
@@ -67,9 +94,9 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     },
     {
       title: '操作',
-      width: 260,
+      width: 230,
       render: (_, p) => (
-        <Space size={4}>
+        <Space wrap size={4}>
           <Button size="small" onClick={() => void test(p.name)}>
             测试
           </Button>
@@ -90,11 +117,42 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
   ];
 
   return (
-    <div style={{ padding: 20, width: '100%', overflow: 'auto' }}>
+    <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
         Providers
       </Typography.Title>
-      <Table rowKey="name" size="small" columns={columns} dataSource={config.providers} pagination={false} />
+      {isMobile ? (
+        <div>
+          {config.providers.map((p) => (
+            <MobileCard
+              key={p.name}
+              title={p.name}
+              subtitle={`${p.type} · ${configuredAPIs(p).join(' / ') || 'no API'}`}
+              tags={
+                p.probe ? (
+                  <Tag color={p.probe.ok ? 'green' : 'red'}>
+                    {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
+                  </Tag>
+                ) : (
+                  <Tag>{p.keysSet} keys</Tag>
+                )
+              }
+              actions={
+                <>
+                  <Button size="small" onClick={() => void test(p.name)}>测试</Button>
+                  <Button size="small" onClick={() => void showModels(p.name)}>模型</Button>
+                  <Button size="small" onClick={() => setEditing(p)}>编辑</Button>
+                  <Popconfirm title={`删除 ${p.name}?`} onConfirm={() => void remove(p.name)}>
+                    <Button size="small" danger>删除</Button>
+                  </Popconfirm>
+                </>
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <Table rowKey="name" size="small" columns={columns} dataSource={config.providers} pagination={false} />
+      )}
 
       <Drawer
         width={420}
@@ -117,13 +175,37 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       <Modal
         title={models ? `${models.name} 的模型` : ''}
         open={!!models}
-        footer={null}
+        footer={
+          <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.name, true)}>
+            刷新
+          </Button>
+        }
         onCancel={() => setModels(null)}
       >
-        <Space wrap>
-          {models?.list.map((m) => (
-            <Tag key={m}>{m}</Tag>
-          ))}
+        <Space direction="vertical" size={8} style={{ width: '100%', maxHeight: 480, overflowY: 'auto' }}>
+          {models?.list.map((m) => {
+            const apis = modelApiLabel(m);
+            const meta = modelMeta(m);
+            const name = m.name && m.name !== m.id ? m.name : '';
+            return (
+              <div key={m.id}>
+                <Space wrap size={4}>
+                  {name ? <Typography.Text strong>{name}</Typography.Text> : null}
+                  <Typography.Text type={name ? 'secondary' : undefined} strong={!name}>
+                    {m.id}
+                  </Typography.Text>
+                  {apis ? <Tag color="blue">{apis}</Tag> : null}
+                </Space>
+                {meta.length > 0 ? (
+                  <div>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {meta.join(' · ')}
+                    </Typography.Text>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
           {models && models.list.length === 0 ? <Typography.Text type="secondary">供应商没有返回模型</Typography.Text> : null}
         </Space>
       </Modal>

@@ -42,6 +42,9 @@ type Server struct {
 	sessions map[string]time.Time
 	probes   map[string]probeResult
 	stats    *stats.Store
+
+	modelsCache    map[string]modelsCacheEntry
+	modelsInflight map[string]*modelsFlight
 }
 
 // New creates a management API server. cfg.Admin.PasswordHash must be set by
@@ -59,15 +62,17 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 		rememberTTL = 30 * 24 * time.Hour
 	}
 	s := &Server{
-		cfgPath:      cfgPath,
-		reloader:     r,
-		log:          log,
-		passwordHash: cfg.Admin.PasswordHash,
-		ttl:          ttl,
-		rememberTTL:  rememberTTL,
-		cfg:          cfg,
-		sessions:     make(map[string]time.Time),
-		probes:       make(map[string]probeResult),
+		cfgPath:        cfgPath,
+		reloader:       r,
+		log:            log,
+		passwordHash:   cfg.Admin.PasswordHash,
+		ttl:            ttl,
+		rememberTTL:    rememberTTL,
+		cfg:            cfg,
+		sessions:       make(map[string]time.Time),
+		probes:         make(map[string]probeResult),
+		modelsCache:    make(map[string]modelsCacheEntry),
+		modelsInflight: make(map[string]*modelsFlight),
 	}
 	if sp, ok := r.(interface{ Stats() *stats.Store }); ok {
 		s.stats = sp.Stats()

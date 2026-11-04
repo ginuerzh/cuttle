@@ -29,26 +29,20 @@ func NewRecorder(store *Store, facts *Facts, log logger.Logger) *Recorder {
 }
 
 // Record implements recorder.Recorder.
-// parseNodeName splits <route>/<provider>/<tier|base>/<node>[/<keyIndex>].
-func parseNodeName(name string) (route, provider, node, tier string) {
+// parseNodeName splits <route>/<provider>/<node>[/<keyIndex>].
+func parseNodeName(name string) (route, provider, node string) {
 	parts := strings.Split(name, "/")
 	if len(parts) == 0 || parts[0] == "" {
-		return "", name, "", ""
+		return "", name, ""
 	}
 	if len(parts) == 1 {
-		return "", parts[0], "", ""
+		return "", parts[0], ""
 	}
 	route, provider = parts[0], parts[1]
 	if len(parts) >= 3 {
-		tier = parts[2]
-		if tier == "base" {
-			tier = ""
-		}
+		node = parts[2]
 	}
-	if len(parts) >= 4 {
-		node = parts[3]
-	}
-	return route, provider, node, tier
+	return route, provider, node
 }
 
 func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.RecordOption) error {
@@ -65,7 +59,7 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 	if ro.HTTP != nil {
 		status = ro.HTTP.StatusCode
 	}
-	route, provider, node, tier := parseNodeName(ro.Node)
+	route, provider, node := parseNodeName(ro.Node)
 	req := Request{
 		ID:         ro.SID,
 		SID:        ro.SID,
@@ -73,7 +67,6 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		Provider:   provider,
 		Route:      route,
 		Node:       node,
-		Tier:       tier,
 		Status:     status,
 		Error:      ro.Err,
 		DurationMS: ro.Duration.Milliseconds(),

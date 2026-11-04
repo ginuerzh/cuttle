@@ -50,7 +50,7 @@ func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, er
 		Errors: []ErrorRow{},
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT request_id, ts, route, node, tier, provider, status, error,
+	rows, err := s.db.QueryContext(ctx, `SELECT request_id, ts, route, node, provider, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens
 		FROM requests WHERE ts >= ? AND ts < ? ORDER BY ts DESC`,
 		from.UnixMilli(), to.UnixMilli())
@@ -76,10 +76,10 @@ func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, er
 	for rows.Next() {
 		var id string
 		var ts int64
-		var route, node, tier, provider, errStr string
+		var route, node, provider, errStr string
 		var status int
 		var dur, in, out, cached int64
-		if err := rows.Scan(&id, &ts, &route, &node, &tier, &provider, &status, &errStr,
+		if err := rows.Scan(&id, &ts, &route, &node, &provider, &status, &errStr,
 			&dur, &in, &out, &cached); err != nil {
 			return g, err
 		}
@@ -119,8 +119,6 @@ func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, er
 			}
 			g.Edges[key] = e
 		}
-
-		_ = tier
 
 		if failed && len(g.Errors) < 20 {
 			msg := errStr

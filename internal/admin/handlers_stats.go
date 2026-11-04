@@ -36,7 +36,6 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		Model:       q.Get("model"),
 		ClientModel: q.Get("clientModel"),
 		Route:       q.Get("route"),
-		Tier:        q.Get("tier"),
 		OnlyErrors:  q.Get("errors") == "1",
 		Limit:       atoi(q.Get("limit")),
 		Offset:      atoi(q.Get("offset")),

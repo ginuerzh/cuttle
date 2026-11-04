@@ -1,72 +1,44 @@
 package admin
 
-import "github.com/go-gost/llm-gw/internal/config"
-
-// Preset is a template used when creating a provider. The chosen wire decides
-// the protocol, pathMap and auth that are written into the config.
+// Preset fills a new provider with a type and the base URL of every API the
+// upstream endpoint serves. Empty fields mean the endpoint does not offer that
+// API.
 type Preset struct {
-	Name       string            `json:"name"`
-	Wire       string            `json:"wire"`
-	BaseURL    string            `json:"baseURL"`
-	Protocol   string            `json:"protocol"`
-	PathMap    map[string]string `json:"pathMap"`
-	Auth       config.Auth       `json:"auth"`
-	HealthPath string            `json:"healthPath"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Chat      string `json:"chat,omitempty"`
+	Responses string `json:"responses,omitempty"`
+	Anthropic string `json:"anthropic,omitempty"`
+	Gemini    string `json:"gemini,omitempty"`
 }
 
 var presets = []Preset{
 	{
-		Name:       "deepseek",
-		Wire:       "openai",
-		BaseURL:    "https://api.deepseek.com",
-		Protocol:   "openai",
-		PathMap:    map[string]string{"/v1/chat/completions": "/chat/completions", "/v1/responses": "/chat/completions"},
-		Auth:       config.Auth{Header: "Authorization", Prefix: "Bearer "},
-		HealthPath: "/models",
+		Name:      "deepseek",
+		Type:      "deepseek",
+		Chat:      "https://api.deepseek.com/v1",
+		Responses: "https://api.deepseek.com/v1",
+		Anthropic: "https://api.deepseek.com/anthropic",
 	},
 	{
-		Name:       "deepseek-anthropic",
-		Wire:       "anthropic",
-		BaseURL:    "https://api.deepseek.com",
-		Protocol:   "anthropic",
-		PathMap:    map[string]string{"/v1/messages": "/anthropic/v1/messages"},
-		Auth:       config.Auth{Header: "x-api-key"},
-		HealthPath: "/models",
+		Name:      "opencode-go",
+		Type:      "opencode-go",
+		Chat:      "https://opencode.ai/zen/go/v1",
+		Responses: "https://opencode.ai/zen/go/v1",
+		Anthropic: "https://opencode.ai/zen/go",
 	},
 	{
-		Name:       "opencode",
-		Wire:       "openai",
-		BaseURL:    "https://opencode.ai",
-		Protocol:   "openai",
-		PathMap:    map[string]string{"/v1/messages": "/zen/go/v1/chat/completions", "/v1/responses": "/zen/go/v1/chat/completions", "/v1/chat/completions": "/zen/go/v1/chat/completions"},
-		Auth:       config.Auth{Header: "Authorization", Prefix: "Bearer ", KeyHeaders: []config.KeyHeader{{Header: "x-api-key"}}},
-		HealthPath: "/zen/go/v1/models",
+		Name:      "opencode-zen",
+		Type:      "opencode-zen",
+		Chat:      "https://opencode.ai/zen/v1",
+		Responses: "https://opencode.ai/zen/v1",
+		Anthropic: "https://opencode.ai/zen",
 	},
 	{
-		Name:       "opencode-anthropic",
-		Wire:       "anthropic",
-		BaseURL:    "https://opencode.ai",
-		Protocol:   "anthropic",
-		PathMap:    map[string]string{"/v1/messages": "/zen/v1/messages"},
-		Auth:       config.Auth{Header: "x-api-key"},
-		HealthPath: "/zen/v1/models",
-	},
-	{
-		Name:       "commandcode",
-		Wire:       "openai",
-		BaseURL:    "https://api.commandcode.ai",
-		Protocol:   "openai",
-		PathMap:    map[string]string{"/v1/chat/completions": "/provider/v1/chat/completions", "/v1/responses": "/provider/v1/responses"},
-		Auth:       config.Auth{Header: "Authorization", Prefix: "Bearer "},
-		HealthPath: "/provider/v1/models",
-	},
-	{
-		Name:       "commandcode-anthropic",
-		Wire:       "anthropic",
-		BaseURL:    "https://api.commandcode.ai",
-		Protocol:   "anthropic",
-		PathMap:    map[string]string{"/v1/messages": "/provider/v1/messages"},
-		Auth:       config.Auth{Header: "Authorization", Prefix: "Bearer "},
-		HealthPath: "/provider/v1/models",
+		Name:      "commandcode",
+		Type:      "commandcode",
+		Chat:      "https://api.commandcode.ai/provider/v1",
+		Responses: "https://api.commandcode.ai/provider/v1",
+		Anthropic: "https://api.commandcode.ai/provider",
 	},
 }

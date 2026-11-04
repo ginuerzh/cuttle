@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { AutoComplete, Button, Drawer, Form, Input, Modal, Space, Table, Typography, message } from 'antd';
+import { AutoComplete, Button, Drawer, Form, Input, Modal, Popconfirm, Space, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { putAliases } from '../api/client';
 import type { Alias, ConfigResponse } from '../api/types';
 import { AliasForm } from './Edit';
+import { useIsMobile } from '../components/useIsMobile';
+import { MobileCard } from '../components/MobileCard';
 
 export function AliasesPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
+  const isMobile = useIsMobile();
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -19,6 +22,16 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
     next.splice(to, 0, moved);
     try {
       await putAliases(next);
+      await onReload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const remove = async (index: number) => {
+    try {
+      await putAliases(config.aliases.filter((_, i) => i !== index));
+      message.success('已删除');
       await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
@@ -54,7 +67,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
   ];
 
   return (
-    <div style={{ padding: 20, width: '100%', overflow: 'auto' }}>
+    <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           Aliases
@@ -64,8 +77,30 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
         </Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
-        顺序即匹配优先级；拖动行调整。alias 是客户端模型进入路由的唯一入口。
+        {isMobile ? '用 ↑ ↓ 调整顺序。' : '顺序即匹配优先级；拖动行调整。'}
+        alias 是客户端模型进入路由的唯一入口。
       </Typography.Paragraph>
+      {isMobile ? (
+        <div>
+          {config.aliases.map((a, i) => (
+            <MobileCard
+              key={`${i}-${a.match}`}
+              title={`${i + 1}. ${a.match}`}
+              subtitle={`→ ${a.model}`}
+              actions={
+                <>
+                  <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
+                  <Button size="small" disabled={i === config.aliases.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
+                  <Button size="small" onClick={() => setEditing(i)}>编辑</Button>
+                  <Popconfirm title={`删除 alias ${a.match}?`} onConfirm={() => void remove(i)}>
+                    <Button size="small" danger>删除</Button>
+                  </Popconfirm>
+                </>
+              }
+            />
+          ))}
+        </div>
+      ) : (
       <Table
         rowKey={(a, i) => `${i}-${a.match}`}
         size="small"
@@ -83,6 +118,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
           style: { cursor: 'grab' },
         })}
       />
+      )}
 
       <Drawer width={380} title={editing !== null ? `编辑 alias #${editing}` : ''} open={editing !== null} onClose={() => setEditing(null)} destroyOnClose>
         {editing !== null && config.aliases[editing] ? (

@@ -40,22 +40,8 @@ export function routeColor(name: string): string {
   return PALETTE[h % PALETTE.length];
 }
 
-function tierDash(tier?: string): string | undefined {
-  switch (tier) {
-    case 'high':
-      return '8 4';
-    case 'medium':
-      return '4 4';
-    case 'low':
-      return '2 4';
-    default:
-      return undefined;
-  }
-}
-
 interface EdgeData extends Record<string, unknown> {
   color: string;
-  tier?: string;
 }
 
 function edge(
@@ -78,7 +64,6 @@ function edge(
     style: {
       stroke: color,
       strokeWidth: 1.5,
-      strokeDasharray: tierDash(data?.tier),
     },
     markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
   };
@@ -123,7 +108,7 @@ export function buildGraph(
       data: {
         kind: 'provider',
         label: p.name,
-        sub: [p.protocol, `keys×${p.keysSet}`].filter(Boolean).join(' · '),
+        sub: [p.type, `keys×${p.keysSet}`].filter(Boolean).join(' · '),
         provider: p,
         disabled: p.enabled === false,
       },
@@ -139,9 +124,7 @@ export function buildGraph(
       data: {
         kind: 'node',
         label: n.name,
-        sub: [n.provider, n.tier || 'base', `${Object.keys(n.models ?? {}).length} models`]
-          .filter(Boolean)
-          .join(' · '),
+        sub: [n.provider, `${Object.keys(n.models ?? {}).length} models`].filter(Boolean).join(' · '),
         node: n,
         disabled: n.enabled === false || (p ? p.enabled === false : false),
       },
@@ -150,7 +133,6 @@ export function buildGraph(
       edges.push(
         edge(`node:${n.name}|provider:${n.provider}`, `node:${n.name}`, `provider:${n.provider}`, undefined, undefined, {
           color: '#0891b2',
-          tier: n.tier || 'base',
         }),
       );
     }
@@ -178,7 +160,6 @@ export function buildGraph(
       edges.push(
         edge(`route:${r.name}|node:${n.name}`, `route:${r.name}`, `node:${n.name}`, undefined, undefined, {
           color,
-          tier: n.tier || 'base',
         }),
       );
     }

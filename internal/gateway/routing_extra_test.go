@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +9,7 @@ import (
 	"testing"
 
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/provider"
 )
 
 func postModel(t *testing.T, gw *Gateway, path, body string) int {
@@ -24,79 +24,15 @@ func postModel(t *testing.T, gw *Gateway, path, body string) int {
 	return resp.StatusCode
 }
 
-func TestEffortTierRouting(t *testing.T) {
-	fastSrv, fastHit := captureUpstream(t)
-	strongSrv, strongHit := captureUpstream(t)
-
-	cfg := matrixConfig(fastSrv.URL, "openai", nil)
-	cfg.Nodes[0].Models = map[string]string{"*": "fast-model"}
-	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name:     "strong",
-		BaseURL:  strongSrv.URL,
-		Protocol: "openai",
-	})
-	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
-		Name:     "strong",
-		Provider: "strong",
-		Models:   map[string]string{"*": "strong-model"},
-		Tier:     "high",
-	})
-	cfg.Routes[0].Nodes = []string{"up", "strong"}
-
-	gw := startGateway(t, cfg)
-
-	reset := func() { fastHit.path, strongHit.path = "", "" }
-
-	if code := postModel(t, gw, "/v1/chat/completions",
-		`{"model":"gpt-4.5","reasoning_effort":"high","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
-		t.Fatalf("high status = %d", code)
-	}
-	if strongHit.path == "" {
-		t.Fatal("high effort did not select the strong provider")
-	}
-	if fastHit.path != "" {
-		t.Fatal("high effort also hit the fast provider")
-	}
-
-	reset()
-	postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[{"role":"user","content":"hi"}]}`)
-	if fastHit.path == "" || strongHit.path != "" {
-		t.Fatalf("no effort should use the base provider: fast=%q strong=%q", fastHit.path, strongHit.path)
-	}
-
-	reset()
-	postModel(t, gw, "/v1/chat/completions",
-		`{"model":"gpt-4.5","thinking":{"type":"enabled","budget_tokens":20000},"messages":[{"role":"user","content":"hi"}]}`)
-	if strongHit.path == "" {
-		t.Fatal("large thinking budget did not select the strong provider")
-	}
-
-	reset()
-	postModel(t, gw, "/v1/chat/completions",
-		`{"model":"gpt-4.5","generationConfig":{"thinkingConfig":{"thinkingBudget":20000}},"messages":[{"role":"user","content":"hi"}]}`)
-	if strongHit.path == "" {
-		t.Fatal("Gemini thinkingBudget did not select the strong provider")
-	}
-
-	// Effort-specific model mapping still applies on the tier node.
-	var v map[string]any
-	if err := json.Unmarshal([]byte(strongHit.body), &v); err != nil {
-		t.Fatal(err)
-	}
-	if v["model"] != "strong-model" {
-		t.Fatalf("tier model = %v, want strong-model", v["model"])
-	}
-}
-
 func TestRoutePrioritySpecificBeforeCatchAll(t *testing.T) {
 	specificSrv, specificHit := captureUpstream(t)
 	catchAllSrv, catchAllHit := captureUpstream(t)
 
-	cfg := matrixConfig(catchAllSrv.URL, "openai", nil)
+	cfg := matrixConfig(catchAllSrv.URL, provider.Chat)
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name:     "specific",
-		BaseURL:  specificSrv.URL,
-		Protocol: "openai",
+		Name: "specific",
+		Type: "generic",
+		Chat: specificSrv.URL,
 	})
 	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "specific", Provider: "specific"})
 	cfg.Routes = []gwconfig.Route{
@@ -136,7 +72,7 @@ func TestMultiKey429Rotation(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	cfg := matrixConfig(upstream.URL, "openai", nil)
+	cfg := matrixConfig(upstream.URL, provider.Chat)
 	cfg.Providers[0].Keys = []string{"k1", "k2"}
 	cfg.Nodes[0].Models = nil
 	cfg.Aliases = nil
@@ -183,13 +119,13 @@ func TestBackupProviderUsedOnlyAfterPrimaryFails(t *testing.T) {
 	}))
 	defer backup.Close()
 
-	cfg := matrixConfig(primary.URL, "openai", nil)
+	cfg := matrixConfig(primary.URL, provider.Chat)
 	cfg.Nodes[0].Models = nil
 	cfg.Aliases = nil
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name:     "backup",
-		BaseURL:  backup.URL,
-		Protocol: "openai",
+		Name: "backup",
+		Type: "generic",
+		Chat: backup.URL,
 	})
 	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "backup", Provider: "backup", Backup: true})
 	cfg.Routes[0].Nodes = []string{"up", "backup"}
@@ -211,40 +147,9 @@ func TestBackupProviderUsedOnlyAfterPrimaryFails(t *testing.T) {
 	}
 }
 
-func TestEffortFallbackWhenTierFails(t *testing.T) {
-	fastSrv, fastHit := captureUpstream(t)
-	strong := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-	}))
-	defer strong.Close()
-
-	cfg := matrixConfig(fastSrv.URL, "openai", nil)
-	cfg.Nodes[0].Models = nil
-	cfg.Aliases = nil
-	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name:     "strong",
-		BaseURL:  strong.URL,
-		Protocol: "openai",
-	})
-	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "strong", Provider: "strong", Tier: "high"})
-	cfg.Routes[0].Nodes = []string{"up", "strong"}
-	gw := startGateway(t, cfg)
-
-	body := `{"model":"gpt-4.5","reasoning_effort":"high","messages":[]}`
-	if code := postModel(t, gw, "/v1/chat/completions", body); code != http.StatusBadGateway {
-		t.Fatalf("first status = %d, want 502 from the high tier", code)
-	}
-	if code := postModel(t, gw, "/v1/chat/completions", body); code != http.StatusOK {
-		t.Fatalf("second status = %d, want 200 after falling back", code)
-	}
-	if fastHit.path == "" {
-		t.Fatal("high effort did not fall back to the base provider after the tier failed")
-	}
-}
-
 func TestDisabledProviderHasNoRoute(t *testing.T) {
 	up, hit := captureUpstream(t)
-	cfg := matrixConfig(up.URL, "openai", nil)
+	cfg := matrixConfig(up.URL, provider.Chat)
 	off := false
 	cfg.Providers[0].Enabled = &off
 

@@ -28,16 +28,15 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 		{Match: "gpt-4.5*", Model: "fast"},
 	}
 	cfg.Providers = []config.Provider{{
-		Name:     "p",
-		BaseURL:  upstreamURL,
-		Protocol: "openai",
-		Keys:     []string{"sk-secret"},
-		PathMap:  map[string]string{"/v1/chat/completions": "/chat/completions"},
+		Name: "p",
+		Type: "generic",
+		Chat: upstreamURL,
+		Keys: []string{"sk-secret"},
 	}}
 	cfg.Nodes = []config.Node{{
 		Name:     "p",
 		Provider: "p",
-		Models:   map[string]string{"fast": "deepseek-v4-flash"},
+		Models:   map[string]string{"fast": "deepseek-v4-flash", "*": "deepseek-v4-flash"},
 	}}
 	cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"p"}}}
 	return cfg
@@ -93,7 +92,7 @@ func TestStatsRecordsNonStreaming(t *testing.T) {
 	if row.Provider != "p" || row.Model != "deepseek-v4-flash" || row.Effort != "high" {
 		t.Fatalf("row = %+v", row)
 	}
-	if row.Route != "r" || row.ClientModel != "gpt-4.5" || row.LogicalModel != "fast" || row.Tier != "" {
+	if row.Route != "r" || row.ClientModel != "gpt-4.5" || row.LogicalModel != "fast" {
 		t.Fatalf("row = %+v", row)
 	}
 	if row.InputTokens != 10 || row.OutputTokens != 5 {

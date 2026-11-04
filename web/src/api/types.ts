@@ -6,6 +6,8 @@ export interface AuthConfig {
 }
 
 export interface HealthConfig {
+  /** API whose base URL the probe targets; empty means the first configured API. */
+  api?: ProviderApi;
   path?: string;
   interval?: string;
   timeout?: string;
@@ -21,12 +23,18 @@ export interface ProbeResult {
 
 export interface Provider {
   name: string;
-  baseURL: string;
-  protocol: string;
+  type: string;
+  /** OpenAI Chat Completions base URL; empty when the provider does not serve it. */
+  chat?: string;
+  /** OpenAI Responses base URL; empty when the provider does not serve it. */
+  responses?: string;
+  /** Anthropic Messages base URL; empty when the provider does not serve it. */
+  anthropic?: string;
+  /** Gemini API base URL; empty when the provider does not serve it. */
+  gemini?: string;
   keysSet: number;
   keyPreviews: string[];
   auth?: AuthConfig;
-  pathMap?: Record<string, string>;
   health?: HealthConfig;
   tls?: Record<string, unknown>;
   keys?: string[];
@@ -34,12 +42,27 @@ export interface Provider {
   probe?: ProbeResult;
 }
 
+export type ProviderApi = 'chat' | 'responses' | 'anthropic' | 'gemini';
+
+/** One entry in a provider's model catalog. */
+export interface ProviderModel {
+  id: string;
+  name?: string;
+  apis?: ProviderApi[];
+  context?: number;
+  output?: number;
+  inputs?: string[];
+  outputs?: string[];
+  reasoning?: boolean;
+  efforts?: string[];
+  free?: boolean;
+  price?: { input?: number; output?: number };
+}
+
 export interface Node {
   name: string;
   provider: string;
   models?: Record<string, string>;
-  effortModels?: Record<string, Record<string, string>>;
-  tier?: string;
   backup?: boolean;
   weight?: number;
   enabled?: boolean;
@@ -65,7 +88,6 @@ export interface ConfigResponse {
   nodes: Node[];
   routes: Route[];
   stats?: { path?: string; retainRequests?: string; retainRollups?: string; storeBody?: boolean };
-  effort?: { lowThreshold?: number; mediumThreshold?: number; highThreshold?: number };
 }
 
 export interface NodeMetrics {
@@ -99,14 +121,14 @@ export interface GraphMetrics {
   errors: ErrorRow[];
 }
 
+/** One preset per upstream endpoint; it fills the type and every API base URL. */
 export interface Preset {
   name: string;
-  wire: string;
-  baseURL: string;
-  protocol: string;
-  pathMap: Record<string, string>;
-  auth?: AuthConfig;
-  healthPath?: string;
+  type: string;
+  chat?: string;
+  responses?: string;
+  anthropic?: string;
+  gemini?: string;
 }
 
 export interface RequestRow {
@@ -118,7 +140,7 @@ export interface RequestRow {
   logicalModel?: string;
   provider: string;
   route?: string;
-  tier?: string;
+  node?: string;
   protocol: string;
   effort: string;
   status: number;

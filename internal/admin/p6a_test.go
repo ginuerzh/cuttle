@@ -13,7 +13,7 @@ import (
 )
 
 func providerBody(name, baseURL string) string {
-	return `{"name":"` + name + `","baseURL":"` + baseURL + `","protocol":"openai"}`
+	return `{"name":"` + name + `","type":"generic","chat":"` + baseURL + `"}`
 }
 
 func TestRouteOrder(t *testing.T) {
@@ -93,7 +93,7 @@ func TestProbeOnce(t *testing.T) {
 	}))
 	defer up.Close()
 
-	body := `{"name":"p","baseURL":"` + up.URL + `","protocol":"openai","health":{"path":"/health","interval":"30s","timeout":"2s"}}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `","health":{"path":"/health","interval":"30s","timeout":"2s"}}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create provider = %d", resp.StatusCode)
 	}
@@ -121,7 +121,7 @@ func TestGraphAPI(t *testing.T) {
 
 	base := time.Now().Add(-time.Hour)
 	for _, row := range []stats.Request{
-		{ID: "g1", TS: base, Route: "r", Node: "n", Tier: "high", Provider: "p", Status: 200, DurationMS: 10, InputTokens: 4},
+		{ID: "g1", TS: base, Route: "r", Node: "n", Provider: "p", Status: 200, DurationMS: 10, InputTokens: 4},
 		{ID: "g2", TS: base.Add(time.Minute), Route: "r", Node: "n", Provider: "p", Status: 500, Error: "boom", DurationMS: 20},
 	} {
 		if err := rel.store.Insert(context.Background(), row); err != nil {

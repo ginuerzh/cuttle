@@ -12,16 +12,14 @@ import (
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
 )
 
-func testConfig(upstreamURL string, pathMap map[string]string) *gwconfig.Config {
+func testConfig(upstreamURL string) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Providers: []gwconfig.Provider{{
-			Name:     "up",
-			BaseURL:  upstreamURL,
-			Protocol: "openai",
-			Keys:     []string{"sk-test"},
-			Auth:     gwconfig.Auth{Header: "Authorization", Prefix: "Bearer "},
-			PathMap:  pathMap,
+			Name: "up",
+			Type: "generic",
+			Chat: upstreamURL,
+			Keys: []string{"sk-test"},
 		}},
 		Nodes: []gwconfig.Node{{
 			Name:     "up",
@@ -61,9 +59,7 @@ func TestGatewayForwardsAndRewrites(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	gw := startGateway(t, testConfig(upstream.URL, map[string]string{
-		"/v1/chat/completions": "/chat/completions",
-	}))
+	gw := startGateway(t, testConfig(upstream.URL))
 
 	req, _ := http.NewRequest(http.MethodPost,
 		"http://"+gw.Addr().String()+"/v1/chat/completions?x=1",
@@ -103,7 +99,7 @@ func TestGatewayPassesThroughUnmappedPathWithoutKey(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	cfg := testConfig(upstream.URL, map[string]string{"/mapped": "/other"})
+	cfg := testConfig(upstream.URL)
 	cfg.Providers[0].Keys = nil
 	gw := startGateway(t, cfg)
 

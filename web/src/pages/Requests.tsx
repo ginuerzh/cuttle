@@ -15,6 +15,8 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { getRequests } from '../api/client';
 import type { RequestRow } from '../api/types';
+import { useIsMobile } from '../components/useIsMobile';
+import { MobileCard } from '../components/MobileCard';
 
 const RANGES = [
   { label: '15 分钟', value: 15 * 60_000 },
@@ -23,6 +25,7 @@ const RANGES = [
 ];
 
 export function RequestsPage() {
+  const isMobile = useIsMobile();
   const [rangeMs, setRangeMs] = useState(60 * 60_000);
   const [provider, setProvider] = useState('');
   const [route, setRoute] = useState('');
@@ -67,41 +70,42 @@ export function RequestsPage() {
       width: 150,
       render: (v: string) => new Date(v).toLocaleString(),
     },
-    { title: 'route', dataIndex: 'route', width: 100, render: (v) => v || <Tag>unrouted</Tag> },
-    { title: 'provider', dataIndex: 'provider', width: 130 },
-    { title: 'client model', dataIndex: 'clientModel', width: 170, ellipsis: true },
-    { title: 'provider model', dataIndex: 'model', width: 170, ellipsis: true },
+    { title: 'route', dataIndex: 'route', width: 100, responsive: ['md'], render: (v) => v || <Tag>unrouted</Tag> },
+    { title: 'provider', dataIndex: 'provider', width: 130, responsive: ['lg'] },
+    { title: 'client model', dataIndex: 'clientModel', width: 170, ellipsis: true, responsive: ['lg'] },
+    { title: 'provider model', dataIndex: 'model', width: 170, ellipsis: true, responsive: ['xl'] },
     {
       title: 'status',
       dataIndex: 'status',
       width: 80,
       render: (v: number) => <Tag color={v >= 400 ? 'red' : v >= 300 ? 'orange' : 'green'}>{v || '—'}</Tag>,
     },
-    { title: 'effort', dataIndex: 'effort', width: 80, render: (v) => v || '—' },
-    { title: '耗时', dataIndex: 'durationMs', width: 90, render: (v: number) => `${v}ms` },
+    { title: 'effort', dataIndex: 'effort', width: 80, responsive: ['lg'], render: (v) => v || '—' },
+    { title: '耗时', dataIndex: 'durationMs', width: 90, responsive: ['md'], render: (v: number) => `${v}ms` },
     {
       title: 'tokens',
       width: 120,
+      responsive: ['lg'],
       render: (_, r) => `${r.inputTokens}/${r.outputTokens}`,
     },
-    { title: '流式', dataIndex: 'stream', width: 60, render: (v: boolean) => (v ? '是' : '否') },
+    { title: '流式', dataIndex: 'stream', width: 60, responsive: ['xl'], render: (v: boolean) => (v ? '是' : '否') },
   ];
 
   return (
-    <div style={{ padding: 20, width: '100%', overflow: 'auto' }}>
+    <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
         Requests
       </Typography.Title>
       <Space wrap style={{ marginBottom: 12 }}>
-        <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES} style={{ width: 110 }} />
-        <Input size="small" placeholder="provider" value={provider} onChange={(e) => setProvider(e.target.value)} style={{ width: 140 }} />
-        <Input size="small" placeholder="route" value={route} onChange={(e) => setRoute(e.target.value)} style={{ width: 120 }} />
+        <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES} style={{ width: isMobile ? '100%' : 110 }} />
+        <Input size="small" placeholder="provider" value={provider} onChange={(e) => setProvider(e.target.value)} style={{ width: isMobile ? '100%' : 140 }} />
+        <Input size="small" placeholder="route" value={route} onChange={(e) => setRoute(e.target.value)} style={{ width: isMobile ? '100%' : 120 }} />
         <Input
           size="small"
           placeholder="client model"
           value={clientModel}
           onChange={(e) => setClientModel(e.target.value)}
-          style={{ width: 160 }}
+          style={{ width: isMobile ? '100%' : 160 }}
         />
         <Checkbox checked={errorsOnly} onChange={(e) => setErrorsOnly(e.target.checked)}>
           仅错误
@@ -112,23 +116,44 @@ export function RequestsPage() {
         <Typography.Text type="secondary">{rows.length} 条</Typography.Text>
       </Space>
 
-      <Table
-        rowKey="requestId"
-        size="small"
-        loading={loading}
-        columns={columns}
-        dataSource={rows}
-        pagination={{ pageSize: 50 }}
-        onRow={(r) => ({ onClick: () => setSelected(r), style: { cursor: 'pointer' } })}
-      />
+      {isMobile ? (
+        <div>
+          {rows.map((r) => (
+            <MobileCard
+              key={r.requestId}
+              title={r.clientModel || r.model || r.requestId}
+              subtitle={`${new Date(r.ts).toLocaleString()} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok`}
+              tags={
+                <Tag color={r.status >= 400 ? 'red' : r.status >= 300 ? 'orange' : 'green'}>
+                  {r.status || '—'}
+                </Tag>
+              }
+              onClick={() => setSelected(r)}
+            />
+          ))}
+          {rows.length === 0 && !loading ? (
+            <Typography.Text type="secondary">没有请求</Typography.Text>
+          ) : null}
+        </div>
+      ) : (
+        <Table
+          rowKey="requestId"
+          size="small"
+          loading={loading}
+          columns={columns}
+          dataSource={rows}
+          pagination={{ pageSize: 50 }}
+          onRow={(r) => ({ onClick: () => setSelected(r), style: { cursor: 'pointer' } })}
+        />
+      )}
 
-      <Drawer width={480} title="请求详情" open={!!selected} onClose={() => setSelected(null)} destroyOnClose>
+      <Drawer width={isMobile ? '100%' : 480} title="请求详情" open={!!selected} onClose={() => setSelected(null)} destroyOnClose>
         {selected ? (
           <Descriptions size="small" column={1} bordered>
             <Descriptions.Item label="requestId">{selected.requestId}</Descriptions.Item>
             <Descriptions.Item label="sid">{selected.sid}</Descriptions.Item>
             <Descriptions.Item label="时间">{new Date(selected.ts).toLocaleString()}</Descriptions.Item>
-            <Descriptions.Item label="route / tier">{`${selected.route || '—'} / ${selected.tier || 'base'}`}</Descriptions.Item>
+            <Descriptions.Item label="route">{selected.route || '—'}</Descriptions.Item>
             <Descriptions.Item label="provider">{selected.provider}</Descriptions.Item>
             <Descriptions.Item label="protocol / effort">{`${selected.protocol} / ${selected.effort}`}</Descriptions.Item>
             <Descriptions.Item label="client → logical">{`${selected.clientModel || '—'} → ${selected.logicalModel || '—'}`}</Descriptions.Item>

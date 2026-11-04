@@ -1,8 +1,9 @@
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
 
 /**
- * n8n-style connection: a plain bezier with a small dot at both ends and an
- * optional label at the midpoint.
+ * n8n-style connection: a plain bezier with an optional label at the midpoint.
+ * The endpoint dots come from the node handles; drawing them here as well
+ * would render two dots at every connection point.
  */
 export function DotEdge({
   sourceX,
@@ -22,14 +23,9 @@ export function DotEdge({
     targetY,
     targetPosition,
   });
-  const color = (style?.stroke as string) || '#94a3b8';
-  const radius = 3;
-
   return (
     <>
       <BaseEdge path={path} style={style} interactionWidth={18} />
-      <circle cx={sourceX} cy={sourceY} r={radius} fill={color} stroke="#fff" strokeWidth={1} />
-      <circle cx={targetX} cy={targetY} r={radius} fill={color} stroke="#fff" strokeWidth={1} />
       {label ? (
         <EdgeLabelRenderer>
           <div

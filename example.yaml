@@ -12,11 +12,6 @@ stats:
   retainRollups: 2160h
   storeBody: false
 
-effort:
-  lowThreshold: 1024
-  mediumThreshold: 4096
-  highThreshold: 16384
-
 aliases:
   - match: "claude-opus*"
     model: strong
@@ -31,45 +26,37 @@ aliases:
   - match: "*"
     model: fast
 
-# A provider is only the endpoint: how to connect and authenticate.
+# A provider declares which wire APIs it serves and where; type selects the
+# adapter. An empty API field means the provider does not serve that API.
 providers:
   - name: deepseek
-    baseURL: https://api.deepseek.com
-    protocol: openai
+    type: deepseek
+    chat: https://api.deepseek.com/v1
+    responses: https://api.deepseek.com/v1
+    anthropic: https://api.deepseek.com/anthropic
     keys:
       - ${DEEPSEEK_API_KEY}
-    pathMap:
-      /v1/chat/completions: /chat/completions
-      /v1/responses: /chat/completions
     health:
-      path: /models
+      api: chat
       interval: 30s
       timeout: 5s
 
 # A node is one concrete use of a provider: model mapping + routing policy.
 # The same provider can back several nodes with different mappings.
 nodes:
-  - name: deepseek-fast
+  - name: deepseek
     provider: deepseek
     models:
       fast: deepseek-v4-flash
-      "*": deepseek-v4-flash
-
-  # Optional: same provider, but high-effort requests get the stronger model.
-  # tier=high nodes win over the base pool via the matcher priority.
-  - name: deepseek-strong
-    provider: deepseek
-    tier: high
-    models:
-      fast: deepseek-v4-pro
       strong: deepseek-v4-pro
+      "*": deepseek-v4-flash
 
 routes:
   - name: strong
-    nodes: [deepseek-strong]
+    nodes: [deepseek]
     match:
       model: strong
   - name: fast
-    nodes: [deepseek-fast, deepseek-strong]
+    nodes: [deepseek]
     match:
       model: fast

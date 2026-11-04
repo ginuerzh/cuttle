@@ -83,7 +83,11 @@ func buildRouteHop(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger) (h
 		if !p.EnabledValue() {
 			continue
 		}
-		ns, err := buildNodes(p, n, r.Name, cfg.Effort)
+		target, err := compileRouteNode(p, n, r)
+		if err != nil {
+			return nil, fmt.Errorf("node %q: %w", n.Name, err)
+		}
+		ns, err := buildNodes(p, n, r.Name, target)
 		if err != nil {
 			return nil, fmt.Errorf("node %q: %w", n.Name, err)
 		}
@@ -103,10 +107,12 @@ func buildRouteHop(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger) (h
 	}, log)
 }
 
-func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, effort gwconfig.Effort) ([]*xconfig.NodeConfig, error) {
-	u, err := url.Parse(strings.TrimSpace(p.BaseURL))
+func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstreamTarget) ([]*xconfig.NodeConfig, error) {
+	auth := target.auth
+
+	u, err := url.Parse(strings.TrimSpace(target.baseURL))
 	if err != nil || u.Host == "" {
-		return nil, fmt.Errorf("invalid base_url %q", p.BaseURL)
+		return nil, fmt.Errorf("invalid base URL %q", target.baseURL)
 	}
 
 	secure := u.Scheme == "https"
@@ -133,7 +139,7 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, effort gwcon
 		tlsCfg = &xconfig.TLSNodeConfig{ServerName: serverName, Secure: verify}
 	}
 
-	rewrites := buildRewrites(u.Path, p.PathMap)
+	rewrites := upstreamRewrites(target.baseURL, target.api, target.targetModel)
 
 	keys := p.Keys
 	if len(keys) == 0 {
@@ -142,28 +148,31 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, effort gwcon
 
 	nodes := make([]*xconfig.NodeConfig, 0, len(keys))
 	for i, key := range keys {
-		headers := make(map[string]string, len(p.Auth.Extra)+1)
-		for k, v := range p.Auth.Extra {
-			headers[k] = v
-		}
+		headers := make(map[string]string, len(auth.Extra)+1)
 		if key != "" {
-			headers[p.Auth.Header] = p.Auth.Prefix + key
-			for _, kh := range p.Auth.KeyHeaders {
+			if auth.Header != "" {
+				headers[auth.Header] = auth.Prefix + key
+			}
+			for _, kh := range auth.KeyHeaders {
+				if kh.Header == "" {
+					continue
+				}
 				headers[kh.Header] = kh.Prefix + key
 			}
 		}
-
-		tier := strings.ToLower(strings.TrimSpace(n.Tier))
-		if tier == "" {
-			tier = "base"
+		// Extra is the user's final override: apply it after every
+		// key-derived header so an explicit value always wins.
+		for k, v := range auth.Extra {
+			headers[k] = v
 		}
-		name := fmt.Sprintf("%s/%s/%s/%s", route, p.Name, tier, n.Name)
+
+		name := fmt.Sprintf("%s/%s/%s", route, p.Name, n.Name)
 		if len(keys) > 1 {
 			name = fmt.Sprintf("%s/%d", name, i)
 		}
 
 		bodyRewrites := []xconfig.HTTPBodyRewriteConfig{{
-			Rewriter: "n:" + n.Name,
+			Rewriter: rewriterName(route, n.Name),
 			Type:     "*",
 		}}
 
@@ -192,46 +201,9 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, effort gwcon
 				FailCodes:           "429,5xx",
 			},
 		}
-		if tier != "base" {
-			priority := 0
-			switch tier {
-			case "high":
-				priority = 3
-			case "medium":
-				priority = 2
-			case "low":
-				priority = 1
-			}
-			nodeCfg.Matcher = &xconfig.NodeMatcherConfig{
-				Rule:     effortRule(tier, effort),
-				Priority: priority,
-			}
-		}
-
 		nodes = append(nodes, nodeCfg)
 	}
 	return nodes, nil
-}
-
-// buildRewrites maps client paths to provider paths, keeping the base path
-// from base_url (for example https://host/provider/v1).
-func buildRewrites(basePath string, pathMap map[string]string) []xconfig.HTTPURLRewriteConfig {
-	if len(pathMap) == 0 {
-		return nil
-	}
-
-	out := make([]xconfig.HTTPURLRewriteConfig, 0, len(pathMap))
-	for from, to := range pathMap {
-		replacement := to
-		if basePath != "" {
-			replacement = strings.TrimSuffix(basePath, "/") + "/" + strings.TrimPrefix(to, "/")
-		}
-		out = append(out, xconfig.HTTPURLRewriteConfig{
-			Match:       "^" + regexp.QuoteMeta(from) + "$",
-			Replacement: replacement,
-		})
-	}
-	return out
 }
 
 func buildMatcher(cfg *gwconfig.Config, m gwconfig.Match) (corerouting.Matcher, error) {
@@ -286,73 +258,79 @@ func globToRegexp(glob string) string {
 	return b.String()
 }
 
-// registerRewriters installs one in-process rewriter per node. Called before
-// ParseHop because node parsing resolves rewriters from the registry.
+// rewriterName returns the registry key for a route-scoped node engine. The
+// same node can select different target APIs in different routes, so engines
+// cannot be shared across routes. Route and node names forbid '/', so the
+// separator cannot make two (route, node) pairs collide.
+func rewriterName(route, node string) string {
+	return "r/" + route + "/" + node
+}
+
+// registerRewriters installs one in-process rewriter per (route, referenced
+// enabled node). Called before ParseHop because node parsing resolves
+// rewriters from the registry. Routing by node alone is not enough: a node
+// shared by two routes compiles to different APIs and paths per route.
 func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) error {
 	providers := make(map[string]gwconfig.Provider, len(cfg.Providers))
 	for _, p := range cfg.Providers {
 		providers[p.Name] = p
 	}
+	nodes := make(map[string]gwconfig.Node, len(cfg.Nodes))
 	for _, n := range cfg.Nodes {
-		p, ok := providers[n.Provider]
-		if !ok {
-			continue
-		}
-		name := "n:" + n.Name
-		registry.RewriterRegistry().Unregister(name)
-		if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(cfg, p, n), p.Name, p.Protocol, facts)); err != nil {
-			return fmt.Errorf("register rewriter %s: %w", name, err)
+		nodes[n.Name] = n
+	}
+
+	for _, r := range cfg.Routes {
+		for _, ref := range r.Nodes {
+			n, ok := nodes[ref]
+			if !ok || !n.EnabledValue() {
+				continue
+			}
+			p, ok := providers[n.Provider]
+			if !ok || !p.EnabledValue() {
+				continue
+			}
+
+			name := rewriterName(r.Name, n.Name)
+			target, err := compileRouteNode(p, n, r)
+			if err != nil {
+				return fmt.Errorf("register rewriter %s: %w", name, err)
+			}
+			// Record the same API that built the node's path rewrites,
+			// including for non-chat inbound paths where the engine returns
+			// before ResolveModel runs.
+			protocol := string(target.api)
+
+			registry.RewriterRegistry().Unregister(name)
+			if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(cfg, r, target), p.Name, protocol, facts)); err != nil {
+				return fmt.Errorf("register rewriter %s: %w", name, err)
+			}
 		}
 	}
 	return nil
 }
 
-func newNodeEngine(cfg *gwconfig.Config, p gwconfig.Provider, n gwconfig.Node) *engine.Engine {
-	fallback := n.EffectiveModel("", "")
-	binding := n
+func newNodeEngine(cfg *gwconfig.Config, r gwconfig.Route, target upstreamTarget) *engine.Engine {
+	targetModel := target.targetModel
+	engineProto := engineProtocol(target.api)
+	routeModel := r.Match.Model
 	return engine.New(engine.Options{
-		Model:     fallback,
+		Model:     targetModel,
 		MaxTokens: 8192,
 		Cache:     "memory",
-		ResolveModel: func(clientModel, effort string) (string, string, string) {
-			logical := cfg.ResolveAlias(clientModel)
+		ResolveModel: func(clientModel, _ string) (string, string, string) {
+			logical := routeModel
 			if logical == "" {
-				return "", "", ""
+				// A catch-all route has no logical model of its own. Keep an
+				// alias (or the client model) only as the stats label; the
+				// target and protocol stay the "*" target chosen when the
+				// route was compiled.
+				logical = cfg.ResolveAlias(clientModel)
+				if logical == "" {
+					logical = strings.TrimSpace(clientModel)
+				}
 			}
-			model := binding.EffectiveModel(logical, effort)
-			if model == "" {
-				return "", "", logical
-			}
-			return model, p.Protocol, logical
+			return targetModel, engineProto, logical
 		},
 	})
-}
-
-// effortRule builds a BodyJSON matcher for one effort band. String fields use
-// the regexp form; budgets use the numeric comparison form. Bands overlap on
-// purpose; node priority resolves the overlap (high > medium > low).
-func effortRule(tier string, e gwconfig.Effort) string {
-	switch tier {
-	case "high":
-		return fmt.Sprintf(`BodyJSON("reasoning_effort", "^(?i)(high|xhigh)$") || `+
-			`BodyJSON("reasoning.effort", "^(?i)high$") || `+
-			`BodyJSON("generationConfig.thinkingConfig.thinkingLevel", "^(?i)high$") || `+
-			`BodyJSON("thinking.budget_tokens", "ge", "%d") || `+
-			`BodyJSON("generationConfig.thinkingConfig.thinkingBudget", "ge", "%d")`,
-			e.HighThreshold, e.HighThreshold)
-	case "medium":
-		return fmt.Sprintf(`BodyJSON("reasoning_effort", "^(?i)medium$") || `+
-			`BodyJSON("reasoning.effort", "^(?i)medium$") || `+
-			`BodyJSON("generationConfig.thinkingConfig.thinkingLevel", "^(?i)medium$") || `+
-			`BodyJSON("thinking.budget_tokens", "ge", "%d") || `+
-			`BodyJSON("generationConfig.thinkingConfig.thinkingBudget", "ge", "%d")`,
-			e.MediumThreshold, e.MediumThreshold)
-	default:
-		return fmt.Sprintf(`BodyJSON("reasoning_effort", "^(?i)(low|minimal)$") || `+
-			`BodyJSON("reasoning.effort", "^(?i)low$") || `+
-			`BodyJSON("generationConfig.thinkingConfig.thinkingLevel", "^(?i)low$") || `+
-			`BodyJSON("thinking.budget_tokens", "ge", "%d") || `+
-			`BodyJSON("generationConfig.thinkingConfig.thinkingBudget", "ge", "%d")`,
-			e.LowThreshold, e.LowThreshold)
-	}
 }

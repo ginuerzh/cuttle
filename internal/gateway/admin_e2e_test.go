@@ -83,7 +83,7 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 		return resp.StatusCode
 	}
 
-	provider := `{"name":"p","baseURL":"` + upstream.URL + `","protocol":"openai","keys":["sk-e2e"],"pathMap":{"/v1/chat/completions":"/hit"}}`
+	provider := `{"name":"p","type":"generic","chat":"` + upstream.URL + `","keys":["sk-e2e"]}`
 	if code := do(http.MethodPost, "/api/providers", provider); code != http.StatusCreated {
 		t.Fatalf("create provider = %d", code)
 	}
@@ -101,8 +101,8 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if hitPath != "/hit" {
-		t.Fatalf("upstream path = %q, want /hit (provider created via API must be live)", hitPath)
+	if hitPath != "/chat/completions" {
+		t.Fatalf("upstream path = %q, want /chat/completions (provider created via API must be live)", hitPath)
 	}
 	if hitAuth != "Bearer sk-e2e" {
 		t.Fatalf("upstream auth = %q", hitAuth)

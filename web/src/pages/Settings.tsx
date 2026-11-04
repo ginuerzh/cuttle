@@ -32,11 +32,6 @@ export function SettingsPage({ config, onLogout }: { config: ConfigResponse; onL
         <Descriptions.Item label="stats 路径">{config.stats?.path || '—'}</Descriptions.Item>
         <Descriptions.Item label="明细保留">{config.stats?.retainRequests || '默认 168h'}</Descriptions.Item>
         <Descriptions.Item label="聚合保留">{config.stats?.retainRollups || '默认 2160h'}</Descriptions.Item>
-        <Descriptions.Item label="effort 阈值">
-          {config.effort
-            ? `${config.effort.lowThreshold} / ${config.effort.mediumThreshold} / ${config.effort.highThreshold}`
-            : '—'}
-        </Descriptions.Item>
       </Descriptions>
 
       <Divider orientation="left">修改密码</Divider>
