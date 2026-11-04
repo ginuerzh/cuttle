@@ -27,6 +27,46 @@ const apiOrder: ProviderApi[] = ['chat', 'responses', 'anthropic', 'gemini'];
 /** Provider adapter names accepted by the backend configuration. */
 export const PROVIDER_TYPES = ['deepseek', 'opencode-go', 'opencode-zen', 'commandcode', 'generic'] as const;
 
+/**
+ * Provider identity is fixed at creation time. Only `generic` providers may
+ * change their API base URLs afterwards; every preset type keeps its URLs.
+ */
+export function isBaseURLLocked(providerType: string): boolean {
+  return providerType.trim().toLowerCase() !== 'generic';
+}
+
+/** Catalog models that remain selectable for a node mapping. */
+export function enabledModels(models: ProviderModel[]): ProviderModel[] {
+  return models.filter((m) => !m.disabled);
+}
+
+/**
+ * Build the server-side provider payload from a provider view. Derived fields
+ * (`keysSet`, `keyPreviews`, `probe`) are display-only and must never be sent
+ * back; `models` defaults to the provider's overrides so a save cannot silently
+ * drop them.
+ */
+export function providerPayload(
+  p: Provider,
+  overrides?: Partial<Pick<Provider, 'models'>>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    name: p.name,
+    type: p.type,
+    chat: p.chat ?? '',
+    responses: p.responses ?? '',
+    anthropic: p.anthropic ?? '',
+    gemini: p.gemini ?? '',
+    auth: p.auth ?? {},
+    health: p.health ?? {},
+    tls: p.tls ?? {},
+    enabled: p.enabled !== false,
+    models: overrides?.models ?? p.models ?? {},
+  };
+  if (p.keys && p.keys.length > 0) payload.keys = p.keys;
+  return payload;
+}
+
 /** APIs a provider has configured a base URL for, in canonical order. */
 export function configuredAPIs(provider: Pick<Provider, 'chat' | 'responses' | 'anthropic' | 'gemini'>): ProviderApi[] {
   return apiOrder.filter((api) => (provider[api] ?? '').trim() !== '');
@@ -71,6 +111,40 @@ export function unknownModels(rows: { key?: string; value?: string }[] | undefin
     out.push(value);
   }
   return out;
+}
+
+/**
+ * Target model values whose catalog entry is locally disabled. Such mappings
+ * remain saveable, but the gateway skips the node, so they get a dedicated
+ * warning instead of the unknown-model one. `*` and blanks are ignored, and an
+ * unloaded catalog produces no warnings.
+ */
+export function disabledTargets(rows: { key?: string; value?: string }[] | undefined, models: ProviderModel[]): string[] {
+  if (models.length === 0) return [];
+  const disabled = new Set(models.filter((m) => m.disabled === true).map((m) => m.id));
+  const out: string[] = [];
+  for (const row of rows ?? []) {
+    const value = (row?.value ?? '').trim();
+    if (!value || value === '*' || out.includes(value)) continue;
+    if (disabled.has(value)) out.push(value);
+  }
+  return out;
+}
+
+/**
+ * Update one disabled override without mutating the provider's map. Enabling a
+ * model removes its key entirely so `disabled: false` never reaches the
+ * backend; other model overrides stay intact.
+ */
+export function toggleModelOverride(
+  models: Provider['models'],
+  id: string,
+  disabled: boolean,
+): NonNullable<Provider['models']> {
+  const next = { ...(models ?? {}) };
+  if (disabled) next[id] = { disabled: true };
+  else delete next[id];
+  return next;
 }
 
 /**

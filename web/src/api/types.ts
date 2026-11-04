@@ -21,6 +21,11 @@ export interface ProbeResult {
   checkedAt?: string;
 }
 
+/** Local policy override for one model in a provider's catalog. */
+export interface ModelOverride {
+  disabled?: boolean;
+}
+
 export interface Provider {
   name: string;
   type: string;
@@ -39,6 +44,8 @@ export interface Provider {
   tls?: Record<string, unknown>;
   keys?: string[];
   enabled?: boolean;
+  /** Per-model local overrides, keyed by model ID; preserved on every save. */
+  models?: Record<string, ModelOverride>;
   probe?: ProbeResult;
 }
 
@@ -57,6 +64,8 @@ export interface ProviderModel {
   efforts?: string[];
   free?: boolean;
   price?: { input?: number; output?: number };
+  /** Locally disabled through the provider's model overrides. */
+  disabled?: boolean;
 }
 
 export interface Node {

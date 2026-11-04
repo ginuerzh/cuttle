@@ -3,11 +3,16 @@ import type { Preset, Provider, ProviderModel } from '../api/types';
 import {
   configuredAPIs,
   derivedTargetAPI,
+  disabledTargets,
+  enabledModels,
   genericCanonicalNote,
+  isBaseURLLocked,
   modelApiLabel,
   modelMeta,
   modelOption,
   presetFormValues,
+  providerPayload,
+  toggleModelOverride,
   unknownModels,
 } from './presets';
 
@@ -201,5 +206,150 @@ describe('modelMeta', () => {
 
   it('is empty when the catalog has no metadata', () => {
     expect(modelMeta({ id: 'm1' })).toEqual([]);
+  });
+});
+
+describe('isBaseURLLocked', () => {
+  it('locks every provider type except generic', () => {
+    expect(isBaseURLLocked('deepseek')).toBe(true);
+    expect(isBaseURLLocked('opencode-go')).toBe(true);
+    expect(isBaseURLLocked('generic')).toBe(false);
+    expect(isBaseURLLocked(' Generic ')).toBe(false);
+  });
+});
+
+describe('enabledModels', () => {
+  it('drops disabled models and keeps the rest', () => {
+    expect(
+      enabledModels([
+        { id: 'm1' },
+        { id: 'm2', disabled: false },
+        { id: 'm3', disabled: true },
+      ]),
+    ).toEqual([{ id: 'm1' }, { id: 'm2', disabled: false }]);
+  });
+
+  it('keeps the catalog order', () => {
+    expect(enabledModels([{ id: 'b' }, { id: 'a' }]).map((m) => m.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('disabledTargets', () => {
+  const models: ProviderModel[] = [
+    { id: 'm1', apis: ['chat'] },
+    { id: 'off', apis: ['chat'], disabled: true },
+    { id: 'off2', apis: ['anthropic'], disabled: true },
+  ];
+
+  it('returns catalog values whose entry is disabled', () => {
+    expect(
+      disabledTargets(
+        [
+          { key: 'fast', value: 'off' },
+          { key: 'strong', value: 'off2' },
+        ],
+        models,
+      ),
+    ).toEqual(['off', 'off2']);
+  });
+
+  it('ignores *, blanks, enabled models, unknown models and duplicates', () => {
+    expect(
+      disabledTargets(
+        [
+          { key: '*', value: '*' },
+          { key: 'blank', value: '  ' },
+          { key: 'enabled', value: 'm1' },
+          { key: 'unknown', value: 'mystery-model' },
+          { key: 'dup', value: 'off' },
+          { key: 'dup2', value: 'off' },
+        ],
+        models,
+      ),
+    ).toEqual(['off']);
+  });
+
+  it('does not warn before the catalog has loaded or without rows', () => {
+    expect(disabledTargets([{ key: 'fast', value: 'off' }], [])).toEqual([]);
+    expect(disabledTargets(undefined, models)).toEqual([]);
+  });
+});
+
+describe('toggleModelOverride', () => {
+  it('adds a disabled override', () => {
+    expect(toggleModelOverride(undefined, 'm1', true)).toEqual({ m1: { disabled: true } });
+  });
+
+  it('removes the key when re-enabled and preserves other overrides', () => {
+    expect(toggleModelOverride({ m1: { disabled: true }, m2: { disabled: true } }, 'm1', false)).toEqual({
+      m2: { disabled: true },
+    });
+  });
+
+  it('does not mutate the input map', () => {
+    const before = { m1: { disabled: true } };
+    const next = toggleModelOverride(before, 'm1', false);
+    expect(before).toEqual({ m1: { disabled: true } });
+    expect(next).toEqual({});
+  });
+});
+
+describe('providerPayload', () => {
+  const full: Provider = {
+    name: 'p',
+    type: 'deepseek',
+    chat: 'https://chat.example/v1',
+    responses: '',
+    anthropic: 'https://anthropic.example',
+    gemini: '',
+    keysSet: 2,
+    keyPreviews: ['sk-...abcd'],
+    auth: { header: 'Authorization' },
+    health: { api: 'chat', path: '/models' },
+    tls: { secure: false },
+    enabled: false,
+    models: { m1: { disabled: true } },
+    probe: { ok: true, latencyMs: 12 },
+  };
+
+  it('keeps server fields and drops view-only fields', () => {
+    const payload = providerPayload(full);
+    expect(payload).toEqual({
+      name: 'p',
+      type: 'deepseek',
+      chat: 'https://chat.example/v1',
+      responses: '',
+      anthropic: 'https://anthropic.example',
+      gemini: '',
+      auth: { header: 'Authorization' },
+      health: { api: 'chat', path: '/models' },
+      tls: { secure: false },
+      enabled: false,
+      models: { m1: { disabled: true } },
+    });
+    expect(payload).not.toHaveProperty('keysSet');
+    expect(payload).not.toHaveProperty('keyPreviews');
+    expect(payload).not.toHaveProperty('probe');
+  });
+
+  it('uses models from the override argument', () => {
+    expect(providerPayload(full, { models: { m2: { disabled: true } } }).models).toEqual({
+      m2: { disabled: true },
+    });
+  });
+
+  it('includes empty objects for optional server fields and defaults enabled to true', () => {
+    expect(providerPayload({ name: 'bare', type: 'generic', keysSet: 0, keyPreviews: [] })).toMatchObject({
+      auth: {},
+      health: {},
+      tls: {},
+      models: {},
+      enabled: true,
+    });
+  });
+
+  it('includes keys only when the provider carries them', () => {
+    expect(providerPayload({ ...full, keys: ['sk-1'] })).toMatchObject({ keys: ['sk-1'] });
+    expect(providerPayload(full)).not.toHaveProperty('keys');
   });
 });

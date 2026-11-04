@@ -36,7 +36,19 @@ import {
 } from '../api/client';
 import type { Alias, ConfigResponse, Node as BindNode, Preset, Provider, ProviderModel, Route } from '../api/types';
 import { aliasFromNodeId, splitId } from './selection';
-import { configuredAPIs, derivedTargetAPI, genericCanonicalNote, modelOption, presetFormValues, PROVIDER_TYPES, unknownModels } from './presets';
+import {
+  configuredAPIs,
+  derivedTargetAPI,
+  disabledTargets,
+  enabledModels,
+  genericCanonicalNote,
+  isBaseURLLocked,
+  modelOption,
+  presetFormValues,
+  providerPayload,
+  PROVIDER_TYPES,
+  unknownModels,
+} from './presets';
 import { MapField, mapToRows, rowsToMap, type MapRow } from '../components/MapFields';
 import { Topology, type Selection } from './Topology';
 
@@ -88,13 +100,23 @@ function ModelCatalogHint({
   error: string;
   rows: MapRow[] | undefined;
 }) {
-  const missing = unknownModels(rows, models);
+  const disabled = disabledTargets(rows, models);
+  const missing = unknownModels(rows, models).filter((id) => !disabled.includes(id));
   return (
     <>
       {error ? (
         <Typography.Paragraph type="warning" style={{ fontSize: 12, marginBottom: 8 }}>
           无法加载模型目录：{error}（仍可手动输入）
         </Typography.Paragraph>
+      ) : null}
+      {disabled.length > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={`目标模型已在 Provider 中禁用，路由会跳过该 node：${disabled.join(', ')}`}
+          description="可在 Provider 的模型列表中重新启用；禁用期间该映射不会参与路由。"
+        />
       ) : null}
       {missing.length > 0 ? (
         <Alert
@@ -128,6 +150,7 @@ function DerivedTargetAPIHint({
     .map((t) => ({
       ...t,
       api: derivedTargetAPI(provider.type, apis, byID.get(t.model)?.apis),
+      disabled: byID.get(t.model)?.disabled === true,
     }));
   const note = genericCanonicalNote(provider.type, apis);
   if (targets.length === 0 && !note) return null;
@@ -137,7 +160,12 @@ function DerivedTargetAPIHint({
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
           目标 API：
           {targets
-            .map((t) => `${t.logical || '?'} → ${t.model}: ${t.api === 'unknown' ? '未知（无可用 base URL）' : t.api}`)
+            .map(
+              (t) =>
+                `${t.logical || '?'} → ${t.model}: ${
+                  t.api === 'unknown' ? '未知（无可用 base URL）' : t.api
+                }${t.disabled ? '（已禁用）' : ''}`,
+            )
             .join('；')}
         </Typography.Paragraph>
       ) : null}
@@ -160,18 +188,19 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
     const v = await form.validateFields();
     setBusy(true);
     try {
-      const payload: Record<string, unknown> = {
-        name: provider.name,
-        type: v.type,
-        chat: String(v.chat ?? '').trim(),
-        responses: String(v.responses ?? '').trim(),
-        anthropic: String(v.anthropic ?? '').trim(),
-        gemini: String(v.gemini ?? '').trim(),
-        auth: provider.auth ?? {},
-        health: provider.health ?? {},
-        tls: provider.tls ?? {},
-        enabled: v.enabled,
-      };
+      const payload = providerPayload(
+        {
+          ...provider,
+          type: v.type,
+          chat: String(v.chat ?? '').trim(),
+          responses: String(v.responses ?? '').trim(),
+          anthropic: String(v.anthropic ?? '').trim(),
+          gemini: String(v.gemini ?? '').trim(),
+          enabled: v.enabled,
+          keys: undefined,
+        },
+        { models: provider.models ?? {} },
+      );
       const keys = String(v.keys ?? '')
         .split('\n')
         .map((s) => s.trim())
@@ -200,6 +229,8 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
     }
   };
 
+  const baseURLLocked = isBaseURLLocked(provider.type);
+
   return (
     <Form
       form={form}
@@ -223,36 +254,41 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         <Tag key={k}>{k}</Tag>
       ))}
       <Divider />
-      <Form.Item name="type" label="type" rules={[{ required: true }]}>
-        <Select options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
+      <Form.Item name="type" label="type" rules={[{ required: true }]} extra="创建后不可修改">
+        <Select disabled options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
       </Form.Item>
+      {baseURLLocked ? (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+          非 generic Provider 的 API base URL 创建后锁定，只有 generic 类型可以编辑；如需更换请删除后重建。
+        </Typography.Paragraph>
+      ) : null}
       <Form.Item
         name="chat"
         label="chat base URL"
         extra="OpenAI Chat Completions 端点，通常以 /v1 结尾；留空表示不提供。"
       >
-        <Input placeholder="https://api.example.com/v1" />
+        <Input disabled={baseURLLocked} placeholder="https://api.example.com/v1" />
       </Form.Item>
       <Form.Item
         name="responses"
         label="responses base URL"
         extra="OpenAI Responses 端点，通常以 /v1 结尾；留空表示不提供。"
       >
-        <Input placeholder="https://api.example.com/v1" />
+        <Input disabled={baseURLLocked} placeholder="https://api.example.com/v1" />
       </Form.Item>
       <Form.Item
         name="anthropic"
         label="anthropic base URL"
         extra="Anthropic Messages 端点，通常是根路径；留空表示不提供。"
       >
-        <Input placeholder="https://api.example.com/anthropic" />
+        <Input disabled={baseURLLocked} placeholder="https://api.example.com/anthropic" />
       </Form.Item>
       <Form.Item
         name="gemini"
         label="gemini base URL"
         extra="Gemini API 端点，通常以 /v1beta 结尾；留空表示不提供。"
       >
-        <Input placeholder="https://generativelanguage.googleapis.com/v1beta" />
+        <Input disabled={baseURLLocked} placeholder="https://generativelanguage.googleapis.com/v1beta" />
       </Form.Item>
       <Form.Item name="keys" label="keys（留空保持不变，每行一个）">
         <Input.TextArea rows={2} placeholder="sk-..." />
@@ -434,7 +470,7 @@ export function NodeForm({
         keyPlaceholder="快速 / *"
         valuePlaceholder="deepseek-v4-flash"
         suggestions={[...logicalModels(config), '*']}
-        valueOptions={models.map(modelOption)}
+        valueOptions={enabledModels(models).map(modelOption)}
         addLabel="添加模型映射"
       />
       <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
@@ -835,6 +871,7 @@ function AddProviderModal({
         anthropic: String(v.anthropic ?? '').trim(),
         gemini: String(v.gemini ?? '').trim(),
         keys,
+        models: {},
       });
       form.resetFields();
       await onDone();
@@ -909,7 +946,7 @@ function AddProviderModal({
           <Input.TextArea rows={2} />
         </Form.Item>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          创建后在画布上为它建 Node，再在 Node 上配置模型映射。
+          创建后在画布上为它建 Node，再在 Node 上配置模型映射。type 与 API base URL 创建后锁定（generic 的 base URL 除外）。
         </Typography.Paragraph>
       </Form>
     </Modal>
@@ -973,7 +1010,7 @@ function AddNodeModal({
           keyPlaceholder="fast / *"
           valuePlaceholder="deepseek-v4-flash"
           suggestions={[...logicalModels(config), '*']}
-          valueOptions={models.map(modelOption)}
+          valueOptions={enabledModels(models).map(modelOption)}
           addLabel="添加模型映射"
         />
         <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />

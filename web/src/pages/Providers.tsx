@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Button, Drawer, Modal, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteProvider, getProviderModels, testProvider } from '../api/client';
+import { deleteProvider, getProviderModels, testProvider, updateProvider } from '../api/client';
 import type { ConfigResponse, Provider, ProviderModel } from '../api/types';
 import { ProviderForm } from './Edit';
-import { configuredAPIs, modelApiLabel, modelMeta } from './presets';
+import { configuredAPIs, modelApiLabel, modelMeta, providerPayload, toggleModelOverride } from './presets';
 import { useIsMobile } from '../components/useIsMobile';
 import { MobileCard } from '../components/MobileCard';
 
@@ -28,6 +28,31 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     setModelsBusy(true);
     try {
       setModels({ name, list: await getProviderModels(name, refresh) });
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModelsBusy(false);
+    }
+  };
+
+  const toggleModel = async (model: ProviderModel, checked: boolean) => {
+    if (!models) return;
+    const provider = config.providers.find((p) => p.name === models.name);
+    if (!provider) {
+      message.error(`未找到 Provider ${models.name}`);
+      return;
+    }
+    const disabled = !checked;
+    const next = toggleModelOverride(provider.models, model.id, disabled);
+    setModelsBusy(true);
+    try {
+      await updateProvider(provider.name, providerPayload(provider, { models: next }));
+      setModels((cur) =>
+        cur && cur.name === provider.name
+          ? { ...cur, list: cur.list.map((m) => (m.id === model.id ? { ...m, disabled } : m)) }
+          : cur,
+      );
+      await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -188,21 +213,39 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
             const meta = modelMeta(m);
             const name = m.name && m.name !== m.id ? m.name : '';
             return (
-              <div key={m.id}>
-                <Space wrap size={4}>
-                  {name ? <Typography.Text strong>{name}</Typography.Text> : null}
-                  <Typography.Text type={name ? 'secondary' : undefined} strong={!name}>
-                    {m.id}
-                  </Typography.Text>
-                  {apis ? <Tag color="blue">{apis}</Tag> : null}
-                </Space>
-                {meta.length > 0 ? (
-                  <div>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {meta.join(' · ')}
+              <div
+                key={m.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  opacity: m.disabled ? 0.55 : 1,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Space wrap size={4}>
+                    {name ? <Typography.Text strong>{name}</Typography.Text> : null}
+                    <Typography.Text type={name ? 'secondary' : undefined} strong={!name}>
+                      {m.id}
                     </Typography.Text>
-                  </div>
-                ) : null}
+                    {apis ? <Tag color="blue">{apis}</Tag> : null}
+                    {m.disabled ? <Tag>已禁用</Tag> : null}
+                  </Space>
+                  {meta.length > 0 ? (
+                    <div>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {meta.join(' · ')}
+                      </Typography.Text>
+                    </div>
+                  ) : null}
+                </div>
+                <Switch
+                  size="small"
+                  checked={!m.disabled}
+                  disabled={modelsBusy}
+                  onChange={(checked) => void toggleModel(m, checked)}
+                  aria-label={`切换 ${m.id}`}
+                />
               </div>
             );
           })}
