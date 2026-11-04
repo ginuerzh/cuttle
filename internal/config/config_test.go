@@ -525,6 +525,36 @@ routes:
 	}
 }
 
+func TestProviderModelOverridesMergeExpandedDuplicates(t *testing.T) {
+	t.Setenv("DUP_MODEL_ID", "shared-model")
+	path := writeConfig(t, `
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+    models:
+      "${DUP_MODEL_ID}":
+        disabled: false
+      "$DUP_MODEL_ID":
+        disabled: true
+`)
+	// Map iteration made the winning entry nondeterministic before the merge;
+	// repeat so a regression cannot pass by chance.
+	for i := 0; i < 20; i++ {
+		c, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := c.Providers[0]
+		if len(p.Models) != 1 {
+			t.Fatalf("models = %+v, want one merged entry", p.Models)
+		}
+		if !p.ModelDisabled("shared-model") {
+			t.Fatalf("models = %+v, want disabled:true to win the merge", p.Models)
+		}
+	}
+}
+
 func TestProviderModelOverrideUnknownField(t *testing.T) {
 	_, err := Load(writeConfig(t, `
 providers:
@@ -541,6 +571,7 @@ providers:
 }
 
 func TestProviderModelOverridesDropEmptyID(t *testing.T) {
+	t.Setenv("MODEL_ID_NOT_SET", "")
 	c, err := Load(writeConfig(t, `
 providers:
   - name: p

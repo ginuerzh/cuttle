@@ -333,7 +333,13 @@ func (c *Config) expandEnv() {
 		if len(p.Models) > 0 {
 			models := make(map[string]ModelOverride, len(p.Models))
 			for id, override := range p.Models {
-				models[ExpandEnv(id)] = override
+				id = strings.TrimSpace(ExpandEnv(id))
+				// Two YAML keys can expand to the same model ID. Merge them
+				// so disabled:true survives regardless of map iteration order.
+				if prev, ok := models[id]; ok {
+					override.Disabled = prev.Disabled || override.Disabled
+				}
+				models[id] = override
 			}
 			p.Models = models
 		}

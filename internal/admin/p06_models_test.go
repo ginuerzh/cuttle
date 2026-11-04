@@ -439,6 +439,72 @@ func TestProviderModelsMergeDisabledOverrides(t *testing.T) {
 	}
 }
 
+func TestProviderModelsShowDisabledOverridesMissingFromCatalog(t *testing.T) {
+	_, _, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	var hits atomic.Int32
+	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"current-model","name":"Current Model"}]}`)
+
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"],"models":{" removed-model ":{"disabled":true},"z-missing":{"disabled":true},"a-missing":{"disabled":true}}}`
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
+	}
+
+	models := readProviderModels(t, client, ts.URL+"/api/providers/p/models")
+	if len(models) != 4 {
+		t.Fatalf("models = %+v, want the catalog entry plus three disabled overrides", models)
+	}
+	// The upstream catalog entry must be returned unchanged.
+	if models[0].ID != "current-model" || models[0].Name != "Current Model" || models[0].Disabled {
+		t.Fatalf("catalog entry changed: %+v", models[0])
+	}
+	// Overrides absent from the catalog are appended as synthetic disabled
+	// entries, sorted by ID for deterministic responses.
+	var missing []string
+	for _, m := range models[1:] {
+		if !m.Disabled {
+			t.Fatalf("synthetic override not disabled: %+v", m)
+		}
+		missing = append(missing, m.ID)
+	}
+	if want := []string{"a-missing", "removed-model", "z-missing"}; !slices.Equal(missing, want) {
+		t.Fatalf("missing overrides = %v, want %v", missing, want)
+	}
+}
+
+func TestApplyModelOverridesAppendsMissingDisabledModels(t *testing.T) {
+	catalog := []providerModel{
+		{ID: "current-model", Name: "Current Model"},
+		{ID: " disabled-in-catalog ", Name: "Spaced"},
+	}
+	overrides := map[string]config.ModelOverride{
+		" current-model ":      {Disabled: true},
+		" disabled-in-catalog": {Disabled: true},
+		" z-removed ":          {Disabled: true},
+		"a-removed":            {Disabled: true},
+		"enabled":              {Disabled: false},
+		"   ":                  {Disabled: true},
+	}
+	got := applyModelOverrides(catalog, overrides)
+	if len(got) != 4 {
+		t.Fatalf("models = %+v, want two catalog entries plus two synthetic ones", got)
+	}
+	if got[0].ID != "current-model" || !got[0].Disabled || got[0].Name != "Current Model" {
+		t.Fatalf("catalog entry not overridden: %+v", got[0])
+	}
+	if got[1].ID != " disabled-in-catalog " || !got[1].Disabled {
+		t.Fatalf("spaced catalog entry not overridden: %+v", got[1])
+	}
+	if got[2].ID != "a-removed" || !got[2].Disabled || got[3].ID != "z-removed" || !got[3].Disabled {
+		t.Fatalf("synthetic entries = %+v, want sorted a-removed, z-removed", got[2:])
+	}
+	if catalog[0].Disabled || catalog[1].Disabled {
+		t.Fatalf("cached catalog was mutated: %+v", catalog)
+	}
+}
+
 func TestProviderViewReturnsModelOverrides(t *testing.T) {
 	_, _, _, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)

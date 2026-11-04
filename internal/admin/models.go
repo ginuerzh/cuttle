@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -174,21 +175,50 @@ func sameProviderFetch(a, b config.Provider) bool {
 }
 
 // applyModelOverrides returns a copy of models with the provider's local
-// overrides applied. The cached catalog is never modified.
+// overrides applied. Disabled overrides for models the upstream catalog no
+// longer lists are appended as synthetic entries, so the UI can still show and
+// re-enable them and route warnings can detect the skip. The cached catalog is
+// never modified.
 func applyModelOverrides(models []providerModel, overrides map[string]config.ModelOverride) []providerModel {
 	out := make([]providerModel, len(models))
 	copy(out, models)
 	if len(overrides) == 0 {
 		return out
 	}
-	for i := range out {
-		ov, ok := overrides[out[i].ID]
-		if !ok {
-			ov, ok = overrides[strings.TrimSpace(out[i].ID)]
+	normalized := make(map[string]config.ModelOverride, len(overrides))
+	for id, ov := range overrides {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
 		}
-		if ok {
+		// Merge duplicate keys that normalize to the same model ID.
+		if prev, ok := normalized[id]; ok {
+			ov.Disabled = prev.Disabled || ov.Disabled
+		}
+		normalized[id] = ov
+	}
+	seen := make(map[string]struct{}, len(out)+len(normalized))
+	for i := range out {
+		id := strings.TrimSpace(out[i].ID)
+		seen[id] = struct{}{}
+		if ov, ok := normalized[id]; ok {
 			out[i].Disabled = ov.Disabled
 		}
+	}
+	var missing []string
+	for id, ov := range normalized {
+		if !ov.Disabled {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		missing = append(missing, id)
+	}
+	slices.Sort(missing)
+	for _, id := range missing {
+		out = append(out, providerModel{ID: id, Disabled: true})
 	}
 	return out
 }

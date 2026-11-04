@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -59,7 +60,7 @@ func (s *Server) viewProvider(p config.Provider) providerView {
 		Health:      p.Health,
 		TLS:         p.TLS,
 		Enabled:     p.Enabled,
-		Models:      p.Models,
+		Models:      maps.Clone(p.Models),
 	}
 	for _, k := range p.Keys {
 		v.KeyPreviews = append(v.KeyPreviews, preview(k))

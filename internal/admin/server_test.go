@@ -719,15 +719,16 @@ func TestProviderTypeAndURLsImmutable(t *testing.T) {
 		chat      = "https://api.deepseek.com/v1"
 		responses = "https://api.deepseek.com/v1"
 		anthropic = "https://api.deepseek.com/anthropic"
+		gemini    = "https://generativelanguage.googleapis.com/v1beta"
 	)
-	body := `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}`
+	body := `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `","gemini":"` + gemini + `"}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
 	}
 	calls := rel.calls
 
-	same := `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}`
+	same := `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `","gemini":"` + gemini + `"}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", same, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("unchanged update = %d: %s", resp.StatusCode, b)
@@ -739,11 +740,23 @@ func TestProviderTypeAndURLsImmutable(t *testing.T) {
 	}{
 		{
 			name: "type",
-			body: `{"name":"p","type":"opencode-go","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}`,
+			body: `{"name":"p","type":"opencode-go","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `","gemini":"` + gemini + `"}`,
 		},
 		{
 			name: "chat url",
-			body: `{"name":"p","type":"deepseek","chat":"https://example.com/v1","responses":"` + responses + `","anthropic":"` + anthropic + `"}`,
+			body: `{"name":"p","type":"deepseek","chat":"https://example.com/chat","responses":"` + responses + `","anthropic":"` + anthropic + `","gemini":"` + gemini + `"}`,
+		},
+		{
+			name: "responses url",
+			body: `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"https://example.com/responses","anthropic":"` + anthropic + `","gemini":"` + gemini + `"}`,
+		},
+		{
+			name: "anthropic url",
+			body: `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"https://example.com/anthropic","gemini":"` + gemini + `"}`,
+		},
+		{
+			name: "gemini url",
+			body: `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `","gemini":"https://example.com/gemini"}`,
 		},
 	}
 	for _, tt := range checks {
@@ -755,7 +768,7 @@ func TestProviderTypeAndURLsImmutable(t *testing.T) {
 		})
 	}
 
-	cfg := `{"providers":[{"name":"p","type":"opencode-go","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}]}`
+	cfg := `{"providers":[{"name":"p","type":"opencode-go","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `","gemini":"` + gemini + `"}]}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", cfg, csrf); resp.StatusCode != http.StatusBadRequest {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("PUT /api/config with changed type = %d: %s, want 400", resp.StatusCode, b)
@@ -764,7 +777,7 @@ func TestProviderTypeAndURLsImmutable(t *testing.T) {
 	if rel.calls != calls+1 {
 		t.Fatalf("reload calls = %d, want %d (rejected updates must not reload)", rel.calls, calls+1)
 	}
-	if got := rel.cfg.Providers[0]; got.Type != "deepseek" || got.Chat != chat || got.Responses != responses || got.Anthropic != anthropic {
+	if got := rel.cfg.Providers[0]; got.Type != "deepseek" || got.Chat != chat || got.Responses != responses || got.Anthropic != anthropic || got.Gemini != gemini {
 		t.Fatalf("provider changed after rejected updates: %+v", got)
 	}
 }
