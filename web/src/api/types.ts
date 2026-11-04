@@ -57,6 +57,7 @@ export interface ProviderModel {
   name?: string;
   apis?: ProviderApi[];
   context?: number;
+  input?: number;
   output?: number;
   inputs?: string[];
   outputs?: string[];

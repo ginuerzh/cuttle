@@ -77,13 +77,72 @@ export function modelApiLabel(model: ProviderModel): string {
   return (model.apis ?? []).join(' · ');
 }
 
-/** Compact metadata line for a catalog entry; sections without data are omitted. */
+/** Render a token count compactly, e.g. 1000000 → "1M", 384000 → "384K". */
+export function formatContextSize(n?: number): string | null {
+  if (!n || n <= 0 || !Number.isFinite(n)) return null;
+  if (n >= 1_000_000) return `${trimUnit(n / 1_000_000)}M`;
+  if (n >= 1_000) {
+    const thousands = Math.round(n / 1_000);
+    return thousands >= 1_000 ? `${trimUnit(n / 1_000_000)}M` : `${thousands}K`;
+  }
+  return String(n);
+}
+
+/** Drop the trailing zeros of a one-decimal unit value, e.g. 1.0 → "1". */
+function trimUnit(value: number): string {
+  return String(Number(value.toFixed(1)));
+}
+
+/**
+ * Reduce modality values to their MIME top-level type and dedupe them in first
+ * appearance order: ["text", "image/jpeg", "image/png"] → "text/image".
+ */
+export function formatModalities(values?: string[]): string | null {
+  const out: string[] = [];
+  for (const value of values ?? []) {
+    const kind = (value ?? '').trim().toLowerCase().split('/')[0];
+    if (kind && !out.includes(kind)) out.push(kind);
+  }
+  return out.length > 0 ? out.join('/') : null;
+}
+
+/**
+ * Format the USD price per million tokens. The catalog serializes an
+ * unreported side as 0, so a zero side is omitted when the other side has a
+ * price; two zero sides mean the model is free.
+ */
+export function formatPrice(price?: ProviderModel['price']): string | null {
+  if (!price) return null;
+  const parts: string[] = [];
+  if (price.input) parts.push(`输入 $${price.input.toFixed(2)}/M`);
+  if (price.output) parts.push(`输出 $${price.output.toFixed(2)}/M`);
+  if (parts.length > 0) return parts.join(' · ');
+  return price.input === 0 || price.output === 0 ? '免费' : null;
+}
+
+/** Display lines for a catalog entry: size limits, modalities and price. */
 export function modelMeta(model: ProviderModel): string[] {
   const out: string[] = [];
-  if (model.context) out.push(`上下文 ${model.context}`);
-  if (model.output) out.push(`最大输出 ${model.output}`);
-  if (model.inputs?.length) out.push(`输入模态 ${model.inputs.join('/')}`);
-  if (model.outputs?.length) out.push(`输出模态 ${model.outputs.join('/')}`);
+
+  const sizes: string[] = [];
+  const context = formatContextSize(model.context);
+  if (context) sizes.push(`上下文 ${context}`);
+  const input = formatContextSize(model.input);
+  if (input) sizes.push(`输入 ${input}`);
+  const output = formatContextSize(model.output);
+  if (output) sizes.push(`输出 ${output}`);
+  if (sizes.length > 0) out.push(sizes.join(' · '));
+
+  const modalities: string[] = [];
+  const inputs = formatModalities(model.inputs);
+  if (inputs) modalities.push(`输入模态 ${inputs}`);
+  const outputs = formatModalities(model.outputs);
+  if (outputs) modalities.push(`输出模态 ${outputs}`);
+  if (modalities.length > 0) out.push(modalities.join(' · '));
+
+  const price = formatPrice(model.price);
+  if (price) out.push(`价格 ${price}`);
+
   return out;
 }
 

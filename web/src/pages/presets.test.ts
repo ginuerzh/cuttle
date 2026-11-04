@@ -5,6 +5,9 @@ import {
   derivedTargetAPI,
   disabledTargets,
   enabledModels,
+  formatContextSize,
+  formatModalities,
+  formatPrice,
   genericCanonicalNote,
   isBaseURLLocked,
   modelApiLabel,
@@ -197,11 +200,86 @@ describe('genericCanonicalNote', () => {
   });
 });
 
+describe('formatContextSize', () => {
+  it('formats K/M values and leaves small values alone', () => {
+    expect(formatContextSize(1_000_000)).toBe('1M');
+    expect(formatContextSize(384_000)).toBe('384K');
+    expect(formatContextSize(999)).toBe('999');
+    expect(formatContextSize(0)).toBeNull();
+    expect(formatContextSize(undefined)).toBeNull();
+  });
+
+  it('rounds to whole units for common context sizes', () => {
+    expect(formatContextSize(128_000)).toBe('128K');
+    expect(formatContextSize(8_192)).toBe('8K');
+  });
+});
+
+describe('formatModalities', () => {
+  it('normalizes MIME values and dedupes', () => {
+    expect(formatModalities(['text', 'image/jpeg', 'image/png'])).toBe('text/image');
+  });
+
+  it('trims, lowercases and strips MIME subtypes', () => {
+    expect(formatModalities([' Text ', 'IMAGE/JPEG', 'image/png'])).toBe('text/image');
+  });
+
+  it('returns null for empty input', () => {
+    expect(formatModalities([])).toBeNull();
+    expect(formatModalities(undefined)).toBeNull();
+  });
+});
+
+describe('formatPrice', () => {
+  it('formats input/output USD per million tokens', () => {
+    expect(formatPrice({ input: 0.15, output: 0.6 })).toBe('输入 $0.15/M · 输出 $0.60/M');
+  });
+
+  it('shows free when both sides are zero', () => {
+    expect(formatPrice({ input: 0, output: 0 })).toBe('免费');
+  });
+
+  it('omits absent sides', () => {
+    expect(formatPrice({ input: 0.15 })).toBe('输入 $0.15/M');
+    expect(formatPrice(undefined)).toBeNull();
+    expect(formatPrice({})).toBeNull();
+  });
+
+  it('omits a zero side when the other side is priced', () => {
+    expect(formatPrice({ input: 0.15, output: 0 })).toBe('输入 $0.15/M');
+    expect(formatPrice({ input: 0, output: 0.6 })).toBe('输出 $0.60/M');
+  });
+});
+
 describe('modelMeta', () => {
-  it('reports context, output and modalities when present', () => {
+  it('reports context, input, output, modalities and price when present', () => {
     expect(
-      modelMeta({ id: 'm1', context: 128000, output: 8192, inputs: ['text', 'image'], outputs: ['text'] }),
-    ).toEqual(['上下文 128000', '最大输出 8192', '输入模态 text/image', '输出模态 text']);
+      modelMeta({
+        id: 'm1',
+        context: 1_000_000,
+        input: 1_000_000,
+        output: 384_000,
+        inputs: ['text', 'image'],
+        outputs: ['text'],
+        price: { input: 0.15, output: 0.6 },
+      }),
+    ).toEqual([
+      '上下文 1M · 输入 1M · 输出 384K',
+      '输入模态 text/image · 输出模态 text',
+      '价格 输入 $0.15/M · 输出 $0.60/M',
+    ]);
+  });
+
+  it('shows only the metadata lines that have data', () => {
+    expect(
+      modelMeta({
+        id: 'm1',
+        context: 32_000,
+        input: 32_000,
+        inputs: ['text'],
+        price: { input: 0, output: 0 },
+      }),
+    ).toEqual(['上下文 32K · 输入 32K', '输入模态 text', '价格 免费']);
   });
 
   it('is empty when the catalog has no metadata', () => {
