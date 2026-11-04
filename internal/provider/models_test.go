@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -447,5 +448,224 @@ func TestNormalizeAPIsPreservesFirstSeenOrder(t *testing.T) {
 	want := []API{Anthropic, Chat, Responses}
 	if !slices.Equal(got, want) {
 		t.Fatalf("normalizeAPIs = %v, want %v", got, want)
+	}
+}
+
+func TestModelsOpenCodeMetadata(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{
+			"id":"deepseek-v4.1-flash",
+			"name":"DeepSeek V4.1 Flash",
+			"modalities":{"input":["text","image/jpeg","image/png"],"output":["text"]},
+			"limit":{"context":1000000,"input":1000000,"output":384000},
+			"cost":{"text":{"input":{"price":0.15},"output":{"price":0.6}}}
+		}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "opencode-go",
+		Type: "opencode-go",
+		Chat: srv.URL + "/v1",
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := findModel(models, "deepseek-v4.1-flash")
+	if !ok {
+		t.Fatalf("models = %+v, want deepseek-v4.1-flash", models)
+	}
+	if m.Context != 1000000 || m.Input != 1000000 || m.Output != 384000 {
+		t.Fatalf("limits = context %d, input %d, output %d, want 1000000/1000000/384000", m.Context, m.Input, m.Output)
+	}
+	if !slices.Equal(m.Inputs, []string{"text", "image"}) {
+		t.Fatalf("Inputs = %v, want [text image]", m.Inputs)
+	}
+	if !slices.Equal(m.Outputs, []string{"text"}) {
+		t.Fatalf("Outputs = %v, want [text]", m.Outputs)
+	}
+	if m.Price == nil || m.Price.Input != 0.15 || m.Price.Output != 0.6 {
+		t.Fatalf("Price = %+v, want input 0.15 output 0.6", m.Price)
+	}
+}
+
+func TestModelsMetadataLenient(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[
+			{"id":"string-price","cost":{"text":{"input":{"price":"0.25"},"output":{"price":"0.5"}}}},
+			{"id":"invalid-price","cost":{"text":{"input":{"price":"n/a"},"output":{"price":null}}}},
+			{"id":"non-finite-price","cost":{"text":{"input":{"price":"NaN"},"output":{"price":"Inf"}}}},
+			{"id":"absent"},
+			{"id":"free","cost":{"text":{"input":{"price":0},"output":{"price":0}}}}
+		]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "p",
+		Type: "generic",
+		Chat: srv.URL,
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models = %v, want lenient metadata decoding", err)
+	}
+	if len(models) != 5 {
+		t.Fatalf("models = %+v, want five", models)
+	}
+
+	stringPrice, ok := findModel(models, "string-price")
+	if !ok || stringPrice.Price == nil {
+		t.Fatalf("string-price = %+v, want a parsed price", stringPrice)
+	}
+	if stringPrice.Price.Input != 0.25 || stringPrice.Price.Output != 0.5 {
+		t.Fatalf("string-price = %+v, want input 0.25 output 0.5", stringPrice.Price)
+	}
+
+	invalid, ok := findModel(models, "invalid-price")
+	if !ok {
+		t.Fatalf("models = %+v, want invalid-price", models)
+	}
+	if invalid.Price != nil {
+		t.Fatalf("invalid-price = %+v, want no price for invalid values", invalid.Price)
+	}
+
+	nonFinite, ok := findModel(models, "non-finite-price")
+	if !ok {
+		t.Fatalf("models = %+v, want non-finite-price", models)
+	}
+	if nonFinite.Price != nil {
+		t.Fatalf("non-finite-price = %+v, want no price for NaN/Inf", nonFinite.Price)
+	}
+	if _, err := json.Marshal(models); err != nil {
+		t.Fatalf("json.Marshal(models) = %v, want a serializable catalog", err)
+	}
+
+	absent, ok := findModel(models, "absent")
+	if !ok {
+		t.Fatalf("models = %+v, want absent", models)
+	}
+	if absent.Context != 0 || absent.Input != 0 || absent.Output != 0 ||
+		absent.Inputs != nil || absent.Outputs != nil || absent.Price != nil {
+		t.Fatalf("absent = %+v, want empty metadata", absent)
+	}
+
+	free, ok := findModel(models, "free")
+	if !ok || free.Price == nil {
+		t.Fatalf("free = %+v, want a zero price rather than none", free)
+	}
+	if free.Price.Input != 0 || free.Price.Output != 0 {
+		t.Fatalf("free = %+v, want zero prices", free.Price)
+	}
+	raw, err := json.Marshal(free.Price)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(raw), `{"input":0,"output":0}`; got != want {
+		t.Fatalf("marshaled price = %s, want %s", got, want)
+	}
+}
+
+func TestModelsGeminiLimits(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"models":[
+			{"name":"models/gemini-2.5-pro","displayName":"Gemini 2.5 Pro","inputTokenLimit":1048576,"outputTokenLimit":65536},
+			{"name":"models/gemini-2.5-flash"}
+		]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name:   "p",
+		Type:   "generic",
+		Gemini: srv.URL + "/v1beta",
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pro, ok := findModel(models, "gemini-2.5-pro")
+	if !ok {
+		t.Fatalf("models = %+v, want gemini-2.5-pro", models)
+	}
+	if pro.Context != 1048576 || pro.Output != 65536 {
+		t.Fatalf("gemini limits = context %d, output %d, want 1048576/65536", pro.Context, pro.Output)
+	}
+	if pro.Input != 0 || pro.Inputs != nil || pro.Outputs != nil || pro.Price != nil {
+		t.Fatalf("gemini metadata = %+v, want only context and output", pro)
+	}
+
+	flash, ok := findModel(models, "gemini-2.5-flash")
+	if !ok {
+		t.Fatalf("models = %+v, want gemini-2.5-flash", models)
+	}
+	if flash.Context != 0 || flash.Output != 0 {
+		t.Fatalf("gemini-flash limits = context %d, output %d, want 0/0", flash.Context, flash.Output)
+	}
+}
+
+func TestModelsMergeMetadataAcrossAPIs(t *testing.T) {
+	chatSrv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("chat path = %q, want /v1/models", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"data":[{
+			"id":"shared-model",
+			"name":"Shared Model",
+			"limit":{"context":200000,"input":150000,"output":50000},
+			"cost":{"text":{"input":{"price":1.5},"output":{"price":2}}}
+		}]}`)
+	})
+	anthropicSrv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("anthropic path = %q, want /v1/models", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"data":[{
+			"id":"shared-model",
+			"modalities":{"input":["text","image/png"],"output":["text","audio/wav"]},
+			"limit":{"context":1000000,"input":1000000,"output":384000}
+		}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name:      "p",
+		Type:      "generic",
+		Chat:      chatSrv.URL + "/v1",
+		Anthropic: anthropicSrv.URL,
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("models = %+v, want one merged entry", models)
+	}
+	m := models[0]
+	if !slices.Equal(m.APIs, []API{Chat, Anthropic}) {
+		t.Fatalf("APIs = %v, want [chat anthropic]", m.APIs)
+	}
+	if m.Name != "Shared Model" {
+		t.Fatalf("Name = %q, want the first non-empty name", m.Name)
+	}
+	if m.Context != 200000 || m.Input != 150000 || m.Output != 50000 {
+		t.Fatalf("limits = context %d, input %d, output %d, want the first API's values", m.Context, m.Input, m.Output)
+	}
+	if !slices.Equal(m.Inputs, []string{"text", "image"}) {
+		t.Fatalf("Inputs = %v, want [text image]", m.Inputs)
+	}
+	if !slices.Equal(m.Outputs, []string{"text", "audio"}) {
+		t.Fatalf("Outputs = %v, want [text audio]", m.Outputs)
+	}
+	if m.Price == nil || m.Price.Input != 1.5 || m.Price.Output != 2 {
+		t.Fatalf("Price = %+v, want input 1.5 output 2", m.Price)
+	}
+}
+
+func TestNormalizeModalities(t *testing.T) {
+	got := normalizeModalities([]string{" Text ", "image/jpeg", "", "IMAGE/PNG", "text", "audio/"})
+	want := []string{"text", "image", "audio"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("normalizeModalities = %v, want %v", got, want)
+	}
+	if got := normalizeModalities(nil); got != nil {
+		t.Fatalf("normalizeModalities(nil) = %v, want nil", got)
 	}
 }

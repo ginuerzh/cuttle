@@ -26,11 +26,12 @@ const (
 // apiOrder is the canonical order used for listing and default selection.
 var apiOrder = []API{Chat, Responses, Anthropic, Gemini}
 
-// Price is the model's list price. It is reserved for a later usage/billing
-// feature and is not populated by the v1 adapters.
+// Price is the model's list price per million tokens, as reported by the
+// upstream catalog. A nil Price means the upstream reports no price; zero
+// values are meaningful (the model is free) and are always serialized.
 type Price struct {
-	Input  float64 `json:"input,omitempty"`
-	Output float64 `json:"output,omitempty"`
+	Input  float64 `json:"input"`
+	Output float64 `json:"output"`
 }
 
 // Model is one entry in a provider's model catalog.
@@ -39,6 +40,7 @@ type Model struct {
 	Name      string   `json:"name,omitempty"`
 	APIs      []API    `json:"apis,omitempty"`
 	Context   int      `json:"context,omitempty"`
+	Input     int      `json:"input,omitempty"`
 	Output    int      `json:"output,omitempty"`
 	Inputs    []string `json:"inputs,omitempty"`
 	Outputs   []string `json:"outputs,omitempty"`
