@@ -52,8 +52,8 @@ function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
     type: 'dot',
     style: { ...e.style, stroke: color, strokeWidth: width },
     markerEnd: undefined,
-    labelStyle: { fontSize: 10, fill: '#475569' },
-    labelBgStyle: { fill: '#f8fafc', fillOpacity: 0.9 },
+    labelStyle: { fontSize: 10, fill: 'var(--gw-text-muted)' },
+    labelBgStyle: { fill: 'var(--gw-edge-label-bg)', fillOpacity: 0.9 },
   } as Edge;
 }
 
@@ -149,7 +149,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
         maxZoom={1.6}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={20} color="#e2e8f0" />
+        <Background gap={20} color="var(--gw-border)" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} />
         <Panel position="top-right">

@@ -43,10 +43,10 @@ const box: React.CSSProperties = {
   borderRadius: 10,
   border: '1.5px solid',
   padding: '10px 12px',
-  background: '#fff',
+  background: 'var(--gw-surface)',
   fontSize: 12,
-  color: '#0f172a',
-  boxShadow: '0 1px 2px rgba(15,23,42,0.08)',
+  color: 'var(--gw-text)',
+  boxShadow: 'var(--gw-node-shadow)',
 };
 
 function IconBadge({ color, children }: { color: string; children: React.ReactNode }) {
@@ -74,15 +74,17 @@ function Body({ label, sub, metrics }: { label: string; sub?: string; metrics?: 
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>{label}</div>
-      {sub ? <div style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>{sub}</div> : null}
-      {metrics ? <div style={{ marginTop: 6, fontSize: 11, color: '#075985' }}>{metricsLine(metrics)}</div> : null}
+      {sub ? <div style={{ color: 'var(--gw-text-muted)', fontSize: 11, marginTop: 2 }}>{sub}</div> : null}
+      {metrics ? (
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--gw-text-metrics)' }}>{metricsLine(metrics)}</div>
+      ) : null}
     </div>
   );
 }
 
 export function AliasNode({ data }: NodeProps<GraphNode>) {
   return (
-    <div style={{ ...box, borderColor: '#6366f1', background: '#eef2ff', minWidth: 220 }}>
+    <div style={{ ...box, borderColor: '#6366f1', background: 'var(--gw-node-alias-bg)', minWidth: 220 }}>
       <IconBadge color="#6366f1">
         <TagOutlined />
       </IconBadge>
@@ -99,7 +101,7 @@ export function RouteNode({ data, selected }: NodeProps<GraphNode>) {
       style={{
         ...box,
         borderColor: selected ? '#0ea5e9' : color,
-        background: '#f0f9ff',
+        background: 'var(--gw-node-route-bg)',
         minWidth: 250,
       }}
     >
@@ -121,7 +123,7 @@ export function BindingNode({ data, selected }: NodeProps<GraphNode>) {
         ...box,
         borderStyle: data.node?.backup ? 'dashed' : 'solid',
         borderColor: selected ? '#0ea5e9' : color,
-        background: data.disabled ? '#f8fafc' : '#ecfeff',
+        background: data.disabled ? 'var(--gw-node-disabled-bg)' : 'var(--gw-node-binding-bg)',
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 220,
       }}
@@ -143,7 +145,7 @@ export function ProviderNode({ data, selected }: NodeProps<GraphNode>) {
       style={{
         ...box,
         borderColor: selected ? '#0ea5e9' : color,
-        background: data.disabled ? '#f8fafc' : '#ecfdf5',
+        background: data.disabled ? 'var(--gw-node-disabled-bg)' : 'var(--gw-node-provider-bg)',
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 230,
       }}
@@ -159,7 +161,7 @@ export function ProviderNode({ data, selected }: NodeProps<GraphNode>) {
 
 export function UnroutedNode({ data }: NodeProps<GraphNode>) {
   return (
-    <div style={{ ...box, borderColor: '#dc2626', background: '#fef2f2', minWidth: 190 }}>
+    <div style={{ ...box, borderColor: '#dc2626', background: 'var(--gw-node-unrouted-bg)', minWidth: 190 }}>
       <IconBadge color="#dc2626">
         <WarningOutlined />
       </IconBadge>

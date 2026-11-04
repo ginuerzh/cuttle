@@ -32,12 +32,12 @@ export function DotEdge({
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
+              background: 'var(--gw-edge-label-bg)',
+              border: '1px solid var(--gw-border)',
               borderRadius: 4,
               padding: '1px 4px',
               fontSize: 10,
-              color: '#475569',
+              color: 'var(--gw-text-muted)',
               pointerEvents: 'none',
               whiteSpace: 'nowrap',
             }}

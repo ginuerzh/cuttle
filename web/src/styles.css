@@ -5,6 +5,7 @@
   --gw-text: #0f172a;
   --gw-text-muted: #64748b;
   --gw-text-metrics: #075985;
+  --gw-node-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
   --gw-node-alias-bg: #eef2ff;
   --gw-node-route-bg: #f0f9ff;
   --gw-node-binding-bg: #ecfeff;
@@ -21,6 +22,7 @@
   --gw-text: #e2e8f0;
   --gw-text-muted: #94a3b8;
   --gw-text-metrics: #7dd3fc;
+  --gw-node-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   --gw-node-alias-bg: #312e81;
   --gw-node-route-bg: #0c4a6e;
   --gw-node-binding-bg: #164e63;
@@ -47,4 +49,39 @@ body {
 
 .react-flow__attribution {
   display: none;
+}
+
+/*
+ * React Flow ships its own light defaults for the controls and minimap and
+ * cannot see the antd algorithm, so theme them here. Scoped to dark mode so
+ * the light canvas keeps its current look.
+ */
+[data-theme='dark'] .react-flow__controls {
+  box-shadow: var(--gw-node-shadow);
+}
+
+[data-theme='dark'] .react-flow__controls-button {
+  background: var(--gw-surface);
+  border-bottom-color: var(--gw-border);
+  color: var(--gw-text);
+}
+
+[data-theme='dark'] .react-flow__controls-button:hover {
+  background: var(--gw-bg);
+}
+
+[data-theme='dark'] .react-flow__minimap {
+  background: var(--gw-surface);
+  border: 1px solid var(--gw-border);
+  border-radius: 4px;
+}
+
+[data-theme='dark'] .react-flow__minimap-mask {
+  fill: var(--gw-bg);
+  fill-opacity: 0.6;
+  stroke: var(--gw-border);
+}
+
+[data-theme='dark'] .react-flow__minimap-node {
+  fill: var(--gw-border);
 }
