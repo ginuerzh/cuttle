@@ -99,14 +99,20 @@ const MODALITY_TYPES = new Set(['text', 'image', 'audio', 'video']);
 /**
  * Reduce modality values to their MIME top-level type, keep only the known
  * types, and dedupe them in first appearance order:
- * ["text", "application/pdf", "image/jpeg"] → "text/image".
+ * ["text", "application/pdf", "image/jpeg"] → ["text", "image"].
  */
-export function formatModalities(values?: string[]): string | null {
+export function normalizedModalities(values?: string[]): string[] {
   const out: string[] = [];
   for (const value of values ?? []) {
     const kind = (value ?? '').trim().toLowerCase().split('/')[0].trim();
     if (MODALITY_TYPES.has(kind) && !out.includes(kind)) out.push(kind);
   }
+  return out;
+}
+
+/** Display label for modalities, e.g. "text/image". */
+export function formatModalities(values?: string[]): string | null {
+  const out = normalizedModalities(values);
   return out.length > 0 ? out.join('/') : null;
 }
 
@@ -131,7 +137,7 @@ export function formatPrice(price?: ProviderModel['price']): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-/** Display lines for a catalog entry: size limits, modalities and price. */
+/** Display lines for a catalog entry: size limits and price. */
 export function modelMeta(model: ProviderModel): string[] {
   const out: string[] = [];
 
@@ -143,13 +149,6 @@ export function modelMeta(model: ProviderModel): string[] {
   const output = formatContextSize(model.output);
   if (output) sizes.push(`输出 ${output}`);
   if (sizes.length > 0) out.push(sizes.join(' · '));
-
-  const modalities: string[] = [];
-  const inputs = formatModalities(model.inputs);
-  if (inputs) modalities.push(`输入模态 ${inputs}`);
-  const outputs = formatModalities(model.outputs);
-  if (outputs) modalities.push(`输出模态 ${outputs}`);
-  if (modalities.length > 0) out.push(modalities.join(' · '));
 
   const price = formatPrice(model.price);
   if (price) out.push(`价格 ${price}`);

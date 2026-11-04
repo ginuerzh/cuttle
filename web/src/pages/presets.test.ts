@@ -13,6 +13,7 @@ import {
   modelApiLabel,
   modelMeta,
   modelOption,
+  normalizedModalities,
   presetFormValues,
   providerPayload,
   toggleModelOverride,
@@ -235,6 +236,17 @@ describe('formatModalities', () => {
   });
 });
 
+describe('normalizedModalities', () => {
+  it('returns known types in first-seen order', () => {
+    expect(normalizedModalities(['image/png', 'text', 'IMAGE/JPEG', 'application/pdf'])).toEqual(['image', 'text']);
+  });
+
+  it('returns an empty array when nothing is known', () => {
+    expect(normalizedModalities(['application/pdf'])).toEqual([]);
+    expect(normalizedModalities(undefined)).toEqual([]);
+  });
+});
+
 describe('formatPrice', () => {
   it('formats input/output USD per million tokens', () => {
     expect(formatPrice({ input: 0.15, output: 0.6 })).toBe('输入 $0.15/M · 输出 $0.60/M');
@@ -262,7 +274,7 @@ describe('formatPrice', () => {
 });
 
 describe('modelMeta', () => {
-  it('reports context, input, output, modalities and price when present', () => {
+  it('reports context, input, output and price when present', () => {
     expect(
       modelMeta({
         id: 'm1',
@@ -273,11 +285,7 @@ describe('modelMeta', () => {
         outputs: ['text'],
         price: { input: 0.15, output: 0.6 },
       }),
-    ).toEqual([
-      '上下文 1M · 输入 1M · 输出 384K',
-      '输入模态 text/image · 输出模态 text',
-      '价格 输入 $0.15/M · 输出 $0.60/M',
-    ]);
+    ).toEqual(['上下文 1M · 输入 1M · 输出 384K', '价格 输入 $0.15/M · 输出 $0.60/M']);
   });
 
   it('shows only the metadata lines that have data', () => {
@@ -289,7 +297,7 @@ describe('modelMeta', () => {
         inputs: ['text'],
         price: { input: 0, output: 0 },
       }),
-    ).toEqual(['上下文 32K · 输入 32K', '输入模态 text', '价格 免费']);
+    ).toEqual(['上下文 32K · 输入 32K', '价格 免费']);
   });
 
   it('is empty when the catalog has no metadata', () => {

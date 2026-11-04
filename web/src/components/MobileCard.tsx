@@ -8,18 +8,20 @@ export function MobileCard({
   tags,
   actions,
   onClick,
+  dense = false,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   tags?: ReactNode;
   actions?: ReactNode;
   onClick?: () => void;
+  dense?: boolean;
 }) {
   return (
     <Card
       size="small"
-      style={{ marginBottom: 8 }}
-      styles={{ body: { padding: 12 } }}
+      style={{ marginBottom: dense ? 6 : 8 }}
+      styles={{ body: { padding: dense ? 8 : 12 } }}
       onClick={onClick}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -28,7 +30,7 @@ export function MobileCard({
             {title}
           </Typography.Text>
           {subtitle ? (
-            <div style={{ color: 'var(--gw-text-muted)', fontSize: 12, marginTop: 2, wordBreak: 'break-all' }}>{subtitle}</div>
+            <div style={{ color: 'var(--gw-text-muted)', fontSize: dense ? 11 : 12, marginTop: 2, wordBreak: 'break-all' }}>{subtitle}</div>
           ) : null}
         </div>
         {tags ? <div style={{ flex: 'none' }}>{tags}</div> : null}

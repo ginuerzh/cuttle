@@ -1,12 +1,52 @@
-import { useState } from 'react';
-import { Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd';
+import { useState, type ReactNode } from 'react';
+import { Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
+import {
+  AudioOutlined,
+  FileTextOutlined,
+  PictureOutlined,
+  VideoCameraOutlined,
+} from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteProvider, getProviderModels, testProvider, updateProvider } from '../api/client';
 import type { ConfigResponse, Provider, ProviderModel } from '../api/types';
 import { ProviderForm } from './Edit';
-import { configuredAPIs, modelApiLabel, modelMeta, providerPayload, toggleModelOverride } from './presets';
+import {
+  configuredAPIs,
+  modelApiLabel,
+  modelMeta,
+  normalizedModalities,
+  providerPayload,
+  toggleModelOverride,
+} from './presets';
 import { useIsMobile } from '../components/useIsMobile';
 import { MobileCard } from '../components/MobileCard';
+
+const MODALITY_ICONS: Record<string, { icon: ReactNode; label: string; color: string }> = {
+  text: { icon: <FileTextOutlined />, label: '文本', color: '#64748b' },
+  image: { icon: <PictureOutlined />, label: '图像', color: '#0891b2' },
+  audio: { icon: <AudioOutlined />, label: '音频', color: '#7c3aed' },
+  video: { icon: <VideoCameraOutlined />, label: '视频', color: '#db2777' },
+};
+
+function ModalityIcons({ label, values }: { label: string; values?: string[] }) {
+  const kinds = normalizedModalities(values);
+  if (kinds.length === 0) return null;
+  return (
+    <Space size={2} style={{ fontSize: 10 }}>
+      <span style={{ color: 'var(--gw-text-muted)' }}>{label}</span>
+      {kinds.map((kind) => {
+        const item = MODALITY_ICONS[kind];
+        return item ? (
+          <Tooltip key={kind} title={`${label}：${item.label}`}>
+            <span aria-label={`${label} ${item.label}`} style={{ color: item.color, display: 'inline-flex', fontSize: 11 }}>
+              {item.icon}
+            </span>
+          </Tooltip>
+        ) : null;
+      })}
+    </Space>
+  );
+}
 
 export function ProvidersPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
   const isMobile = useIsMobile();
@@ -215,29 +255,37 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
             return (
               <div key={m.id} style={{ opacity: m.disabled ? 0.55 : 1 }}>
                 <MobileCard
+                  dense
                   title={m.name || m.id}
                   subtitle={
                     <>
-                      <Typography.Text type="secondary" style={{ wordBreak: 'break-all' }}>
-                        {m.id}
-                      </Typography.Text>
-                      {apis ? (
-                        <div style={{ marginTop: 4 }}>
-                          <Tag color="blue" style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 10, wordBreak: 'break-all' }}>
+                          {m.id}
+                        </Typography.Text>
+                        {apis ? (
+                          <Tag
+                            color="blue"
+                            style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '15px', paddingInline: 4 }}
+                          >
                             {apis}
                           </Tag>
+                        ) : null}
+                      </div>
+                      {meta.length > 0 ? (
+                        <div style={{ fontSize: 10, marginTop: 2 }}>{meta.join(' · ')}</div>
+                      ) : null}
+                      {normalizedModalities(m.inputs).length + normalizedModalities(m.outputs).length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 }}>
+                          <ModalityIcons label="入" values={m.inputs} />
+                          <ModalityIcons label="出" values={m.outputs} />
                         </div>
                       ) : null}
-                      {meta.map((line) => (
-                        <div key={line} style={{ color: 'var(--gw-text-muted)', fontSize: 12 }}>
-                          {line}
-                        </div>
-                      ))}
                     </>
                   }
                   tags={
-                    <Space direction="vertical" align="end" size={4}>
-                      {m.disabled ? <Tag style={{ marginInlineEnd: 0 }}>已禁用</Tag> : null}
+                    <Space direction="vertical" align="end" size={2}>
+                      {m.disabled ? <Tag style={{ marginInlineEnd: 0, fontSize: 10 }}>已禁用</Tag> : null}
                       <Switch
                         size="small"
                         checked={!m.disabled}
