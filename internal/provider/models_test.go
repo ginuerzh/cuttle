@@ -665,7 +665,84 @@ func TestNormalizeModalities(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("normalizeModalities = %v, want %v", got, want)
 	}
+	if got := normalizeModalities([]string{"application/pdf", "text", "image/png"}); !slices.Equal(got, []string{"text", "image"}) {
+		t.Fatalf("normalizeModalities with unknown type = %v, want [text image]", got)
+	}
+	if got := normalizeModalities([]string{"image / jpeg"}); !slices.Equal(got, []string{"image"}) {
+		t.Fatalf("normalizeModalities with spaced MIME = %v, want [image]", got)
+	}
 	if got := normalizeModalities(nil); got != nil {
 		t.Fatalf("normalizeModalities(nil) = %v, want nil", got)
+	}
+}
+
+func TestModelsPriceMaterialization(t *testing.T) {
+	tests := []struct {
+		name string
+		cost string
+		want *Price
+	}{
+		{name: "input-only zero", cost: `{"text":{"input":{"price":0}}}`, want: nil},
+		{name: "output-only zero", cost: `{"text":{"output":{"price":0}}}`, want: nil},
+		{name: "both zero", cost: `{"text":{"input":{"price":0},"output":{"price":0}}}`, want: &Price{}},
+		{name: "input-only priced", cost: `{"text":{"input":{"price":1.25}}}`, want: &Price{Input: 1.25}},
+		{name: "output-only priced", cost: `{"text":{"output":{"price":2.5}}}`, want: &Price{Output: 2.5}},
+		{name: "zero input with priced output", cost: `{"text":{"input":{"price":0},"output":{"price":2.5}}}`, want: &Price{Output: 2.5}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"data":[{"id":"priced-model","cost":%s}]}`, tt.cost)
+			})
+			p := mustProvider(t, config.Provider{
+				Name: "p",
+				Type: "generic",
+				Chat: srv.URL,
+			})
+
+			models, err := p.Models(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := models[0].Price
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("Price = %+v, want no price for a single-sided zero", got)
+				}
+				return
+			}
+			if got == nil || *got != *tt.want {
+				t.Fatalf("Price = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestModelsWrongShapedMetadataContainers(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{
+			"id":"odd-metadata",
+			"modalities":"text",
+			"limit":[],
+			"cost":[]
+		}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "p",
+		Type: "generic",
+		Chat: srv.URL,
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models = %v, want wrong-shaped optional containers to be ignored", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("models = %+v, want one", models)
+	}
+	m := models[0]
+	if m.Context != 0 || m.Input != 0 || m.Output != 0 ||
+		m.Inputs != nil || m.Outputs != nil || m.Price != nil {
+		t.Fatalf("model = %+v, want no metadata from wrong-shaped containers", m)
 	}
 }

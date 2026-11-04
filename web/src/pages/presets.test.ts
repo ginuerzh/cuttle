@@ -212,6 +212,7 @@ describe('formatContextSize', () => {
   it('rounds to whole units for common context sizes', () => {
     expect(formatContextSize(128_000)).toBe('128K');
     expect(formatContextSize(8_192)).toBe('8K');
+    expect(formatContextSize(999_500)).toBe('1M');
   });
 });
 
@@ -222,6 +223,10 @@ describe('formatModalities', () => {
 
   it('trims, lowercases and strips MIME subtypes', () => {
     expect(formatModalities([' Text ', 'IMAGE/JPEG', 'image/png'])).toBe('text/image');
+  });
+
+  it('drops unknown top-level types but keeps known ones', () => {
+    expect(formatModalities(['text', 'application/pdf', 'image / jpeg'])).toBe('text/image');
   });
 
   it('returns null for empty input', () => {
@@ -248,6 +253,11 @@ describe('formatPrice', () => {
   it('omits a zero side when the other side is priced', () => {
     expect(formatPrice({ input: 0.15, output: 0 })).toBe('输入 $0.15/M');
     expect(formatPrice({ input: 0, output: 0.6 })).toBe('输出 $0.60/M');
+  });
+
+  it('treats a lone zero side as unreported rather than free', () => {
+    expect(formatPrice({ input: 0 })).toBeNull();
+    expect(formatPrice({ output: 0 })).toBeNull();
   });
 });
 

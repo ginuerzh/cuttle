@@ -260,7 +260,11 @@ func (m openAIModelJSON) toItem() modelItem {
 	if len(m.Cost) > 0 {
 		_ = json.Unmarshal(m.Cost, &cost)
 	}
-	if in, out := cost.Text.Input.Price, cost.Text.Output.Price; in.Valid || out.Valid {
+	in, out := cost.Text.Input.Price, cost.Text.Output.Price
+	// A single reported zero side is treated as unreported: it cannot be
+	// distinguished from a missing side. Both sides reported means a real
+	// price, including the free 0/0 case; a lone non-zero side is real too.
+	if (in.Valid && out.Valid) || (in.Valid && in.Value != 0) || (out.Valid && out.Value != 0) {
 		item.Price = &Price{Input: in.Value, Output: out.Value}
 	}
 	return item
@@ -315,8 +319,8 @@ func decodeModels(r io.Reader, api API) ([]modelItem, error) {
 }
 
 // normalizeModalities lowercases modality names, reduces MIME values to their
-// top-level type ("image/jpeg" -> "image"), drops empty entries, and removes
-// duplicates in first-seen order.
+// allowed top-level type ("image / jpeg" -> "image"), drops unknown types and
+// empty entries, and removes duplicates in first-seen order.
 func normalizeModalities(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -328,7 +332,12 @@ func normalizeModalities(values []string) []string {
 		if i := strings.IndexByte(value, '/'); i >= 0 {
 			value = strings.TrimSpace(value[:i])
 		}
-		if value == "" || seen[value] {
+		switch value {
+		case "text", "image", "audio", "video":
+		default:
+			continue
+		}
+		if seen[value] {
 			continue
 		}
 		seen[value] = true

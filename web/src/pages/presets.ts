@@ -93,31 +93,42 @@ function trimUnit(value: number): string {
   return String(Number(value.toFixed(1)));
 }
 
+/** Top-level modality types the UI knows how to display. */
+const MODALITY_TYPES = new Set(['text', 'image', 'audio', 'video']);
+
 /**
- * Reduce modality values to their MIME top-level type and dedupe them in first
- * appearance order: ["text", "image/jpeg", "image/png"] → "text/image".
+ * Reduce modality values to their MIME top-level type, keep only the known
+ * types, and dedupe them in first appearance order:
+ * ["text", "application/pdf", "image/jpeg"] → "text/image".
  */
 export function formatModalities(values?: string[]): string | null {
   const out: string[] = [];
   for (const value of values ?? []) {
-    const kind = (value ?? '').trim().toLowerCase().split('/')[0];
-    if (kind && !out.includes(kind)) out.push(kind);
+    const kind = (value ?? '').trim().toLowerCase().split('/')[0].trim();
+    if (MODALITY_TYPES.has(kind) && !out.includes(kind)) out.push(kind);
   }
   return out.length > 0 ? out.join('/') : null;
 }
 
 /**
- * Format the USD price per million tokens. The catalog serializes an
- * unreported side as 0, so a zero side is omitted when the other side has a
- * price; two zero sides mean the model is free.
+ * Format the USD price per million tokens. A lone zero side is treated as
+ * unreported because it cannot be distinguished from a missing side; two zero
+ * sides mean the model is free. A zero side next to a priced side is omitted.
  */
 export function formatPrice(price?: ProviderModel['price']): string | null {
   if (!price) return null;
+  const hasInput = typeof price.input === 'number';
+  const hasOutput = typeof price.output === 'number';
+  if (!hasInput && !hasOutput) return null;
+  if (hasInput && hasOutput && price.input === 0 && price.output === 0) return '免费';
   const parts: string[] = [];
-  if (price.input) parts.push(`输入 $${price.input.toFixed(2)}/M`);
-  if (price.output) parts.push(`输出 $${price.output.toFixed(2)}/M`);
-  if (parts.length > 0) return parts.join(' · ');
-  return price.input === 0 || price.output === 0 ? '免费' : null;
+  if (typeof price.input === 'number' && price.input !== 0) {
+    parts.push(`输入 $${price.input.toFixed(2)}/M`);
+  }
+  if (typeof price.output === 'number' && price.output !== 0) {
+    parts.push(`输出 $${price.output.toFixed(2)}/M`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** Display lines for a catalog entry: size limits, modalities and price. */

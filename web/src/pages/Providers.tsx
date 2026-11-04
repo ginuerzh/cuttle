@@ -208,7 +208,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
         }
         onCancel={() => setModels(null)}
       >
-        <div style={{ width: '100%', maxHeight: 480, overflowY: 'auto' }}>
+        <div style={{ width: '100%', maxHeight: 'min(480px, 60dvh)', overflowY: 'auto' }}>
           {models?.list.map((m) => {
             const apis = modelApiLabel(m);
             const meta = modelMeta(m);

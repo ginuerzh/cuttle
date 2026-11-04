@@ -27,8 +27,11 @@ const (
 var apiOrder = []API{Chat, Responses, Anthropic, Gemini}
 
 // Price is the model's list price per million tokens, as reported by the
-// upstream catalog. A nil Price means the upstream reports no price; zero
-// values are meaningful (the model is free) and are always serialized.
+// upstream catalog. A nil Price means the upstream reports no price, or only
+// reports a single zero side, which is indistinguishable from "not reported".
+// A non-nil Price means at least one side is genuinely priced, or both sides
+// are reported: zero values are meaningful (the model is free) and are always
+// serialized.
 type Price struct {
 	Input  float64 `json:"input"`
 	Output float64 `json:"output"`
