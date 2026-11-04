@@ -1,3 +1,35 @@
+:root {
+  --gw-bg: #f8fafc;
+  --gw-surface: #fff;
+  --gw-border: #e2e8f0;
+  --gw-text: #0f172a;
+  --gw-text-muted: #64748b;
+  --gw-text-metrics: #075985;
+  --gw-node-alias-bg: #eef2ff;
+  --gw-node-route-bg: #f0f9ff;
+  --gw-node-binding-bg: #ecfeff;
+  --gw-node-provider-bg: #ecfdf5;
+  --gw-node-unrouted-bg: #fef2f2;
+  --gw-node-disabled-bg: #f8fafc;
+  --gw-edge-label-bg: #f8fafc;
+}
+
+[data-theme='dark'] {
+  --gw-bg: #0f172a;
+  --gw-surface: #1e293b;
+  --gw-border: #334155;
+  --gw-text: #e2e8f0;
+  --gw-text-muted: #94a3b8;
+  --gw-text-metrics: #7dd3fc;
+  --gw-node-alias-bg: #312e81;
+  --gw-node-route-bg: #0c4a6e;
+  --gw-node-binding-bg: #164e63;
+  --gw-node-provider-bg: #064e3b;
+  --gw-node-unrouted-bg: #7f1d1d;
+  --gw-node-disabled-bg: #172033;
+  --gw-edge-label-bg: #1e293b;
+}
+
 html,
 body,
 #root {
@@ -8,7 +40,9 @@ body,
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     'Noto Sans', sans-serif;
-  background: #f8fafc;
+  background: var(--gw-bg);
+  color: var(--gw-text);
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .react-flow__attribution {
