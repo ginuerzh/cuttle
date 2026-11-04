@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-gost/llm-gw/internal/config"
@@ -104,7 +105,7 @@ func (s *Server) loadModels(ctx context.Context, p config.Provider, name string,
 		resultErr    error
 	)
 
-	if current, ok := s.providerLocked(name); !ok || !reflect.DeepEqual(current, p) {
+	if current, ok := s.providerLocked(name); !ok || !sameProviderFetch(current, p) {
 		if err == nil {
 			resultModels, resultAt = models, now
 		} else {
@@ -147,7 +148,9 @@ func (s *Server) providerLocked(name string) (config.Provider, bool) {
 }
 
 // invalidateModelsLocked drops cache entries whose provider was removed or
-// whose configuration changed. Callers must hold s.mu.
+// whose upstream configuration changed. A change to Models alone keeps the
+// cache: overrides are local policy and never affect the catalog. Callers must
+// hold s.mu.
 func (s *Server) invalidateModelsLocked(next *config.Config) {
 	nextByName := make(map[string]config.Provider, len(next.Providers))
 	for _, p := range next.Providers {
@@ -155,10 +158,39 @@ func (s *Server) invalidateModelsLocked(next *config.Config) {
 	}
 	for _, p := range s.cfg.Providers {
 		updated, ok := nextByName[p.Name]
-		if !ok || !reflect.DeepEqual(p, updated) {
+		if !ok || !sameProviderFetch(p, updated) {
 			delete(s.modelsCache, p.Name)
 		}
 	}
+}
+
+// sameProviderFetch reports whether two provider snapshots would fetch the
+// same upstream catalog. Local model overrides are ignored so toggling a
+// model's disabled flag reuses the cached catalog.
+func sameProviderFetch(a, b config.Provider) bool {
+	a.Models = nil
+	b.Models = nil
+	return reflect.DeepEqual(a, b)
+}
+
+// applyModelOverrides returns a copy of models with the provider's local
+// overrides applied. The cached catalog is never modified.
+func applyModelOverrides(models []providerModel, overrides map[string]config.ModelOverride) []providerModel {
+	out := make([]providerModel, len(models))
+	copy(out, models)
+	if len(overrides) == 0 {
+		return out
+	}
+	for i := range out {
+		ov, ok := overrides[out[i].ID]
+		if !ok {
+			ov, ok = overrides[strings.TrimSpace(out[i].ID)]
+		}
+		if ok {
+			out[i].Disabled = ov.Disabled
+		}
+	}
+	return out
 }
 
 // formatFetchedAt renders a catalog timestamp for the response header.

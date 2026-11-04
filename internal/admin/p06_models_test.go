@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/provider"
 )
 
@@ -400,5 +401,118 @@ func TestProviderModelsUpstreamError(t *testing.T) {
 	if resp.StatusCode != http.StatusBadGateway {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("models without last-good = %d: %s, want 502", resp.StatusCode, b)
+	}
+}
+
+func TestProviderModelsMergeDisabledOverrides(t *testing.T) {
+	s, _, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	var hits atomic.Int32
+	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model","name":"Chat Model"}]}`)
+
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"],"models":{"chat-model":{"disabled":true}}}`
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
+	}
+
+	models := readProviderModels(t, client, ts.URL+"/api/providers/p/models")
+	if len(models) != 1 || models[0].ID != "chat-model" || !models[0].Disabled {
+		t.Fatalf("models = %+v, want chat-model with Disabled=true", models)
+	}
+
+	// The cache must keep the raw upstream catalog; the overlay belongs to
+	// the response only.
+	s.mu.Lock()
+	cached := s.modelsCache["p"].models
+	s.mu.Unlock()
+	if len(cached) != 1 || cached[0].Disabled {
+		t.Fatalf("cached catalog was mutated by the overlay: %+v", cached)
+	}
+
+	if got := readProviderModels(t, client, ts.URL+"/api/providers/p/models?refresh=1"); len(got) != 1 || !got[0].Disabled {
+		t.Fatalf("refreshed models = %+v, want chat-model with Disabled=true", got)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("upstream hits = %d, want 2 (initial + refresh)", got)
+	}
+}
+
+func TestProviderViewReturnsModelOverrides(t *testing.T) {
+	_, _, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	body := `{"name":"p","type":"generic","chat":"https://api.example.com/v1","models":{"chat-model":{"disabled":true}}}`
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
+	}
+
+	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/providers/p", "", "")
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("get provider = %d: %s", resp.StatusCode, b)
+	}
+	var view map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := view["models"]
+	if !ok {
+		t.Fatalf("provider view has no models field: %v", view)
+	}
+	var overrides map[string]config.ModelOverride
+	if err := json.Unmarshal(raw, &overrides); err != nil {
+		t.Fatal(err)
+	}
+	if ov, ok := overrides["chat-model"]; !ok || !ov.Disabled {
+		t.Fatalf("models = %+v, want chat-model disabled", overrides)
+	}
+}
+
+func TestProviderModelsKeepCacheOnModelOverrideChange(t *testing.T) {
+	_, _, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	var hits atomic.Int32
+	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
+
+	base := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", base, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
+	}
+	if got := readProviderModels(t, client, ts.URL+"/api/providers/p/models"); len(got) != 1 || got[0].Disabled {
+		t.Fatalf("initial models = %+v", got)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1", got)
+	}
+
+	disable := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"],"models":{"chat-model":{"disabled":true}}}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", disable, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("disable model = %d: %s", resp.StatusCode, b)
+	}
+	if got := readProviderModels(t, client, ts.URL+"/api/providers/p/models"); len(got) != 1 || !got[0].Disabled {
+		t.Fatalf("models after disable = %+v", got)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1 after a model-only update cleared the cache", got)
+	}
+
+	// Enabling again through the raw config endpoint must also reuse the
+	// cached catalog.
+	enable := `{"providers":[{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}]}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", enable, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("put config = %d: %s", resp.StatusCode, b)
+	}
+	if got := readProviderModels(t, client, ts.URL+"/api/providers/p/models"); len(got) != 1 || got[0].Disabled {
+		t.Fatalf("models after enable = %+v", got)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1 after re-enabling a model", got)
 	}
 }

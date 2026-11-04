@@ -14,19 +14,20 @@ import (
 )
 
 type providerView struct {
-	Name        string        `json:"name"`
-	Type        string        `json:"type"`
-	Chat        string        `json:"chat,omitempty"`
-	Responses   string        `json:"responses,omitempty"`
-	Anthropic   string        `json:"anthropic,omitempty"`
-	Gemini      string        `json:"gemini,omitempty"`
-	KeysSet     int           `json:"keysSet"`
-	KeyPreviews []string      `json:"keyPreviews"`
-	Auth        config.Auth   `json:"auth"`
-	Health      config.Health `json:"health"`
-	TLS         config.TLS    `json:"tls"`
-	Enabled     *bool         `json:"enabled,omitempty"`
-	Probe       *probeResult  `json:"probe,omitempty"`
+	Name        string                          `json:"name"`
+	Type        string                          `json:"type"`
+	Chat        string                          `json:"chat,omitempty"`
+	Responses   string                          `json:"responses,omitempty"`
+	Anthropic   string                          `json:"anthropic,omitempty"`
+	Gemini      string                          `json:"gemini,omitempty"`
+	KeysSet     int                             `json:"keysSet"`
+	KeyPreviews []string                        `json:"keyPreviews"`
+	Auth        config.Auth                     `json:"auth"`
+	Health      config.Health                   `json:"health"`
+	TLS         config.TLS                      `json:"tls"`
+	Enabled     *bool                           `json:"enabled,omitempty"`
+	Models      map[string]config.ModelOverride `json:"models,omitempty"`
+	Probe       *probeResult                    `json:"probe,omitempty"`
 }
 
 type configView struct {
@@ -58,6 +59,7 @@ func (s *Server) viewProvider(p config.Provider) providerView {
 		Health:      p.Health,
 		TLS:         p.TLS,
 		Enabled:     p.Enabled,
+		Models:      p.Models,
 	}
 	for _, k := range p.Keys {
 		v.KeyPreviews = append(v.KeyPreviews, preview(k))
@@ -94,6 +96,9 @@ func (s *Server) replaceLocked(c *config.Config) error {
 	if err := config.Validate(c); err != nil {
 		return err
 	}
+	if err := validateProviderImmutability(s.cfg, c); err != nil {
+		return err
+	}
 	if err := s.reloader.Reload(c); err != nil {
 		return err
 	}
@@ -114,6 +119,46 @@ func (s *Server) mutate(fn func(*config.Config) error) error {
 		return err
 	}
 	return s.replaceLocked(c)
+}
+
+// validateProviderImmutability rejects provider identity changes through the
+// management API. A provider's type is fixed after creation, and so are the
+// API base URLs of non-generic providers; operators must delete and recreate
+// the provider instead. New and deleted providers are always allowed.
+func validateProviderImmutability(old, next *config.Config) error {
+	if old == nil || next == nil {
+		return nil
+	}
+
+	nextByName := make(map[string]config.Provider, len(next.Providers))
+	for _, p := range next.Providers {
+		nextByName[p.Name] = p
+	}
+
+	for _, prev := range old.Providers {
+		updated, ok := nextByName[prev.Name]
+		if !ok {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(prev.Type), strings.TrimSpace(updated.Type)) {
+			return fmt.Errorf("provider %q: type cannot change after creation; delete and recreate it", prev.Name)
+		}
+		if strings.EqualFold(strings.TrimSpace(prev.Type), "generic") {
+			continue
+		}
+		if !sameBaseURL(prev.Chat, updated.Chat) ||
+			!sameBaseURL(prev.Responses, updated.Responses) ||
+			!sameBaseURL(prev.Anthropic, updated.Anthropic) ||
+			!sameBaseURL(prev.Gemini, updated.Gemini) {
+			return fmt.Errorf("provider %q: base URL cannot change after creation for type %q", prev.Name, prev.Type)
+		}
+	}
+	return nil
+}
+
+// sameBaseURL compares base URLs ignoring surrounding whitespace.
+func sameBaseURL(a, b string) bool {
+	return strings.TrimSpace(a) == strings.TrimSpace(b)
 }
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
@@ -301,6 +346,18 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+
+	// Read the current overrides after the fetch: the provider may have been
+	// edited while the upstream call was in flight.
+	s.mu.Lock()
+	p, ok := s.providerLocked(name)
+	s.mu.Unlock()
+	if !ok {
+		writeError(w, http.StatusNotFound, errProviderNotFound.Error())
+		return
+	}
+	models = applyModelOverrides(models, p.Models)
+
 	if at := formatFetchedAt(fetchedAt); at != "" {
 		w.Header().Set("X-Models-Fetched-At", at)
 	}

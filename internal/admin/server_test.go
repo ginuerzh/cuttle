@@ -710,3 +710,107 @@ func TestLogoutDeletesPersistedSession(t *testing.T) {
 		t.Fatalf("persisted sessions = %d, want 0", len(saved))
 	}
 }
+
+func TestProviderTypeAndURLsImmutable(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	const (
+		chat      = "https://api.deepseek.com/v1"
+		responses = "https://api.deepseek.com/v1"
+		anthropic = "https://api.deepseek.com/anthropic"
+	)
+	body := `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}`
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
+	}
+	calls := rel.calls
+
+	same := `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", same, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("unchanged update = %d: %s", resp.StatusCode, b)
+	}
+
+	checks := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "type",
+			body: `{"name":"p","type":"opencode-go","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}`,
+		},
+		{
+			name: "chat url",
+			body: `{"name":"p","type":"deepseek","chat":"https://example.com/v1","responses":"` + responses + `","anthropic":"` + anthropic + `"}`,
+		},
+	}
+	for _, tt := range checks {
+		t.Run(tt.name, func(t *testing.T) {
+			if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", tt.body, csrf); resp.StatusCode != http.StatusBadRequest {
+				b, _ := io.ReadAll(resp.Body)
+				t.Fatalf("update with changed %s = %d: %s, want 400", tt.name, resp.StatusCode, b)
+			}
+		})
+	}
+
+	cfg := `{"providers":[{"name":"p","type":"opencode-go","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `"}]}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", cfg, csrf); resp.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("PUT /api/config with changed type = %d: %s, want 400", resp.StatusCode, b)
+	}
+
+	if rel.calls != calls+1 {
+		t.Fatalf("reload calls = %d, want %d (rejected updates must not reload)", rel.calls, calls+1)
+	}
+	if got := rel.cfg.Providers[0]; got.Type != "deepseek" || got.Chat != chat || got.Responses != responses || got.Anthropic != anthropic {
+		t.Fatalf("provider changed after rejected updates: %+v", got)
+	}
+}
+
+func TestGenericProviderURLsRemainEditable(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	body := `{"name":"p","type":"generic","chat":"https://api.example.com/v1"}`
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
+	}
+
+	changed := `{"name":"p","type":"generic","chat":"https://api.example.com/v2"}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", changed, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("generic url update = %d: %s", resp.StatusCode, b)
+	}
+	if got := rel.cfg.Providers[0].Chat; got != "https://api.example.com/v2" {
+		t.Fatalf("chat = %q, want the edited generic URL", got)
+	}
+
+	retype := `{"name":"p","type":"deepseek","chat":"https://api.example.com/v2"}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", retype, csrf); resp.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("generic type change = %d: %s, want 400", resp.StatusCode, b)
+	}
+	if got := rel.cfg.Providers[0].Type; got != "generic" {
+		t.Fatalf("type = %q, want generic after the rejected change", got)
+	}
+}
+
+func TestProviderImmutabilityIgnoresTypeCaseAndSpace(t *testing.T) {
+	old := &config.Config{Providers: []config.Provider{
+		{Name: "p", Type: "deepseek", Chat: "https://api.deepseek.com/v1"},
+	}}
+	next := &config.Config{Providers: []config.Provider{
+		{Name: "p", Type: " DeepSeek ", Chat: " https://api.deepseek.com/v1 "},
+	}}
+	if err := validateProviderImmutability(old, next); err != nil {
+		t.Fatalf("case/space-only change rejected: %v", err)
+	}
+
+	next.Providers[0].Chat = "https://api.deepseek.com/v2"
+	if err := validateProviderImmutability(old, next); err == nil {
+		t.Fatal("changed base URL must be rejected for a non-generic provider")
+	}
+}
