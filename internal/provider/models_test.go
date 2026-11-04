@@ -387,6 +387,61 @@ func TestModelsIntersectAPIsWithConfiguredBases(t *testing.T) {
 	}
 }
 
+func TestModelsOpenCodeCatalogIsKeyless(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			http.Error(w, `{"error":{"message":"Invalid credential"}}`, http.StatusUnauthorized)
+			return
+		}
+		if got := r.Header.Get("x-api-key"); got != "" {
+			t.Errorf("x-api-key = %q, want empty for a keyless catalog", got)
+		}
+		if got := r.Header.Get("X-Org"); got != "acme" {
+			t.Errorf("X-Org = %q, want acme", got)
+		}
+		fmt.Fprint(w, `{"data":[{"id":"deepseek-v4-flash"}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "opencode-go",
+		Type: "opencode-go",
+		Chat: srv.URL + "/v1",
+		Keys: []string{"invalid-key"},
+		Auth: config.Auth{Extra: map[string]string{"X-Org": "acme"}},
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models = %v, want a keyless catalog", err)
+	}
+	if len(models) != 1 || models[0].ID != "deepseek-v4-flash" {
+		t.Fatalf("models = %+v", models)
+	}
+}
+
+func TestModelsOpenCodeKeylessHonorsExplicitAuthHeader(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			http.Error(w, "unexpected bearer auth", http.StatusUnauthorized)
+			return
+		}
+		if got := r.Header.Get("X-Custom"); got != "Token invalid-key" {
+			t.Errorf("X-Custom = %q, want the configured full override", got)
+		}
+		fmt.Fprint(w, `{"data":[{"id":"deepseek-v4-flash"}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "opencode-go",
+		Type: "opencode-go",
+		Chat: srv.URL + "/v1",
+		Keys: []string{"invalid-key"},
+		Auth: config.Auth{Header: "X-Custom", Prefix: "Token "},
+	})
+
+	if _, err := p.Models(context.Background()); err != nil {
+		t.Fatalf("Models = %v, want the explicit auth header honored", err)
+	}
+}
+
 func TestNormalizeAPIsPreservesFirstSeenOrder(t *testing.T) {
 	got := normalizeAPIs([]API{Anthropic, Chat, Anthropic, Responses})
 	want := []API{Anthropic, Chat, Responses}

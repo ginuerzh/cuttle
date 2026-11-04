@@ -11,3 +11,5 @@ func (genericAdapter) classify(string) []API { return nil }
 func (genericAdapter) auth(api API) config.Auth { return defaultAuth(api) }
 
 func (genericAdapter) listAll() bool { return true }
+
+func (genericAdapter) keylessCatalog() bool { return false }

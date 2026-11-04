@@ -17,3 +17,5 @@ func (deepSeekAdapter) classify(id string) []API {
 func (deepSeekAdapter) auth(api API) config.Auth { return defaultAuth(api) }
 
 func (deepSeekAdapter) listAll() bool { return false }
+
+func (deepSeekAdapter) keylessCatalog() bool { return false }

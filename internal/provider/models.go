@@ -112,6 +112,9 @@ func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([
 	if len(p.cfg.Keys) > 0 {
 		key = p.cfg.Keys[0]
 	}
+	if p.CatalogKeyless() {
+		key = ""
+	}
 	applyAuth(req, p.Auth(api), key)
 	ApplyAnthropicVersion(req, api)
 

@@ -320,6 +320,27 @@ func TestProbeProvider(t *testing.T) {
 	}
 }
 
+func TestProbeProviderOpenCodeCatalogIsKeyless(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			http.Error(w, "invalid credential", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer up.Close()
+
+	p := config.Provider{
+		Name: "opencode-go",
+		Type: "opencode-go",
+		Chat: up.URL + "/v1",
+		Keys: []string{"invalid-key"},
+	}
+	if res := probeHTTP(context.Background(), p); !res.OK || res.Error != "" {
+		t.Fatalf("probe = %+v, want a keyless catalog", res)
+	}
+}
+
 func TestProbeProviderAnthropicAPI(t *testing.T) {
 	s, _, _, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)

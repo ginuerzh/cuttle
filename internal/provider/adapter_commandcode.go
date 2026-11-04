@@ -25,3 +25,5 @@ func (commandCodeAdapter) classify(id string) []API {
 func (commandCodeAdapter) auth(API) config.Auth { return bearerAuth() }
 
 func (commandCodeAdapter) listAll() bool { return false }
+
+func (commandCodeAdapter) keylessCatalog() bool { return false }

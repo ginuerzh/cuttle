@@ -61,6 +61,10 @@ type Provider interface {
 	// prefix, keyHeaders and extra are merged onto the adapter default; a
 	// non-empty Header replaces the adapter default entirely.
 	Auth(api API) config.Auth
+	// CatalogKeyless reports whether the model catalog endpoint is public and
+	// works without credentials. It is false when an explicit auth header is
+	// configured, because that is a deliberate override.
+	CatalogKeyless() bool
 }
 
 // adapter supplies the vendor-specific classification and auth behavior.
@@ -68,6 +72,9 @@ type adapter interface {
 	classify(id string) []API
 	auth(api API) config.Auth
 	listAll() bool
+	// keylessCatalog reports whether the model catalog is public. Key-derived
+	// credentials are omitted, but configured extra headers still apply.
+	keylessCatalog() bool
 }
 
 type baseProvider struct {
@@ -143,6 +150,10 @@ func (p *baseProvider) BaseURL(api API) (string, bool) {
 	}
 	raw = strings.TrimSpace(raw)
 	return raw, raw != ""
+}
+
+func (p *baseProvider) CatalogKeyless() bool {
+	return p.cfg.Auth.Header == "" && p.adapter.keylessCatalog()
 }
 
 func (p *baseProvider) Auth(api API) config.Auth {

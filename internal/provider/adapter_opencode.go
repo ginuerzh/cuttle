@@ -20,3 +20,8 @@ func (openCodeAdapter) classify(id string) []API {
 func (openCodeAdapter) auth(api API) config.Auth { return openCodeAuth(api) }
 
 func (openCodeAdapter) listAll() bool { return false }
+
+// keylessCatalog: OpenCode's catalog endpoints are public. They also reject an
+// invalid bearer token even though the catalog needs no auth, so sending a
+// configured placeholder key would break model discovery.
+func (openCodeAdapter) keylessCatalog() bool { return true }

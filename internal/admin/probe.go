@@ -59,7 +59,7 @@ func (s *Server) ProbeOnce(ctx context.Context) {
 }
 
 func probeHTTP(ctx context.Context, p config.Provider) probeResult {
-	base, api, auth, ok := probeTarget(p)
+	base, api, auth, keyless, ok := probeTarget(p)
 	if !ok {
 		return probeResult{Error: "no provider base URL configured"}
 	}
@@ -75,7 +75,7 @@ func probeHTTP(ctx context.Context, p config.Provider) probeResult {
 		return probeResult{Error: err.Error()}
 	}
 	key := ""
-	if len(p.Keys) > 0 {
+	if len(p.Keys) > 0 && !keyless {
 		key = p.Keys[0]
 	}
 	applyAuthConfig(req, auth, key)
@@ -102,26 +102,26 @@ func probeHTTP(ctx context.Context, p config.Provider) probeResult {
 	return res
 }
 
-// probeTarget returns the base URL, API and auth used for a provider health
-// check: health.api when set, otherwise the first configured API in canonical
-// order.
-func probeTarget(p config.Provider) (string, provider.API, config.Auth, bool) {
+// probeTarget returns the base URL, API, auth and catalog mode used for a
+// provider health check: health.api when set, otherwise the first configured
+// API in canonical order.
+func probeTarget(p config.Provider) (string, provider.API, config.Auth, bool, bool) {
 	prov, err := provider.New(p)
 	if err != nil {
-		return "", "", config.Auth{}, false
+		return "", "", config.Auth{}, false, false
 	}
 	if raw := strings.TrimSpace(p.Health.API); raw != "" {
 		api := provider.API(strings.ToLower(raw))
 		if base, ok := prov.BaseURL(api); ok {
-			return base, api, prov.Auth(api), true
+			return base, api, prov.Auth(api), prov.CatalogKeyless(), true
 		}
 	}
 	for _, api := range []provider.API{provider.Chat, provider.Responses, provider.Anthropic, provider.Gemini} {
 		if base, ok := prov.BaseURL(api); ok {
-			return base, api, prov.Auth(api), true
+			return base, api, prov.Auth(api), prov.CatalogKeyless(), true
 		}
 	}
-	return "", "", config.Auth{}, false
+	return "", "", config.Auth{}, false, false
 }
 
 // probeURL builds the health-check URL. A configured health.path is appended
