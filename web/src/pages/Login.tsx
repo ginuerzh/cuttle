@@ -24,7 +24,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#f1f5f9',
+        background: 'var(--gw-bg)',
       }}
     >
       <Card style={{ width: '100%', maxWidth: 360, margin: '0 16px' }}>
