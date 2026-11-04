@@ -31,6 +31,9 @@ function readStoredMode(): ThemeMode {
 }
 
 function systemPrefersDark(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
   return window.matchMedia(DARK_QUERY).matches;
 }
 
@@ -47,7 +50,7 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
   const [systemDark, setSystemDark] = useState<boolean>(systemPrefersDark);
 
   useEffect(() => {
-    if (mode !== 'system') {
+    if (mode !== 'system' || typeof window.matchMedia !== 'function') {
       return;
     }
     const media = window.matchMedia(DARK_QUERY);
@@ -73,6 +76,11 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
       window.localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
       // Storage can be unavailable (private mode, blocked cookies); theme still applies.
+    }
+    if (next === 'system') {
+      // Refresh the current system preference in the same render as the mode
+      // change, otherwise switching back to system can paint a stale theme.
+      setSystemDark(systemPrefersDark());
     }
     setModeState(next);
   }, []);

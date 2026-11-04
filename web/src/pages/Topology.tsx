@@ -52,8 +52,6 @@ function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
     type: 'dot',
     style: { ...e.style, stroke: color, strokeWidth: width },
     markerEnd: undefined,
-    labelStyle: { fontSize: 10, fill: 'var(--gw-text-muted)' },
-    labelBgStyle: { fill: 'var(--gw-edge-label-bg)', fillOpacity: 0.9 },
   } as Edge;
 }
 
@@ -156,13 +154,13 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
           <button
             onClick={resetLayout}
             style={{
-              border: '1px solid var(--gw-border)',
+              border: '1px solid var(--gw-control-border)',
               background: 'var(--gw-surface)',
               borderRadius: 6,
               padding: '4px 10px',
               fontSize: 12,
               cursor: 'pointer',
-              color: 'var(--gw-text-muted)',
+              color: 'var(--gw-control-text)',
             }}
           >
             重置布局

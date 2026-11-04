@@ -74,7 +74,7 @@ function Body({ label, sub, metrics }: { label: string; sub?: string; metrics?: 
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>{label}</div>
-      {sub ? <div style={{ color: 'var(--gw-text-muted)', fontSize: 11, marginTop: 2 }}>{sub}</div> : null}
+      {sub ? <div style={{ color: 'var(--gw-node-text-muted)', fontSize: 11, marginTop: 2 }}>{sub}</div> : null}
       {metrics ? (
         <div style={{ marginTop: 6, fontSize: 11, color: 'var(--gw-text-metrics)' }}>{metricsLine(metrics)}</div>
       ) : null}
