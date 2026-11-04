@@ -28,7 +28,7 @@ export function MobileCard({
             {title}
           </Typography.Text>
           {subtitle ? (
-            <div style={{ color: '#64748b', fontSize: 12, marginTop: 2, wordBreak: 'break-all' }}>{subtitle}</div>
+            <div style={{ color: 'var(--gw-text-muted)', fontSize: 12, marginTop: 2, wordBreak: 'break-all' }}>{subtitle}</div>
           ) : null}
         </div>
         {tags ? <div style={{ flex: 'none' }}>{tags}</div> : null}

@@ -5,6 +5,7 @@ import {
   Descriptions,
   Divider,
   Drawer,
+  Dropdown,
   Grid,
   Layout,
   Menu,
@@ -19,9 +20,12 @@ import {
   ApartmentOutlined,
   ApiOutlined,
   DatabaseOutlined,
+  DesktopOutlined,
   MenuOutlined,
+  MoonOutlined,
   PartitionOutlined,
   SettingOutlined,
+  SunOutlined,
   SwapOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
@@ -36,6 +40,7 @@ import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
 import { Topology, type Selection } from './pages/Topology';
+import { useTheme, type ThemeMode } from './theme';
 
 const { Header, Sider, Content } = Layout;
 
@@ -48,6 +53,18 @@ const NAV_ITEMS = [
   { key: 'requests', icon: <DatabaseOutlined />, label: 'Requests' },
   { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
 ];
+
+const THEME_ITEMS = [
+  { key: 'system' as const, icon: <DesktopOutlined />, label: '跟随系统' },
+  { key: 'light' as const, icon: <SunOutlined />, label: '浅色' },
+  { key: 'dark' as const, icon: <MoonOutlined />, label: '深色' },
+];
+
+function themeIcon(mode: ThemeMode) {
+  if (mode === 'light') return <SunOutlined />;
+  if (mode === 'dark') return <MoonOutlined />;
+  return <DesktopOutlined />;
+}
 
 type Mode = 'monitor' | 'edit';
 type Page = 'topology' | 'providers' | 'nodes' | 'routes' | 'aliases' | 'requests' | 'settings';
@@ -145,6 +162,7 @@ export default function App() {
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
   const [mode, setMode] = useState<Mode>('monitor');
   const [range, setRange] = useState('1h');
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [navOpen, setNavOpen] = useState(false);
@@ -231,7 +249,7 @@ export default function App() {
   }
 
   return (
-    <Layout style={{ height: '100vh' }}>
+    <Layout style={{ height: '100vh', background: 'var(--gw-bg)' }}>
       <Header
         style={{
           display: 'flex',
@@ -241,8 +259,8 @@ export default function App() {
           height: 'auto',
           lineHeight: 'normal',
           paddingBlock: 8,
-          background: '#fff',
-          borderBottom: '1px solid #e2e8f0',
+          background: 'var(--gw-surface)',
+          borderBottom: '1px solid var(--gw-border)',
           paddingInline: isMobile ? 12 : 20,
         }}
       >
@@ -280,6 +298,17 @@ export default function App() {
           <Tag color="orange">编辑模式 · 统计已暂停</Tag>
         )}
         <div style={{ flex: 1 }} />
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            items: THEME_ITEMS,
+            selectable: true,
+            selectedKeys: [themeMode],
+            onClick: ({ key }) => setThemeMode(key as ThemeMode),
+          }}
+        >
+          <Button size="small" icon={themeIcon(themeMode)} aria-label="切换主题" />
+        </Dropdown>
         <Button
           size="small"
           onClick={async () => {
@@ -292,7 +321,7 @@ export default function App() {
         </Button>
       </Header>
 
-      <Layout>
+      <Layout style={{ background: 'var(--gw-bg)' }}>
         {isMobile ? (
           <Drawer
             placement="left"
@@ -304,7 +333,7 @@ export default function App() {
             <Menu
               mode="inline"
               selectedKeys={[page]}
-              style={{ borderInlineEnd: 'none' }}
+              style={{ borderInlineEnd: 'none', background: 'transparent' }}
               onClick={(e) => {
                 setPage(e.key as Page);
                 setNavOpen(false);
@@ -313,11 +342,14 @@ export default function App() {
             />
           </Drawer>
         ) : (
-          <Sider width={190} style={{ background: '#fff', borderRight: '1px solid #e2e8f0' }}>
+          <Sider
+            width={190}
+            style={{ background: 'var(--gw-surface)', borderRight: '1px solid var(--gw-border)' }}
+          >
             <Menu
               mode="inline"
               selectedKeys={[page]}
-              style={{ borderInlineEnd: 'none' }}
+              style={{ borderInlineEnd: 'none', background: 'transparent' }}
               onClick={(e) => setPage(e.key as Page)}
               items={NAV_ITEMS}
             />
@@ -380,8 +412,8 @@ export default function App() {
               <aside
                 style={{
                   width: 320,
-                  borderLeft: '1px solid #e2e8f0',
-                  background: '#fff',
+                  borderLeft: '1px solid var(--gw-border)',
+                  background: 'var(--gw-surface)',
                   padding: 16,
                   overflow: 'auto',
                 }}

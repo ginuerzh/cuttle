@@ -783,8 +783,8 @@ export function Edit({ config, onReload }: Props) {
         <aside
           style={{
             width: 340,
-            borderLeft: '1px solid #e2e8f0',
-            background: '#fff',
+            borderLeft: '1px solid var(--gw-border)',
+            background: 'var(--gw-surface)',
             padding: 16,
             overflow: 'auto',
           }}

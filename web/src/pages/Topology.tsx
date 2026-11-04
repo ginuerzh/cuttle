@@ -156,13 +156,13 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
           <button
             onClick={resetLayout}
             style={{
-              border: '1px solid #cbd5e1',
-              background: '#fff',
+              border: '1px solid var(--gw-border)',
+              background: 'var(--gw-surface)',
               borderRadius: 6,
               padding: '4px 10px',
               fontSize: 12,
               cursor: 'pointer',
-              color: '#475569',
+              color: 'var(--gw-text-muted)',
             }}
           >
             重置布局
