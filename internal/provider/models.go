@@ -162,12 +162,13 @@ func ModelsURL(base string, api API) string {
 // metadata is kept raw so a malformed metadata block cannot fail the whole
 // catalog.
 type openAIModelJSON struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	DisplayName string          `json:"display_name"`
-	Modalities  json.RawMessage `json:"modalities"`
-	Limit       json.RawMessage `json:"limit"`
-	Cost        json.RawMessage `json:"cost"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	DisplayName   string          `json:"display_name"`
+	ContextLength int             `json:"context_length"`
+	Modalities    json.RawMessage `json:"modalities"`
+	Limit         json.RawMessage `json:"limit"`
+	Cost          json.RawMessage `json:"cost"`
 }
 
 type openAIModalitiesJSON struct {
@@ -255,6 +256,11 @@ func (m openAIModelJSON) toItem() modelItem {
 		_ = json.Unmarshal(m.Limit, &limit)
 	}
 	item.Context, item.Input, item.Output = limit.Context, limit.Input, limit.Output
+	// commandcode lists the context window as a top-level context_length
+	// instead of the OpenAI-style limit object.
+	if item.Context <= 0 && m.ContextLength > 0 {
+		item.Context = m.ContextLength
+	}
 
 	var cost openAICostJSON
 	if len(m.Cost) > 0 {

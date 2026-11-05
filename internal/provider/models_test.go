@@ -746,3 +746,34 @@ func TestModelsWrongShapedMetadataContainers(t *testing.T) {
 		t.Fatalf("model = %+v, want no metadata from wrong-shaped containers", m)
 	}
 }
+
+func TestModelsCommandCodeContextLength(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/provider/v1/models" {
+			t.Errorf("path = %q, want /provider/v1/models", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"object":"list","data":[{
+			"id":"claude-sonnet-5",
+			"name":"Claude Sonnet 5",
+			"context_length":1000000,
+			"supported_endpoints":["/messages"]
+		}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "commandcode",
+		Type: "commandcode",
+		Chat: srv.URL + "/provider/v1",
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := findModel(models, "claude-sonnet-5")
+	if !ok {
+		t.Fatalf("models = %+v, want claude-sonnet-5", models)
+	}
+	if m.Context != 1000000 {
+		t.Fatalf("context = %d, want 1000000", m.Context)
+	}
+}
