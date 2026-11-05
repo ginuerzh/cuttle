@@ -11,6 +11,34 @@ export interface PresetFormValues {
   gemini: string;
 }
 
+/** One editable provider-key row. Existing rows keep their masked preview. */
+export interface ProviderKeyRow {
+  index?: number;
+  preview?: string;
+  value: string;
+}
+
+/** One per-key operation sent to the admin API; no secret is ever returned. */
+export interface ProviderKeyUpdate {
+  index?: number;
+  key?: string;
+  delete?: boolean;
+}
+
+export function providerKeyRows(previews: string[]): ProviderKeyRow[] {
+  return previews.map((preview, index) => ({ index, preview, value: '' }));
+}
+
+export function providerKeyUpdates(rows: ProviderKeyRow[], deleted: number[]): ProviderKeyUpdate[] {
+  const updates: ProviderKeyUpdate[] = deleted.map((index) => ({ index, delete: true }));
+  for (const row of rows) {
+    const key = row.value.trim();
+    if (!key) continue;
+    updates.push(row.index === undefined ? { key } : { index: row.index, key });
+  }
+  return updates;
+}
+
 /** Turn a preset into form values; blank base URLs stay blank, never undefined. */
 export function presetFormValues(preset: Preset): PresetFormValues {
   return {

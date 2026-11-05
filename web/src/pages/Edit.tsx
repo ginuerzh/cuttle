@@ -45,7 +45,10 @@ import {
   genericCanonicalNote,
   isBaseURLLocked,
   presetFormValues,
+  providerKeyRows,
+  providerKeyUpdates,
   providerPayload,
+  type ProviderKeyRow,
   PROVIDER_TYPES,
   routeLogicalModels,
   unknownModels,
@@ -62,6 +65,54 @@ interface Props {
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Per-key editor: existing keys stay masked; blank input keeps them. */
+function ProviderKeyEditor({
+  rows,
+  onChange,
+  onDelete,
+  onAdd,
+}: {
+  rows: ProviderKeyRow[];
+  onChange: (index: number, value: string) => void;
+  onDelete: (index: number) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <Form.Item
+      label="keys"
+      extra={tr('已有 key 仅显示掩码；留空保持不变，填写后替换该 key。')}
+      style={{ marginBottom: 12 }}
+    >
+      {rows.map((row, i) => (
+        <div key={`${row.index ?? 'new'}-${i}`} style={{ marginTop: 6 }}>
+          {row.preview ? (
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              {row.preview}
+            </Typography.Text>
+          ) : null}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <Input.Password
+              value={row.value}
+              placeholder={row.preview ? tr('留空保持不变') : 'sk-...'}
+              onChange={(e) => onChange(i, e.target.value)}
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<MinusCircleOutlined />}
+              onClick={() => onDelete(i)}
+              aria-label={tr('删除 key')}
+            />
+          </div>
+        </div>
+      ))}
+      <Button type="dashed" size="small" block icon={<PlusOutlined />} style={{ marginTop: 6 }} onClick={onAdd}>
+        {tr('添加 key')}
+      </Button>
+    </Form.Item>
+  );
 }
 
 /** One input per provider key; blank rows are ignored on save. */
@@ -347,6 +398,22 @@ function DerivedTargetAPIHint({
 export function ProviderForm({ provider, onSaved }: { provider: Provider; onSaved: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
+  const [keyRows, setKeyRows] = useState<ProviderKeyRow[]>(() => providerKeyRows(provider.keyPreviews));
+  const [deletedKeys, setDeletedKeys] = useState<number[]>([]);
+
+  useEffect(() => {
+    setKeyRows(providerKeyRows(provider.keyPreviews));
+    setDeletedKeys([]);
+  }, [provider.name, provider.keyPreviews]);
+
+  const deleteKey = (i: number) => {
+    const row = keyRows[i];
+    if (!row) return;
+    if (row.index !== undefined) {
+      setDeletedKeys((current) => (current.includes(row.index!) ? current : [...current, row.index!]));
+    }
+    setKeyRows((current) => current.filter((_, index) => index !== i));
+  };
 
   const save = async () => {
     const v = await form.validateFields();
@@ -361,14 +428,11 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
           anthropic: String(v.anthropic ?? '').trim(),
           gemini: String(v.gemini ?? '').trim(),
           enabled: v.enabled,
-          keys: undefined,
         },
         { models: provider.models ?? {} },
       );
-      const keys = ((v.keys ?? []) as string[])
-        .map((s) => String(s ?? '').trim())
-        .filter(Boolean);
-      if (keys.length > 0) payload.keys = keys;
+      const keyUpdates = providerKeyUpdates(keyRows, deletedKeys);
+      if (keyUpdates.length > 0) payload.keyUpdates = keyUpdates;
       await updateProvider(provider.name, payload);
       message.success(tr('已保存'));
       await onSaved();
@@ -405,17 +469,12 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         responses: provider.responses ?? '',
         anthropic: provider.anthropic ?? '',
         gemini: provider.gemini ?? '',
-        keys: [],
         enabled: provider.enabled !== false,
       }}
     >
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {provider.name}
       </Typography.Title>
-      <Tag>{`keys: ${provider.keysSet}`}</Tag>
-      {provider.keyPreviews.map((k) => (
-        <Tag key={k}>{k}</Tag>
-      ))}
       <Divider />
       <Form.Item name="type" label="type" rules={[{ required: true }]} extra={tr('创建后不可修改')}>
         <Select disabled options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
@@ -453,9 +512,11 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       >
         <Input disabled={baseURLLocked} placeholder="https://generativelanguage.googleapis.com/v1beta" />
       </Form.Item>
-      <KeyField
-        label="keys"
-        extra={tr('每个输入框一个 key；全部留空则保持现有 keys 不变，填写后替换全部。')}
+      <ProviderKeyEditor
+        rows={keyRows}
+        onChange={(i, value) => setKeyRows((rows) => rows.map((row, index) => (index === i ? { ...row, value } : row)))}
+        onDelete={deleteKey}
+        onAdd={() => setKeyRows((rows) => [...rows, { value: '' }])}
       />
       <Form.Item name="enabled" label="enabled" valuePropName="checked">
         <Switch size="small" />

@@ -16,6 +16,8 @@ import {
   modelOption,
   normalizedModalities,
   presetFormValues,
+  providerKeyRows,
+  providerKeyUpdates,
   providerPayload,
   routeLogicalModels,
   toggleModelOverride,
@@ -497,5 +499,32 @@ describe('routeLogicalModels', () => {
         { name: 'e', nodes: [], match: {} },
       ]),
     ).toEqual(['Strong', 'fast']);
+  });
+});
+
+describe('provider keys', () => {
+  it('builds editable rows from masked previews', () => {
+    expect(providerKeyRows(['sk-...a', 'sk-...b'])).toEqual([
+      { index: 0, preview: 'sk-...a', value: '' },
+      { index: 1, preview: 'sk-...b', value: '' },
+    ]);
+  });
+
+  it('turns edits, deletions and additions into key updates', () => {
+    expect(
+      providerKeyUpdates(
+        [
+          { index: 0, preview: 'sk-...a', value: ' new-a ' },
+          { index: 1, preview: 'sk-...b', value: '' },
+          { value: 'new-c' },
+          { value: '  ' },
+        ],
+        [2],
+      ),
+    ).toEqual([
+      { index: 2, delete: true },
+      { index: 0, key: 'new-a' },
+      { key: 'new-c' },
+    ]);
   });
 });

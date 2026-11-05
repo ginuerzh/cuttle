@@ -53,6 +53,8 @@ export const enUS: Record<string, string> = {
   '编辑 {name}': 'Edit {name}',
   '保存': 'Save',
   '删除 key': 'Delete key',
+  '留空保持不变': 'Leave blank to keep',
+  '已有 key 仅显示掩码；留空保持不变，填写后替换该 key。': 'Existing keys are shown masked; leave the field blank to keep one, or enter a value to replace it.',
   '添加 key': 'Add key',
   '无法加载模型目录：{error}（仍可手动输入）': 'Failed to load model catalog: {error} (manual input still allowed)',
   '目标模型已在 Provider 中禁用，路由会跳过该 node：{models}': 'Target model is disabled in the Provider; routing will skip this node: {models}',
