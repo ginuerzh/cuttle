@@ -9,7 +9,6 @@ export function ListCard({
   actions,
   onClick,
   dense = false,
-  tagsAlign = 'start',
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -17,7 +16,6 @@ export function ListCard({
   actions?: ReactNode;
   onClick?: () => void;
   dense?: boolean;
-  tagsAlign?: 'start' | 'center';
 }) {
   return (
     <Card
@@ -38,7 +36,14 @@ export function ListCard({
           : undefined
       }
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          columnGap: 8,
+          alignItems: 'center',
+        }}
+      >
         <div style={{ minWidth: 0 }}>
           <Typography.Text strong style={{ wordBreak: 'break-all' }}>
             {title}
@@ -47,15 +52,17 @@ export function ListCard({
             <div style={{ color: 'var(--gw-text-muted)', fontSize: dense ? 11 : 12, marginTop: 2, wordBreak: 'break-all' }}>{subtitle}</div>
           ) : null}
         </div>
-        {tags ? <div style={{ flex: 'none', alignSelf: tagsAlign === 'center' ? 'center' : 'flex-start' }}>{tags}</div> : null}
+        {tags ? (
+          <div style={{ gridColumn: 2, gridRow: actions ? '1 / span 2' : undefined, alignSelf: 'center' }}>{tags}</div>
+        ) : null}
+        {actions ? (
+          <div style={{ gridColumn: 1, marginTop: 8 }}>
+            <Space wrap size={4}>
+              {actions}
+            </Space>
+          </div>
+        ) : null}
       </div>
-      {actions ? (
-        <div style={{ marginTop: 8 }}>
-          <Space wrap size={4}>
-            {actions}
-          </Space>
-        </div>
-      ) : null}
     </Card>
   );
 }

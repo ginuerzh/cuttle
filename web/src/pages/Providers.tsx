@@ -166,7 +166,6 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
               <div style={{ marginTop: 2 }}>{apiTags(p)}</div>
             </>
           }
-          tagsAlign="center"
           tags={
             <Space direction="vertical" align="end" size={2}>
               {p.probe ? (

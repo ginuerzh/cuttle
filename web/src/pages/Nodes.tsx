@@ -68,7 +68,6 @@ export function NodesPage({
               key={n.name}
               title={n.name}
               subtitle={`${n.provider} · ${t('{count} 个模型', { count: models })}`}
-              tagsAlign="center"
               tags={
                 <Space direction="vertical" align="end" size={2}>
                   {n.backup ? <Tag color="purple">backup</Tag> : null}
