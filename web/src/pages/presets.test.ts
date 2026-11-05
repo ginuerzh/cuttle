@@ -510,7 +510,7 @@ describe('provider keys', () => {
     ]);
   });
 
-  it('turns edits, deletions and additions into key updates', () => {
+  it('turns deletions and additions into key updates and ignores existing values', () => {
     expect(
       providerKeyUpdates(
         [
@@ -523,7 +523,6 @@ describe('provider keys', () => {
       ),
     ).toEqual([
       { index: 2, delete: true },
-      { index: 0, key: 'new-a' },
       { key: 'new-c' },
     ]);
   });

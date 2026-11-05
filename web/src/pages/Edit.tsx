@@ -82,30 +82,27 @@ function ProviderKeyEditor({
   return (
     <Form.Item
       label="keys"
-      extra={tr('已有 key 仅显示掩码；留空保持不变，填写后替换该 key。')}
+      extra={tr('已有 key 只读显示掩码；如需更换请删除后添加新 key。')}
       style={{ marginBottom: 12 }}
     >
       {rows.map((row, i) => (
-        <div key={`${row.index ?? 'new'}-${i}`} style={{ marginTop: 6 }}>
-          {row.preview ? (
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              {row.preview}
-            </Typography.Text>
-          ) : null}
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <div key={`${row.index ?? 'new'}-${i}`} style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center' }}>
+          {row.index !== undefined ? (
+            <Tag style={{ flex: 1, marginInlineEnd: 0 }}>{row.preview || '****'}</Tag>
+          ) : (
             <Input.Password
               value={row.value}
-              placeholder={row.preview ? tr('留空保持不变') : 'sk-...'}
+              placeholder="sk-..."
               onChange={(e) => onChange(i, e.target.value)}
             />
-            <Button
-              type="text"
-              size="small"
-              icon={<MinusCircleOutlined />}
-              onClick={() => onDelete(i)}
-              aria-label={tr('删除 key')}
-            />
-          </div>
+          )}
+          <Button
+            type="text"
+            size="small"
+            icon={<MinusCircleOutlined />}
+            onClick={() => onDelete(i)}
+            aria-label={tr('删除 key')}
+          />
         </div>
       ))}
       <Button type="dashed" size="small" block icon={<PlusOutlined />} style={{ marginTop: 6 }} onClick={onAdd}>

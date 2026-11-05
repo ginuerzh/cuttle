@@ -32,9 +32,9 @@ export function providerKeyRows(previews: string[]): ProviderKeyRow[] {
 export function providerKeyUpdates(rows: ProviderKeyRow[], deleted: number[]): ProviderKeyUpdate[] {
   const updates: ProviderKeyUpdate[] = deleted.map((index) => ({ index, delete: true }));
   for (const row of rows) {
+    if (row.index !== undefined) continue;
     const key = row.value.trim();
-    if (!key) continue;
-    updates.push(row.index === undefined ? { key } : { index: row.index, key });
+    if (key) updates.push({ key });
   }
   return updates;
 }
