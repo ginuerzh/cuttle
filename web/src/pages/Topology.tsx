@@ -16,6 +16,7 @@ import {
 import type { ConfigResponse, GraphMetrics, NodeMetrics } from '../api/types';
 import { buildGraph, type GraphNode } from '../graph/build';
 import { layoutGraph } from '../graph/layout';
+import { mergePositions } from '../graph/positions';
 import { nodeTypes } from '../graph/nodes';
 import { edgeTypes } from './edges';
 import { translate as t } from '../i18n';
@@ -92,6 +93,16 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
 
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>(structure.nodes);
   const [edges, setEdges] = useState<Edge[]>(structure.edges.map((e) => decorateEdge(e, metrics)));
+
+  // Persist the first layout for every node. Without this, only dragged nodes
+  // have saved positions and any config change (adding/deleting an edge)
+  // re-runs dagre for the rest of the graph.
+  useEffect(() => {
+    const next = mergePositions(positions, structure.nodes);
+    if (next === positions) return;
+    setPositions(next);
+    savePositions(next);
+  }, [positions, structure.nodes]);
 
   useEffect(() => {
     setNodes(structure.nodes);
