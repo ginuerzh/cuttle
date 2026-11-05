@@ -17,7 +17,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { Connection } from '@xyflow/react';
 import {
   createNode,
@@ -63,6 +63,44 @@ function logicalModels(config: ConfigResponse): string[] {
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** One input per provider key; blank rows are ignored on save. */
+function KeyField({ label, extra }: { label: string; extra?: string }) {
+  return (
+    <Form.Item label={label} extra={extra} style={{ marginBottom: 12 }}>
+      <Form.List name="keys">
+        {(fields, { add, remove }) => (
+          <>
+            {fields.map((field) => (
+              <div key={field.key} style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+                <Form.Item name={field.name} noStyle>
+                  <Input.Password placeholder="sk-..." />
+                </Form.Item>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MinusCircleOutlined />}
+                  onClick={() => remove(field.name)}
+                  aria-label="删除 key"
+                />
+              </div>
+            ))}
+            <Button
+              type="dashed"
+              size="small"
+              block
+              icon={<PlusOutlined />}
+              style={{ marginTop: 6 }}
+              onClick={() => add('')}
+            >
+              添加 key
+            </Button>
+          </>
+        )}
+      </Form.List>
+    </Form.Item>
+  );
 }
 
 /** Load a provider's model catalog; failures are non-blocking. */
@@ -201,9 +239,8 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         },
         { models: provider.models ?? {} },
       );
-      const keys = String(v.keys ?? '')
-        .split('\n')
-        .map((s) => s.trim())
+      const keys = ((v.keys ?? []) as string[])
+        .map((s) => String(s ?? '').trim())
         .filter(Boolean);
       if (keys.length > 0) payload.keys = keys;
       await updateProvider(provider.name, payload);
@@ -242,7 +279,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         responses: provider.responses ?? '',
         anthropic: provider.anthropic ?? '',
         gemini: provider.gemini ?? '',
-        keys: '',
+        keys: [],
         enabled: provider.enabled !== false,
       }}
     >
@@ -290,9 +327,10 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       >
         <Input disabled={baseURLLocked} placeholder="https://generativelanguage.googleapis.com/v1beta" />
       </Form.Item>
-      <Form.Item name="keys" label="keys（留空保持不变，每行一个）">
-        <Input.TextArea rows={2} placeholder="sk-..." />
-      </Form.Item>
+      <KeyField
+        label="keys"
+        extra="每个输入框一个 key；全部留空则保持现有 keys 不变，填写后替换全部。"
+      />
       <Form.Item name="enabled" label="enabled" valuePropName="checked">
         <Switch size="small" />
       </Form.Item>
@@ -859,9 +897,8 @@ function AddProviderModal({
     const v = await form.validateFields();
     setBusy(true);
     try {
-      const keys = String(v.keys ?? '')
-        .split('\n')
-        .map((s) => s.trim())
+      const keys = ((v.keys ?? []) as string[])
+        .map((s) => String(s ?? '').trim())
         .filter(Boolean);
       await createProvider({
         name: v.name,
@@ -884,7 +921,7 @@ function AddProviderModal({
 
   return (
     <Modal open={open} title="添加 Provider" onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
-      <Form form={form} layout="vertical" size="small" initialValues={{ type: 'generic' }}>
+      <Form form={form} layout="vertical" size="small" initialValues={{ type: 'generic', keys: [''] }}>
         <Form.Item name="preset" label="预设">
           <Select
             allowClear
@@ -942,9 +979,7 @@ function AddProviderModal({
             );
           }}
         </Form.Item>
-        <Form.Item name="keys" label="keys（每行一个）">
-          <Input.TextArea rows={2} />
-        </Form.Item>
+        <KeyField label="keys" extra="每个输入框一个 key；留空表示不配置 key。" />
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           创建后在画布上为它建 Node，再在 Node 上配置模型映射。type 与 API base URL 创建后锁定（generic 的 base URL 除外）。
         </Typography.Paragraph>

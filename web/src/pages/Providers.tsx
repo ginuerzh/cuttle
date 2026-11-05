@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteProvider, getProviderModels, testProvider, updateProvider } from '../api/client';
 import type { ConfigResponse, Provider, ProviderModel } from '../api/types';
@@ -130,6 +130,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<Provider | null>(null);
   const [models, setModels] = useState<{ name: string; list: ProviderModel[] } | null>(null);
+  const [modelsError, setModelsError] = useState('');
   const [modelsBusy, setModelsBusy] = useState(false);
 
   const test = async (name: string) => {
@@ -144,10 +145,14 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
 
   const showModels = async (name: string, refresh = false) => {
     setModelsBusy(true);
+    setModelsError('');
+    setModels((cur) => (cur && cur.name === name ? cur : { name, list: [] }));
     try {
       setModels({ name, list: await getProviderModels(name, refresh) });
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err));
+      const text = err instanceof Error ? err.message : String(err);
+      setModelsError(text);
+      message.error(text);
     } finally {
       setModelsBusy(false);
     }
@@ -168,6 +173,32 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       setModels((cur) =>
         cur && cur.name === provider.name
           ? { ...cur, list: cur.list.map((m) => (m.id === model.id ? { ...m, disabled } : m)) }
+          : cur,
+      );
+      await onReload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModelsBusy(false);
+    }
+  };
+
+  const setAllModelsDisabled = async (disabled: boolean) => {
+    if (!models) return;
+    const provider = config.providers.find((p) => p.name === models.name);
+    if (!provider) {
+      message.error(`未找到 Provider ${models.name}`);
+      return;
+    }
+    const next = disabled
+      ? Object.fromEntries(models.list.map((m) => [m.id, { disabled: true }]))
+      : {};
+    setModelsBusy(true);
+    try {
+      await updateProvider(provider.name, providerPayload(provider, { models: next }));
+      setModels((cur) =>
+        cur && cur.name === provider.name
+          ? { ...cur, list: cur.list.map((m) => ({ ...m, disabled })) }
           : cur,
       );
       await onReload();
@@ -199,6 +230,8 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       </Space>
     );
   };
+
+  const allDisabled = !!models && models.list.length > 0 && models.list.every((m) => m.disabled);
 
   const columns: ColumnsType<Provider> = [
     { title: '名称', dataIndex: 'name', width: 180, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
@@ -320,14 +353,40 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
         open={!!models}
         width={isMobile ? '94%' : 640}
         footer={
-          <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.name, true)}>
-            刷新
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <Space size={4}>
+              <Switch
+                size="small"
+                checked={allDisabled}
+                disabled={modelsBusy || !models?.list.length}
+                onChange={(checked) => void setAllModelsDisabled(checked)}
+                aria-label="全局禁用"
+              />
+              <span style={{ fontSize: 12 }}>全局禁用</span>
+            </Space>
+            <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.name, true)}>
+              刷新
+            </Button>
+          </div>
         }
         onCancel={() => setModels(null)}
-        styles={{ body: { padding: 0, maxHeight: 'min(480px, 60dvh)', overflowY: 'auto' } }}
+        styles={{
+          content: { padding: 0 },
+          header: { padding: '16px 24px 0' },
+          body: { padding: 0, maxHeight: 'min(480px, 60dvh)', overflowY: 'auto' },
+          footer: { padding: '0 24px 16px' },
+        }}
       >
         <div style={{ padding: '12px 24px 16px' }}>
+          {modelsError ? (
+            <Alert
+              type="error"
+              showIcon
+              message="模型目录加载失败"
+              description={modelsError}
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
           {models?.list.map((m) => {
             const apis = modelApiLabel(m);
             const rows = modelDirectionRows(m);
@@ -357,7 +416,6 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
                   }
                   tags={
                     <Space direction="vertical" align="end" size={2}>
-                      {m.disabled ? <Tag style={{ marginInlineEnd: 0, fontSize: 10 }}>已禁用</Tag> : null}
                       <Switch
                         size="small"
                         checked={!m.disabled}
@@ -371,7 +429,9 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
               </div>
             );
           })}
-          {models && models.list.length === 0 ? <Typography.Text type="secondary">供应商没有返回模型</Typography.Text> : null}
+          {models && models.list.length === 0 && !modelsError ? (
+            <Typography.Text type="secondary">供应商没有返回模型</Typography.Text>
+          ) : null}
         </div>
       </Modal>
     </div>

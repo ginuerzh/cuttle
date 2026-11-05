@@ -15,7 +15,7 @@ import (
 
 // modelsTimeout bounds model-list requests so a stalled provider cannot hold
 // the admin catalog endpoint open indefinitely.
-const modelsTimeout = 10 * time.Second
+const modelsTimeout = 30 * time.Second
 
 // Models fetches the model catalog from the adapter's primary listing
 // endpoint. Generic providers list every configured API; the vendor adapters
