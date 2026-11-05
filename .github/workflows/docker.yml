@@ -27,26 +27,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout llm-gw
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: src/llm-gw
 
       - name: Checkout core
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: go-gost/core
           ref: v0.6.1
           path: src/core
 
       - name: Checkout x
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: go-gost/x
           ref: 5265f03275446d91d61a393243bc878ee7336928
           path: src/x
 
       - name: Checkout llm-api-converter
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ginuerzh/llm-api-converter
           ref: e4c7c1a339426a62b157968641e5ca9735d270b7
@@ -54,14 +54,14 @@ jobs:
 
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -79,14 +79,14 @@ jobs:
 
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: src
           file: src/llm-gw/Dockerfile
