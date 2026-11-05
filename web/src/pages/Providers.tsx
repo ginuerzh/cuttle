@@ -251,7 +251,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     return (
       <Space wrap size={2}>
         {apis.map((api) => (
-          <Tag key={api}>{api}</Tag>
+          <Tag key={api} color="blue">{api}</Tag>
         ))}
       </Space>
     );
@@ -327,7 +327,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
 
   return (
     <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
-      <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           Providers
         </Typography.Title>
@@ -341,16 +341,21 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
             <MobileCard
               key={p.name}
               title={p.name}
-              subtitle={`${p.type} · ${configuredAPIs(p).join(' / ') || 'no API'}`}
+              subtitle={
+                <>
+                  <span>{p.type}</span>
+                  <div style={{ marginTop: 2 }}>{apiTags(p)}</div>
+                </>
+              }
               tagsAlign="center"
               tags={
                 <Space direction="vertical" align="end" size={2}>
                   {p.probe ? (
-                    <Tag color={p.probe.ok ? 'green' : 'red'}>
+                    <Tag color={p.probe.ok ? 'green' : 'red'} style={{ marginInlineEnd: 0 }}>
                       {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
                     </Tag>
                   ) : (
-                    <Tag>{p.keysSet} keys</Tag>
+                    <Tag style={{ marginInlineEnd: 0 }}>{p.keysSet} keys</Tag>
                   )}
                   <Switch
                     size="small"

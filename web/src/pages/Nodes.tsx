@@ -90,7 +90,7 @@ export function NodesPage({
 
   return (
     <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
-      <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           Nodes
         </Typography.Title>
