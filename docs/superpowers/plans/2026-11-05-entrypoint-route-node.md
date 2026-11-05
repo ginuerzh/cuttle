@@ -646,7 +646,7 @@ git commit -m "test: verify entrypoint routing end to end"
 
 **Implementation record**
 - Date/status: 2026-11-05 / complete
-- Repo/commit: llm-gw / pending follow-up record commit (test commit below)
+- Repo/commit: llm-gw / b94718ba (e2e code and docs); this record commit is the follow-up
 - Files changed: `internal/gateway/entrypoint_e2e_test.go` (new), `internal/config/config_test.go`, plan record.
 - Tests: `GOWORK=off go test ./internal/gateway -run TestEntrypointConfigEndToEnd -count=1` PASS; `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1` PASS; `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS; `cd web && npm test` PASS (9 files, 75 tests); `npm run build` PASS.
 - Review findings/fixes: the end-to-end test loads a real YAML file, routes four client models through the loaded config, then rewrites the entrypoint order and calls `gw.Reload` to prove precedence changes without a restart. `example.yaml` loads with `DEEPSEEK_API_KEY` set and every entrypoint route resolves. The leftover scan found only historical design-doc mentions and the deliberate legacy-config rejection test; the built `internal/admin/dist` bundle was excluded from the scan.
