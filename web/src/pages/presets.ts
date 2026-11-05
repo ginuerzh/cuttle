@@ -94,17 +94,19 @@ function trimUnit(value: number): string {
 }
 
 /** Top-level modality types the UI knows how to display. */
-const MODALITY_TYPES = new Set(['text', 'image', 'audio', 'video']);
+const MODALITY_TYPES = new Set(['text', 'image', 'audio', 'video', 'file']);
 
 /**
- * Reduce modality values to their MIME top-level type, keep only the known
- * types, and dedupe them in first appearance order:
- * ["text", "application/pdf", "image/jpeg"] → ["text", "image"].
+ * Reduce modality values to their MIME top-level type, map application MIME
+ * types to "file", keep only the known types, and dedupe them in first
+ * appearance order:
+ * ["text", "application/pdf", "image/jpeg"] → ["text", "file", "image"].
  */
 export function normalizedModalities(values?: string[]): string[] {
   const out: string[] = [];
   for (const value of values ?? []) {
-    const kind = (value ?? '').trim().toLowerCase().split('/')[0].trim();
+    let kind = (value ?? '').trim().toLowerCase().split('/')[0].trim();
+    if (kind === 'application') kind = 'file';
     if (MODALITY_TYPES.has(kind) && !out.includes(kind)) out.push(kind);
   }
   return out;
@@ -152,9 +154,10 @@ function priceSide(value: number | undefined, free: boolean): string | null {
 }
 
 /**
- * Build the two compact model-card rows. Output-related fields share one line
- * and input-related fields the next. `limit.input` falls back to the context
- * window; when both differ, the context window is shown alongside the input.
+ * Build the two compact model-card rows. Input-related fields share the first
+ * line and output-related fields the next. `limit.input` falls back to the
+ * context window; when both differ, the context window is shown alongside the
+ * input.
  */
 export function modelDirectionRows(model: ProviderModel): ModelDirectionRows {
   const context = formatContextSize(model.context);

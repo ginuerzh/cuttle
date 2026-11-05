@@ -1,11 +1,5 @@
 import { useState, type ReactNode } from 'react';
 import { Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
-import {
-  AudioOutlined,
-  FileTextOutlined,
-  PictureOutlined,
-  VideoCameraOutlined,
-} from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteProvider, getProviderModels, testProvider, updateProvider } from '../api/client';
 import type { ConfigResponse, Provider, ProviderModel } from '../api/types';
@@ -21,11 +15,63 @@ import {
 import { useIsMobile } from '../components/useIsMobile';
 import { MobileCard } from '../components/MobileCard';
 
-const MODALITY_ICONS: Record<string, { icon: ReactNode; label: string; color: string }> = {
-  text: { icon: <FileTextOutlined />, label: '文本', color: '#64748b' },
-  image: { icon: <PictureOutlined />, label: '图像', color: '#0891b2' },
-  audio: { icon: <AudioOutlined />, label: '音频', color: '#7c3aed' },
-  video: { icon: <VideoCameraOutlined />, label: '视频', color: '#db2777' },
+const MODALITY_ICONS: Record<string, { label: string; color: string; paths: ReactNode }> = {
+  text: {
+    label: '文本',
+    color: '#0088fe',
+    paths: (
+      <>
+        <path d="M12 4v16" />
+        <path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" />
+        <path d="M9 20h6" />
+      </>
+    ),
+  },
+  file: {
+    label: '文件',
+    color: '#daa520',
+    paths: (
+      <>
+        <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+        <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      </>
+    ),
+  },
+  image: {
+    label: '图像',
+    color: '#2e8b57',
+    paths: (
+      <>
+        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+      </>
+    ),
+  },
+  audio: {
+    label: '音频',
+    color: '#7b68ee',
+    paths: (
+      <>
+        <path d="M2 10v3" />
+        <path d="M6 6v11" />
+        <path d="M10 3v18" />
+        <path d="M14 8v7" />
+        <path d="M18 5v13" />
+        <path d="M22 10v3" />
+      </>
+    ),
+  },
+  video: {
+    label: '视频',
+    color: '#ff4500',
+    paths: (
+      <>
+        <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
+        <rect x="2" y="6" width="14" height="12" rx="2" />
+      </>
+    ),
+  },
 };
 
 function DirectionRow({
@@ -46,8 +92,32 @@ function DirectionRow({
         const item = MODALITY_ICONS[kind];
         return item ? (
           <Tooltip key={kind} title={`${direction}：${item.label}`}>
-            <span aria-label={`${direction} ${item.label}`} style={{ color: item.color, display: 'inline-flex', fontSize: 11 }}>
-              {item.icon}
+            <span
+              aria-label={`${direction} ${item.label}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 16,
+                height: 16,
+                borderRadius: 4,
+                color: item.color,
+                background: `color-mix(in srgb, ${item.color} 12%, transparent)`,
+              }}
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                {item.paths}
+              </svg>
             </span>
           </Tooltip>
         ) : null;
@@ -255,52 +325,54 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           </Button>
         }
         onCancel={() => setModels(null)}
-        styles={{ body: { maxHeight: 'min(480px, 60dvh)', overflowY: 'auto', paddingRight: 4 } }}
+        styles={{ body: { padding: 0, maxHeight: 'min(480px, 60dvh)', overflowY: 'auto' } }}
       >
-        {models?.list.map((m) => {
-          const apis = modelApiLabel(m);
-          const rows = modelDirectionRows(m);
-          return (
-            <div key={m.id} style={{ opacity: m.disabled ? 0.55 : 1 }}>
-              <MobileCard
-                dense
-                title={m.name || m.id}
-                subtitle={
-                  <>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
-                      <Typography.Text type="secondary" style={{ fontSize: 10, wordBreak: 'break-all' }}>
-                        {m.id}
-                      </Typography.Text>
-                      {apis ? (
-                        <Tag
-                          color="blue"
-                          style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '15px', paddingInline: 4 }}
-                        >
-                          {apis}
-                        </Tag>
-                      ) : null}
-                    </div>
-                    <DirectionRow text={rows.output} direction="输出" values={m.outputs} />
-                    <DirectionRow text={rows.input} direction="输入" values={m.inputs} />
-                  </>
-                }
-                tags={
-                  <Space direction="vertical" align="end" size={2}>
-                    {m.disabled ? <Tag style={{ marginInlineEnd: 0, fontSize: 10 }}>已禁用</Tag> : null}
-                    <Switch
-                      size="small"
-                      checked={!m.disabled}
-                      disabled={modelsBusy}
-                      onChange={(checked) => void toggleModel(m, checked)}
-                      aria-label={`切换 ${m.id}`}
-                    />
-                  </Space>
-                }
-              />
-            </div>
-          );
-        })}
-        {models && models.list.length === 0 ? <Typography.Text type="secondary">供应商没有返回模型</Typography.Text> : null}
+        <div style={{ padding: '12px 24px 16px' }}>
+          {models?.list.map((m) => {
+            const apis = modelApiLabel(m);
+            const rows = modelDirectionRows(m);
+            return (
+              <div key={m.id} style={{ opacity: m.disabled ? 0.55 : 1 }}>
+                <MobileCard
+                  dense
+                  title={m.name || m.id}
+                  subtitle={
+                    <>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 10, wordBreak: 'break-all' }}>
+                          {m.id}
+                        </Typography.Text>
+                        {apis ? (
+                          <Tag
+                            color="blue"
+                            style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '15px', paddingInline: 4 }}
+                          >
+                            {apis}
+                          </Tag>
+                        ) : null}
+                      </div>
+                      <DirectionRow text={rows.input} direction="输入" values={m.inputs} />
+                      <DirectionRow text={rows.output} direction="输出" values={m.outputs} />
+                    </>
+                  }
+                  tags={
+                    <Space direction="vertical" align="end" size={2}>
+                      {m.disabled ? <Tag style={{ marginInlineEnd: 0, fontSize: 10 }}>已禁用</Tag> : null}
+                      <Switch
+                        size="small"
+                        checked={!m.disabled}
+                        disabled={modelsBusy}
+                        onChange={(checked) => void toggleModel(m, checked)}
+                        aria-label={`切换 ${m.id}`}
+                      />
+                    </Space>
+                  }
+                />
+              </div>
+            );
+          })}
+          {models && models.list.length === 0 ? <Typography.Text type="secondary">供应商没有返回模型</Typography.Text> : null}
+        </div>
       </Modal>
     </div>
   );

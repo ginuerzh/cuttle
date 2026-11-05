@@ -665,8 +665,8 @@ func TestNormalizeModalities(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("normalizeModalities = %v, want %v", got, want)
 	}
-	if got := normalizeModalities([]string{"application/pdf", "text", "image/png"}); !slices.Equal(got, []string{"text", "image"}) {
-		t.Fatalf("normalizeModalities with unknown type = %v, want [text image]", got)
+	if got := normalizeModalities([]string{"application/pdf", "text", "image/png"}); !slices.Equal(got, []string{"file", "text", "image"}) {
+		t.Fatalf("normalizeModalities with application type = %v, want [file text image]", got)
 	}
 	if got := normalizeModalities([]string{"image / jpeg"}); !slices.Equal(got, []string{"image"}) {
 		t.Fatalf("normalizeModalities with spaced MIME = %v, want [image]", got)

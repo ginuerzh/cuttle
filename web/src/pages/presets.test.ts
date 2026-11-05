@@ -227,7 +227,7 @@ describe('formatModalities', () => {
   });
 
   it('drops unknown top-level types but keeps known ones', () => {
-    expect(formatModalities(['text', 'application/pdf', 'image / jpeg'])).toBe('text/image');
+    expect(formatModalities(['text', 'application/pdf', 'image / jpeg'])).toBe('text/file/image');
   });
 
   it('returns null for empty input', () => {
@@ -238,11 +238,15 @@ describe('formatModalities', () => {
 
 describe('normalizedModalities', () => {
   it('returns known types in first-seen order', () => {
-    expect(normalizedModalities(['image/png', 'text', 'IMAGE/JPEG', 'application/pdf'])).toEqual(['image', 'text']);
+    expect(normalizedModalities(['image/png', 'text', 'IMAGE/JPEG', 'application/pdf'])).toEqual(['image', 'text', 'file']);
+  });
+
+  it('maps application MIME types to file', () => {
+    expect(normalizedModalities(['application/pdf'])).toEqual(['file']);
   });
 
   it('returns an empty array when nothing is known', () => {
-    expect(normalizedModalities(['application/pdf'])).toEqual([]);
+    expect(normalizedModalities(['x-unknown/thing'])).toEqual([]);
     expect(normalizedModalities(undefined)).toEqual([]);
   });
 });

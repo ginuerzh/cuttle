@@ -319,8 +319,9 @@ func decodeModels(r io.Reader, api API) ([]modelItem, error) {
 }
 
 // normalizeModalities lowercases modality names, reduces MIME values to their
-// allowed top-level type ("image / jpeg" -> "image"), drops unknown types and
-// empty entries, and removes duplicates in first-seen order.
+// allowed top-level type ("image / jpeg" -> "image"), maps application MIME
+// types to the generic "file" modality, drops unknown types and empty entries,
+// and removes duplicates in first-seen order.
 func normalizeModalities(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -332,8 +333,11 @@ func normalizeModalities(values []string) []string {
 		if i := strings.IndexByte(value, '/'); i >= 0 {
 			value = strings.TrimSpace(value[:i])
 		}
+		if value == "application" {
+			value = "file"
+		}
 		switch value {
-		case "text", "image", "audio", "video":
+		case "text", "image", "audio", "video", "file":
 		default:
 			continue
 		}
