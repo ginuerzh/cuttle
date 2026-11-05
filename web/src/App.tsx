@@ -33,7 +33,7 @@ import {
 import { getConfig, getGraph, logout, UnauthorizedError } from './api/client';
 import type { ConfigResponse, EdgeMetrics, ErrorRow, GraphMetrics, NodeMetrics } from './api/types';
 import { Login } from './pages/Login';
-import { AliasesPage } from './pages/Aliases';
+import { EntrypointsPage } from './pages/Entrypoints';
 import { ProvidersPage } from './pages/Providers';
 import { NodesPage } from './pages/Nodes';
 import { RequestsPage } from './pages/Requests';
@@ -51,7 +51,7 @@ const NAV_ITEMS = [
   { key: 'providers', icon: <CloudServerOutlined />, label: '提供商' },
   { key: 'nodes', icon: <ApiOutlined />, label: '节点' },
   { key: 'routes', icon: <BranchesOutlined />, label: '路由' },
-  { key: 'aliases', icon: <TagOutlined />, label: '别名' },
+  { key: 'entrypoints', icon: <TagOutlined />, label: '入口' },
   { key: 'requests', icon: <DatabaseOutlined />, label: '请求' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置' },
 ];
@@ -69,7 +69,7 @@ function themeIcon(mode: ThemeMode) {
 }
 
 type Mode = 'monitor' | 'edit';
-type Page = 'topology' | 'providers' | 'nodes' | 'routes' | 'aliases' | 'requests' | 'settings';
+type Page = 'topology' | 'providers' | 'nodes' | 'routes' | 'entrypoints' | 'requests' | 'settings';
 type Session = 'unknown' | 'yes' | 'no';
 
 const RANGES = [
@@ -439,8 +439,8 @@ export default function App() {
               config ? <NodesPage config={config} onReload={loadConfig} /> : null
             ) : page === 'routes' ? (
               config ? <RoutesPage config={config} onReload={loadConfig} /> : null
-            ) : page === 'aliases' ? (
-              config ? <AliasesPage config={config} onReload={loadConfig} /> : null
+            ) : page === 'entrypoints' ? (
+              config ? <EntrypointsPage config={config} onReload={loadConfig} /> : null
             ) : page === 'requests' ? (
               <RequestsPage />
             ) : (

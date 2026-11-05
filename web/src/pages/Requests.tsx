@@ -116,7 +116,7 @@ export function RequestsPage() {
             <Descriptions.Item label="route">{selected.route || '—'}</Descriptions.Item>
             <Descriptions.Item label="provider">{selected.provider}</Descriptions.Item>
             <Descriptions.Item label="protocol / effort">{`${selected.protocol} / ${selected.effort}`}</Descriptions.Item>
-            <Descriptions.Item label="client → logical">{`${selected.clientModel || '—'} → ${selected.logicalModel || '—'}`}</Descriptions.Item>
+            <Descriptions.Item label="client model">{selected.clientModel || '—'}</Descriptions.Item>
             <Descriptions.Item label="provider model">{selected.model}</Descriptions.Item>
             <Descriptions.Item label="status / error">{`${selected.status} ${selected.error || ''}`}</Descriptions.Item>
             <Descriptions.Item label={t('耗时')}>{`${selected.durationMs} ms`}</Descriptions.Item>

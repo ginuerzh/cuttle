@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  AutoComplete,
   Button,
   Divider,
   Drawer,
@@ -28,15 +27,14 @@ import {
   deleteRoute,
   getPresets,
   getProviderModels,
-  putAliases,
-  reorderRoutes,
+  putEntrypoints,
   updateProvider,
   updateNode,
   updateRoute,
 } from '../api/client';
-import type { Alias, ConfigResponse, Node as BindNode, Preset, Provider, ProviderModel, Route } from '../api/types';
+import type { ConfigResponse, Entrypoint, Node as BindNode, Preset, Provider, ProviderModel, Route } from '../api/types';
 import { translate as tr } from '../i18n';
-import { aliasFromNodeId, splitId } from './selection';
+import { entrypointFromNodeId, splitId } from './selection';
 import {
   configuredAPIs,
   derivedTargetAPI,
@@ -50,10 +48,8 @@ import {
   providerPayload,
   type ProviderKeyRow,
   PROVIDER_TYPES,
-  routeLogicalModels,
   unknownModels,
 } from './presets';
-import { mapToRows, rowsToMap, type MapRow } from '../components/MapFields';
 import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
 
@@ -151,93 +147,53 @@ function KeyField({ label, extra }: { label: string; extra?: string }) {
 }
 
 /**
- * Node model mapping. The value stays editable, but the picker opens the same
- * card list used by the Provider model modal.
+ * One provider model per node. The value stays editable, but the picker opens
+ * the same card list used by the Provider model modal.
  */
-function ModelMapField({
-  config,
+function ModelField({
   models,
   modelsError,
 }: {
-  config: ConfigResponse;
   models: ProviderModel[];
   modelsError: string;
 }) {
   const form = Form.useFormInstance();
   const isMobile = !Grid.useBreakpoint().md;
-  const [picker, setPicker] = useState<number | null>(null);
+  const [picker, setPicker] = useState(false);
   const [query, setQuery] = useState('');
   const choices = enabledModels(models).filter((m) => {
     const q = query.trim().toLowerCase();
     return !q || m.id.toLowerCase().includes(q) || (m.name ?? '').toLowerCase().includes(q);
   });
   const close = () => {
-    setPicker(null);
+    setPicker(false);
     setQuery('');
   };
   const choose = (model: ProviderModel) => {
-    if (picker === null) return;
-    form.setFieldValue(['models', picker, 'value'], model.id);
+    form.setFieldValue('model', model.id);
     close();
   };
 
   return (
     <>
-      <Form.Item label={tr('models（逻辑模型 → 供应商模型）')} style={{ marginBottom: 12 }}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {tr('用 * 作为兜底；未命中的逻辑模型会走 * 或直接透传。')}
-        </Typography.Text>
-        <Form.List name="models">
-          {(fields, { add, remove }) => (
-            <>
-              {fields.map((field) => (
-                <div key={field.key} style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
-                  <Form.Item name={[field.name, 'key']} noStyle>
-                    <AutoComplete
-                      style={{ flex: 1, minWidth: 0 }}
-                      options={[...routeLogicalModels(config.routes), '*'].map((v) => ({ value: v }))}
-                      placeholder={tr('快速 / *')}
-                    />
-                  </Form.Item>
-                  <Typography.Text type="secondary">→</Typography.Text>
-                  <Form.Item name={[field.name, 'value']} noStyle>
-                    <Input style={{ flex: 1, minWidth: 0 }} placeholder="deepseek-v4-flash" />
-                  </Form.Item>
-                  <Button
-                    size="small"
-                    icon={<SearchOutlined />}
-                    onClick={() => {
-                      setQuery('');
-                      setPicker(field.name);
-                    }}
-                    aria-label={tr('选择模型')}
-                  />
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<MinusCircleOutlined />}
-                    onClick={() => remove(field.name)}
-                    aria-label={tr('删除映射')}
-                  />
-                </div>
-              ))}
-              <Button
-                type="dashed"
-                size="small"
-                block
-                icon={<PlusOutlined />}
-                style={{ marginTop: 6 }}
-                onClick={() => add({ key: '', value: '' })}
-              >
-                {tr('添加模型映射')}
-              </Button>
-            </>
-          )}
-        </Form.List>
+      <Form.Item label={tr('模型 ID')} required style={{ marginBottom: 12 }}>
+        <Space.Compact style={{ width: '100%' }}>
+          <Form.Item name="model" noStyle rules={[{ required: true, message: tr('请填写模型') }]}>
+            <Input placeholder="deepseek-v4-flash" />
+          </Form.Item>
+          <Button
+            icon={<SearchOutlined />}
+            onClick={() => {
+              setQuery('');
+              setPicker(true);
+            }}
+            aria-label={tr('选择模型')}
+          />
+        </Space.Compact>
       </Form.Item>
       <Modal
         title={tr('选择模型')}
-        open={picker !== null}
+        open={picker}
         onCancel={close}
         footer={null}
         width={isMobile ? '94%' : 640}
@@ -302,16 +258,17 @@ function useProviderModels(providerName?: string) {
   return { models, error };
 }
 
-/** Warning shown below the model mapping field. */
+/** Warning shown below the model field. */
 function ModelCatalogHint({
   models,
   error,
-  rows,
+  model,
 }: {
   models: ProviderModel[];
   error: string;
-  rows: MapRow[] | undefined;
+  model?: string;
 }) {
+  const rows = model ? [{ value: model }] : [];
   const disabled = disabledTargets(rows, models);
   const missing = unknownModels(rows, models).filter((id) => !disabled.includes(id));
   return (
@@ -343,42 +300,30 @@ function ModelCatalogHint({
   );
 }
 
-/** Read-only APIs the gateway will use for each model mapping. */
+/** Read-only API the gateway will use for the node's model. */
 function DerivedTargetAPIHint({
   provider,
   models,
-  rows,
+  model,
 }: {
   provider?: Provider;
   models: ProviderModel[];
-  rows: MapRow[] | undefined;
+  model?: string;
 }) {
   if (!provider) return null;
   const apis = configuredAPIs(provider);
   const byID = new Map(models.map((m) => [m.id, m]));
-  const targets = (rows ?? [])
-    .map((row) => ({ logical: (row?.key ?? '').trim(), model: (row?.value ?? '').trim() }))
-    .filter((t) => t.model)
-    .map((t) => ({
-      ...t,
-      api: derivedTargetAPI(provider.type, apis, byID.get(t.model)?.apis),
-      disabled: byID.get(t.model)?.disabled === true,
-    }));
+  const target = (model ?? '').trim();
+  const api = target ? derivedTargetAPI(provider.type, apis, byID.get(target)?.apis) : '';
+  const disabled = target ? byID.get(target)?.disabled === true : false;
   const note = genericCanonicalNote(provider.type, apis);
-  if (targets.length === 0 && !note) return null;
+  if (!target && !note) return null;
   return (
     <>
-      {targets.length > 0 ? (
+      {target ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
           {tr('目标 API：')}
-          {targets
-            .map(
-              (t) =>
-                `${t.logical || '?'} → ${t.model}: ${
-                  t.api === 'unknown' ? tr('未知（无可用 base URL）') : t.api
-                }${t.disabled ? tr('（已禁用）') : ''}`,
-            )
-            .join('；')}
+          {`${target}: ${api === 'unknown' ? tr('未知（无可用 base URL）') : api}${disabled ? tr('（已禁用）') : ''}`}
         </Typography.Paragraph>
       ) : null}
       {note ? (
@@ -541,7 +486,6 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
         name: route.name,
         nodes: v.nodes ?? [],
         strategy: v.strategy,
-        match: { model: v.model || '' },
       });
       message.success(tr('已保存'));
       await onSaved();
@@ -576,7 +520,6 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
       layout="vertical"
       size="small"
       initialValues={{
-        model: route.match?.model ?? '',
         strategy: route.strategy ?? 'round',
         nodes: route.nodes,
       }}
@@ -584,13 +527,6 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {route.name}
       </Typography.Title>
-      <Form.Item
-        name="model"
-        label={tr('逻辑模型（空 = catch-all）')}
-        extra={tr('创建或重命名逻辑模型；Alias 只能引用这里定义的名称。')}
-      >
-        <Input />
-      </Form.Item>
       <Form.Item name="strategy" label="strategy">
         <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
       </Form.Item>
@@ -633,7 +569,7 @@ export function NodeForm({
         backup: v.backup,
         weight: v.weight,
         enabled: node.enabled,
-        models: rowsToMap(v.models, tr('逻辑模型')),
+        model: v.model,
       });
       message.success(tr('已保存'));
       await onSaved();
@@ -661,7 +597,7 @@ export function NodeForm({
   const providerName = Form.useWatch('provider', form) as string | undefined;
   const provider = config.providers.find((p) => p.name === providerName);
   const { models, error: modelsError } = useProviderModels(providerName);
-  const modelRows = Form.useWatch('models', form) as MapRow[] | undefined;
+  const model = Form.useWatch('model', form) as string | undefined;
 
   return (
     <Form
@@ -670,7 +606,7 @@ export function NodeForm({
       size="small"
       initialValues={{
         provider: node.provider,
-        models: mapToRows(node.models),
+        model: node.model,
         backup: node.backup,
         weight: node.weight ?? 1,
       }}
@@ -683,9 +619,9 @@ export function NodeForm({
       <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
         <Select options={providerOptions} />
       </Form.Item>
-      <ModelMapField config={config} models={models} modelsError={modelsError} />
-      <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
-      <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
+      <ModelField models={models} modelsError={modelsError} />
+      <DerivedTargetAPIHint provider={provider} models={models} model={model} />
+      <ModelCatalogHint models={models} error={modelsError} model={model} />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
         {tr('backup：主节点失败时作为备用；weight：轮询权重。')}
       </Typography.Paragraph>
@@ -710,27 +646,28 @@ export function NodeForm({
   );
 }
 
-export function AliasForm({
-  alias,
+export function EntrypointForm({
+  entrypoint,
   index,
   config,
   onSaved,
 }: {
-  alias: Alias;
+  entrypoint: Entrypoint;
   index: number;
   config: ConfigResponse;
   onSaved: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
-  const models = routeLogicalModels(config.routes);
 
   const save = async () => {
     const v = await form.validateFields();
     setBusy(true);
     try {
-      const next = config.aliases.map((a, i) => (i === index ? { match: v.match, model: v.model } : a));
-      await putAliases(next);
+      const next = config.entrypoints.map((e, i) =>
+        i === index ? { name: v.name, match: v.match, route: v.route } : e,
+      );
+      await putEntrypoints(next);
       message.success(tr('已保存'));
       await onSaved();
     } catch (err) {
@@ -743,7 +680,7 @@ export function AliasForm({
   const remove = async () => {
     setBusy(true);
     try {
-      await putAliases(config.aliases.filter((_, i) => i !== index));
+      await putEntrypoints(config.entrypoints.filter((_, i) => i !== index));
       message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
@@ -758,31 +695,35 @@ export function AliasForm({
       form={form}
       layout="vertical"
       size="small"
-      initialValues={{ match: alias.match, model: alias.model }}
+      initialValues={{ name: entrypoint.name, match: entrypoint.match, route: entrypoint.route }}
     >
       <Typography.Title level={5} style={{ marginTop: 0 }}>
-        alias #{index}
+        {entrypoint.name}
       </Typography.Title>
-      <Form.Item name="match" label={tr('客户端模型 glob')} rules={[{ required: true }]}>
-        <Input />
+      <Tag color="geekblue">entrypoint</Tag>
+      <Divider />
+      <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
+        <Input placeholder="fast" />
       </Form.Item>
       <Form.Item
-        name="model"
-        label={tr('逻辑模型')}
-        rules={[{ required: true }]}
-        extra={models.length === 0 ? tr('请先创建 Route 并填写逻辑模型。') : tr('只能选择 Route 中定义的逻辑模型。')}
+        name="match"
+        label={tr('客户端模型 glob')}
+        rules={[{ required: true, message: tr('至少填写一个模型 glob') }]}
+        extra={tr('顺序见入口列表；同一个入口内多个 glob 等价。')}
       >
+        <Select mode="tags" tokenSeparators={[',']} placeholder="claude-opus*" />
+      </Form.Item>
+      <Form.Item name="route" label={tr('路由')} rules={[{ required: true }]}>
         <Select
           showSearch
           optionFilterProp="label"
-          disabled={models.length === 0}
-          options={models.map((m) => ({ value: m, label: m }))}
+          options={config.routes.map((r) => ({ value: r.name, label: r.name }))}
           placeholder="strong / fast"
         />
       </Form.Item>
       <Divider />
       <Space>
-        <Button type="primary" loading={busy} onClick={save} disabled={models.length === 0}>
+        <Button type="primary" loading={busy} onClick={save}>
           {tr('保存')}
         </Button>
         <Button danger loading={busy} onClick={remove}>
@@ -795,14 +736,14 @@ export function AliasForm({
 
 function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse; onSaved: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
-  if (id.startsWith('alias:')) {
+  if (id.startsWith('entrypoint:')) {
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
-          {tr('别名连线')}
+          {tr('入口连线')}
         </Typography.Title>
         <Typography.Paragraph type="secondary">
-          {tr('别名连到哪条逻辑模型由 alias 的 model 决定，请在 Alias 面板里修改。')}
+          {tr('入口指向哪条 route 由 entrypoint 的 route 决定，请在入口面板里修改。')}
         </Typography.Paragraph>
       </div>
     );
@@ -883,12 +824,12 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
 export function Edit({ config, onReload }: Props) {
   const isMobile = !Grid.useBreakpoint().md;
   const [selection, setSelection] = useState<Selection>(null);
-  const [addOpen, setAddOpen] = useState<null | 'provider' | 'node' | 'route' | 'alias'>(null);
+  const [addOpen, setAddOpen] = useState<null | 'provider' | 'node' | 'route' | 'entrypoint'>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const openAdd = async (kind: 'provider' | 'node' | 'route' | 'alias') => {
+  const openAdd = async (kind: 'provider' | 'node' | 'route' | 'entrypoint') => {
     setError('');
     if (kind === 'provider' && presets.length === 0) {
       try {
@@ -913,14 +854,14 @@ export function Edit({ config, onReload }: Props) {
         if (!route.nodes.includes(tname)) {
           await updateRoute(route.name, { ...route, nodes: [...route.nodes, tname] });
         }
-      } else if (skind === 'alias' && tkind === 'route') {
-        const found = aliasFromNodeId(config.aliases, c.source);
-        if (!found) throw new Error('alias not found');
-        const index = found.index;
-        const target = config.routes.find((r) => r.name === tname);
-        if (!target?.match?.model) throw new Error(tr('catch-all 路由不能作为别名目标'));
-        const next = config.aliases.map((a, i) => (i === index ? { ...a, model: target.match.model! } : a));
-        await putAliases(next);
+      } else if (skind === 'entrypoint' && tkind === 'route') {
+        const found = entrypointFromNodeId(config.entrypoints, c.source);
+        if (!found) throw new Error('entrypoint not found');
+        if (!config.routes.some((r) => r.name === tname)) throw new Error('route not found');
+        const next = config.entrypoints.map((e, i) =>
+          i === found.index ? { ...e, route: tname } : e,
+        );
+        await putEntrypoints(next);
       } else {
         throw new Error(tr('不支持的连接方向'));
       }
@@ -950,12 +891,12 @@ export function Edit({ config, onReload }: Props) {
       const n = config.nodes.find((x) => x.name === name);
       return n ? <NodeForm key={n.name} node={n} config={config} onSaved={onReload} /> : null;
     }
-    if (kind === 'alias') {
-      const found = aliasFromNodeId(config.aliases, selection.id);
+    if (kind === 'entrypoint') {
+      const found = entrypointFromNodeId(config.entrypoints, selection.id);
       return found ? (
-        <AliasForm
+        <EntrypointForm
           key={found.index}
-          alias={found.alias}
+          entrypoint={found.entrypoint}
           index={found.index}
           config={config}
           onSaved={onReload}
@@ -979,8 +920,8 @@ export function Edit({ config, onReload }: Props) {
             <Button icon={<PlusOutlined />} onClick={() => void openAdd('route')}>
               Route
             </Button>
-            <Button icon={<PlusOutlined />} onClick={() => void openAdd('alias')}>
-              Alias
+            <Button icon={<PlusOutlined />} onClick={() => void openAdd('entrypoint')}>
+              Entrypoint
             </Button>
             {busy ? <Tag color="processing">{tr('应用中…')}</Tag> : null}
           </Space>
@@ -1045,8 +986,8 @@ export function Edit({ config, onReload }: Props) {
         }}
         onError={setError}
       />
-      <AddAliasModal
-        open={addOpen === 'alias'}
+      <AddEntrypointModal
+        open={addOpen === 'entrypoint'}
         config={config}
         onClose={() => setAddOpen(null)}
         onDone={async () => {
@@ -1196,7 +1137,7 @@ export function AddNodeModal({
       await createNode({
         name: v.name,
         provider: v.provider,
-        models: rowsToMap(v.models, tr('逻辑模型')),
+        model: v.model,
       });
       form.resetFields();
       await onDone();
@@ -1211,20 +1152,20 @@ export function AddNodeModal({
   const providerName = Form.useWatch('provider', form) as string | undefined;
   const provider = config.providers.find((p) => p.name === providerName);
   const { models, error: modelsError } = useProviderModels(providerName);
-  const modelRows = Form.useWatch('models', form) as MapRow[] | undefined;
+  const model = Form.useWatch('model', form) as string | undefined;
 
   return (
     <Modal open={open} title={tr('添加节点')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
-      <Form form={form} layout="vertical" size="small" initialValues={{ models: [] }}>
+      <Form form={form} layout="vertical" size="small">
         <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="deepseek-fast" />
         </Form.Item>
         <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
           <Select options={providerOptions} />
         </Form.Item>
-        <ModelMapField config={config} models={models} modelsError={modelsError} />
-        <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
-        <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
+        <ModelField models={models} modelsError={modelsError} />
+        <DerivedTargetAPIHint provider={provider} models={models} model={model} />
+        <ModelCatalogHint models={models} error={modelsError} model={model} />
       </Form>
     </Modal>
   );
@@ -1255,13 +1196,7 @@ export function AddRouteModal({
         name: v.name,
         nodes: v.nodes ?? [],
         strategy: v.strategy,
-        match: { model: v.model || '' },
       });
-      // new routes append after catch-all; move it before the first catch-all
-      const names = config.routes.map((r) => r.name);
-      const catchAll = config.routes.findIndex((r) => !r.match?.model);
-      names.splice(catchAll < 0 ? names.length : catchAll, 0, v.name);
-      await reorderRoutes(names);
       form.resetFields();
       await onDone();
     } catch (err) {
@@ -1277,13 +1212,6 @@ export function AddRouteModal({
         <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="strong" />
         </Form.Item>
-        <Form.Item
-          name="model"
-          label={tr('逻辑模型（alias 的 model 指向它）')}
-          extra={tr('创建或重命名逻辑模型；Alias 只能引用这里定义的名称。')}
-        >
-          <Input placeholder="strong" />
-        </Form.Item>
         <Form.Item name="strategy" label="strategy" initialValue="round">
           <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
         </Form.Item>
@@ -1295,7 +1223,7 @@ export function AddRouteModal({
   );
 }
 
-export function AddAliasModal({
+export function AddEntrypointModal({
   open,
   config,
   onClose,
@@ -1310,13 +1238,15 @@ export function AddAliasModal({
 }) {
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
-  const models = routeLogicalModels(config.routes);
 
   const submit = async () => {
     const v = await form.validateFields();
     setBusy(true);
     try {
-      await putAliases([...config.aliases, { match: v.match, model: v.model }]);
+      await putEntrypoints([
+        ...config.entrypoints,
+        { name: v.name, match: v.match, route: v.route },
+      ]);
       form.resetFields();
       await onDone();
     } catch (err) {
@@ -1329,29 +1259,29 @@ export function AddAliasModal({
   return (
     <Modal
       open={open}
-      title={tr('添加别名')}
+      title={tr('添加入口')}
       onCancel={onClose}
       onOk={submit}
       confirmLoading={busy}
-      okButtonProps={{ disabled: models.length === 0 }}
       destroyOnClose
     >
       <Form form={form} layout="vertical" size="small">
-        <Form.Item name="match" label={tr('客户端模型 glob')} rules={[{ required: true }]}>
-          <Input placeholder="claude-opus*" />
+        <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
+          <Input placeholder="fast" />
         </Form.Item>
         <Form.Item
-          name="model"
-          label={tr('逻辑模型')}
-          rules={[{ required: true }]}
-          extra={models.length === 0 ? tr('请先创建 Route 并填写逻辑模型。') : tr('只能选择 Route 中定义的逻辑模型。')}
+          name="match"
+          label={tr('客户端模型 glob')}
+          rules={[{ required: true, message: tr('至少填写一个模型 glob') }]}
         >
+          <Select mode="tags" tokenSeparators={[',']} placeholder="claude-opus*" />
+        </Form.Item>
+        <Form.Item name="route" label={tr('路由')} rules={[{ required: true }]}>
           <Select
             showSearch
             optionFilterProp="label"
-            disabled={models.length === 0}
-            options={models.map((m) => ({ value: m, label: m }))}
-            placeholder="strong"
+            options={config.routes.map((r) => ({ value: r.name, label: r.name }))}
+            placeholder="strong / fast"
           />
         </Form.Item>
       </Form>

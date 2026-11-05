@@ -3,7 +3,7 @@ import type { Edge } from '@xyflow/react';
 import type { GraphNode, NodeKind } from './build';
 
 const sizes: Record<NodeKind, { w: number; h: number }> = {
-  alias: { w: 250, h: 72 },
+  entrypoint: { w: 250, h: 72 },
   route: { w: 280, h: 116 },
   node: { w: 250, h: 96 },
   provider: { w: 260, h: 82 },

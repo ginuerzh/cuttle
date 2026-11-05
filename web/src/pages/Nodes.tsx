@@ -25,7 +25,7 @@ export function NodesPage({
       await updateNode(n.name, {
         name: n.name,
         provider: n.provider,
-        models: n.models ?? {},
+        model: n.model,
         backup: n.backup,
         weight: n.weight,
         enabled,
@@ -62,12 +62,11 @@ export function NodesPage({
       </Space>
       <div style={{ marginTop: 12 }}>
         {config.nodes.length === 0 ? <Empty /> : config.nodes.map((n) => {
-          const models = Object.keys(n.models ?? {}).length;
           return (
             <ListCard
               key={n.name}
               title={n.name}
-              subtitle={`${n.provider} · ${t('{count} 个模型', { count: models })}`}
+              subtitle={`${n.provider} · ${n.model}`}
               tags={
                 <Space direction="vertical" align="end" size={2}>
                   {n.backup ? <Tag color="purple">backup</Tag> : null}

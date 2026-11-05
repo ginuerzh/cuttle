@@ -1,4 +1,4 @@
-import type { Preset, Provider, ProviderApi, ProviderModel, Route } from '../api/types';
+import type { Preset, Provider, ProviderApi, ProviderModel } from '../api/types';
 import { translate as t } from '../i18n';
 
 /** Form values a preset writes into the add-provider dialog. */
@@ -214,20 +214,6 @@ export function modelDirectionRows(model: ProviderModel): ModelDirectionRows {
 }
 
 /** AutoComplete option for one model, showing its name and supported APIs. */
-/** Logical models are created by routes; aliases may only reference these. */
-export function routeLogicalModels(routes: Route[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const route of routes) {
-    const model = (route.match?.model ?? '').trim();
-    const key = model.toLowerCase();
-    if (!model || seen.has(key)) continue;
-    seen.add(key);
-    out.push(model);
-  }
-  return out;
-}
-
 export function modelOption(model: ProviderModel): { value: string; label: string } {
   const apis = modelApiLabel(model);
   const name = model.name && model.name !== model.id ? `${model.name} (${model.id})` : model.id;

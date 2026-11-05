@@ -2,32 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { buildGraph } from './build';
 import type { ConfigResponse } from '../api/types';
 
-const cfg: Pick<ConfigResponse, 'aliases' | 'routes' | 'providers' | 'nodes'> = {
-  aliases: [
-    { match: 'claude-opus*', model: 'strong' },
-    { match: 'gpt-5.5*', model: 'strong' },
-    { match: 'gpt-4.5*', model: 'fast' },
+const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
+  entrypoints: [
+    { name: 'strong', match: ['claude-opus*', 'gpt-5.5*'], route: 'strong' },
+    { name: 'fast', match: ['gpt-4.5*'], route: 'fast' },
   ],
   providers: [
     { name: 'p1', type: 'deepseek', chat: 'https://a/v1', keysSet: 1, keyPreviews: [] },
     { name: 'p2', type: 'generic', anthropic: 'https://b', keysSet: 2, keyPreviews: [] },
   ],
   nodes: [
-    { name: 'p1', provider: 'p1', models: { fast: 'm1' } },
-    { name: 'p2', provider: 'p2' },
+    { name: 'p1', provider: 'p1', model: 'm1' },
+    { name: 'p2', provider: 'p2', model: 'm2' },
   ],
   routes: [
-    { name: 'strong', nodes: ['p1', 'p2'], strategy: 'round', match: { model: 'strong' } },
-    { name: 'fast', nodes: ['p1'], strategy: 'fifo', match: { model: 'fast' } },
+    { name: 'strong', nodes: ['p1', 'p2'], strategy: 'round' },
+    { name: 'fast', nodes: ['p1'], strategy: 'fifo' },
   ],
 };
 
 describe('buildGraph', () => {
-  it('links aliases to logical-model routes', () => {
+  it('links entrypoints to their routes', () => {
     const { edges } = buildGraph(cfg);
-    expect(edges.some((e) => e.id === 'alias:claude-opus*->route:strong')).toBe(true);
-    expect(edges.some((e) => e.id === 'alias:gpt-5.5*->route:strong')).toBe(true);
-    expect(edges.some((e) => e.id === 'alias:gpt-4.5*->route:fast')).toBe(true);
+    expect(edges.some((e) => e.id === 'entrypoint:strong->route:strong')).toBe(true);
+    expect(edges.some((e) => e.id === 'entrypoint:fast->route:fast')).toBe(true);
+    expect(edges.some((e) => e.id.startsWith('alias:'))).toBe(false);
   });
 
   it('emits route -> node and node -> provider edges', () => {
@@ -38,23 +37,13 @@ describe('buildGraph', () => {
     expect(edges.some((e) => e.id === 'node:p2|provider:p2')).toBe(true);
   });
 
-  it('falls back to a catch-all route for unknown logical models', () => {
-    const withCatchAll = {
+  it('adds an unrouted node when an entrypoint route is missing', () => {
+    const missing = {
       ...cfg,
-      aliases: [...cfg.aliases, { match: 'mystery*', model: 'other' }],
-      routes: [...cfg.routes, { name: 'default', nodes: ['p1'], match: {} }],
+      entrypoints: [...cfg.entrypoints, { name: 'broken', match: ['mystery*'], route: 'missing' }],
     };
-    const { edges } = buildGraph(withCatchAll);
-    expect(edges.some((e) => e.id === 'alias:mystery*->route:default')).toBe(true);
-  });
-
-  it('adds an unrouted node when nothing matches', () => {
-    const noRoute = {
-      ...cfg,
-      aliases: [{ match: 'mystery*', model: 'other' }],
-    };
-    const { nodes, edges } = buildGraph(noRoute);
+    const { nodes, edges } = buildGraph(missing);
     expect(nodes.some((n) => n.id === 'unrouted')).toBe(true);
-    expect(edges.some((e) => e.id === 'alias:mystery*->unrouted')).toBe(true);
+    expect(edges.some((e) => e.id === 'entrypoint:broken->unrouted')).toBe(true);
   });
 });

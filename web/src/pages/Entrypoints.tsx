@@ -1,23 +1,23 @@
 import { useState } from 'react';
 import { Button, Drawer, Empty, Popconfirm, Space, Typography, message } from 'antd';
-import { putAliases } from '../api/client';
+import { putEntrypoints } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse } from '../api/types';
-import { AddAliasModal, AliasForm } from './Edit';
+import { AddEntrypointModal, EntrypointForm } from './Edit';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
 
-export function AliasesPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
+export function EntrypointsPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
-    const next = [...config.aliases];
+    const next = [...config.entrypoints];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
     try {
-      await putAliases(next);
+      await putEntrypoints(next);
       await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
@@ -26,7 +26,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
 
   const remove = async (index: number) => {
     try {
-      await putAliases(config.aliases.filter((_, i) => i !== index));
+      await putEntrypoints(config.entrypoints.filter((_, i) => i !== index));
       message.success(t('已删除'));
       await onReload();
     } catch (err) {
@@ -34,33 +34,30 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
     }
   };
 
-
-
-
   return (
     <ListPage>
       <Space style={{ width: '100%', justifyContent: 'space-between' }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t('别名')}
+          {t('入口')}
         </Typography.Title>
         <Button type="primary" onClick={() => setAdding(true)}>
           {t('添加')}
         </Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
-        {t('用 ↑ ↓ 调整顺序。alias 是客户端模型进入路由的唯一入口。')}
+        {t('用 ↑ ↓ 调整顺序。入口按顺序匹配客户端模型，第一个命中的入口决定 route。')}
       </Typography.Paragraph>
-      {config.aliases.length === 0 ? <Empty /> : config.aliases.map((a, i) => (
+      {config.entrypoints.length === 0 ? <Empty /> : config.entrypoints.map((e, i) => (
         <ListCard
-          key={`${i}-${a.match}`}
-          title={`${i + 1}. ${a.match}`}
-          subtitle={`→ ${a.model}`}
+          key={`${i}-${e.name}`}
+          title={`${i + 1}. ${e.name}`}
+          subtitle={`${(e.match ?? []).join(', ')} → ${e.route}`}
           actions={
             <>
               <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
-              <Button size="small" disabled={i === config.aliases.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
+              <Button size="small" disabled={i === config.entrypoints.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
               <Button size="small" onClick={() => setEditing(i)}>{t('编辑')}</Button>
-              <Popconfirm title={t('删除 alias {name}?', { name: a.match })} onConfirm={() => void remove(i)}>
+              <Popconfirm title={t('删除入口 {name}?', { name: e.name })} onConfirm={() => void remove(i)}>
                 <Button size="small" danger>{t('删除')}</Button>
               </Popconfirm>
             </>
@@ -68,11 +65,11 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
         />
       ))}
 
-      <Drawer width={380} title={editing !== null ? t('编辑 alias #{index}', { index: editing }) : ''} open={editing !== null} onClose={() => setEditing(null)} destroyOnClose>
-        {editing !== null && config.aliases[editing] ? (
-          <AliasForm
+      <Drawer width={380} title={editing !== null ? t('编辑入口 #{index}', { index: editing }) : ''} open={editing !== null} onClose={() => setEditing(null)} destroyOnClose>
+        {editing !== null && config.entrypoints[editing] ? (
+          <EntrypointForm
             key={editing}
-            alias={config.aliases[editing]}
+            entrypoint={config.entrypoints[editing]}
             index={editing}
             config={config}
             onSaved={async () => {
@@ -83,7 +80,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
         ) : null}
       </Drawer>
 
-      <AddAliasModal
+      <AddEntrypointModal
         open={adding}
         config={config}
         onClose={() => setAdding(false)}

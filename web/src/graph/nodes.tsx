@@ -94,9 +94,9 @@ function Body({ label, sub, metrics }: { label: string; sub?: string; metrics?: 
   );
 }
 
-export function AliasNode({ data, selected }: NodeProps<GraphNode>) {
+export function EntrypointNode({ data, selected }: NodeProps<GraphNode>) {
   return (
-    <div style={{ ...box, ...selectionStyle(selected, '#6366f1'), background: 'var(--gw-node-alias-bg)', minWidth: 220 }}>
+    <div style={{ ...box, ...selectionStyle(selected, '#6366f1'), background: 'var(--gw-node-entrypoint-bg)', minWidth: 220 }}>
       <IconBadge color="#6366f1">
         <TagOutlined />
       </IconBadge>
@@ -184,7 +184,7 @@ export function UnroutedNode({ data, selected }: NodeProps<GraphNode>) {
 }
 
 export const nodeTypes = {
-  alias: AliasNode,
+  entrypoint: EntrypointNode,
   route: RouteNode,
   node: BindingNode,
   provider: ProviderNode,

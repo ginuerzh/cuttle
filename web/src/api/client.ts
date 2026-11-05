@@ -1,4 +1,4 @@
-import type { Alias, ConfigResponse, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route } from './types';
+import type { ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -64,7 +64,7 @@ export async function getConfig(): Promise<ConfigResponse> {
   const cfg = await request<ConfigResponse>('GET', '/api/config');
   return {
     ...cfg,
-    aliases: cfg.aliases ?? [],
+    entrypoints: cfg.entrypoints ?? [],
     providers: cfg.providers ?? [],
     nodes: cfg.nodes ?? [],
     routes: cfg.routes ?? [],
@@ -131,12 +131,8 @@ export function deleteRoute(name: string): Promise<void> {
   return request<void>('DELETE', `/api/routes/${encodeURIComponent(name)}`);
 }
 
-export function reorderRoutes(names: string[]): Promise<void> {
-  return request<void>('PUT', '/api/routes/order', names);
-}
-
-export function putAliases(aliases: Alias[]): Promise<void> {
-  return request<void>('PUT', '/api/aliases', aliases);
+export function putEntrypoints(entrypoints: Entrypoint[]): Promise<void> {
+  return request<void>('PUT', '/api/entrypoints', entrypoints);
 }
 
 export function testProvider(name: string): Promise<ProbeResult> {

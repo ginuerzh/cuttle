@@ -72,7 +72,7 @@ export interface ProviderModel {
 export interface Node {
   name: string;
   provider: string;
-  models?: Record<string, string>;
+  model: string;
   backup?: boolean;
   weight?: number;
   enabled?: boolean;
@@ -82,18 +82,18 @@ export interface Route {
   name: string;
   nodes: string[];
   strategy?: string;
-  match: { model?: string; path?: string; host?: string };
 }
 
-export interface Alias {
-  match: string;
-  model: string;
+export interface Entrypoint {
+  name: string;
+  match: string[];
+  route: string;
 }
 
 export interface ConfigResponse {
   gateway: { listen: string };
   admin: { listen: string; sessionTTL: string };
-  aliases: Alias[];
+  entrypoints: Entrypoint[];
   providers: Provider[];
   nodes: Node[];
   routes: Route[];
@@ -147,7 +147,6 @@ export interface RequestRow {
   ts: string;
   model: string;
   clientModel?: string;
-  logicalModel?: string;
   provider: string;
   route?: string;
   node?: string;

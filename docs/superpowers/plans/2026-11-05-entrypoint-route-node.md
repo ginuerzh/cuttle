@@ -444,7 +444,7 @@ git commit -m "refactor(backend)!: route clients through named entrypoints"
 - Produces components: `EntrypointsPage`, `EntrypointForm`, `AddEntrypointModal`.
 - Produces graph helpers: `entrypointFromNodeId(entrypoints, id)` and node kind `entrypoint`.
 
-- [ ] **Step 1: Write the failing web tests**
+- [x] **Step 1: Write the failing web tests**
 
 Update `web/src/graph/build.test.ts` to a config with `entrypoints` and expect:
 
@@ -459,13 +459,13 @@ ids return null. In `presets.test.ts`, delete the `routeLogicalModels` describe
 block. Keep the `unknownModels` / `disabledTargets` signatures and their tests;
 they are called with a single-element rows array for a node's one model.
 
-- [ ] **Step 2: Run the web tests to verify they fail**
+- [x] **Step 2: Run the web tests to verify they fail**
 
 Run: `cd web && npm test`
 
 Expected: failures for missing `entrypoints` / `entrypointFromNodeId`.
 
-- [ ] **Step 3: Update types and client**
+- [x] **Step 3: Update types and client**
 
 In `types.ts`: add `Entrypoint`, change `Node.models` to `model`, remove
 `Route.match`, replace `aliases` with `entrypoints` in `ConfigResponse`, remove
@@ -473,7 +473,7 @@ In `types.ts`: add `Entrypoint`, change `Node.models` to `model`, remove
 `entrypoints: cfg.entrypoints ?? []`; replace `putAliases` with
 `putEntrypoints` calling `PUT /api/entrypoints`; remove `reorderRoutes`.
 
-- [ ] **Step 4: Implement the Entrypoints page and forms**
+- [x] **Step 4: Implement the Entrypoints page and forms**
 
 Rename `Aliases.tsx` to `Entrypoints.tsx`:
 
@@ -499,7 +499,7 @@ In `Edit.tsx`:
   its uses.
 - Delete `mapToRows`/`rowsToMap` if no longer used.
 
-- [ ] **Step 5: Update navigation and Routes page**
+- [x] **Step 5: Update navigation and Routes page**
 
 - `App.tsx`: import `EntrypointsPage`, rename the nav key/label
   `aliases/别名` to `entrypoints/入口`, and route the page.
@@ -510,7 +510,7 @@ In `Edit.tsx`:
 - `locales/en-US.ts`: translate `入口` as `Entrypoints`; remove or rewrite the
   alias and logical-model strings so no stale translation is reachable.
 
-- [ ] **Step 6: Update the topology graph**
+- [x] **Step 6: Update the topology graph**
 
 - `graph/build.ts`: `NodeKind` uses `entrypoint`; `GraphNodeData.entrypoint`;
   accept `entrypoints`; draw one node per entrypoint keyed
@@ -529,12 +529,12 @@ In `Edit.tsx`:
 - `App.tsx` `NodePanel`: treat `entrypoint` like other kinds for request/error
   metrics.
 
-- [ ] **Step 7: Update the Requests page**
+- [x] **Step 7: Update the Requests page**
 
 Remove the `client → logical` Descriptions item; keep client model and target
 model. Remove any `logicalModel` type references.
 
-- [ ] **Step 8: Run the web gate**
+- [x] **Step 8: Run the web gate**
 
 ```bash
 cd web
@@ -544,7 +544,7 @@ npm run build
 
 Expected: all tests PASS; TypeScript and Vite build PASS.
 
-- [ ] **Step 9: Fill the Implementation record and commit**
+- [x] **Step 9: Fill the Implementation record and commit**
 
 Fill the record below, then:
 
@@ -554,12 +554,12 @@ git commit -m "refactor(web)!: author named entrypoints and the new topology"
 ```
 
 **Implementation record**
-- Date/status: pending
-- Repo/commit: llm-gw / —
-- Files changed: —
-- Tests: —
-- Review findings/fixes: —
-- Deferred/limitations: —
+- Date/status: 2026-11-05 / complete
+- Repo/commit: llm-gw / pending follow-up record commit (web commit below)
+- Files changed: `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/App.tsx`, `web/src/pages/Entrypoints.tsx` (replaced `Aliases.tsx`), `web/src/pages/Edit.tsx`, `Routes.tsx`, `Nodes.tsx`, `Requests.tsx`, `presets.ts`, `web/src/graph/build.ts`, `layout.ts`, `nodes.tsx`, `web/src/pages/selection.ts`, `web/src/locales/en-US.ts`, `web/src/styles.css`, and their tests. Removed the now-unused `web/src/components/MapFields.tsx` and its test.
+- Tests: `npx tsc --noEmit` PASS; `npm test` PASS (9 files, 75 tests); `npm run build` PASS (Vite chunk-size warning unchanged); `GOWORK=off go test ./... -count=1` PASS after the web build.
+- Review findings/fixes: route order is no longer editable (no ↑/↓, no `reorderRoutes`); new routes append. The node form now has one required model field with the existing catalog picker and unknown/disabled warnings. The entrypoint form uses a tags control for `match`, a route select, and the list order is edited via ↑/↓/bulk PUT. Topology draws `entrypoint:<name>` nodes and dragging an entrypoint onto a route replaces its route. Requests no longer show a logical model. Stale alias/logical translations were removed.
+- Deferred/limitations: `PUT /api/routes/order` is still interpreted as an update of a route literally named `order` (backend ruling from Task 1); no UI path uses it. Requests do not display the resolved entrypoint. The Vite large-chunk warning is pre-existing.
 
 ---
 
