@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { AutoComplete, Button, Drawer, Form, Input, Modal, Popconfirm, Space, Table, Typography, message } from 'antd';
+import { Button, Drawer, Popconfirm, Space, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { putAliases } from '../api/client';
 import { translate as t } from '../i18n';
 import type { Alias, ConfigResponse } from '../api/types';
-import { AliasForm } from './Edit';
+import { AddAliasModal, AliasForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
 import { MobileCard } from '../components/MobileCard';
 
@@ -13,8 +13,6 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [form] = Form.useForm();
-  const models = config.routes.map((r) => r.match?.model || '').filter(Boolean);
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
@@ -39,18 +37,6 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
     }
   };
 
-  const add = async () => {
-    const v = await form.validateFields();
-    try {
-      await putAliases([...config.aliases, { match: v.match, model: v.model }]);
-      message.success(t('已添加'));
-      setAdding(false);
-      form.resetFields();
-      await onReload();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err));
-    }
-  };
 
   const columns: ColumnsType<Alias> = [
     { title: t('顺序'), width: 60, render: (_, __, i) => <Typography.Text type="secondary">{i + 1}</Typography.Text> },
@@ -136,16 +122,17 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
         ) : null}
       </Drawer>
 
-      <Modal title={t('添加 Alias')} open={adding} onCancel={() => setAdding(false)} onOk={() => void add()} destroyOnClose>
-        <Form form={form} layout="vertical" size="small">
-          <Form.Item name="match" label={t('客户端模型 glob')} rules={[{ required: true }]}>
-            <Input placeholder="claude-opus*" />
-          </Form.Item>
-          <Form.Item name="model" label={t('逻辑模型')} rules={[{ required: true }]}>
-            <AutoComplete options={models.map((m) => ({ value: m }))} placeholder="strong" />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <AddAliasModal
+        open={adding}
+        config={config}
+        onClose={() => setAdding(false)}
+        onDone={async () => {
+          message.success(t('已添加'));
+          setAdding(false);
+          await onReload();
+        }}
+        onError={(s) => message.error(s)}
+      />
     </div>
   );
 }
