@@ -747,3 +747,11 @@ git commit -m "feat(web): sync topology layout through the server"
   manual second-session check).
 - Limitation: the React mount effect is not covered by a DOM-level unit test;
   its decision logic is extracted into `pickInitialPositions` and tested.
+
+## Final review fix pass (2026-11-05)
+
+- Important: a successful `GET` could apply a stale snapshot after a drag (or after a failed `PUT`), snapping the graph back and losing the newer local layout on the next load. Fixed with a persistent `llm-gw.positions.pending` marker, a `mutated` guard for the in-flight read, and a latest-save version check that clears the marker only when the newest save succeeds. `pickInitialPositions` now accepts `pending`/`mutated` and returns `positions: null` when the in-memory map must win. Tests in `positions.test.ts` pin the pending and raced-read cases.
+- Important (re-graded from the review's Minor by effect): a `PUT` with a missing or null `positions` field cleared the shared map. The request body now requires a non-nil `positions` field; `{}` and `{"positions":null}` return `400`. The admin test asserts the stored map is unchanged after both.
+- Minor: invalid payload tests now confirm the stored map is untouched after empty-ID and oversized-map requests, and the missing-store `PUT` path is pinned with a `503`.
+- Minor: after a failed server read the topology no longer performs an implicit write or shows a second warning; `serverReadOK` gates persistence from the merge effect while still filling in-memory dagre positions.
+- Verification: `GOWORK=off go test ./... -count=1` PASS; `cd web && npm test -- --run` PASS (9 files, 83 tests); `npx tsc --noEmit` PASS; `npm run build` PASS. The fix commit is `d2e662cc`; the implementation record above remains the feature commit.
