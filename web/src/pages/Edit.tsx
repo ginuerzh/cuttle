@@ -877,7 +877,7 @@ export function Edit({ config, onReload }: Props) {
 
 // ---------------------------------------------------------------- add modals
 
-function AddProviderModal({
+export function AddProviderModal({
   open,
   presets,
   onClose,
@@ -989,7 +989,7 @@ function AddProviderModal({
 }
 
 
-function AddNodeModal({
+export function AddNodeModal({
   open,
   config,
   onClose,
@@ -1055,7 +1055,7 @@ function AddNodeModal({
   );
 }
 
-function AddRouteModal({
+export function AddRouteModal({
   open,
   config,
   onClose,
@@ -1116,7 +1116,7 @@ function AddRouteModal({
   );
 }
 
-function AddAliasModal({
+export function AddAliasModal({
   open,
   config,
   onClose,

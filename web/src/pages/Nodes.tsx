@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Button, Drawer, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteNode } from '../api/client';
 import type { ConfigResponse, Node } from '../api/types';
-import { NodeForm } from './Edit';
+import { AddNodeModal, NodeForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
 import { MobileCard } from '../components/MobileCard';
 
@@ -16,6 +17,7 @@ export function NodesPage({
 }) {
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<Node | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const remove = async (name: string) => {
     try {
@@ -86,37 +88,47 @@ export function NodesPage({
   ];
 
   return (
-    <>
-      {isMobile ? (
-        <div style={{ padding: 12 }}>
-          {config.nodes.map((n) => {
-            const models = Object.keys(n.models ?? {}).length;
-            return (
-              <MobileCard
-                key={n.name}
-                title={n.name}
-                subtitle={`${n.provider} · ${models} models`}
-                tags={
-                  <Space size={2}>
-                    {n.backup ? <Tag color="purple">backup</Tag> : null}
-                    {n.enabled === false ? <Tag>off</Tag> : <Tag color="green">on</Tag>}
-                  </Space>
-                }
-                actions={
-                  <>
-                    <Button size="small" onClick={() => setEditing(n)}>编辑</Button>
-                    <Popconfirm title={`删除 ${n.name}?`} onConfirm={() => void remove(n.name)}>
-                      <Button size="small" danger>删除</Button>
-                    </Popconfirm>
-                  </>
-                }
-              />
-            );
-          })}
-        </div>
-      ) : (
-        <Table rowKey="name" dataSource={config.nodes} columns={columns} pagination={false} />
-      )}
+    <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
+      <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          Nodes
+        </Typography.Title>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>
+          添加
+        </Button>
+      </Space>
+      <div style={{ marginTop: 12 }}>
+        {isMobile ? (
+          <div>
+            {config.nodes.map((n) => {
+              const models = Object.keys(n.models ?? {}).length;
+              return (
+                <MobileCard
+                  key={n.name}
+                  title={n.name}
+                  subtitle={`${n.provider} · ${models} models`}
+                  tags={
+                    <Space size={2}>
+                      {n.backup ? <Tag color="purple">backup</Tag> : null}
+                      {n.enabled === false ? <Tag>off</Tag> : <Tag color="green">on</Tag>}
+                    </Space>
+                  }
+                  actions={
+                    <>
+                      <Button size="small" onClick={() => setEditing(n)}>编辑</Button>
+                      <Popconfirm title={`删除 ${n.name}?`} onConfirm={() => void remove(n.name)}>
+                        <Button size="small" danger>删除</Button>
+                      </Popconfirm>
+                    </>
+                  }
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <Table rowKey="name" dataSource={config.nodes} columns={columns} pagination={false} />
+        )}
+      </div>
       <Drawer
         open={!!editing}
         width={420}
@@ -136,6 +148,16 @@ export function NodesPage({
           />
         ) : null}
       </Drawer>
-    </>
+      <AddNodeModal
+        open={adding}
+        config={config}
+        onClose={() => setAdding(false)}
+        onDone={async () => {
+          setAdding(false);
+          await onReload();
+        }}
+        onError={(s) => message.error(s)}
+      />
+    </div>
   );
 }

@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Button, Drawer, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteRoute, reorderRoutes } from '../api/client';
 import type { ConfigResponse, Route } from '../api/types';
-import { RouteForm } from './Edit';
+import { AddRouteModal, RouteForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
 import { MobileCard } from '../components/MobileCard';
 
 export function RoutesPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<Route | null>(null);
+  const [adding, setAdding] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const move = async (from: number, to: number) => {
@@ -78,9 +80,14 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
 
   return (
     <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        Routes
-      </Typography.Title>
+      <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          Routes
+        </Typography.Title>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>
+          添加
+        </Button>
+      </Space>
       <Typography.Paragraph type="secondary">
         {isMobile ? '用 ↑ ↓ 调整顺序；顺序即 FIFO 优先级，catch-all 应放在最后。' : '拖动行调整顺序：顺序即 FIFO 优先级，catch-all 应放在最后。'}
       </Typography.Paragraph>
@@ -138,6 +145,16 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
           />
         ) : null}
       </Drawer>
+      <AddRouteModal
+        open={adding}
+        config={config}
+        onClose={() => setAdding(false)}
+        onDone={async () => {
+          setAdding(false);
+          await onReload();
+        }}
+        onError={(s) => message.error(s)}
+      />
     </div>
   );
 }

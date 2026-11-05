@@ -156,6 +156,56 @@ function EdgePanel({ id, metrics }: { id: string; metrics?: EdgeMetrics }) {
   );
 }
 
+function Sidebar({
+  page,
+  onPage,
+  themeMode,
+  onThemeMode,
+  onLogout,
+}: {
+  page: Page;
+  onPage: (page: Page) => void;
+  themeMode: ThemeMode;
+  onThemeMode: (mode: ThemeMode) => void;
+  onLogout: () => void;
+}) {
+  const themeLabel = THEME_ITEMS.find((item) => item.key === themeMode)?.label ?? '跟随系统';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <Menu
+          mode="inline"
+          selectedKeys={[page]}
+          style={{ borderInlineEnd: 'none', background: 'transparent' }}
+          onClick={(e) => onPage(e.key as Page)}
+          items={NAV_ITEMS}
+        />
+      </div>
+      <div style={{ borderTop: '1px solid var(--gw-border)', padding: 12 }}>
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Dropdown
+            trigger={['click']}
+            placement="topLeft"
+            menu={{
+              items: THEME_ITEMS,
+              selectable: true,
+              selectedKeys: [themeMode],
+              onClick: ({ key }) => onThemeMode(key as ThemeMode),
+            }}
+          >
+            <Button block icon={themeIcon(themeMode)} style={{ justifyContent: 'flex-start' }}>
+              {themeLabel}
+            </Button>
+          </Dropdown>
+          <Button block onClick={onLogout}>
+            退出
+          </Button>
+        </Space>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState<Session>('unknown');
   const [config, setConfig] = useState<ConfigResponse | null>(null);
@@ -189,8 +239,14 @@ export default function App() {
     void loadConfig();
   }, [loadConfig]);
 
+  const handleLogout = useCallback(async () => {
+    await logout().catch(() => undefined);
+    setSession('no');
+    setConfig(null);
+  }, []);
+
   useEffect(() => {
-    if (session !== 'yes' || mode !== 'monitor') {
+    if (session !== 'yes' || mode !== 'monitor' || page !== 'topology') {
       return;
     }
     let cancelled = false;
@@ -226,7 +282,7 @@ export default function App() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [session, mode, range]);
+  }, [session, mode, range, page]);
 
   useEffect(() => {
     if (mode === 'edit') {
@@ -254,7 +310,6 @@ export default function App() {
         style={{
           display: 'flex',
           alignItems: 'center',
-          flexWrap: 'wrap',
           gap: isMobile ? 8 : 16,
           height: 'auto',
           lineHeight: 'normal',
@@ -270,55 +325,6 @@ export default function App() {
         <Typography.Text strong style={{ fontSize: 16 }}>
           llm-gw
         </Typography.Text>
-        <Segmented
-          value={mode}
-          onChange={(v) => setMode(v as Mode)}
-          options={[
-            { label: '监控', value: 'monitor' },
-            { label: '编辑', value: 'edit' },
-          ]}
-        />
-        {mode === 'monitor' ? (
-          <Space size={8}>
-            <Select
-              size="small"
-              value={range}
-              onChange={setRange}
-              options={RANGES.map(({ label, value }) => ({ label, value }))}
-              style={{ width: 140 }}
-            />
-            {!isMobile ? (
-              <Badge
-                status={stale ? 'warning' : 'success'}
-                text={stale ? '数据延迟' : updatedAt ? `更新 ${updatedAt}` : '等待数据'}
-              />
-            ) : null}
-          </Space>
-        ) : (
-          <Tag color="orange">编辑模式 · 统计已暂停</Tag>
-        )}
-        <div style={{ flex: 1 }} />
-        <Dropdown
-          trigger={['click']}
-          menu={{
-            items: THEME_ITEMS,
-            selectable: true,
-            selectedKeys: [themeMode],
-            onClick: ({ key }) => setThemeMode(key as ThemeMode),
-          }}
-        >
-          <Button size="small" icon={themeIcon(themeMode)} aria-label="切换主题" />
-        </Dropdown>
-        <Button
-          size="small"
-          onClick={async () => {
-            await logout().catch(() => undefined);
-            setSession('no');
-            setConfig(null);
-          }}
-        >
-          退出
-        </Button>
       </Header>
 
       <Layout style={{ background: 'var(--gw-bg)' }}>
@@ -327,18 +333,18 @@ export default function App() {
             placement="left"
             open={navOpen}
             onClose={() => setNavOpen(false)}
-            width={220}
+            width={230}
             styles={{ body: { padding: 0 } }}
           >
-            <Menu
-              mode="inline"
-              selectedKeys={[page]}
-              style={{ borderInlineEnd: 'none', background: 'transparent' }}
-              onClick={(e) => {
-                setPage(e.key as Page);
+            <Sidebar
+              page={page}
+              onPage={(next) => {
+                setPage(next);
                 setNavOpen(false);
               }}
-              items={NAV_ITEMS}
+              themeMode={themeMode}
+              onThemeMode={setThemeMode}
+              onLogout={() => void handleLogout()}
             />
           </Drawer>
         ) : (
@@ -346,26 +352,69 @@ export default function App() {
             width={190}
             style={{ background: 'var(--gw-surface)', borderRight: '1px solid var(--gw-border)' }}
           >
-            <Menu
-              mode="inline"
-              selectedKeys={[page]}
-              style={{ borderInlineEnd: 'none', background: 'transparent' }}
-              onClick={(e) => setPage(e.key as Page)}
-              items={NAV_ITEMS}
+            <Sidebar
+              page={page}
+              onPage={setPage}
+              themeMode={themeMode}
+              onThemeMode={setThemeMode}
+              onLogout={() => void handleLogout()}
             />
           </Sider>
         )}
 
         <Content style={{ display: 'flex', minWidth: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+          <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
             {page === 'topology' ? (
-              mode === 'edit' ? (
-                config ? (
-                  <Edit config={config} onReload={loadConfig} />
-                ) : null
-              ) : config ? (
-                <Topology config={config} metrics={metrics} onSelect={setSelection} />
-              ) : null
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 12px',
+                    background: 'var(--gw-surface)',
+                    borderBottom: '1px solid var(--gw-border)',
+                  }}
+                >
+                  <Segmented
+                    value={mode}
+                    onChange={(v) => setMode(v as Mode)}
+                    options={[
+                      { label: '监控', value: 'monitor' },
+                      { label: '编辑', value: 'edit' },
+                    ]}
+                  />
+                  {mode === 'monitor' ? (
+                    <Space wrap size={8}>
+                      <Select
+                        size="small"
+                        value={range}
+                        onChange={setRange}
+                        options={RANGES.map(({ label, value }) => ({ label, value }))}
+                        style={{ width: 140 }}
+                      />
+                      {!isMobile ? (
+                        <Badge
+                          status={stale ? 'warning' : 'success'}
+                          text={stale ? '数据延迟' : updatedAt ? `更新 ${updatedAt}` : '等待数据'}
+                        />
+                      ) : null}
+                    </Space>
+                  ) : (
+                    <Tag color="orange">编辑模式 · 统计已暂停</Tag>
+                  )}
+                </div>
+                <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                  {mode === 'edit' ? (
+                    config ? (
+                      <Edit config={config} onReload={loadConfig} />
+                    ) : null
+                  ) : config ? (
+                    <Topology config={config} metrics={metrics} onSelect={setSelection} />
+                  ) : null}
+                </div>
+              </div>
             ) : page === 'providers' ? (
               config ? <ProvidersPage config={config} onReload={loadConfig} /> : null
             ) : page === 'nodes' ? (
@@ -380,10 +429,7 @@ export default function App() {
               config ? (
                 <SettingsPage
                   config={config}
-                  onLogout={() => {
-                    setSession('no');
-                    setConfig(null);
-                  }}
+                  onLogout={() => void handleLogout()}
                 />
               ) : null
             )}

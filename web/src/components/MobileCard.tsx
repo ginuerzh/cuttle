@@ -9,6 +9,7 @@ export function MobileCard({
   actions,
   onClick,
   dense = false,
+  tagsAlign = 'start',
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -16,6 +17,7 @@ export function MobileCard({
   actions?: ReactNode;
   onClick?: () => void;
   dense?: boolean;
+  tagsAlign?: 'start' | 'center';
 }) {
   return (
     <Card
@@ -33,7 +35,7 @@ export function MobileCard({
             <div style={{ color: 'var(--gw-text-muted)', fontSize: dense ? 11 : 12, marginTop: 2, wordBreak: 'break-all' }}>{subtitle}</div>
           ) : null}
         </div>
-        {tags ? <div style={{ flex: 'none' }}>{tags}</div> : null}
+        {tags ? <div style={{ flex: 'none', alignSelf: tagsAlign === 'center' ? 'center' : 'flex-start' }}>{tags}</div> : null}
       </div>
       {actions ? (
         <div style={{ marginTop: 8 }}>

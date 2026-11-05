@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import { Alert, Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteProvider, getProviderModels, testProvider, updateProvider } from '../api/client';
-import type { ConfigResponse, Provider, ProviderModel } from '../api/types';
-import { ProviderForm } from './Edit';
+import { deleteProvider, getPresets, getProviderModels, testProvider, updateProvider } from '../api/client';
+import type { ConfigResponse, Preset, Provider, ProviderModel } from '../api/types';
+import { AddProviderModal, ProviderForm } from './Edit';
 import {
   configuredAPIs,
   modelApiLabel,
@@ -129,6 +130,8 @@ function DirectionRow({
 export function ProvidersPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
   const isMobile = useIsMobile();
   const [editing, setEditing] = useState<Provider | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [presets, setPresets] = useState<Preset[]>([]);
   const [models, setModels] = useState<{ name: string; list: ProviderModel[] } | null>(null);
   const [modelsError, setModelsError] = useState('');
   const [modelsBusy, setModelsBusy] = useState(false);
@@ -154,6 +157,15 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     } finally {
       setProviderBusy('');
     }
+  };
+
+  const openAdd = async () => {
+    try {
+      setPresets(await getPresets());
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    }
+    setAddOpen(true);
   };
 
   const showModels = async (name: string, refresh = false) => {
@@ -314,9 +326,14 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
 
   return (
     <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        Providers
-      </Typography.Title>
+      <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          Providers
+        </Typography.Title>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => void openAdd()}>
+          添加
+        </Button>
+      </Space>
       {isMobile ? (
         <div>
           {config.providers.map((p) => (
@@ -324,15 +341,9 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
               key={p.name}
               title={p.name}
               subtitle={`${p.type} · ${configuredAPIs(p).join(' / ') || 'no API'}`}
+              tagsAlign="center"
               tags={
                 <Space direction="vertical" align="end" size={2}>
-                  <Switch
-                    size="small"
-                    checked={p.enabled !== false}
-                    disabled={providerBusy === p.name}
-                    onChange={(checked) => void toggleProvider(p, checked)}
-                    aria-label={`切换 ${p.name}`}
-                  />
                   {p.probe ? (
                     <Tag color={p.probe.ok ? 'green' : 'red'}>
                       {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
@@ -340,6 +351,13 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
                   ) : (
                     <Tag>{p.keysSet} keys</Tag>
                   )}
+                  <Switch
+                    size="small"
+                    checked={p.enabled !== false}
+                    disabled={providerBusy === p.name}
+                    onChange={(checked) => void toggleProvider(p, checked)}
+                    aria-label={`切换 ${p.name}`}
+                  />
                 </Space>
               }
               actions={
@@ -463,6 +481,17 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           ) : null}
         </div>
       </Modal>
+
+      <AddProviderModal
+        open={addOpen}
+        presets={presets}
+        onClose={() => setAddOpen(false)}
+        onDone={async () => {
+          setAddOpen(false);
+          await onReload();
+        }}
+        onError={(s) => message.error(s)}
+      />
     </div>
   );
 }
