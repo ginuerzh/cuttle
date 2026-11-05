@@ -56,8 +56,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return (await res.json()) as T;
 }
 
-export function getConfig(): Promise<ConfigResponse> {
-  return request<ConfigResponse>('GET', '/api/config');
+export async function getConfig(): Promise<ConfigResponse> {
+  const cfg = await request<ConfigResponse>('GET', '/api/config');
+  return {
+    ...cfg,
+    aliases: cfg.aliases ?? [],
+    providers: cfg.providers ?? [],
+    nodes: cfg.nodes ?? [],
+    routes: cfg.routes ?? [],
+  };
 }
 
 export function getGraph(from: Date, to: Date): Promise<GraphMetrics> {
@@ -134,7 +141,9 @@ export function testProvider(name: string): Promise<ProbeResult> {
 
 export function getProviderModels(name: string, refresh = false): Promise<ProviderModel[]> {
   const query = refresh ? '?refresh=1' : '';
-  return request<ProviderModel[]>('GET', `/api/providers/${encodeURIComponent(name)}/models${query}`);
+  return request<ProviderModel[] | null>('GET', `/api/providers/${encodeURIComponent(name)}/models${query}`).then(
+    (models) => models ?? [],
+  );
 }
 
 export interface RequestQuery {
@@ -157,7 +166,7 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
   if (q.route) params.set('route', q.route);
   if (q.clientModel) params.set('clientModel', q.clientModel);
   if (q.errorsOnly) params.set('errors', '1');
-  return request<RequestRow[]>('GET', `/api/requests?${params.toString()}`);
+  return request<RequestRow[] | null>('GET', `/api/requests?${params.toString()}`).then((rows) => rows ?? []);
 }
 
 export function changePassword(oldPassword: string, newPassword: string): Promise<void> {
