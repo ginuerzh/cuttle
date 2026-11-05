@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Drawer, Popconfirm, Space, Typography, message } from 'antd';
+import { Button, Drawer, Empty, Popconfirm, Space, Typography, message } from 'antd';
 import { putAliases } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse } from '../api/types';
@@ -48,10 +48,9 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
         </Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
-        {t('用 ↑ ↓ 调整顺序。')}
-        {t('alias 是客户端模型进入路由的唯一入口。')}
+        {t('用 ↑ ↓ 调整顺序。alias 是客户端模型进入路由的唯一入口。')}
       </Typography.Paragraph>
-      {config.aliases.map((a, i) => (
+      {config.aliases.length === 0 ? <Empty /> : config.aliases.map((a, i) => (
         <ListCard
           key={`${i}-${a.match}`}
           title={`${i + 1}. ${a.match}`}

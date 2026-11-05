@@ -267,6 +267,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (session !== 'yes') setNavOpen(false);
+  }, [session]);
+
+  useEffect(() => {
     if (session !== 'yes' || mode !== 'monitor' || page !== 'topology') {
       return;
     }
@@ -340,7 +344,12 @@ export default function App() {
           paddingInline: isMobile ? 12 : 20,
         }}
       >
-        <Button icon={<MenuOutlined />} onClick={() => setNavOpen(true)} aria-label="menu" />
+        <Button
+          icon={<MenuOutlined />}
+          onClick={() => setNavOpen(true)}
+          aria-label="menu"
+          aria-expanded={navOpen}
+        />
         <Typography.Text strong style={{ fontSize: 16 }}>
           llm-gw
         </Typography.Text>

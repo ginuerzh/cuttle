@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { Card, Space, Typography } from 'antd';
 
 /** Single-column list item used on every viewport. */
@@ -22,9 +22,21 @@ export function ListCard({
   return (
     <Card
       size="small"
-      style={{ marginBottom: dense ? 6 : 8 }}
+      hoverable={!!onClick}
+      style={{ marginBottom: dense ? 6 : 8, cursor: onClick ? 'pointer' : undefined }}
       styles={{ body: { padding: dense ? 8 : 12 } }}
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? 'button' : undefined}
       onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e: KeyboardEvent<HTMLDivElement>) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              onClick();
+            }
+          : undefined
+      }
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ minWidth: 0 }}>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Drawer, Popconfirm, Space, Tag, Typography, message } from 'antd';
+import { Button, Drawer, Empty, Popconfirm, Space, Tag, Typography, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { deleteNode } from '../api/client';
 import { translate as t } from '../i18n';
@@ -41,7 +41,7 @@ export function NodesPage({
         </Button>
       </Space>
       <div style={{ marginTop: 12 }}>
-        {config.nodes.map((n) => {
+        {config.nodes.length === 0 ? <Empty /> : config.nodes.map((n) => {
           const models = Object.keys(n.models ?? {}).length;
           return (
             <ListCard

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Button, Drawer, Modal, Popconfirm, Space, Switch, Tag, Typography, message } from 'antd';
+import { Alert, Button, Drawer, Empty, Modal, Popconfirm, Space, Switch, Tag, Tooltip, Typography, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { deleteProvider, getPresets, getProviderModels, testProvider, updateProvider } from '../api/client';
 import type { ConfigResponse, Preset, Provider, ProviderModel } from '../api/types';
@@ -156,7 +156,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           {t('添加')}
         </Button>
       </Space>
-      {config.providers.map((p) => (
+      {config.providers.length === 0 ? <Empty /> : config.providers.map((p) => (
         <ListCard
           key={p.name}
           title={p.name}
@@ -170,12 +170,21 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           tags={
             <Space direction="vertical" align="end" size={2}>
               {p.probe ? (
-                <Tag color={p.probe.ok ? 'green' : 'red'} style={{ marginInlineEnd: 0 }}>
-                  {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
-                </Tag>
-              ) : (
-                <Tag style={{ marginInlineEnd: 0 }}>{p.keysSet} keys</Tag>
-              )}
+                <Tooltip title={p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}>
+                  <Tag
+                    color={p.probe.ok ? 'green' : 'red'}
+                    style={{
+                      marginInlineEnd: 0,
+                      maxWidth: 180,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              <Tag style={{ marginInlineEnd: 0 }}>{p.keysSet} keys</Tag>
               <Switch
                 size="small"
                 checked={p.enabled !== false}

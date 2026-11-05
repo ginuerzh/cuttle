@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Drawer, Popconfirm, Space, Typography, message } from 'antd';
+import { Button, Drawer, Empty, Popconfirm, Space, Typography, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { deleteRoute, reorderRoutes } from '../api/client';
 import { translate as t } from '../i18n';
@@ -50,7 +50,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
       <Typography.Paragraph type="secondary">
         {t('用 ↑ ↓ 调整顺序；顺序即 FIFO 优先级，catch-all 应放在最后。')}
       </Typography.Paragraph>
-      {config.routes.map((r, i) => (
+      {config.routes.length === 0 ? <Empty /> : config.routes.map((r, i) => (
         <ListCard
           key={r.name}
           title={`${i + 1}. ${r.name}`}
