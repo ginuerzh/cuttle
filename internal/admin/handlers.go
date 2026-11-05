@@ -261,10 +261,10 @@ type providerUpdate struct {
 	KeyUpdates []providerKeyUpdate `json:"keyUpdates,omitempty"`
 }
 
-// applyProviderKeyUpdates applies per-index replacements/deletions and appends
-// new keys without exposing the existing secrets to the client.
+// applyProviderKeyUpdates deletes existing keys and appends new ones without
+// exposing the existing secrets to the client. Existing keys are read-only:
+// changing one requires deleting it and adding a replacement.
 func applyProviderKeyUpdates(keys []string, updates []providerKeyUpdate) ([]string, error) {
-	replaced := make(map[int]string, len(updates))
 	deleted := make(map[int]bool, len(updates))
 	var appended []string
 	for _, u := range updates {
@@ -280,29 +280,21 @@ func applyProviderKeyUpdates(keys []string, updates []providerKeyUpdate) ([]stri
 		if i < 0 || i >= len(keys) {
 			return nil, fmt.Errorf("key index %d out of range", i)
 		}
-		if _, ok := replaced[i]; ok || deleted[i] {
-			return nil, fmt.Errorf("duplicate operation for key index %d", i)
+		if deleted[i] {
+			return nil, fmt.Errorf("duplicate delete for key index %d", i)
 		}
-		if u.Delete {
-			if key != "" {
-				return nil, fmt.Errorf("key index %d: delete and key are mutually exclusive", i)
-			}
-			deleted[i] = true
-			continue
+		if !u.Delete {
+			return nil, fmt.Errorf("key index %d is read-only; delete it and add a new key", i)
 		}
-		if key == "" {
-			return nil, fmt.Errorf("key index %d: key is required", i)
+		if key != "" {
+			return nil, fmt.Errorf("key index %d: delete and key are mutually exclusive", i)
 		}
-		replaced[i] = key
+		deleted[i] = true
 	}
 
 	out := make([]string, 0, len(keys)-len(deleted)+len(appended))
 	for i, key := range keys {
 		if deleted[i] {
-			continue
-		}
-		if next, ok := replaced[i]; ok {
-			out = append(out, next)
 			continue
 		}
 		out = append(out, key)
