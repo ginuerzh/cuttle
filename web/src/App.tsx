@@ -73,8 +73,13 @@ type Page = 'topology' | 'providers' | 'nodes' | 'routes' | 'aliases' | 'request
 type Session = 'unknown' | 'yes' | 'no';
 
 const RANGES = [
+  { label: '最近 1 分钟', value: '1m', ms: 60_000 },
+  { label: '最近 5 分钟', value: '5m', ms: 5 * 60_000 },
   { label: '最近 15 分钟', value: '15m', ms: 15 * 60_000 },
+  { label: '最近 30 分钟', value: '30m', ms: 30 * 60_000 },
   { label: '最近 1 小时', value: '1h', ms: 60 * 60_000 },
+  { label: '最近 6 小时', value: '6h', ms: 6 * 60 * 60_000 },
+  { label: '最近 12 小时', value: '12h', ms: 12 * 60 * 60_000 },
   { label: '最近 24 小时', value: '24h', ms: 24 * 60 * 60_000 },
 ];
 
