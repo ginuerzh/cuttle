@@ -3,7 +3,7 @@ import { Tag, Tooltip, Typography } from 'antd';
 import type { ProviderModel } from '../api/types';
 import { translate as t } from '../i18n';
 import { modelApiLabel, modelDirectionRows, normalizedModalities } from '../pages/presets';
-import { MobileCard } from './MobileCard';
+import { ListCard } from './ListCard';
 
 const MODALITY_ICONS: Record<string, { label: string; color: string; paths: ReactNode }> = {
   text: {
@@ -132,7 +132,7 @@ export function ModelCard({
   const rows = modelDirectionRows(model);
   return (
     <div style={{ borderRadius: 10, boxShadow: selected ? '0 0 0 2px #0ea5e9' : undefined }}>
-      <MobileCard
+      <ListCard
         dense
         title={model.name || model.id}
         subtitle={

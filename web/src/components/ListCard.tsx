@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Card, Space, Typography } from 'antd';
 
-/** Compact list item used instead of a table row on narrow screens. */
-export function MobileCard({
+/** Single-column list item used on every viewport. */
+export function ListCard({
   title,
   subtitle,
   tags,

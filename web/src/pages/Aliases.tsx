@@ -6,7 +6,7 @@ import { translate as t } from '../i18n';
 import type { Alias, ConfigResponse } from '../api/types';
 import { AddAliasModal, AliasForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
-import { MobileCard } from '../components/MobileCard';
+import { ListCard } from '../components/ListCard';
 
 export function AliasesPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
   const isMobile = useIsMobile();
@@ -70,7 +70,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
       {isMobile ? (
         <div>
           {config.aliases.map((a, i) => (
-            <MobileCard
+            <ListCard
               key={`${i}-${a.match}`}
               title={`${i + 1}. ${a.match}`}
               subtitle={`→ ${a.model}`}

@@ -17,7 +17,7 @@ import { getRequests } from '../api/client';
 import { translate as t } from '../i18n';
 import type { RequestRow } from '../api/types';
 import { useIsMobile } from '../components/useIsMobile';
-import { MobileCard } from '../components/MobileCard';
+import { ListCard } from '../components/ListCard';
 
 const RANGES = [
   { label: '15 分钟', value: 15 * 60_000 },
@@ -120,7 +120,7 @@ export function RequestsPage() {
       {isMobile ? (
         <div>
           {rows.map((r) => (
-            <MobileCard
+            <ListCard
               key={r.requestId}
               title={r.clientModel || r.model || r.requestId}
               subtitle={`${new Date(r.ts).toLocaleString()} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok`}

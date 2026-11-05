@@ -7,7 +7,7 @@ import { translate as t } from '../i18n';
 import type { ConfigResponse, Route } from '../api/types';
 import { AddRouteModal, RouteForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
-import { MobileCard } from '../components/MobileCard';
+import { ListCard } from '../components/ListCard';
 
 export function RoutesPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
   const isMobile = useIsMobile();
@@ -96,7 +96,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
         <div>
           {config.routes.map((r, i) => {
             return (
-              <MobileCard
+              <ListCard
                 key={r.name}
                 title={`${i + 1}. ${r.name}`}
                 subtitle={`${r.match?.model || 'catch-all'} · ${r.strategy || 'round'} · ${(r.nodes ?? []).join(', ') || 'no nodes'}`}

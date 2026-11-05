@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Alert, Button, Drawer, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Drawer, Modal, Popconfirm, Space, Switch, Tag, Typography, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import { deleteProvider, getPresets, getProviderModels, testProvider, updateProvider } from '../api/client';
 import type { ConfigResponse, Preset, Provider, ProviderModel } from '../api/types';
 import { translate as t } from '../i18n';
@@ -12,7 +11,8 @@ import {
   toggleModelOverride,
 } from './presets';
 import { useIsMobile } from '../components/useIsMobile';
-import { MobileCard } from '../components/MobileCard';
+import { ListCard } from '../components/ListCard';
+import { ListPage } from '../components/ListPage';
 import { ModelCard } from '../components/ModelCard';
 
 export function ProvidersPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
@@ -146,74 +146,8 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
 
   const anyEnabled = !!models && models.list.some((m) => !m.disabled);
 
-  const columns: ColumnsType<Provider> = [
-    { title: t('名称'), dataIndex: 'name', width: 180, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
-    { title: 'type', dataIndex: 'type', width: 120, responsive: ['md'] },
-    {
-      title: 'APIs',
-      key: 'apis',
-      responsive: ['lg'],
-      render: (_, p) => apiTags(p),
-    },
-    {
-      title: 'keys',
-      dataIndex: 'keysSet',
-      width: 70,
-      responsive: ['lg'],
-      render: (v: number) => <Tag>{v}</Tag>,
-    },
-    {
-      title: t('探测'),
-      dataIndex: 'probe',
-      width: 150,
-      responsive: ['xl'],
-      render: (p?: Provider['probe']) =>
-        p ? (
-          <Tag color={p.ok ? 'green' : 'red'}>{p.ok ? `${p.latencyMs}ms` : p.error || 'fail'}</Tag>
-        ) : (
-          <Typography.Text type="secondary">—</Typography.Text>
-        ),
-    },
-    {
-      title: t('启用'),
-      dataIndex: 'enabled',
-      width: 70,
-      render: (enabled: boolean | undefined, p) => (
-        <Switch
-          size="small"
-          checked={enabled !== false}
-          disabled={providerBusy === p.name}
-          onChange={(checked) => void toggleProvider(p, checked)}
-          aria-label={t('切换 {name}', { name: p.name })}
-        />
-      ),
-    },
-    {
-      title: t('操作'),
-      width: 230,
-      render: (_, p) => (
-        <Space wrap size={4}>
-          <Button size="small" onClick={() => void test(p.name)}>
-            {t('测试')}
-          </Button>
-          <Button size="small" onClick={() => void showModels(p.name)}>
-            {t('模型')}
-          </Button>
-          <Button size="small" onClick={() => setEditing(p)}>
-            {t('编辑')}
-          </Button>
-          <Popconfirm title={t('删除 {name}?', { name: p.name })} onConfirm={() => void remove(p.name)}>
-            <Button size="small" danger>
-              {t('删除')}
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
   return (
-    <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
+    <ListPage>
       <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           Providers
@@ -222,53 +156,47 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           {t('添加')}
         </Button>
       </Space>
-      {isMobile ? (
-        <div>
-          {config.providers.map((p) => (
-            <MobileCard
-              key={p.name}
-              title={p.name}
-              subtitle={
-                <>
-                  <span>{p.type}</span>
-                  <div style={{ marginTop: 2 }}>{apiTags(p)}</div>
-                </>
-              }
-              tagsAlign="center"
-              tags={
-                <Space direction="vertical" align="end" size={2}>
-                  {p.probe ? (
-                    <Tag color={p.probe.ok ? 'green' : 'red'} style={{ marginInlineEnd: 0 }}>
-                      {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
-                    </Tag>
-                  ) : (
-                    <Tag style={{ marginInlineEnd: 0 }}>{p.keysSet} keys</Tag>
-                  )}
-                  <Switch
-                    size="small"
-                    checked={p.enabled !== false}
-                    disabled={providerBusy === p.name}
-                    onChange={(checked) => void toggleProvider(p, checked)}
-                    aria-label={t('切换 {name}', { name: p.name })}
-                  />
-                </Space>
-              }
-              actions={
-                <>
-                  <Button size="small" onClick={() => void test(p.name)}>{t('测试')}</Button>
-                  <Button size="small" onClick={() => void showModels(p.name)}>{t('模型')}</Button>
-                  <Button size="small" onClick={() => setEditing(p)}>{t('编辑')}</Button>
-                  <Popconfirm title={t('删除 {name}?', { name: p.name })} onConfirm={() => void remove(p.name)}>
-                    <Button size="small" danger>{t('删除')}</Button>
-                  </Popconfirm>
-                </>
-              }
-            />
-          ))}
-        </div>
-      ) : (
-        <Table rowKey="name" size="small" columns={columns} dataSource={config.providers} pagination={false} />
-      )}
+      {config.providers.map((p) => (
+        <ListCard
+          key={p.name}
+          title={p.name}
+          subtitle={
+            <>
+              <span>{p.type}</span>
+              <div style={{ marginTop: 2 }}>{apiTags(p)}</div>
+            </>
+          }
+          tagsAlign="center"
+          tags={
+            <Space direction="vertical" align="end" size={2}>
+              {p.probe ? (
+                <Tag color={p.probe.ok ? 'green' : 'red'} style={{ marginInlineEnd: 0 }}>
+                  {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
+                </Tag>
+              ) : (
+                <Tag style={{ marginInlineEnd: 0 }}>{p.keysSet} keys</Tag>
+              )}
+              <Switch
+                size="small"
+                checked={p.enabled !== false}
+                disabled={providerBusy === p.name}
+                onChange={(checked) => void toggleProvider(p, checked)}
+                aria-label={t('切换 {name}', { name: p.name })}
+              />
+            </Space>
+          }
+          actions={
+            <>
+              <Button size="small" onClick={() => void test(p.name)}>{t('测试')}</Button>
+              <Button size="small" onClick={() => void showModels(p.name)}>{t('模型')}</Button>
+              <Button size="small" onClick={() => setEditing(p)}>{t('编辑')}</Button>
+              <Popconfirm title={t('删除 {name}?', { name: p.name })} onConfirm={() => void remove(p.name)}>
+                <Button size="small" danger>{t('删除')}</Button>
+              </Popconfirm>
+            </>
+          }
+        />
+      ))}
 
       <Drawer
         width={420}
@@ -359,6 +287,6 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
         }}
         onError={(s) => message.error(s)}
       />
-    </div>
+    </ListPage>
   );
 }
