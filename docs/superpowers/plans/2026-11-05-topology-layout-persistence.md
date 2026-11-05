@@ -726,12 +726,12 @@ git commit -m "feat(web): sync topology layout through the server"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-05 / complete
+- Repo/commit: llm-gw / 26cd6c5c (web and docs); this record commit is the follow-up
+- Files changed: `web/src/graph/positions.ts`, `web/src/graph/positions.test.ts`, `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/api/client.test.ts`, `web/src/pages/Topology.tsx`, `web/src/locales/en-US.ts`, `README.md`, `AGENTS.md`, `docs/superpowers/plans/2026-11-05-topology-layout-persistence.md`
+- Tests/commands and results: `cd web && npm test -- --run` PASS (9 files, 81 tests); `npx tsc --noEmit` PASS; `npm run build` PASS; `GOWORK=off go test ./... -count=1` PASS. Manual: logged in with two cookie jars, PUT the layout with session A, GET returned the same map with session B; restarted the process and GET still returned it from `stats.sqlite`.
+- Review findings and fixes: Server positions replace the local map; an empty server seeds from the local backup once; server failures keep the local layout and show keyed warnings. Saves go through `createPositionSaver`, so PUTs run in call order. Reset computes the dagre layout and persists it in one call instead of clearing and refilling. The mount effect is gated by `serverReady` so a partial local map is not written before the server response. `positions.test.ts` pins server-wins, local-seed and save-order behavior; `client.test.ts` pins the response envelope normalization.
+- Deferred items/limitations: no DOM-level test for the mount effect (decision logic is extracted and tested); simultaneous editors are last-write-wins; stale IDs are retained until a reset or a save from a pruned map.
 
 ## Self-Review
 
