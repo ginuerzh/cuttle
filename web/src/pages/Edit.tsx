@@ -17,7 +17,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { MinusCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import type { Connection } from '@xyflow/react';
 import {
   createNode,
@@ -44,13 +44,13 @@ import {
   enabledModels,
   genericCanonicalNote,
   isBaseURLLocked,
-  modelOption,
   presetFormValues,
   providerPayload,
   PROVIDER_TYPES,
   unknownModels,
 } from './presets';
-import { MapField, mapToRows, rowsToMap, type MapRow } from '../components/MapFields';
+import { mapToRows, rowsToMap, type MapRow } from '../components/MapFields';
+import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
 
 interface Props {
@@ -101,6 +101,133 @@ function KeyField({ label, extra }: { label: string; extra?: string }) {
         )}
       </Form.List>
     </Form.Item>
+  );
+}
+
+/**
+ * Node model mapping. The value stays editable, but the picker opens the same
+ * card list used by the Provider model modal.
+ */
+function ModelMapField({
+  config,
+  models,
+  modelsError,
+}: {
+  config: ConfigResponse;
+  models: ProviderModel[];
+  modelsError: string;
+}) {
+  const form = Form.useFormInstance();
+  const isMobile = !Grid.useBreakpoint().md;
+  const [picker, setPicker] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
+  const choices = enabledModels(models).filter((m) => {
+    const q = query.trim().toLowerCase();
+    return !q || m.id.toLowerCase().includes(q) || (m.name ?? '').toLowerCase().includes(q);
+  });
+  const close = () => {
+    setPicker(null);
+    setQuery('');
+  };
+  const choose = (model: ProviderModel) => {
+    if (picker === null) return;
+    form.setFieldValue(['models', picker, 'value'], model.id);
+    close();
+  };
+
+  return (
+    <>
+      <Form.Item label={tr('models（逻辑模型 → 供应商模型）')} style={{ marginBottom: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {tr('用 * 作为兜底；未命中的逻辑模型会走 * 或直接透传。')}
+        </Typography.Text>
+        <Form.List name="models">
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map((field) => (
+                <div key={field.key} style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+                  <Form.Item name={[field.name, 'key']} noStyle>
+                    <AutoComplete
+                      style={{ flex: 1, minWidth: 0 }}
+                      options={[...logicalModels(config), '*'].map((v) => ({ value: v }))}
+                      placeholder={tr('快速 / *')}
+                    />
+                  </Form.Item>
+                  <Typography.Text type="secondary">→</Typography.Text>
+                  <Form.Item name={[field.name, 'value']} noStyle>
+                    <Input style={{ flex: 1, minWidth: 0 }} placeholder="deepseek-v4-flash" />
+                  </Form.Item>
+                  <Button
+                    size="small"
+                    icon={<SearchOutlined />}
+                    onClick={() => {
+                      setQuery('');
+                      setPicker(field.name);
+                    }}
+                    aria-label={tr('选择模型')}
+                  />
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MinusCircleOutlined />}
+                    onClick={() => remove(field.name)}
+                    aria-label={tr('删除映射')}
+                  />
+                </div>
+              ))}
+              <Button
+                type="dashed"
+                size="small"
+                block
+                icon={<PlusOutlined />}
+                style={{ marginTop: 6 }}
+                onClick={() => add({ key: '', value: '' })}
+              >
+                {tr('添加模型映射')}
+              </Button>
+            </>
+          )}
+        </Form.List>
+      </Form.Item>
+      <Modal
+        title={tr('选择模型')}
+        open={picker !== null}
+        onCancel={close}
+        footer={null}
+        width={isMobile ? '94%' : 640}
+        destroyOnClose
+        styles={{
+          content: { padding: 0 },
+          header: { padding: '16px 24px 0' },
+          body: { padding: 0, maxHeight: 'min(480px, 60dvh)', overflowY: 'auto' },
+        }}
+      >
+        <div style={{ padding: '12px 24px 16px' }}>
+          <Input.Search
+            allowClear
+            placeholder={tr('搜索模型')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ marginBottom: 12 }}
+          />
+          {modelsError ? (
+            <Alert
+              type="error"
+              showIcon
+              message={tr('模型目录加载失败')}
+              description={modelsError}
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
+          {choices.map((model) => (
+            <ModelCard key={model.id} model={model} onClick={() => choose(model)} />
+          ))}
+          {choices.length === 0 && !modelsError ? (
+            <Typography.Text type="secondary">{tr('供应商没有返回模型')}</Typography.Text>
+          ) : null}
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -502,26 +629,20 @@ export function NodeForm({
       <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
         <Select options={providerOptions} />
       </Form.Item>
-      <MapField
-        name="models"
-        label={tr('models（逻辑模型 → 供应商模型）')}
-        hint={tr('用 * 作为兜底；未命中的逻辑模型会走 * 或直接透传。')}
-        keyPlaceholder={tr('快速 / *')}
-        valuePlaceholder="deepseek-v4-flash"
-        suggestions={[...logicalModels(config), '*']}
-        valueOptions={enabledModels(models).map(modelOption)}
-        addLabel={tr('添加模型映射')}
-      />
+      <ModelMapField config={config} models={models} modelsError={modelsError} />
       <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
       <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
-      <Space>
-        <Form.Item name="backup" label="backup" valuePropName="checked" noStyle>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+        {tr('backup：主节点失败时作为备用；enabled：是否启用；weight：轮询权重。')}
+      </Typography.Paragraph>
+      <Space size={16} wrap align="start">
+        <Form.Item name="backup" label="backup" valuePropName="checked" style={{ marginBottom: 0 }}>
           <Switch size="small" />
         </Form.Item>
-        <Form.Item name="enabled" label="enabled" valuePropName="checked" noStyle>
+        <Form.Item name="enabled" label="enabled" valuePropName="checked" style={{ marginBottom: 0 }}>
           <Switch size="small" />
         </Form.Item>
-        <Form.Item name="weight" label="weight" noStyle>
+        <Form.Item name="weight" label="weight" style={{ marginBottom: 0 }}>
           <InputNumber min={0} size="small" style={{ width: 70 }} />
         </Form.Item>
       </Space>
@@ -1039,16 +1160,7 @@ export function AddNodeModal({
         <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
           <Select options={providerOptions} />
         </Form.Item>
-        <MapField
-          name="models"
-          label={tr('models（逻辑模型 → 供应商模型）')}
-          hint={tr('用 * 作为兜底。')}
-          keyPlaceholder="fast / *"
-          valuePlaceholder="deepseek-v4-flash"
-          suggestions={[...logicalModels(config), '*']}
-          valueOptions={enabledModels(models).map(modelOption)}
-          addLabel={tr('添加模型映射')}
-        />
+        <ModelMapField config={config} models={models} modelsError={modelsError} />
         <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
         <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
       </Form>
