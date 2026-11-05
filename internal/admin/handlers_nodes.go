@@ -11,7 +11,7 @@ import (
 func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	writeJSON(w, http.StatusOK, s.cfg.Nodes)
+	writeJSON(w, http.StatusOK, nonNilSlice(s.cfg.Nodes))
 }
 
 func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {

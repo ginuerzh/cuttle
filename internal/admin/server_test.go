@@ -838,3 +838,27 @@ func TestProviderImmutabilityIgnoresTypeCaseAndSpace(t *testing.T) {
 		t.Fatal("changed base URL must be rejected for a non-generic provider")
 	}
 }
+
+func TestEmptyListsReturnArrays(t *testing.T) {
+	_, _, _, ts := newTestAdmin(t)
+	client, _ := login(t, ts.URL)
+
+	for _, path := range []string{"/api/requests", "/api/routes", "/api/aliases", "/api/nodes"} {
+		resp := doJSON(t, client, http.MethodGet, ts.URL+path, "", "")
+		b, _ := io.ReadAll(resp.Body)
+		if got := strings.TrimSpace(string(b)); got != "[]" {
+			t.Fatalf("%s = %s, want []", path, got)
+		}
+	}
+
+	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/config", "", "")
+	var v map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"aliases", "providers", "nodes", "routes"} {
+		if got := string(v[key]); got != "[]" {
+			t.Fatalf("config.%s = %s, want []", key, got)
+		}
+	}
+}

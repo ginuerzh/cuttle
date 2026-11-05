@@ -48,7 +48,7 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, rows)
+	writeJSON(w, http.StatusOK, nonNilSlice(rows))
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {

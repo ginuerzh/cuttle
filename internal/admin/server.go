@@ -138,6 +138,14 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, presets)
 }
 
+// nonNilSlice keeps list endpoints returning JSON arrays instead of null.
+func nonNilSlice[T any](v []T) []T {
+	if v == nil {
+		return []T{}
+	}
+	return v
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

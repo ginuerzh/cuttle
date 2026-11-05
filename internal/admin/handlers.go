@@ -171,9 +171,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	v.Admin.Listen = s.cfg.Admin.Listen
 	v.Admin.SessionTTL = s.cfg.Admin.SessionTTL
 	v.Stats = s.cfg.Stats
-	v.Aliases = s.cfg.Aliases
-	v.Nodes = s.cfg.Nodes
-	v.Routes = s.cfg.Routes
+	v.Aliases = nonNilSlice(s.cfg.Aliases)
+	v.Nodes = nonNilSlice(s.cfg.Nodes)
+	v.Routes = nonNilSlice(s.cfg.Routes)
+	v.Providers = make([]providerView, 0, len(s.cfg.Providers))
 	for _, p := range s.cfg.Providers {
 		v.Providers = append(v.Providers, s.viewProvider(p))
 	}
@@ -368,7 +369,7 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListRoutes(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	writeJSON(w, http.StatusOK, s.cfg.Routes)
+	writeJSON(w, http.StatusOK, nonNilSlice(s.cfg.Routes))
 }
 
 func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
@@ -543,7 +544,7 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetAliases(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	writeJSON(w, http.StatusOK, s.cfg.Aliases)
+	writeJSON(w, http.StatusOK, nonNilSlice(s.cfg.Aliases))
 }
 
 func (s *Server) handlePutAliases(w http.ResponseWriter, r *http.Request) {
