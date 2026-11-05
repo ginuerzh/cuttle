@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import type { NodeMetrics } from '../api/types';
 import type { GraphNode } from './build';
+import { translate as t } from '../i18n';
 
 function errorRate(m?: NodeMetrics): number {
   if (!m || m.requests === 0) return 0;
@@ -30,7 +31,7 @@ function fmt(n: number): string {
 
 function metricsLine(m?: NodeMetrics): string {
   if (!m) return '';
-  if (m.requests === 0) return '暂无请求';
+  if (m.requests === 0) return t('暂无请求');
   const err = errorRate(m) * 100;
   return `${fmt(m.requests)} req · ${err < 10 ? err.toFixed(1) : err.toFixed(0)}% err · p95 ${fmt(m.p95Ms)}ms`;
 }

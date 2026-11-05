@@ -35,6 +35,7 @@ import {
   updateRoute,
 } from '../api/client';
 import type { Alias, ConfigResponse, Node as BindNode, Preset, Provider, ProviderModel, Route } from '../api/types';
+import { translate as tr } from '../i18n';
 import { aliasFromNodeId, splitId } from './selection';
 import {
   configuredAPIs,
@@ -82,7 +83,7 @@ function KeyField({ label, extra }: { label: string; extra?: string }) {
                   size="small"
                   icon={<MinusCircleOutlined />}
                   onClick={() => remove(field.name)}
-                  aria-label="删除 key"
+                  aria-label={tr('删除 key')}
                 />
               </div>
             ))}
@@ -94,7 +95,7 @@ function KeyField({ label, extra }: { label: string; extra?: string }) {
               style={{ marginTop: 6 }}
               onClick={() => add('')}
             >
-              添加 key
+              {tr('添加 key')}
             </Button>
           </>
         )}
@@ -144,7 +145,7 @@ function ModelCatalogHint({
     <>
       {error ? (
         <Typography.Paragraph type="warning" style={{ fontSize: 12, marginBottom: 8 }}>
-          无法加载模型目录：{error}（仍可手动输入）
+          {tr('无法加载模型目录：{error}（仍可手动输入）', { error })}
         </Typography.Paragraph>
       ) : null}
       {disabled.length > 0 ? (
@@ -152,8 +153,8 @@ function ModelCatalogHint({
           type="warning"
           showIcon
           style={{ marginBottom: 8 }}
-          message={`目标模型已在 Provider 中禁用，路由会跳过该 node：${disabled.join(', ')}`}
-          description="可在 Provider 的模型列表中重新启用；禁用期间该映射不会参与路由。"
+          message={tr('目标模型已在 Provider 中禁用，路由会跳过该 node：{models}', { models: disabled.join(', ') })}
+          description={tr('可在 Provider 的模型列表中重新启用；禁用期间该映射不会参与路由。')}
         />
       ) : null}
       {missing.length > 0 ? (
@@ -161,8 +162,8 @@ function ModelCatalogHint({
           type="warning"
           showIcon
           style={{ marginBottom: 8 }}
-          message={`未知模型或 API 待定：${missing.join(', ')}`}
-          description="目录中没有该模型，或目录尚未提供它的 API。仍可保存，网关会按默认 API 顺序解析。"
+          message={tr('未知模型或 API 待定：{models}', { models: missing.join(', ') })}
+          description={tr('目录中没有该模型，或目录尚未提供它的 API。仍可保存，网关会按默认 API 顺序解析。')}
         />
       ) : null}
     </>
@@ -196,13 +197,13 @@ function DerivedTargetAPIHint({
     <>
       {targets.length > 0 ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-          目标 API：
+          {tr('目标 API：')}
           {targets
             .map(
               (t) =>
                 `${t.logical || '?'} → ${t.model}: ${
-                  t.api === 'unknown' ? '未知（无可用 base URL）' : t.api
-                }${t.disabled ? '（已禁用）' : ''}`,
+                  t.api === 'unknown' ? tr('未知（无可用 base URL）') : t.api
+                }${t.disabled ? tr('（已禁用）') : ''}`,
             )
             .join('；')}
         </Typography.Paragraph>
@@ -244,7 +245,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         .filter(Boolean);
       if (keys.length > 0) payload.keys = keys;
       await updateProvider(provider.name, payload);
-      message.success('已保存');
+      message.success(tr('已保存'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -257,7 +258,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
     setBusy(true);
     try {
       await deleteProvider(provider.name);
-      message.success('已删除');
+      message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -291,59 +292,59 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         <Tag key={k}>{k}</Tag>
       ))}
       <Divider />
-      <Form.Item name="type" label="type" rules={[{ required: true }]} extra="创建后不可修改">
+      <Form.Item name="type" label="type" rules={[{ required: true }]} extra={tr('创建后不可修改')}>
         <Select disabled options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
       </Form.Item>
       {baseURLLocked ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-          非 generic Provider 的 API base URL 创建后锁定，只有 generic 类型可以编辑；如需更换请删除后重建。
+          {tr('非 generic Provider 的 API base URL 创建后锁定，只有 generic 类型可以编辑；如需更换请删除后重建。')}
         </Typography.Paragraph>
       ) : null}
       <Form.Item
         name="chat"
         label="chat base URL"
-        extra="OpenAI Chat Completions 端点，通常以 /v1 结尾；留空表示不提供。"
+        extra={tr('OpenAI Chat Completions 端点，通常以 /v1 结尾；留空表示不提供。')}
       >
         <Input disabled={baseURLLocked} placeholder="https://api.example.com/v1" />
       </Form.Item>
       <Form.Item
         name="responses"
         label="responses base URL"
-        extra="OpenAI Responses 端点，通常以 /v1 结尾；留空表示不提供。"
+        extra={tr('OpenAI Responses 端点，通常以 /v1 结尾；留空表示不提供。')}
       >
         <Input disabled={baseURLLocked} placeholder="https://api.example.com/v1" />
       </Form.Item>
       <Form.Item
         name="anthropic"
         label="anthropic base URL"
-        extra="Anthropic Messages 端点，通常是根路径；留空表示不提供。"
+        extra={tr('Anthropic Messages 端点，通常是根路径；留空表示不提供。')}
       >
         <Input disabled={baseURLLocked} placeholder="https://api.example.com/anthropic" />
       </Form.Item>
       <Form.Item
         name="gemini"
         label="gemini base URL"
-        extra="Gemini API 端点，通常以 /v1beta 结尾；留空表示不提供。"
+        extra={tr('Gemini API 端点，通常以 /v1beta 结尾；留空表示不提供。')}
       >
         <Input disabled={baseURLLocked} placeholder="https://generativelanguage.googleapis.com/v1beta" />
       </Form.Item>
       <KeyField
         label="keys"
-        extra="每个输入框一个 key；全部留空则保持现有 keys 不变，填写后替换全部。"
+        extra={tr('每个输入框一个 key；全部留空则保持现有 keys 不变，填写后替换全部。')}
       />
       <Form.Item name="enabled" label="enabled" valuePropName="checked">
         <Switch size="small" />
       </Form.Item>
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        至少填写一个 API base URL。模型映射与 backup/weight 在 Node 上配置；同一个 Provider 可以被多个 Node 引用。
+        {tr('至少填写一个 API base URL。模型映射与 backup/weight 在 Node 上配置；同一个 Provider 可以被多个 Node 引用。')}
       </Typography.Paragraph>
       <Divider />
       <Space>
         <Button type="primary" loading={busy} onClick={save}>
-          保存
+          {tr('保存')}
         </Button>
         <Button danger loading={busy} onClick={remove}>
-          删除
+          {tr('删除')}
         </Button>
       </Space>
     </Form>
@@ -364,7 +365,7 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
         strategy: v.strategy,
         match: { model: v.model || '' },
       });
-      message.success('已保存');
+      message.success(tr('已保存'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -377,7 +378,7 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
     setBusy(true);
     try {
       await deleteRoute(route.name);
-      message.success('已删除');
+      message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -405,22 +406,22 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {route.name}
       </Typography.Title>
-      <Form.Item name="model" label="逻辑模型（空 = catch-all）">
+      <Form.Item name="model" label={tr('逻辑模型（空 = catch-all）')}>
         <Input />
       </Form.Item>
       <Form.Item name="strategy" label="strategy">
         <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
       </Form.Item>
-      <Form.Item name="nodes" label="Nodes（顺序 = 优先级）">
+      <Form.Item name="nodes" label={tr('Nodes（顺序 = 优先级）')}>
         <Select mode="multiple" options={nodeOptions} />
       </Form.Item>
       <Divider />
       <Space>
         <Button type="primary" loading={busy} onClick={save}>
-          保存
+          {tr('保存')}
         </Button>
         <Button danger loading={busy} onClick={remove}>
-          删除
+          {tr('删除')}
         </Button>
       </Space>
     </Form>
@@ -450,9 +451,9 @@ export function NodeForm({
         backup: v.backup,
         weight: v.weight,
         enabled: v.enabled,
-        models: rowsToMap(v.models, '逻辑模型'),
+        models: rowsToMap(v.models, tr('逻辑模型')),
       });
-      message.success('已保存');
+      message.success(tr('已保存'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -465,7 +466,7 @@ export function NodeForm({
     setBusy(true);
     try {
       await deleteNode(node.name);
-      message.success('已删除');
+      message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -503,13 +504,13 @@ export function NodeForm({
       </Form.Item>
       <MapField
         name="models"
-        label="models（逻辑模型 → 供应商模型）"
-        hint='用 * 作为兜底；未命中的逻辑模型会走 * 或直接透传。'
-        keyPlaceholder="快速 / *"
+        label={tr('models（逻辑模型 → 供应商模型）')}
+        hint={tr('用 * 作为兜底；未命中的逻辑模型会走 * 或直接透传。')}
+        keyPlaceholder={tr('快速 / *')}
         valuePlaceholder="deepseek-v4-flash"
         suggestions={[...logicalModels(config), '*']}
         valueOptions={enabledModels(models).map(modelOption)}
-        addLabel="添加模型映射"
+        addLabel={tr('添加模型映射')}
       />
       <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
       <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
@@ -527,10 +528,10 @@ export function NodeForm({
       <Divider />
       <Space>
         <Button type="primary" loading={busy} onClick={save}>
-          保存
+          {tr('保存')}
         </Button>
         <Button danger loading={busy} onClick={remove}>
-          删除
+          {tr('删除')}
         </Button>
       </Space>
     </Form>
@@ -558,7 +559,7 @@ export function AliasForm({
     try {
       const next = config.aliases.map((a, i) => (i === index ? { match: v.match, model: v.model } : a));
       await putAliases(next);
-      message.success('已保存');
+      message.success(tr('已保存'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -571,7 +572,7 @@ export function AliasForm({
     setBusy(true);
     try {
       await putAliases(config.aliases.filter((_, i) => i !== index));
-      message.success('已删除');
+      message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
       message.error(errorText(err));
@@ -590,19 +591,19 @@ export function AliasForm({
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         alias #{index}
       </Typography.Title>
-      <Form.Item name="match" label="客户端模型 glob" rules={[{ required: true }]}>
+      <Form.Item name="match" label={tr('客户端模型 glob')} rules={[{ required: true }]}>
         <Input />
       </Form.Item>
-      <Form.Item name="model" label="逻辑模型" rules={[{ required: true }]}>
+      <Form.Item name="model" label={tr('逻辑模型')} rules={[{ required: true }]}>
         <AutoComplete options={models.map((m) => ({ value: m }))} placeholder="strong / fast" />
       </Form.Item>
       <Divider />
       <Space>
         <Button type="primary" loading={busy} onClick={save}>
-          保存
+          {tr('保存')}
         </Button>
         <Button danger loading={busy} onClick={remove}>
-          删除
+          {tr('删除')}
         </Button>
       </Space>
     </Form>
@@ -615,10 +616,10 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
-          别名连线
+          {tr('别名连线')}
         </Typography.Title>
         <Typography.Paragraph type="secondary">
-          别名连到哪条逻辑模型由 alias 的 model 决定，请在 Alias 面板里修改。
+          {tr('别名连到哪条逻辑模型由 alias 的 model 决定，请在 Alias 面板里修改。')}
         </Typography.Paragraph>
       </div>
     );
@@ -638,7 +639,7 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
       setBusy(true);
       try {
         await updateRoute(route.name, { ...route, nodes: route.nodes.filter((n) => n !== nodeName) });
-        message.success('已断开');
+        message.success(tr('已断开'));
         await onSaved();
       } catch (err) {
         message.error(errorText(err));
@@ -650,17 +651,17 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
-          连线
+          {tr('连线')}
         </Typography.Title>
         <Typography.Paragraph>
           {routeName} → {nodeName}
           {node ? `（${node.provider}）` : ''}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          模型映射和 backup/weight 都在 Node 面板里改。
+          {tr('模型映射和 backup/weight 都在 Node 面板里改。')}
         </Typography.Paragraph>
         <Button danger loading={busy} onClick={remove} disabled={!route}>
-          断开
+          {tr('断开')}
         </Button>
       </div>
     );
@@ -672,13 +673,13 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
-          连线
+          {tr('连线')}
         </Typography.Title>
         <Typography.Paragraph>
           {nodeName} → {providerName}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          Node 指向哪个 Provider 由 Node 的 provider 字段决定，请在 Node 面板修改。
+          {tr('Node 指向哪个 Provider 由 Node 的 provider 字段决定，请在 Node 面板修改。')}
         </Typography.Paragraph>
       </div>
     );
@@ -687,9 +688,9 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
   return (
     <div>
       <Typography.Title level={5} style={{ marginTop: 0 }}>
-        连线
+        {tr('连线')}
       </Typography.Title>
-      <Typography.Paragraph type="secondary">这条连线不可直接编辑。</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">{tr('这条连线不可直接编辑。')}</Typography.Paragraph>
     </div>
   );
 }
@@ -734,11 +735,11 @@ export function Edit({ config, onReload }: Props) {
         if (!found) throw new Error('alias not found');
         const index = found.index;
         const target = config.routes.find((r) => r.name === tname);
-        if (!target?.match?.model) throw new Error('catch-all 路由不能作为别名目标');
+        if (!target?.match?.model) throw new Error(tr('catch-all 路由不能作为别名目标'));
         const next = config.aliases.map((a, i) => (i === index ? { ...a, model: target.match.model! } : a));
         await putAliases(next);
       } else {
-        throw new Error('不支持的连接方向');
+        throw new Error(tr('不支持的连接方向'));
       }
       await onReload();
     } catch (err) {
@@ -749,7 +750,7 @@ export function Edit({ config, onReload }: Props) {
   };
 
   const panel = useMemo(() => {
-    if (!selection) return <Typography.Text type="secondary">选择节点或连线开始编辑</Typography.Text>;
+    if (!selection) return <Typography.Text type="secondary">tr('选择节点或连线开始编辑')</Typography.Text>;
     if (selection.kind === 'edge') {
       return <EdgeForm id={selection.id} config={config} onSaved={onReload} />;
     }
@@ -798,7 +799,7 @@ export function Edit({ config, onReload }: Props) {
             <Button icon={<PlusOutlined />} onClick={() => void openAdd('alias')}>
               Alias
             </Button>
-            {busy ? <Tag color="processing">应用中…</Tag> : null}
+            {busy ? <Tag color="processing">{tr('应用中…')}</Tag> : null}
           </Space>
           {error ? (
             <Alert style={{ marginTop: 8, maxWidth: 520 }} type="error" message={error} showIcon closable onClose={() => setError('')} />
@@ -920,13 +921,13 @@ export function AddProviderModal({
   };
 
   return (
-    <Modal open={open} title="添加 Provider" onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal open={open} title={tr('添加 Provider')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
       <Form form={form} layout="vertical" size="small" initialValues={{ type: 'generic', keys: [''] }}>
-        <Form.Item name="preset" label="预设">
+        <Form.Item name="preset" label={tr('预设')}>
           <Select
             allowClear
             options={presets.map((p) => ({ value: p.name, label: `${p.name} (${p.type})` }))}
-            placeholder="可选"
+            placeholder={tr('可选')}
             onChange={(name?: string) => {
               const p = presets.find((x) => x.name === name);
               if (!p) return;
@@ -935,22 +936,22 @@ export function AddProviderModal({
             }}
           />
         </Form.Item>
-        <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+        <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="opencode-go" />
         </Form.Item>
         <Form.Item name="type" label="type" rules={[{ required: true }]}>
           <Select options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
         </Form.Item>
-        <Form.Item name="chat" label="chat base URL" extra="留空表示不提供该 API。">
+        <Form.Item name="chat" label="chat base URL" extra={tr('留空表示不提供该 API。')}>
           <Input placeholder="https://api.example.com/v1" />
         </Form.Item>
-        <Form.Item name="responses" label="responses base URL" extra="留空表示不提供该 API。">
+        <Form.Item name="responses" label="responses base URL" extra={tr('留空表示不提供该 API。')}>
           <Input placeholder="https://api.example.com/v1" />
         </Form.Item>
-        <Form.Item name="anthropic" label="anthropic base URL" extra="留空表示不提供该 API。">
+        <Form.Item name="anthropic" label="anthropic base URL" extra={tr('留空表示不提供该 API。')}>
           <Input placeholder="https://api.example.com/anthropic" />
         </Form.Item>
-        <Form.Item name="gemini" label="gemini base URL" extra="留空表示不提供该 API。">
+        <Form.Item name="gemini" label="gemini base URL" extra={tr('留空表示不提供该 API。')}>
           <Input placeholder="https://generativelanguage.googleapis.com/v1beta" />
         </Form.Item>
         <Form.Item
@@ -963,7 +964,7 @@ export function AddProviderModal({
             const values = getFieldsValue() as Partial<Provider>;
             const apis = configuredAPIs(values);
             return (
-              <Form.Item label="已配置 API">
+              <Form.Item label={tr('已配置 API')}>
                 {apis.length > 0 ? (
                   <Space wrap size={2}>
                     {apis.map((api) => (
@@ -973,15 +974,15 @@ export function AddProviderModal({
                     ))}
                   </Space>
                 ) : (
-                  <Typography.Text type="warning">至少填写一个 API base URL</Typography.Text>
+                  <Typography.Text type="warning">{tr('至少填写一个 API base URL')}</Typography.Text>
                 )}
               </Form.Item>
             );
           }}
         </Form.Item>
-        <KeyField label="keys" extra="每个输入框一个 key；留空表示不配置 key。" />
+        <KeyField label="keys" extra={tr('每个输入框一个 key；留空表示不配置 key。')} />
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          创建后在画布上为它建 Node，再在 Node 上配置模型映射。type 与 API base URL 创建后锁定（generic 的 base URL 除外）。
+          {tr('创建后在画布上为它建 Node，再在 Node 上配置模型映射。type 与 API base URL 创建后锁定（generic 的 base URL 除外）。')}
         </Typography.Paragraph>
       </Form>
     </Modal>
@@ -1012,7 +1013,7 @@ export function AddNodeModal({
       await createNode({
         name: v.name,
         provider: v.provider,
-        models: rowsToMap(v.models, '逻辑模型'),
+        models: rowsToMap(v.models, tr('逻辑模型')),
       });
       form.resetFields();
       await onDone();
@@ -1030,9 +1031,9 @@ export function AddNodeModal({
   const modelRows = Form.useWatch('models', form) as MapRow[] | undefined;
 
   return (
-    <Modal open={open} title="添加 Node" onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal open={open} title={tr('添加 Node')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
       <Form form={form} layout="vertical" size="small" initialValues={{ models: [] }}>
-        <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+        <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="deepseek-fast" />
         </Form.Item>
         <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
@@ -1040,13 +1041,13 @@ export function AddNodeModal({
         </Form.Item>
         <MapField
           name="models"
-          label="models（逻辑模型 → 供应商模型）"
-          hint="用 * 作为兜底。"
+          label={tr('models（逻辑模型 → 供应商模型）')}
+          hint={tr('用 * 作为兜底。')}
           keyPlaceholder="fast / *"
           valuePlaceholder="deepseek-v4-flash"
           suggestions={[...logicalModels(config), '*']}
           valueOptions={enabledModels(models).map(modelOption)}
-          addLabel="添加模型映射"
+          addLabel={tr('添加模型映射')}
         />
         <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
         <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
@@ -1097,18 +1098,18 @@ export function AddRouteModal({
   };
 
   return (
-    <Modal open={open} title="添加 Route" onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal open={open} title={tr('添加 Route')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
       <Form form={form} layout="vertical" size="small">
-        <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+        <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="strong" />
         </Form.Item>
-        <Form.Item name="model" label="逻辑模型（alias 的 model 指向它）">
+        <Form.Item name="model" label={tr('逻辑模型（alias 的 model 指向它）')}>
           <Input placeholder="strong" />
         </Form.Item>
         <Form.Item name="strategy" label="strategy" initialValue="round">
           <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
         </Form.Item>
-        <Form.Item name="nodes" label="Nodes（顺序 = 优先级）">
+        <Form.Item name="nodes" label={tr('Nodes（顺序 = 优先级）')}>
           <Select mode="multiple" options={options} />
         </Form.Item>
       </Form>
@@ -1148,12 +1149,12 @@ export function AddAliasModal({
   };
 
   return (
-    <Modal open={open} title="添加 Alias" onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal open={open} title={tr('添加 Alias')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
       <Form form={form} layout="vertical" size="small">
-        <Form.Item name="match" label="客户端模型 glob" rules={[{ required: true }]}>
+        <Form.Item name="match" label={tr('客户端模型 glob')} rules={[{ required: true }]}>
           <Input placeholder="claude-opus*" />
         </Form.Item>
-        <Form.Item name="model" label="逻辑模型" rules={[{ required: true }]}>
+        <Form.Item name="model" label={tr('逻辑模型')} rules={[{ required: true }]}>
           <AutoComplete options={models.map((m) => ({ value: m }))} placeholder="strong" />
         </Form.Item>
       </Form>

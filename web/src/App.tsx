@@ -22,6 +22,7 @@ import {
   CloudServerOutlined,
   DatabaseOutlined,
   DesktopOutlined,
+  GlobalOutlined,
   MenuOutlined,
   MoonOutlined,
   PartitionOutlined,
@@ -41,6 +42,7 @@ import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
 import { Topology, type Selection } from './pages/Topology';
 import { useTheme, type ThemeMode } from './theme';
+import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
 
 const { Header, Sider, Content } = Layout;
 
@@ -109,22 +111,25 @@ function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics;
         {id}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
-        <Descriptions.Item label="请求">{fmt(metrics?.requests)}</Descriptions.Item>
-        <Descriptions.Item label="错误率">{rate(metrics)}</Descriptions.Item>
+        <Descriptions.Item label={translate('请求')}>{fmt(metrics?.requests)}</Descriptions.Item>
+        <Descriptions.Item label={translate('错误率')}>{rate(metrics)}</Descriptions.Item>
         <Descriptions.Item label="P50 / P95">
           {fmt(metrics?.p50Ms)}ms / {fmt(metrics?.p95Ms)}ms
         </Descriptions.Item>
         <Descriptions.Item label="tokens">
-          入 {fmt(metrics?.inputTokens)} · 出 {fmt(metrics?.outputTokens)} · 缓存{' '}
-          {fmt(metrics?.cachedTokens)}
+          {translate('入 {input} · 出 {output} · 缓存 {cached}', {
+            input: fmt(metrics?.inputTokens),
+            output: fmt(metrics?.outputTokens),
+            cached: fmt(metrics?.cachedTokens),
+          })}
         </Descriptions.Item>
       </Descriptions>
 
       <Divider orientation="left" plain>
-        最近错误
+        {translate('最近错误')}
       </Divider>
       {mine.length === 0 ? (
-        <Typography.Text type="secondary">最近窗口内没有错误</Typography.Text>
+        <Typography.Text type="secondary">{translate('最近窗口内没有错误')}</Typography.Text>
       ) : (
         <Space direction="vertical" size={6} style={{ width: '100%' }}>
           {mine.slice(0, 5).map((e) => (
@@ -145,12 +150,14 @@ function EdgePanel({ id, metrics }: { id: string; metrics?: EdgeMetrics }) {
   return (
     <div>
       <Typography.Title level={5} style={{ marginTop: 0 }}>
-        连线
+        {translate('连线')}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
-        <Descriptions.Item label="路径">{parts.join(' → ')}</Descriptions.Item>
-        <Descriptions.Item label="请求">{fmt(metrics?.requests)}</Descriptions.Item>
-        <Descriptions.Item label="错误">{fmt(metrics?.errors)}（{rate(metrics)}）</Descriptions.Item>
+        <Descriptions.Item label={translate('路径')}>{parts.join(' → ')}</Descriptions.Item>
+        <Descriptions.Item label={translate('请求')}>{fmt(metrics?.requests)}</Descriptions.Item>
+        <Descriptions.Item label={translate('错误')}>
+          {fmt(metrics?.errors)}（{rate(metrics)}）
+        </Descriptions.Item>
       </Descriptions>
     </div>
   );
@@ -169,7 +176,11 @@ function Sidebar({
   onThemeMode: (mode: ThemeMode) => void;
   onLogout: () => void;
 }) {
-  const themeLabel = THEME_ITEMS.find((item) => item.key === themeMode)?.label ?? '跟随系统';
+  const { t, lang, setLang } = useI18n();
+  const themeLabel = t(THEME_ITEMS.find((item) => item.key === themeMode)?.label ?? '跟随系统');
+  const themeItems = THEME_ITEMS.map((item) => ({ ...item, label: t(item.label) }));
+  const navItems = NAV_ITEMS.map((item) => ({ ...item, label: t(item.label) }));
+  const languageLabel = LANGUAGES.find((item) => item.id === lang)?.label ?? 'English';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -178,7 +189,7 @@ function Sidebar({
           selectedKeys={[page]}
           style={{ borderInlineEnd: 'none', background: 'transparent' }}
           onClick={(e) => onPage(e.key as Page)}
-          items={NAV_ITEMS}
+          items={navItems}
         />
       </div>
       <div style={{ borderTop: '1px solid var(--gw-border)', padding: 12 }}>
@@ -186,19 +197,28 @@ function Sidebar({
           <Dropdown
             trigger={['click']}
             placement="topLeft"
-            menu={{
-              items: THEME_ITEMS,
-              selectable: true,
-              selectedKeys: [themeMode],
-              onClick: ({ key }) => onThemeMode(key as ThemeMode),
-            }}
+            menu={{ items: themeItems, selectable: true, selectedKeys: [themeMode], onClick: ({ key }) => onThemeMode(key as ThemeMode) }}
           >
             <Button block icon={themeIcon(themeMode)} style={{ justifyContent: 'flex-start' }}>
               {themeLabel}
             </Button>
           </Dropdown>
+          <Dropdown
+            trigger={['click']}
+            placement="topLeft"
+            menu={{
+              items: LANGUAGES.map((item) => ({ key: item.id, label: item.label })),
+              selectable: true,
+              selectedKeys: [lang],
+              onClick: ({ key }) => setLang(key as Lang),
+            }}
+          >
+            <Button block icon={<GlobalOutlined />} style={{ justifyContent: 'flex-start' }}>
+              {languageLabel}
+            </Button>
+          </Dropdown>
           <Button block onClick={onLogout}>
-            退出
+            {t('退出')}
           </Button>
         </Space>
       </div>
@@ -213,6 +233,7 @@ export default function App() {
   const [mode, setMode] = useState<Mode>('monitor');
   const [range, setRange] = useState('1h');
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const { t } = useI18n();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [navOpen, setNavOpen] = useState(false);
@@ -230,7 +251,7 @@ export default function App() {
       if (err instanceof UnauthorizedError) {
         setSession('no');
       } else {
-        message.error(err instanceof Error ? err.message : '加载配置失败');
+        message.error(err instanceof Error ? err.message : t('加载配置失败'));
       }
     }
   }, []);
@@ -292,7 +313,7 @@ export default function App() {
   }, [mode]);
 
   if (session === 'unknown') {
-    return <div style={{ padding: 48 }}>加载中…</div>;
+    return <div style={{ padding: 48 }}>{t('加载中…')}</div>;
   }
   if (session === 'no') {
     return (
@@ -381,8 +402,8 @@ export default function App() {
                     value={mode}
                     onChange={(v) => setMode(v as Mode)}
                     options={[
-                      { label: '监控', value: 'monitor' },
-                      { label: '编辑', value: 'edit' },
+                      { label: t('监控'), value: 'monitor' },
+                      { label: t('编辑'), value: 'edit' },
                     ]}
                   />
                   {mode === 'monitor' ? (
@@ -391,18 +412,18 @@ export default function App() {
                         size="small"
                         value={range}
                         onChange={setRange}
-                        options={RANGES.map(({ label, value }) => ({ label, value }))}
+                        options={RANGES.map(({ label, value }) => ({ label: t(label), value }))}
                         style={{ width: 140 }}
                       />
                       {!isMobile ? (
                         <Badge
                           status={stale ? 'warning' : 'success'}
-                          text={stale ? '数据延迟' : updatedAt ? `更新 ${updatedAt}` : '等待数据'}
+                          text={stale ? t('数据延迟') : updatedAt ? t('更新 {time}', { time: updatedAt }) : t('等待数据')}
                         />
                       ) : null}
                     </Space>
                   ) : (
-                    <Tag color="orange">编辑模式 · 统计已暂停</Tag>
+                    <Tag color="orange">{t('编辑模式 · 统计已暂停')}</Tag>
                   )}
                 </div>
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>

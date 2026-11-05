@@ -14,6 +14,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getRequests } from '../api/client';
+import { translate as t } from '../i18n';
 import type { RequestRow } from '../api/types';
 import { useIsMobile } from '../components/useIsMobile';
 import { MobileCard } from '../components/MobileCard';
@@ -65,7 +66,7 @@ export function RequestsPage() {
 
   const columns: ColumnsType<RequestRow> = [
     {
-      title: '时间',
+      title: t('时间'),
       dataIndex: 'ts',
       width: 150,
       render: (v: string) => new Date(v).toLocaleString(),
@@ -81,14 +82,14 @@ export function RequestsPage() {
       render: (v: number) => <Tag color={v >= 400 ? 'red' : v >= 300 ? 'orange' : 'green'}>{v || '—'}</Tag>,
     },
     { title: 'effort', dataIndex: 'effort', width: 80, responsive: ['lg'], render: (v) => v || '—' },
-    { title: '耗时', dataIndex: 'durationMs', width: 90, responsive: ['md'], render: (v: number) => `${v}ms` },
+    { title: t('耗时'), dataIndex: 'durationMs', width: 90, responsive: ['md'], render: (v: number) => `${v}ms` },
     {
       title: 'tokens',
       width: 120,
       responsive: ['lg'],
       render: (_, r) => `${r.inputTokens}/${r.outputTokens}`,
     },
-    { title: '流式', dataIndex: 'stream', width: 60, responsive: ['xl'], render: (v: boolean) => (v ? '是' : '否') },
+    { title: t('流式'), dataIndex: 'stream', width: 60, responsive: ['xl'], render: (v: boolean) => (v ? t('是') : t('否')) },
   ];
 
   return (
@@ -97,7 +98,7 @@ export function RequestsPage() {
         Requests
       </Typography.Title>
       <Space wrap style={{ marginBottom: 12 }}>
-        <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES} style={{ width: isMobile ? '100%' : 110 }} />
+        <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES.map((r) => ({ ...r, label: t(r.label) }))} style={{ width: isMobile ? '100%' : 110 }} />
         <Input size="small" placeholder="provider" value={provider} onChange={(e) => setProvider(e.target.value)} style={{ width: isMobile ? '100%' : 140 }} />
         <Input size="small" placeholder="route" value={route} onChange={(e) => setRoute(e.target.value)} style={{ width: isMobile ? '100%' : 120 }} />
         <Input
@@ -108,12 +109,12 @@ export function RequestsPage() {
           style={{ width: isMobile ? '100%' : 160 }}
         />
         <Checkbox checked={errorsOnly} onChange={(e) => setErrorsOnly(e.target.checked)}>
-          仅错误
+          {t('仅错误')}
         </Checkbox>
         <Button size="small" loading={loading} onClick={() => setTick((t) => t + 1)}>
-          刷新
+          {t('刷新')}
         </Button>
-        <Typography.Text type="secondary">{rows.length} 条</Typography.Text>
+        <Typography.Text type="secondary">{t('{count} 条', { count: rows.length })}</Typography.Text>
       </Space>
 
       {isMobile ? (
@@ -132,7 +133,7 @@ export function RequestsPage() {
             />
           ))}
           {rows.length === 0 && !loading ? (
-            <Typography.Text type="secondary">没有请求</Typography.Text>
+            <Typography.Text type="secondary">{t('没有请求')}</Typography.Text>
           ) : null}
         </div>
       ) : (
@@ -147,26 +148,26 @@ export function RequestsPage() {
         />
       )}
 
-      <Drawer width={isMobile ? '100%' : 480} title="请求详情" open={!!selected} onClose={() => setSelected(null)} destroyOnClose>
+      <Drawer width={isMobile ? '100%' : 480} title={t('请求详情')} open={!!selected} onClose={() => setSelected(null)} destroyOnClose>
         {selected ? (
           <Descriptions size="small" column={1} bordered>
             <Descriptions.Item label="requestId">{selected.requestId}</Descriptions.Item>
             <Descriptions.Item label="sid">{selected.sid}</Descriptions.Item>
-            <Descriptions.Item label="时间">{new Date(selected.ts).toLocaleString()}</Descriptions.Item>
+            <Descriptions.Item label={t('时间')}>{new Date(selected.ts).toLocaleString()}</Descriptions.Item>
             <Descriptions.Item label="route">{selected.route || '—'}</Descriptions.Item>
             <Descriptions.Item label="provider">{selected.provider}</Descriptions.Item>
             <Descriptions.Item label="protocol / effort">{`${selected.protocol} / ${selected.effort}`}</Descriptions.Item>
             <Descriptions.Item label="client → logical">{`${selected.clientModel || '—'} → ${selected.logicalModel || '—'}`}</Descriptions.Item>
             <Descriptions.Item label="provider model">{selected.model}</Descriptions.Item>
             <Descriptions.Item label="status / error">{`${selected.status} ${selected.error || ''}`}</Descriptions.Item>
-            <Descriptions.Item label="耗时">{`${selected.durationMs} ms`}</Descriptions.Item>
+            <Descriptions.Item label={t('耗时')}>{`${selected.durationMs} ms`}</Descriptions.Item>
             <Descriptions.Item label="tokens">
-              {`入 ${selected.inputTokens} · 出 ${selected.outputTokens} · 缓存 ${selected.cachedTokens}`}
+              {t('入 {input} · 出 {output} · 缓存 {cached}', { input: selected.inputTokens, output: selected.outputTokens, cached: selected.cachedTokens })}
             </Descriptions.Item>
             <Descriptions.Item label="bytes">
               {`${selected.bytesIn} in / ${selected.bytesOut} out`}
             </Descriptions.Item>
-            <Descriptions.Item label="stream">{selected.stream ? '是' : '否'}</Descriptions.Item>
+            <Descriptions.Item label="stream">{selected.stream ? t('是') : t('否')}</Descriptions.Item>
           </Descriptions>
         ) : null}
       </Drawer>

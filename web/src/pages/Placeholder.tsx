@@ -1,4 +1,5 @@
 import { Empty, Typography } from 'antd';
+import { translate as t } from '../i18n';
 
 export function Placeholder({ title, phase }: { title: string; phase: string }) {
   return (
@@ -6,7 +7,7 @@ export function Placeholder({ title, phase }: { title: string; phase: string }) 
       <Typography.Title level={4} style={{ marginTop: 0 }}>
         {title}
       </Typography.Title>
-      <Empty description={`${phase} 提供`} />
+      <Empty description={t('{phase} 提供', { phase })} />
     </div>
   );
 }

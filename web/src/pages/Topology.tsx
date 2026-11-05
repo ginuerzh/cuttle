@@ -18,6 +18,7 @@ import { buildGraph, type GraphNode } from '../graph/build';
 import { layoutGraph } from '../graph/layout';
 import { nodeTypes } from '../graph/nodes';
 import { edgeTypes } from './edges';
+import { translate as t } from '../i18n';
 
 export type Selection =
   | { kind: 'node'; id: string }
@@ -163,7 +164,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
               color: 'var(--gw-control-text)',
             }}
           >
-            重置布局
+            {t('重置布局')}
           </button>
         </Panel>
       </ReactFlow>

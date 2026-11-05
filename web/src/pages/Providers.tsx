@@ -4,6 +4,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteProvider, getPresets, getProviderModels, testProvider, updateProvider } from '../api/client';
 import type { ConfigResponse, Preset, Provider, ProviderModel } from '../api/types';
+import { translate as t } from '../i18n';
 import { AddProviderModal, ProviderForm } from './Edit';
 import {
   configuredAPIs,
@@ -92,9 +93,9 @@ function DirectionRow({
       {kinds.map((kind) => {
         const item = MODALITY_ICONS[kind];
         return item ? (
-          <Tooltip key={kind} title={`${direction}：${item.label}`}>
+          <Tooltip key={kind} title={t('{direction}：{label}', { direction, label: t(item.label) })}>
             <span
-              aria-label={`${direction} ${item.label}`}
+              aria-label={`${direction} ${t(item.label)}`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -187,7 +188,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     if (!models) return;
     const provider = config.providers.find((p) => p.name === models.name);
     if (!provider) {
-      message.error(`未找到 Provider ${models.name}`);
+      message.error(t('未找到 Provider {name}', { name: models.name }));
       return;
     }
     const disabled = !checked;
@@ -212,7 +213,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     if (!models) return;
     const provider = config.providers.find((p) => p.name === models.name);
     if (!provider) {
-      message.error(`未找到 Provider ${models.name}`);
+      message.error(t('未找到 Provider {name}', { name: models.name }));
       return;
     }
     const next = enabled
@@ -237,7 +238,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
   const remove = async (name: string) => {
     try {
       await deleteProvider(name);
-      message.success('已删除');
+      message.success(t('已删除'));
       await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
@@ -259,7 +260,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
   const anyEnabled = !!models && models.list.some((m) => !m.disabled);
 
   const columns: ColumnsType<Provider> = [
-    { title: '名称', dataIndex: 'name', width: 180, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
+    { title: t('名称'), dataIndex: 'name', width: 180, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
     { title: 'type', dataIndex: 'type', width: 120, responsive: ['md'] },
     {
       title: 'APIs',
@@ -275,7 +276,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       render: (v: number) => <Tag>{v}</Tag>,
     },
     {
-      title: '探测',
+      title: t('探测'),
       dataIndex: 'probe',
       width: 150,
       responsive: ['xl'],
@@ -287,7 +288,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
         ),
     },
     {
-      title: '启用',
+      title: t('启用'),
       dataIndex: 'enabled',
       width: 70,
       render: (enabled: boolean | undefined, p) => (
@@ -296,27 +297,27 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           checked={enabled !== false}
           disabled={providerBusy === p.name}
           onChange={(checked) => void toggleProvider(p, checked)}
-          aria-label={`切换 ${p.name}`}
+          aria-label={t('切换 {name}', { name: p.name })}
         />
       ),
     },
     {
-      title: '操作',
+      title: t('操作'),
       width: 230,
       render: (_, p) => (
         <Space wrap size={4}>
           <Button size="small" onClick={() => void test(p.name)}>
-            测试
+            {t('测试')}
           </Button>
           <Button size="small" onClick={() => void showModels(p.name)}>
-            模型
+            {t('模型')}
           </Button>
           <Button size="small" onClick={() => setEditing(p)}>
-            编辑
+            {t('编辑')}
           </Button>
-          <Popconfirm title={`删除 ${p.name}?`} onConfirm={() => void remove(p.name)}>
+          <Popconfirm title={t('删除 {name}?', { name: p.name })} onConfirm={() => void remove(p.name)}>
             <Button size="small" danger>
-              删除
+              {t('删除')}
             </Button>
           </Popconfirm>
         </Space>
@@ -331,7 +332,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           Providers
         </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => void openAdd()}>
-          添加
+          {t('添加')}
         </Button>
       </Space>
       {isMobile ? (
@@ -356,17 +357,17 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
                     checked={p.enabled !== false}
                     disabled={providerBusy === p.name}
                     onChange={(checked) => void toggleProvider(p, checked)}
-                    aria-label={`切换 ${p.name}`}
+                    aria-label={t('切换 {name}', { name: p.name })}
                   />
                 </Space>
               }
               actions={
                 <>
-                  <Button size="small" onClick={() => void test(p.name)}>测试</Button>
-                  <Button size="small" onClick={() => void showModels(p.name)}>模型</Button>
-                  <Button size="small" onClick={() => setEditing(p)}>编辑</Button>
-                  <Popconfirm title={`删除 ${p.name}?`} onConfirm={() => void remove(p.name)}>
-                    <Button size="small" danger>删除</Button>
+                  <Button size="small" onClick={() => void test(p.name)}>{t('测试')}</Button>
+                  <Button size="small" onClick={() => void showModels(p.name)}>{t('模型')}</Button>
+                  <Button size="small" onClick={() => setEditing(p)}>{t('编辑')}</Button>
+                  <Popconfirm title={t('删除 {name}?', { name: p.name })} onConfirm={() => void remove(p.name)}>
+                    <Button size="small" danger>{t('删除')}</Button>
                   </Popconfirm>
                 </>
               }
@@ -379,7 +380,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
 
       <Drawer
         width={420}
-        title={editing ? `编辑 ${editing.name}` : ''}
+        title={editing ? t('编辑 {name}', { name: editing.name }) : ''}
         open={!!editing}
         onClose={() => setEditing(null)}
         destroyOnClose
@@ -396,7 +397,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       </Drawer>
 
       <Modal
-        title={models ? `${models.name} 的模型` : ''}
+        title={models ? t('{name} 的模型', { name: models.name }) : ''}
         open={!!models}
         width={isMobile ? '94%' : 640}
         footer={
@@ -407,12 +408,12 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
                 checked={anyEnabled}
                 disabled={modelsBusy || !models?.list.length}
                 onChange={(checked) => void setAllModelsEnabled(checked)}
-                aria-label="全局启用"
+                aria-label={t('全局启用')}
               />
-              <span style={{ fontSize: 12 }}>全局启用</span>
+              <span style={{ fontSize: 12 }}>{t('全局启用')}</span>
             </Space>
             <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.name, true)}>
-              刷新
+              {t('刷新')}
             </Button>
           </div>
         }
@@ -429,7 +430,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
             <Alert
               type="error"
               showIcon
-              message="模型目录加载失败"
+              message={t('模型目录加载失败')}
               description={modelsError}
               style={{ marginBottom: 12 }}
             />
@@ -457,8 +458,8 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
                           </Tag>
                         ) : null}
                       </div>
-                      <DirectionRow text={rows.input} direction="输入" values={m.inputs} />
-                      <DirectionRow text={rows.output} direction="输出" values={m.outputs} />
+                      <DirectionRow text={rows.input} direction={t('输入')} values={m.inputs} />
+                      <DirectionRow text={rows.output} direction={t('输出')} values={m.outputs} />
                     </>
                   }
                   tags={
@@ -468,7 +469,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
                         checked={!m.disabled}
                         disabled={modelsBusy}
                         onChange={(checked) => void toggleModel(m, checked)}
-                        aria-label={`切换 ${m.id}`}
+                        aria-label={t('切换 {name}', { name: m.id })}
                       />
                     </Space>
                   }
@@ -477,7 +478,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
             );
           })}
           {models && models.list.length === 0 && !modelsError ? (
-            <Typography.Text type="secondary">供应商没有返回模型</Typography.Text>
+            <Typography.Text type="secondary">{t('供应商没有返回模型')}</Typography.Text>
           ) : null}
         </div>
       </Modal>

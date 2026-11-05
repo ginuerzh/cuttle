@@ -1,4 +1,5 @@
 import type { Preset, Provider, ProviderApi, ProviderModel } from '../api/types';
+import { translate as t } from '../i18n';
 
 /** Form values a preset writes into the add-provider dialog. */
 export interface PresetFormValues {
@@ -128,13 +129,13 @@ export function formatPrice(price?: ProviderModel['price']): string | null {
   const hasInput = typeof price.input === 'number';
   const hasOutput = typeof price.output === 'number';
   if (!hasInput && !hasOutput) return null;
-  if (hasInput && hasOutput && price.input === 0 && price.output === 0) return '免费';
+  if (hasInput && hasOutput && price.input === 0 && price.output === 0) return t('免费');
   const parts: string[] = [];
   if (typeof price.input === 'number' && price.input !== 0) {
-    parts.push(`输入 $${price.input.toFixed(2)}/M`);
+    parts.push(t('输入 ${price}/M', { price: price.input.toFixed(2) }));
   }
   if (typeof price.output === 'number' && price.output !== 0) {
-    parts.push(`输出 $${price.output.toFixed(2)}/M`);
+    parts.push(t('输出 ${price}/M', { price: price.output.toFixed(2) }));
   }
   return parts.length > 0 ? parts.join(' · ') : null;
 }
@@ -148,7 +149,7 @@ export interface ModelDirectionRows {
 /** One side of the USD price, omitting an unreported zero. */
 function priceSide(value: number | undefined, free: boolean): string | null {
   if (typeof value !== 'number') return null;
-  if (free) return '免费';
+  if (free) return t('免费');
   if (value === 0) return null;
   return `$${value.toFixed(2)}/M`;
 }
@@ -167,14 +168,14 @@ export function modelDirectionRows(model: ProviderModel): ModelDirectionRows {
   const free = !!price && price.input === 0 && price.output === 0;
 
   const inputParts: string[] = [];
-  if (inputSize) inputParts.push(`入 ${inputSize}`);
-  else if (context) inputParts.push(`入 ${context}`);
-  if (context && inputSize && inputSize !== context) inputParts.push(`上下文 ${context}`);
+  if (inputSize) inputParts.push(t('入 {size}', { size: inputSize }));
+  else if (context) inputParts.push(t('入 {size}', { size: context }));
+  if (context && inputSize && inputSize !== context) inputParts.push(t('上下文 {size}', { size: context }));
   const inputPrice = priceSide(price?.input, free);
   if (inputPrice) inputParts.push(inputPrice);
 
   const outputParts: string[] = [];
-  if (outputSize) outputParts.push(`出 ${outputSize}`);
+  if (outputSize) outputParts.push(t('出 {size}', { size: outputSize }));
   const outputPrice = priceSide(price?.output, free);
   if (outputPrice) outputParts.push(outputPrice);
 
@@ -271,5 +272,5 @@ export function derivedTargetAPI(
  */
 export function genericCanonicalNote(providerType: string, configured: ProviderApi[]): string | null {
   if (providerType.trim().toLowerCase() !== 'generic' || configured.length < 2) return null;
-  return `generic 提供商按固定顺序 ${apiOrder.join(' → ')} 选择目标 API；模型目录中的 APIs 不参与路由。`;
+  return t('generic 提供商按固定顺序 {order} 选择目标 API；模型目录中的 APIs 不参与路由。', { order: apiOrder.join(' → ') });
 }

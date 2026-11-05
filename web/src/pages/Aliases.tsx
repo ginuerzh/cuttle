@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AutoComplete, Button, Drawer, Form, Input, Modal, Popconfirm, Space, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { putAliases } from '../api/client';
+import { translate as t } from '../i18n';
 import type { Alias, ConfigResponse } from '../api/types';
 import { AliasForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
@@ -31,7 +32,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
   const remove = async (index: number) => {
     try {
       await putAliases(config.aliases.filter((_, i) => i !== index));
-      message.success('已删除');
+      message.success(t('已删除'));
       await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
@@ -42,7 +43,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
     const v = await form.validateFields();
     try {
       await putAliases([...config.aliases, { match: v.match, model: v.model }]);
-      message.success('已添加');
+      message.success(t('已添加'));
       setAdding(false);
       form.resetFields();
       await onReload();
@@ -52,15 +53,15 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
   };
 
   const columns: ColumnsType<Alias> = [
-    { title: '顺序', width: 60, render: (_, __, i) => <Typography.Text type="secondary">{i + 1}</Typography.Text> },
-    { title: '客户端模型 glob', dataIndex: 'match', render: (v) => <Typography.Text code>{v}</Typography.Text> },
-    { title: '逻辑模型', dataIndex: 'model', width: 160 },
+    { title: t('顺序'), width: 60, render: (_, __, i) => <Typography.Text type="secondary">{i + 1}</Typography.Text> },
+    { title: t('客户端模型 glob'), dataIndex: 'match', render: (v) => <Typography.Text code>{v}</Typography.Text> },
+    { title: t('逻辑模型'), dataIndex: 'model', width: 160 },
     {
-      title: '操作',
+      title: t('操作'),
       width: 100,
       render: (_, __, i) => (
         <Button size="small" onClick={() => setEditing(i)}>
-          编辑
+          {t('编辑')}
         </Button>
       ),
     },
@@ -73,12 +74,12 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
           Aliases
         </Typography.Title>
         <Button type="primary" onClick={() => setAdding(true)}>
-          添加
+          {t('添加')}
         </Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
-        {isMobile ? '用 ↑ ↓ 调整顺序。' : '顺序即匹配优先级；拖动行调整。'}
-        alias 是客户端模型进入路由的唯一入口。
+        {isMobile ? t('用 ↑ ↓ 调整顺序。') : t('顺序即匹配优先级；拖动行调整。')}
+        {t('alias 是客户端模型进入路由的唯一入口。')}
       </Typography.Paragraph>
       {isMobile ? (
         <div>
@@ -91,9 +92,9 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
                 <>
                   <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
                   <Button size="small" disabled={i === config.aliases.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
-                  <Button size="small" onClick={() => setEditing(i)}>编辑</Button>
-                  <Popconfirm title={`删除 alias ${a.match}?`} onConfirm={() => void remove(i)}>
-                    <Button size="small" danger>删除</Button>
+                  <Button size="small" onClick={() => setEditing(i)}>{t('编辑')}</Button>
+                  <Popconfirm title={t('删除 alias {name}?', { name: a.match })} onConfirm={() => void remove(i)}>
+                    <Button size="small" danger>{t('删除')}</Button>
                   </Popconfirm>
                 </>
               }
@@ -120,7 +121,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
       />
       )}
 
-      <Drawer width={380} title={editing !== null ? `编辑 alias #${editing}` : ''} open={editing !== null} onClose={() => setEditing(null)} destroyOnClose>
+      <Drawer width={380} title={editing !== null ? t('编辑 alias #{index}', { index: editing }) : ''} open={editing !== null} onClose={() => setEditing(null)} destroyOnClose>
         {editing !== null && config.aliases[editing] ? (
           <AliasForm
             key={editing}
@@ -135,12 +136,12 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
         ) : null}
       </Drawer>
 
-      <Modal title="添加 Alias" open={adding} onCancel={() => setAdding(false)} onOk={() => void add()} destroyOnClose>
+      <Modal title={t('添加 Alias')} open={adding} onCancel={() => setAdding(false)} onOk={() => void add()} destroyOnClose>
         <Form form={form} layout="vertical" size="small">
-          <Form.Item name="match" label="客户端模型 glob" rules={[{ required: true }]}>
+          <Form.Item name="match" label={t('客户端模型 glob')} rules={[{ required: true }]}>
             <Input placeholder="claude-opus*" />
           </Form.Item>
-          <Form.Item name="model" label="逻辑模型" rules={[{ required: true }]}>
+          <Form.Item name="model" label={t('逻辑模型')} rules={[{ required: true }]}>
             <AutoComplete options={models.map((m) => ({ value: m }))} placeholder="strong" />
           </Form.Item>
         </Form>

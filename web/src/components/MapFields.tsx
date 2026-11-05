@@ -1,5 +1,6 @@
 import { AutoComplete, Button, Form, Input, Typography } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { translate as t } from '../i18n';
 
 export interface MapRow {
   key: string;
@@ -11,14 +12,14 @@ export function mapToRows(map?: Record<string, string>): MapRow[] {
 }
 
 /** Turn the row editor back into the config map, rejecting blanks and duplicates. */
-export function rowsToMap(rows: MapRow[] | undefined, what = '键'): Record<string, string> {
+export function rowsToMap(rows: MapRow[] | undefined, what = t('键')): Record<string, string> {
   const out: Record<string, string> = {};
   for (const row of rows ?? []) {
     const key = (row.key ?? '').trim();
     const value = (row.value ?? '').trim();
     if (!key && !value) continue;
-    if (!key) throw new Error(`${what}不能为空`);
-    if (key in out) throw new Error(`重复的${what}：${key}`);
+    if (!key) throw new Error(t('{what}不能为空', { what }));
+    if (key in out) throw new Error(t('重复的{what}：{key}', { what, key }));
     out[key] = value;
   }
   return out;
@@ -40,7 +41,7 @@ export function MapField({
   hint,
   suggestions,
   valueOptions,
-  addLabel = '添加映射',
+  addLabel = t('添加映射'),
 }: {
   name: string;
   label: string;
@@ -92,7 +93,7 @@ export function MapField({
                   size="small"
                   icon={<MinusCircleOutlined />}
                   onClick={() => remove(field.name)}
-                  aria-label="删除映射"
+                  aria-label={t('删除映射')}
                 />
               </div>
             ))}

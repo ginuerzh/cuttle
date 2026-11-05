@@ -3,6 +3,7 @@ import { Button, Drawer, Popconfirm, Space, Table, Tag, Typography, message } fr
 import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteNode } from '../api/client';
+import { translate as t } from '../i18n';
 import type { ConfigResponse, Node } from '../api/types';
 import { AddNodeModal, NodeForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
@@ -22,7 +23,7 @@ export function NodesPage({
   const remove = async (name: string) => {
     try {
       await deleteNode(name);
-      message.success('已删除');
+      message.success(t('已删除'));
       await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
@@ -31,7 +32,7 @@ export function NodesPage({
 
   const columns: ColumnsType<Node> = [
     {
-      title: '名称',
+      title: t('名称'),
       dataIndex: 'name',
       width: 180,
       render: (v) => <Typography.Text strong>{v}</Typography.Text>,
@@ -64,22 +65,22 @@ export function NodesPage({
     },
     { title: 'weight', dataIndex: 'weight', width: 70, responsive: ['lg'] },
     {
-      title: '启用',
+      title: t('启用'),
       dataIndex: 'enabled',
       width: 70,
       render: (v?: boolean) => (v === false ? <Tag>off</Tag> : <Tag color="green">on</Tag>),
     },
     {
-      title: '操作',
+      title: t('操作'),
       width: 130,
       render: (_, n) => (
         <Space size={4}>
           <Button size="small" onClick={() => setEditing(n)}>
-            编辑
+            {t('编辑')}
           </Button>
-          <Popconfirm title={`删除 ${n.name}?`} onConfirm={() => void remove(n.name)}>
+          <Popconfirm title={t('删除 {name}?', { name: n.name })} onConfirm={() => void remove(n.name)}>
             <Button size="small" danger>
-              删除
+              {t('删除')}
             </Button>
           </Popconfirm>
         </Space>
@@ -94,7 +95,7 @@ export function NodesPage({
           Nodes
         </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>
-          添加
+          {t('添加')}
         </Button>
       </Space>
       <div style={{ marginTop: 12 }}>
@@ -115,9 +116,9 @@ export function NodesPage({
                   }
                   actions={
                     <>
-                      <Button size="small" onClick={() => setEditing(n)}>编辑</Button>
-                      <Popconfirm title={`删除 ${n.name}?`} onConfirm={() => void remove(n.name)}>
-                        <Button size="small" danger>删除</Button>
+                      <Button size="small" onClick={() => setEditing(n)}>{t('编辑')}</Button>
+                      <Popconfirm title={t('删除 {name}?', { name: n.name })} onConfirm={() => void remove(n.name)}>
+                        <Button size="small" danger>{t('删除')}</Button>
                       </Popconfirm>
                     </>
                   }

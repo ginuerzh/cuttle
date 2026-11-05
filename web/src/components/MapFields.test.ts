@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { setActiveLang } from '../i18n';
 import { mapToRows, rowsToMap } from './MapFields';
+
+setActiveLang('zh-CN');
 
 describe('rowsToMap', () => {
   it('round-trips a map through the row editor', () => {

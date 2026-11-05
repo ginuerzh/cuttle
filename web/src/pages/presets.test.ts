@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Preset, Provider, ProviderModel } from '../api/types';
+import { setActiveLang } from '../i18n';
 import {
   configuredAPIs,
   derivedTargetAPI,
@@ -19,6 +20,8 @@ import {
   toggleModelOverride,
   unknownModels,
 } from './presets';
+
+setActiveLang('zh-CN');
 
 const opencodeGo: Preset = {
   name: 'opencode-go',

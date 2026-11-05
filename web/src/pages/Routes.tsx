@@ -3,6 +3,7 @@ import { Button, Drawer, Popconfirm, Space, Table, Tag, Typography, message } fr
 import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { deleteRoute, reorderRoutes } from '../api/client';
+import { translate as t } from '../i18n';
 import type { ConfigResponse, Route } from '../api/types';
 import { AddRouteModal, RouteForm } from './Edit';
 import { useIsMobile } from '../components/useIsMobile';
@@ -30,7 +31,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
   const remove = async (name: string) => {
     try {
       await deleteRoute(name);
-      message.success('已删除');
+      message.success(t('已删除'));
       await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
@@ -39,13 +40,13 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
 
   const columns: ColumnsType<Route> = [
     {
-      title: '顺序',
+      title: t('顺序'),
       width: 60,
       render: (_, __, i) => <Typography.Text type="secondary">{i + 1}</Typography.Text>,
     },
-    { title: '名称', dataIndex: 'name', width: 160, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
+    { title: t('名称'), dataIndex: 'name', width: 160, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
     {
-      title: '逻辑模型',
+      title: t('逻辑模型'),
       width: 140,
       render: (_, r) => r.match?.model || <Tag>catch-all</Tag>,
     },
@@ -61,16 +62,16 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
     },
     { title: 'strategy', dataIndex: 'strategy', width: 90, responsive: ['lg'] },
     {
-      title: '操作',
+      title: t('操作'),
       width: 140,
       render: (_, r) => (
         <Space size={4}>
           <Button size="small" onClick={() => setEditing(r)}>
-            编辑
+            {t('编辑')}
           </Button>
-          <Popconfirm title={`删除 ${r.name}?`} onConfirm={() => void remove(r.name)}>
+          <Popconfirm title={t('删除 {name}?', { name: r.name })} onConfirm={() => void remove(r.name)}>
             <Button size="small" danger>
-              删除
+              {t('删除')}
             </Button>
           </Popconfirm>
         </Space>
@@ -85,11 +86,11 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
           Routes
         </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>
-          添加
+          {t('添加')}
         </Button>
       </Space>
       <Typography.Paragraph type="secondary">
-        {isMobile ? '用 ↑ ↓ 调整顺序；顺序即 FIFO 优先级，catch-all 应放在最后。' : '拖动行调整顺序：顺序即 FIFO 优先级，catch-all 应放在最后。'}
+        {isMobile ? t('用 ↑ ↓ 调整顺序；顺序即 FIFO 优先级，catch-all 应放在最后。') : t('拖动行调整顺序：顺序即 FIFO 优先级，catch-all 应放在最后。')}
       </Typography.Paragraph>
       {isMobile ? (
         <div>
@@ -103,9 +104,9 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
                   <>
                     <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
                     <Button size="small" disabled={i === config.routes.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
-                    <Button size="small" onClick={() => setEditing(r)}>编辑</Button>
-                    <Popconfirm title={`删除 ${r.name}?`} onConfirm={() => void remove(r.name)}>
-                      <Button size="small" danger>删除</Button>
+                    <Button size="small" onClick={() => setEditing(r)}>{t('编辑')}</Button>
+                    <Popconfirm title={t('删除 {name}?', { name: r.name })} onConfirm={() => void remove(r.name)}>
+                      <Button size="small" danger>{t('删除')}</Button>
                     </Popconfirm>
                   </>
                 }
@@ -133,7 +134,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
       />
       )}
 
-      <Drawer width={420} title={editing ? `编辑 ${editing.name}` : ''} open={!!editing} onClose={() => setEditing(null)} destroyOnClose>
+      <Drawer width={420} title={editing ? t('编辑 {name}', { name: editing.name }) : ''} open={!!editing} onClose={() => setEditing(null)} destroyOnClose>
         {editing ? (
           <RouteForm
             route={editing}
