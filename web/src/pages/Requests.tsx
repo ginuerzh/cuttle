@@ -68,7 +68,7 @@ export function RequestsPage() {
   return (
     <ListPage>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
-        Requests
+        {t('请求')}
       </Typography.Title>
       <Space wrap style={{ marginBottom: 12 }}>
         <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES.map((r) => ({ ...r, label: t(r.label) }))} style={{ width: isMobile ? '100%' : 110 }} />

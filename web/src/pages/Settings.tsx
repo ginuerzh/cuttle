@@ -24,7 +24,7 @@ export function SettingsPage({ config, onLogout }: { config: ConfigResponse; onL
   return (
     <div style={{ padding: 20, width: '100%', overflow: 'auto', maxWidth: 760 }}>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
-        Settings
+        {t('设置')}
       </Typography.Title>
 
       <Descriptions size="small" column={1} bordered>

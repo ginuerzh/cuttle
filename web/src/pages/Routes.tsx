@@ -41,7 +41,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
     <ListPage>
       <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Routes
+          {t('路由')}
         </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>
           {t('添加')}

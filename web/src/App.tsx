@@ -48,12 +48,12 @@ const { Header, Content } = Layout;
 
 const NAV_ITEMS = [
   { key: 'topology', icon: <PartitionOutlined />, label: '拓扑' },
-  { key: 'providers', icon: <CloudServerOutlined />, label: 'Providers' },
-  { key: 'nodes', icon: <ApiOutlined />, label: 'Nodes' },
-  { key: 'routes', icon: <BranchesOutlined />, label: 'Routes' },
-  { key: 'aliases', icon: <TagOutlined />, label: 'Aliases' },
-  { key: 'requests', icon: <DatabaseOutlined />, label: 'Requests' },
-  { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
+  { key: 'providers', icon: <CloudServerOutlined />, label: '提供商' },
+  { key: 'nodes', icon: <ApiOutlined />, label: '节点' },
+  { key: 'routes', icon: <BranchesOutlined />, label: '路由' },
+  { key: 'aliases', icon: <TagOutlined />, label: '别名' },
+  { key: 'requests', icon: <DatabaseOutlined />, label: '请求' },
+  { key: 'settings', icon: <SettingOutlined />, label: '设置' },
 ];
 
 const THEME_ITEMS = [

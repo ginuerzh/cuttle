@@ -41,7 +41,7 @@ export function AliasesPage({ config, onReload }: { config: ConfigResponse; onRe
     <ListPage>
       <Space style={{ width: '100%', justifyContent: 'space-between' }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Aliases
+          {t('别名')}
         </Typography.Title>
         <Button type="primary" onClick={() => setAdding(true)}>
           {t('添加')}

@@ -150,7 +150,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     <ListPage>
       <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Providers
+          {t('提供商')}
         </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => void openAdd()}>
           {t('添加')}

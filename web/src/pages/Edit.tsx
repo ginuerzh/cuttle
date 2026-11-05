@@ -1108,7 +1108,7 @@ export function AddProviderModal({
   };
 
   return (
-    <Modal open={open} title={tr('添加 Provider')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal open={open} title={tr('添加提供商')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
       <Form form={form} layout="vertical" size="small" initialValues={{ type: 'generic', keys: [''] }}>
         <Form.Item name="preset" label={tr('预设')}>
           <Select
@@ -1218,7 +1218,7 @@ export function AddNodeModal({
   const modelRows = Form.useWatch('models', form) as MapRow[] | undefined;
 
   return (
-    <Modal open={open} title={tr('添加 Node')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal open={open} title={tr('添加节点')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
       <Form form={form} layout="vertical" size="small" initialValues={{ models: [] }}>
         <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="deepseek-fast" />
@@ -1276,7 +1276,7 @@ export function AddRouteModal({
   };
 
   return (
-    <Modal open={open} title={tr('添加 Route')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal open={open} title={tr('添加路由')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
       <Form form={form} layout="vertical" size="small">
         <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="strong" />
@@ -1333,7 +1333,7 @@ export function AddAliasModal({
   return (
     <Modal
       open={open}
-      title={tr('添加 Alias')}
+      title={tr('添加别名')}
       onCancel={onClose}
       onOk={submit}
       confirmLoading={busy}
