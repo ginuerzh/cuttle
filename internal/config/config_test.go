@@ -772,3 +772,23 @@ func TestTopologyIncludes(t *testing.T) {
 		}
 	}
 }
+
+func TestExampleConfigLoads(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "test")
+	c, err := Load("../../example.yaml")
+	if err != nil {
+		t.Fatalf("load example: %v", err)
+	}
+	if len(c.Entrypoints) == 0 {
+		t.Fatal("example has no entrypoints")
+	}
+	routes := make(map[string]bool, len(c.Routes))
+	for _, r := range c.Routes {
+		routes[r.Name] = true
+	}
+	for _, e := range c.Entrypoints {
+		if !routes[e.Route] {
+			t.Fatalf("entrypoint %q references unknown route %q", e.Name, e.Route)
+		}
+	}
+}
