@@ -933,7 +933,7 @@ export function Edit({ config, onReload }: Props) {
   };
 
   const panel = useMemo(() => {
-    if (!selection) return <Typography.Text type="secondary">tr('选择节点或连线开始编辑')</Typography.Text>;
+    if (!selection) return null;
     if (selection.kind === 'edge') {
       return <EdgeForm id={selection.id} config={config} onSaved={onReload} />;
     }
@@ -1001,7 +1001,7 @@ export function Edit({ config, onReload }: Props) {
         >
           {panel}
         </Drawer>
-      ) : (
+      ) : selection ? (
         <aside
           style={{
             width: 340,
@@ -1013,7 +1013,7 @@ export function Edit({ config, onReload }: Props) {
         >
           {panel}
         </aside>
-      )}
+      ) : null}
 
       <AddProviderModal
         open={addOpen === 'provider'}
