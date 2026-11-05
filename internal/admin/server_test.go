@@ -147,6 +147,17 @@ func TestAuthAndCSRF(t *testing.T) {
 		t.Fatal("rejected request must not reload")
 	}
 
+	for _, tc := range []struct {
+		path, body string
+	}{
+		{"/api/providers", providerBody("p", "https://a.example")},
+		{"/api/nodes", `{"name":"n","provider":"p"}`},
+		{"/api/routes", `{"name":"fast","nodes":["n"],"match":{"model":"fast"}}`},
+	} {
+		if resp := doJSON(t, client, http.MethodPost, ts.URL+tc.path, tc.body, csrf); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create %s status = %d", tc.path, resp.StatusCode)
+		}
+	}
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/aliases", `[{"match":"*","model":"fast"}]`, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put aliases status = %d", resp.StatusCode)
 	}

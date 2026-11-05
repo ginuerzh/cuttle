@@ -471,9 +471,18 @@ func Validate(c *Config) error {
 	if strings.TrimSpace(c.Gateway.Listen) == "" {
 		return fmt.Errorf("gateway.listen is required")
 	}
+	logical := make(map[string]bool, len(c.Routes))
+	for _, r := range c.Routes {
+		if model := strings.TrimSpace(r.Match.Model); model != "" {
+			logical[strings.ToLower(model)] = true
+		}
+	}
 	for i, a := range c.Aliases {
 		if strings.TrimSpace(a.Match) == "" || strings.TrimSpace(a.Model) == "" {
 			return fmt.Errorf("aliases[%d]: match and model are required", i)
+		}
+		if !logical[strings.ToLower(strings.TrimSpace(a.Model))] {
+			return fmt.Errorf("aliases[%d]: unknown logical model %q (no route defines it)", i, a.Model)
 		}
 	}
 
@@ -586,6 +595,52 @@ func Validate(c *Config) error {
 		}
 	}
 	return nil
+}
+
+// LogicalModels returns non-empty route logical models in route order,
+// dropping case-insensitive duplicates.
+func (c *Config) LogicalModels() []string {
+	seen := make(map[string]bool, len(c.Routes))
+	out := make([]string, 0, len(c.Routes))
+	for _, r := range c.Routes {
+		model := strings.TrimSpace(r.Match.Model)
+		if model == "" || seen[strings.ToLower(model)] {
+			continue
+		}
+		seen[strings.ToLower(model)] = true
+		out = append(out, model)
+	}
+	return out
+}
+
+// HasLogicalModel reports whether a route defines name, ignoring case and
+// surrounding space.
+func (c *Config) HasLogicalModel(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, r := range c.Routes {
+		if r.Match.Model != "" && strings.EqualFold(strings.TrimSpace(r.Match.Model), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// AliasMatchesForModel returns the match globs of aliases targeting name.
+func (c *Config) AliasMatchesForModel(name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	var out []string
+	for _, a := range c.Aliases {
+		if strings.EqualFold(strings.TrimSpace(a.Model), name) {
+			out = append(out, a.Match)
+		}
+	}
+	return out
 }
 
 // ResolveAlias maps a client-facing model name to a logical model using the

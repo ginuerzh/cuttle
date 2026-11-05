@@ -588,3 +588,70 @@ providers:
 		t.Fatalf("models = %+v, want empty after dropping empty IDs", models)
 	}
 }
+
+func TestValidateAliasRequiresExistingLogicalModel(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Gateway: Gateway{Listen: "127.0.0.1:0"},
+			Providers: []Provider{{
+				Name: "p", Type: "generic", Chat: "https://a.example/v1",
+			}},
+			Nodes: []Node{{Name: "n", Provider: "p"}},
+			Routes: []Route{{
+				Name: "strong", Nodes: []string{"n"}, Match: Match{Model: "strong"},
+			}},
+		}
+	}
+
+	t.Run("accepts a route logical model", func(t *testing.T) {
+		c := base()
+		c.Aliases = []Alias{{Match: "claude-opus*", Model: " Strong "}}
+		if err := Validate(c); err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+	})
+
+	t.Run("rejects a missing logical model", func(t *testing.T) {
+		c := base()
+		c.Aliases = []Alias{{Match: "claude-opus*", Model: "missing"}}
+		err := Validate(c)
+		if err == nil || !strings.Contains(err.Error(), `aliases[0]`) || !strings.Contains(err.Error(), `"missing"`) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("rejects a catch-all route as the target", func(t *testing.T) {
+		c := base()
+		c.Routes[0].Match.Model = ""
+		c.Aliases = []Alias{{Match: "*", Model: "strong"}}
+		if err := Validate(c); err == nil {
+			t.Fatal("expected an error for a catch-all target")
+		}
+	})
+}
+
+func TestLogicalModelHelpers(t *testing.T) {
+	c := &Config{
+		Routes: []Route{
+			{Name: "a", Match: Match{Model: "Strong"}},
+			{Name: "b", Match: Match{Model: "fast"}},
+			{Name: "c", Match: Match{Model: ""}},
+			{Name: "d", Match: Match{Model: " strong "}},
+		},
+		Aliases: []Alias{
+			{Match: "claude*", Model: "strong"},
+			{Match: "gpt*", Model: "STRONG"},
+			{Match: "*", Model: "fast"},
+		},
+	}
+
+	if got := c.LogicalModels(); len(got) != 2 || got[0] != "Strong" || got[1] != "fast" {
+		t.Fatalf("LogicalModels = %#v", got)
+	}
+	if !c.HasLogicalModel("  strong ") || c.HasLogicalModel("missing") || c.HasLogicalModel("") {
+		t.Fatal("HasLogicalModel mismatch")
+	}
+	if got := c.AliasMatchesForModel("strong"); len(got) != 2 || got[0] != "claude*" || got[1] != "gpt*" {
+		t.Fatalf("AliasMatchesForModel = %#v", got)
+	}
+}
