@@ -138,9 +138,9 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
         onEdgeClick={onEdgeClick}
         onPaneClick={() => onSelect(null)}
         onConnect={onConnect}
-        onNodeDragStop={onNodeDragStop}
+        onNodeDragStop={editable ? onNodeDragStop : undefined}
         nodesConnectable={editable}
-        nodesDraggable
+        nodesDraggable={!!editable}
         deleteKeyCode={null}
         connectionLineStyle={{ stroke: '#0ea5e9', strokeWidth: 2 }}
         fitView

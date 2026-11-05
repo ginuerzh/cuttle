@@ -50,6 +50,16 @@ const box: React.CSSProperties = {
   boxShadow: 'var(--gw-node-shadow)',
 };
 
+function selectionStyle(selected: boolean | undefined, color: string) {
+  return {
+    borderColor: selected ? '#0ea5e9' : color,
+    borderWidth: selected ? 2.5 : 1.5,
+    boxShadow: selected
+      ? '0 0 0 3px rgba(14, 165, 233, 0.22), var(--gw-node-shadow)'
+      : 'var(--gw-node-shadow)',
+  };
+}
+
 function IconBadge({ color, children }: { color: string; children: React.ReactNode }) {
   return (
     <div
@@ -83,9 +93,9 @@ function Body({ label, sub, metrics }: { label: string; sub?: string; metrics?: 
   );
 }
 
-export function AliasNode({ data }: NodeProps<GraphNode>) {
+export function AliasNode({ data, selected }: NodeProps<GraphNode>) {
   return (
-    <div style={{ ...box, borderColor: '#6366f1', background: 'var(--gw-node-alias-bg)', minWidth: 220 }}>
+    <div style={{ ...box, ...selectionStyle(selected, '#6366f1'), background: 'var(--gw-node-alias-bg)', minWidth: 220 }}>
       <IconBadge color="#6366f1">
         <TagOutlined />
       </IconBadge>
@@ -101,7 +111,7 @@ export function RouteNode({ data, selected }: NodeProps<GraphNode>) {
     <div
       style={{
         ...box,
-        borderColor: selected ? '#0ea5e9' : color,
+        ...selectionStyle(selected, color),
         background: 'var(--gw-node-route-bg)',
         minWidth: 250,
       }}
@@ -122,8 +132,8 @@ export function BindingNode({ data, selected }: NodeProps<GraphNode>) {
     <div
       style={{
         ...box,
+        ...selectionStyle(selected, color),
         borderStyle: data.node?.backup ? 'dashed' : 'solid',
-        borderColor: selected ? '#0ea5e9' : color,
         background: data.disabled ? 'var(--gw-node-disabled-bg)' : 'var(--gw-node-binding-bg)',
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 220,
@@ -145,7 +155,7 @@ export function ProviderNode({ data, selected }: NodeProps<GraphNode>) {
     <div
       style={{
         ...box,
-        borderColor: selected ? '#0ea5e9' : color,
+        ...selectionStyle(selected, color),
         background: data.disabled ? 'var(--gw-node-disabled-bg)' : 'var(--gw-node-provider-bg)',
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 230,
@@ -160,9 +170,9 @@ export function ProviderNode({ data, selected }: NodeProps<GraphNode>) {
   );
 }
 
-export function UnroutedNode({ data }: NodeProps<GraphNode>) {
+export function UnroutedNode({ data, selected }: NodeProps<GraphNode>) {
   return (
-    <div style={{ ...box, borderColor: '#dc2626', background: 'var(--gw-node-unrouted-bg)', minWidth: 190 }}>
+    <div style={{ ...box, ...selectionStyle(selected, '#dc2626'), background: 'var(--gw-node-unrouted-bg)', minWidth: 190 }}>
       <IconBadge color="#dc2626">
         <WarningOutlined />
       </IconBadge>

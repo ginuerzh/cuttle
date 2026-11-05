@@ -14,6 +14,7 @@ export function DotEdge({
   targetPosition,
   style,
   label,
+  selected,
 }: EdgeProps) {
   const [path, labelX, labelY] = getBezierPath({
     sourceX,
@@ -23,9 +24,12 @@ export function DotEdge({
     targetY,
     targetPosition,
   });
+  const edgeStyle = selected
+    ? { ...style, stroke: '#0ea5e9', strokeWidth: 3.5 }
+    : style;
   return (
     <>
-      <BaseEdge path={path} style={style} interactionWidth={18} />
+      <BaseEdge path={path} style={edgeStyle} interactionWidth={18} />
       {label ? (
         <EdgeLabelRenderer>
           <div
@@ -33,11 +37,12 @@ export function DotEdge({
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               background: 'var(--gw-edge-label-bg)',
-              border: '1px solid var(--gw-border)',
+              border: `1px solid ${selected ? '#0ea5e9' : 'var(--gw-border)'}`,
               borderRadius: 4,
               padding: '1px 4px',
               fontSize: 10,
-              color: 'var(--gw-text-muted)',
+              color: selected ? '#0284c7' : 'var(--gw-text-muted)',
+              fontWeight: selected ? 600 : undefined,
               pointerEvents: 'none',
               whiteSpace: 'nowrap',
             }}
