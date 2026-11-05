@@ -555,7 +555,7 @@ git commit -m "refactor(web)!: author named entrypoints and the new topology"
 
 **Implementation record**
 - Date/status: 2026-11-05 / complete
-- Repo/commit: llm-gw / pending follow-up record commit (web commit below)
+- Repo/commit: llm-gw / c101eb21 (web code and docs); this record commit is the follow-up
 - Files changed: `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/App.tsx`, `web/src/pages/Entrypoints.tsx` (replaced `Aliases.tsx`), `web/src/pages/Edit.tsx`, `Routes.tsx`, `Nodes.tsx`, `Requests.tsx`, `presets.ts`, `web/src/graph/build.ts`, `layout.ts`, `nodes.tsx`, `web/src/pages/selection.ts`, `web/src/locales/en-US.ts`, `web/src/styles.css`, and their tests. Removed the now-unused `web/src/components/MapFields.tsx` and its test.
 - Tests: `npx tsc --noEmit` PASS; `npm test` PASS (9 files, 75 tests); `npm run build` PASS (Vite chunk-size warning unchanged); `GOWORK=off go test ./... -count=1` PASS after the web build.
 - Review findings/fixes: route order is no longer editable (no ↑/↓, no `reorderRoutes`); new routes append. The node form now has one required model field with the existing catalog picker and unknown/disabled warnings. The entrypoint form uses a tags control for `match`, a route select, and the list order is edited via ↑/↓/bulk PUT. Topology draws `entrypoint:<name>` nodes and dragging an entrypoint onto a route replaces its route. Requests no longer show a logical model. Stale alias/logical translations were removed.
