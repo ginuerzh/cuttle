@@ -81,3 +81,51 @@ func TestParseNodeName(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphAliasMetrics(t *testing.T) {
+	s := newStore(t)
+	base := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+
+	rows := []Request{
+		{ID: "a1", TS: base, ClientModel: "claude-sonnet-4-5", Route: "fast", Node: "n", Provider: "p", Status: 200, DurationMS: 10},
+		{ID: "a2", TS: base.Add(time.Minute), ClientModel: "claude-sonnet-4-5", Route: "fast", Node: "n", Provider: "p", Status: 500, Error: "boom", DurationMS: 20},
+		{ID: "a3", TS: base.Add(2 * time.Minute), ClientModel: "gpt-4.5", Route: "fast", Node: "n", Provider: "p", Status: 200, DurationMS: 30},
+		{ID: "a4", TS: base.Add(3 * time.Minute), ClientModel: "direct-model", Route: "fast", Node: "n", Provider: "p", Status: 200, DurationMS: 40},
+	}
+	for _, r := range rows {
+		if err := s.Insert(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resolve := func(clientModel string) string {
+		switch clientModel {
+		case "claude-sonnet-4-5":
+			return "claude-sonnet*"
+		case "gpt-4.5":
+			return "gpt-4.5*"
+		default:
+			return ""
+		}
+	}
+	g, err := s.GraphWithAliases(context.Background(), base.Add(-time.Hour), base.Add(time.Hour), resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := g.Nodes["alias:claude-sonnet*"]; got.Requests != 2 || got.Errors != 1 || got.P50MS != 20 {
+		t.Fatalf("claude alias = %+v", got)
+	}
+	if got := g.Nodes["alias:gpt-4.5*"]; got.Requests != 1 || got.Errors != 0 {
+		t.Fatalf("gpt alias = %+v", got)
+	}
+	if _, ok := g.Nodes["alias:direct-model"]; ok {
+		t.Fatalf("unexpected alias metrics for an unmatched client model: %+v", g.Nodes)
+	}
+	if got := g.Edges["alias:claude-sonnet*->route:fast"]; got.Requests != 2 || got.Errors != 1 {
+		t.Fatalf("alias edge = %+v", got)
+	}
+	if got := g.Edges["alias:gpt-4.5*->route:fast"]; got.Requests != 1 {
+		t.Fatalf("gpt alias edge = %+v", got)
+	}
+}

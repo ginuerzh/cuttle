@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
@@ -97,7 +98,11 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to := parseRange(r)
-	g, err := s.stats.Graph(r.Context(), from, to)
+	// Snapshot the alias list so the stats query does not hold the config lock.
+	s.mu.Lock()
+	cfg := &config.Config{Aliases: append([]config.Alias(nil), s.cfg.Aliases...)}
+	s.mu.Unlock()
+	g, err := s.stats.GraphWithAliases(r.Context(), from, to, cfg.ResolveAliasMatch)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

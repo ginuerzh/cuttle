@@ -42,15 +42,24 @@ type GraphMetrics struct {
 	Errors []ErrorRow             `json:"errors"`
 }
 
+// AliasResolver maps a client model to the alias glob that handled it.
+type AliasResolver func(clientModel string) string
+
 // Graph aggregates the request detail into node/edge metrics for a window.
 func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, error) {
+	return s.GraphWithAliases(ctx, from, to, nil)
+}
+
+// GraphWithAliases also attributes requests to alias nodes when resolve can
+// map the client model back to an alias glob.
+func (s *Store) GraphWithAliases(ctx context.Context, from, to time.Time, resolve AliasResolver) (GraphMetrics, error) {
 	g := GraphMetrics{
 		Nodes:  make(map[string]NodeMetrics),
 		Edges:  make(map[string]EdgeMetrics),
 		Errors: []ErrorRow{},
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT request_id, ts, route, node, provider, status, error,
+	rows, err := s.db.QueryContext(ctx, `SELECT request_id, ts, route, node, provider, client_model, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens
 		FROM requests WHERE ts >= ? AND ts < ? ORDER BY ts DESC`,
 		from.UnixMilli(), to.UnixMilli())
@@ -72,14 +81,22 @@ func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, er
 		g.Nodes[key] = n
 		durations[key] = append(durations[key], dur)
 	}
+	addEdge := func(key string, failed bool) {
+		e := g.Edges[key]
+		e.Requests++
+		if failed {
+			e.Errors++
+		}
+		g.Edges[key] = e
+	}
 
 	for rows.Next() {
 		var id string
 		var ts int64
-		var route, node, provider, errStr string
+		var route, node, provider, clientModel, errStr string
 		var status int
 		var dur, in, out, cached int64
-		if err := rows.Scan(&id, &ts, &route, &node, &provider, &status, &errStr,
+		if err := rows.Scan(&id, &ts, &route, &node, &provider, &clientModel, &status, &errStr,
 			&dur, &in, &out, &cached); err != nil {
 			return g, err
 		}
@@ -95,29 +112,23 @@ func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, er
 		}
 		addNode(routeKey, failed, in, out, cached, dur)
 
-		if route == "" {
-			e := g.Edges["unrouted|provider:"+provider]
-			e.Requests++
-			if failed {
-				e.Errors++
+		if resolve != nil && clientModel != "" {
+			if match := resolve(clientModel); match != "" {
+				aliasKey := "alias:" + match
+				addNode(aliasKey, failed, in, out, cached, dur)
+				if route == "" {
+					addEdge(aliasKey+"->unrouted", failed)
+				} else {
+					addEdge(aliasKey+"->route:"+route, failed)
+				}
 			}
-			g.Edges["unrouted|provider:"+provider] = e
-		} else if node != "" {
-			key := "route:" + route + "|node:" + node
-			e := g.Edges[key]
-			e.Requests++
-			if failed {
-				e.Errors++
-			}
-			g.Edges[key] = e
+		}
 
-			key = "node:" + node + "|provider:" + provider
-			e = g.Edges[key]
-			e.Requests++
-			if failed {
-				e.Errors++
-			}
-			g.Edges[key] = e
+		if route == "" {
+			addEdge("unrouted|provider:"+provider, failed)
+		} else if node != "" {
+			addEdge("route:"+route+"|node:"+node, failed)
+			addEdge("node:"+node+"|provider:"+provider, failed)
 		}
 
 		if failed && len(g.Errors) < 20 {

@@ -643,6 +643,17 @@ func (c *Config) AliasMatchesForModel(name string) []string {
 	return out
 }
 
+// ResolveAliasMatch returns the glob of the first alias matching clientModel.
+// An empty result means no alias matched.
+func (c *Config) ResolveAliasMatch(clientModel string) string {
+	for _, a := range c.Aliases {
+		if globMatch(a.Match, clientModel) {
+			return a.Match
+		}
+	}
+	return ""
+}
+
 // ResolveAlias maps a client-facing model name to a logical model using the
 // ordered alias list. An empty result means no alias matched.
 func (c *Config) ResolveAlias(clientModel string) string {

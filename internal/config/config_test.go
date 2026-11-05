@@ -176,6 +176,13 @@ func TestResolveAliasAndEffectiveModel(t *testing.T) {
 		}
 	}
 
+	if got := c.ResolveAliasMatch("claude-opus-4-5"); got != "claude-opus*" {
+		t.Fatalf("ResolveAliasMatch = %q, want claude-opus*", got)
+	}
+	if got := c.ResolveAliasMatch("unknown-model"); got != "*" {
+		t.Fatalf("ResolveAliasMatch fallback = %q, want *", got)
+	}
+
 	n := c.Nodes[0]
 	if got := n.EffectiveModel("strong"); got != "deepseek-v4-pro" {
 		t.Fatalf("strong = %q", got)

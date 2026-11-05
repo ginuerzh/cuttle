@@ -165,3 +165,31 @@ func loginWith(t *testing.T, tsURL, password string) {
 }
 
 var _ = sort.Strings
+
+func TestGraphAliasAPI(t *testing.T) {
+	srv, rel, _, ts := newTestAdmin(t)
+	client, _ := login(t, ts.URL)
+
+	srv.mu.Lock()
+	srv.cfg.Aliases = []config.Alias{{Match: "claude*", Model: "r"}}
+	srv.mu.Unlock()
+
+	base := time.Now().Add(-time.Hour)
+	if err := rel.store.Insert(context.Background(), stats.Request{
+		ID: "a1", TS: base, ClientModel: "claude-sonnet-4-5", Route: "r", Node: "n", Provider: "p", Status: 200, DurationMS: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/stats/graph", "", "")
+	var g stats.GraphMetrics
+	if err := jsonDecode(resp.Body, &g); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Nodes["alias:claude*"]; got.Requests != 1 {
+		t.Fatalf("alias node = %+v", got)
+	}
+	if got := g.Edges["alias:claude*->route:r"]; got.Requests != 1 {
+		t.Fatalf("alias edge = %+v", got)
+	}
+}
