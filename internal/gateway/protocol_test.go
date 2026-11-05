@@ -55,21 +55,15 @@ func matrixConfig(upstreamURL string, api provider.API) *gwconfig.Config {
 	}
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
-		Aliases: []gwconfig.Alias{
-			{Match: "claude-opus*", Model: "strong"},
-			{Match: "gpt-5.5*", Model: "strong"},
-			{Match: "gpt-4.5*", Model: "fast"},
-			{Match: "*", Model: "fast"},
+		Entrypoints: []gwconfig.Entrypoint{
+			{Name: "strong", Match: []string{"claude-opus*", "gpt-5.5*"}, Route: "r"},
+			{Name: "fast", Match: []string{"gpt-4.5*", "*"}, Route: "r"},
 		},
 		Providers: []gwconfig.Provider{p},
 		Nodes: []gwconfig.Node{{
 			Name:     "up",
 			Provider: "up",
-			Models: map[string]string{
-				"strong": "deepseek-v4-pro",
-				"fast":   "deepseek-v4-flash",
-				"*":      "deepseek-v4-flash",
-			},
+			Model:    "deepseek-v4-flash",
 		}},
 		Routes: []gwconfig.Route{{Name: "r", Nodes: []string{"up"}}},
 	}
@@ -190,19 +184,12 @@ func TestProtocolMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("provider without models keeps the client model", func(t *testing.T) {
-		up, got := captureUpstream(t)
+	t.Run("empty node model is rejected", func(t *testing.T) {
+		up, _ := captureUpstream(t)
 		cfg := matrixConfig(up.URL, provider.Chat)
-		cfg.Aliases = nil
-		cfg.Nodes[0].Models = nil
-		gw := startGateway(t, cfg)
-
-		body := `{"model":"gpt-4.5","messages":[{"role":"user","content":"hi"}]}`
-		postThroughGateway(t, gw, "/v1/chat/completions", body)
-
-		v := decodeBody(t, got.body)
-		if v["model"] != "gpt-4.5" {
-			t.Fatalf("model = %v, want gpt-4.5", v["model"])
+		cfg.Nodes[0].Model = ""
+		if _, err := New(cfg, nil); err == nil {
+			t.Fatal("New accepted an empty node model")
 		}
 	})
 }

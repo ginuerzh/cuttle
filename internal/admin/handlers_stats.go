@@ -98,15 +98,15 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to := parseRange(r)
-	// Snapshot the alias list so the stats query does not hold the config lock.
+	// Snapshot the entrypoint list so the stats query does not hold the config lock.
 	s.mu.Lock()
 	cfg := &config.Config{
-		Aliases: append([]config.Alias(nil), s.cfg.Aliases...),
-		Routes:  append([]config.Route(nil), s.cfg.Routes...),
-		Nodes:   append([]config.Node(nil), s.cfg.Nodes...),
+		Entrypoints: append([]config.Entrypoint(nil), s.cfg.Entrypoints...),
+		Routes:      append([]config.Route(nil), s.cfg.Routes...),
+		Nodes:       append([]config.Node(nil), s.cfg.Nodes...),
 	}
 	s.mu.Unlock()
-	g, err := s.stats.GraphWithFilter(r.Context(), from, to, cfg.ResolveAliasMatch, cfg.TopologyIncludes)
+	g, err := s.stats.GraphWithFilter(r.Context(), from, to, cfg.ResolveEntrypointName, cfg.TopologyIncludes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

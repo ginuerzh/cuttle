@@ -24,34 +24,6 @@ func postModel(t *testing.T, gw *Gateway, path, body string) int {
 	return resp.StatusCode
 }
 
-func TestRoutePrioritySpecificBeforeCatchAll(t *testing.T) {
-	specificSrv, specificHit := captureUpstream(t)
-	catchAllSrv, catchAllHit := captureUpstream(t)
-
-	cfg := matrixConfig(catchAllSrv.URL, provider.Chat)
-	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name: "specific",
-		Type: "generic",
-		Chat: specificSrv.URL,
-	})
-	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "specific", Provider: "specific"})
-	cfg.Routes = []gwconfig.Route{
-		{Name: "specific", Nodes: []string{"specific"}, Match: gwconfig.Match{Model: "gpt-5.5"}},
-		{Name: "default", Nodes: []string{"up"}},
-	}
-	gw := startGateway(t, cfg)
-
-	postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-5.5","messages":[]}`)
-	if specificHit.path == "" || catchAllHit.path != "" {
-		t.Fatalf("specific route lost: specific=%q catchall=%q", specificHit.path, catchAllHit.path)
-	}
-
-	postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[]}`)
-	if catchAllHit.path == "" {
-		t.Fatal("catch-all route did not serve the unmatched model")
-	}
-}
-
 func TestMultiKey429Rotation(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
@@ -74,8 +46,6 @@ func TestMultiKey429Rotation(t *testing.T) {
 
 	cfg := matrixConfig(upstream.URL, provider.Chat)
 	cfg.Providers[0].Keys = []string{"k1", "k2"}
-	cfg.Nodes[0].Models = nil
-	cfg.Aliases = nil
 	cfg.Routes[0].Strategy = "round"
 	gw := startGateway(t, cfg)
 
@@ -120,14 +90,12 @@ func TestBackupProviderUsedOnlyAfterPrimaryFails(t *testing.T) {
 	defer backup.Close()
 
 	cfg := matrixConfig(primary.URL, provider.Chat)
-	cfg.Nodes[0].Models = nil
-	cfg.Aliases = nil
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
 		Name: "backup",
 		Type: "generic",
 		Chat: backup.URL,
 	})
-	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "backup", Provider: "backup", Backup: true})
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "backup", Provider: "backup", Model: "backup-model", Backup: true})
 	cfg.Routes[0].Nodes = []string{"up", "backup"}
 	gw := startGateway(t, cfg)
 

@@ -16,42 +16,6 @@ func providerBody(name, baseURL string) string {
 	return `{"name":"` + name + `","type":"generic","chat":"` + baseURL + `"}`
 }
 
-func TestRouteOrder(t *testing.T) {
-	_, rel, _, ts := newTestAdmin(t)
-	client, csrf := login(t, ts.URL)
-
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", providerBody("p1", "https://a.example"), csrf); resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create provider = %d", resp.StatusCode)
-	}
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes",
-		`{"name":"n1","provider":"p1"}`, csrf); resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create node = %d", resp.StatusCode)
-	}
-	for _, name := range []string{"r1", "r2", "r3"} {
-		if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes",
-			`{"name":"`+name+`","nodes":["n1"]}`, csrf); resp.StatusCode != http.StatusCreated {
-			t.Fatalf("create route %s = %d", name, resp.StatusCode)
-		}
-	}
-
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/routes/order",
-		`["r3","r1","r2"]`, csrf); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("order = %d", resp.StatusCode)
-	}
-	var names []string
-	for _, rt := range rel.cfg.Routes {
-		names = append(names, rt.Name)
-	}
-	if len(names) != 3 || names[0] != "r3" || names[1] != "r1" || names[2] != "r2" {
-		t.Fatalf("order = %v", names)
-	}
-
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/routes/order",
-		`["r1","r2"]`, csrf); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("incomplete order status = %d, want 400", resp.StatusCode)
-	}
-}
-
 func TestChangePassword(t *testing.T) {
 	_, _, path, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)
@@ -121,7 +85,7 @@ func TestGraphAPI(t *testing.T) {
 
 	srv.mu.Lock()
 	srv.cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"n"}}}
-	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p"}}
+	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p", Model: "m1"}}
 	srv.mu.Unlock()
 
 	base := time.Now().Add(-time.Hour)
@@ -171,14 +135,14 @@ func loginWith(t *testing.T, tsURL, password string) {
 
 var _ = sort.Strings
 
-func TestGraphAliasAPI(t *testing.T) {
+func TestGraphEntrypointAPI(t *testing.T) {
 	srv, rel, _, ts := newTestAdmin(t)
 	client, _ := login(t, ts.URL)
 
 	srv.mu.Lock()
-	srv.cfg.Aliases = []config.Alias{{Match: "claude*", Model: "r"}}
+	srv.cfg.Entrypoints = []config.Entrypoint{{Name: "claude", Match: []string{"claude*"}, Route: "r"}}
 	srv.cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"n"}}}
-	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p"}}
+	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p", Model: "m1"}}
 	srv.mu.Unlock()
 
 	base := time.Now().Add(-time.Hour)
@@ -193,10 +157,10 @@ func TestGraphAliasAPI(t *testing.T) {
 	if err := jsonDecode(resp.Body, &g); err != nil {
 		t.Fatal(err)
 	}
-	if got := g.Nodes["alias:claude*"]; got.Requests != 1 {
+	if got := g.Nodes["entrypoint:claude"]; got.Requests != 1 {
 		t.Fatalf("alias node = %+v", got)
 	}
-	if got := g.Edges["alias:claude*->route:r"]; got.Requests != 1 {
+	if got := g.Edges["entrypoint:claude->route:r"]; got.Requests != 1 {
 		t.Fatalf("alias edge = %+v", got)
 	}
 }

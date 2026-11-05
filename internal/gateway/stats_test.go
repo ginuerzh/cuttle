@@ -24,8 +24,8 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
-	cfg.Aliases = []config.Alias{
-		{Match: "gpt-4.5*", Model: "fast"},
+	cfg.Entrypoints = []config.Entrypoint{
+		{Name: "fast", Match: []string{"gpt-4.5*"}, Route: "r"},
 	}
 	cfg.Providers = []config.Provider{{
 		Name: "p",
@@ -36,7 +36,7 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 	cfg.Nodes = []config.Node{{
 		Name:     "p",
 		Provider: "p",
-		Models:   map[string]string{"fast": "deepseek-v4-flash", "*": "deepseek-v4-flash"},
+		Model:    "deepseek-v4-flash",
 	}}
 	cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"p"}}}
 	return cfg
@@ -92,7 +92,7 @@ func TestStatsRecordsNonStreaming(t *testing.T) {
 	if row.Provider != "p" || row.Model != "deepseek-v4-flash" || row.Effort != "high" {
 		t.Fatalf("row = %+v", row)
 	}
-	if row.Route != "r" || row.ClientModel != "gpt-4.5" || row.LogicalModel != "fast" {
+	if row.Route != "r" || row.ClientModel != "gpt-4.5" {
 		t.Fatalf("row = %+v", row)
 	}
 	if row.InputTokens != 10 || row.OutputTokens != 5 {

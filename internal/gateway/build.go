@@ -29,23 +29,37 @@ import (
 	_ "github.com/go-gost/x/dialer/tcp"
 )
 
-// buildHopGroup compiles the configured routes into a hop group. Route
-// declaration order is preserved; the group selector is FIFO so the first
-// matching route wins.
+// buildHopGroup compiles the configured routes into a hop group and emits one
+// hop entry per entrypoint, in declaration order. The FIFO group selector then
+// makes entrypoint order the single precedence rule.
 func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) (hop.Hop, error) {
 	if err := registerRewriters(cfg, log, facts); err != nil {
 		return nil, err
 	}
 
-	entries := make([]*xhop.HopEntry, 0, len(cfg.Routes))
+	routes := make(map[string]gwconfig.Route, len(cfg.Routes))
 	for _, r := range cfg.Routes {
-		h, err := buildRouteHop(cfg, r, log)
-		if err != nil {
-			return nil, fmt.Errorf("route %q: %w", r.Name, err)
+		routes[r.Name] = r
+	}
+	routeHops := make(map[string]hop.Hop, len(cfg.Routes))
+	entries := make([]*xhop.HopEntry, 0, len(cfg.Entrypoints))
+	for _, e := range cfg.Entrypoints {
+		r, ok := routes[e.Route]
+		if !ok {
+			return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
 		}
-		m, err := buildMatcher(cfg, r.Match)
+		h, ok := routeHops[r.Name]
+		if !ok {
+			var err error
+			h, err = buildRouteHop(cfg, r, log)
+			if err != nil {
+				return nil, fmt.Errorf("route %q: %w", r.Name, err)
+			}
+			routeHops[r.Name] = h
+		}
+		m, err := buildEntrypointMatcher(e.Match)
 		if err != nil {
-			return nil, fmt.Errorf("route %q: matcher: %w", r.Name, err)
+			return nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 		}
 		entries = append(entries, xhop.NewHopEntry(h, m, nil))
 	}
@@ -84,7 +98,7 @@ func buildRouteHop(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger) (h
 		if !p.EnabledValue() {
 			continue
 		}
-		target, err := compileRouteNode(p, n, r)
+		target, err := compileRouteNode(p, n)
 		if err != nil {
 			if errors.Is(err, errModelDisabled) {
 				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
@@ -211,41 +225,29 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 	return nodes, nil
 }
 
-func buildMatcher(cfg *gwconfig.Config, m gwconfig.Match) (corerouting.Matcher, error) {
-	var rules []string
-	if m.Model != "" {
-		pattern := globToRegexp(m.Model)
-		// A route's model is a logical model: compile the union of the alias
-		// globs that resolve to it. Fall back to a literal glob when no alias
-		// targets this logical model (keeps older configs working).
-		var globs []string
-		for _, a := range cfg.Aliases {
-			if strings.EqualFold(strings.TrimSpace(a.Model), strings.TrimSpace(m.Model)) {
-				globs = append(globs, a.Match)
-			}
+// buildEntrypointMatcher compiles one entrypoint's model globs into a single
+// anchored body-model matcher. The entrypoint order in the hop group, not the
+// order inside this list, decides precedence.
+func buildEntrypointMatcher(match []string) (corerouting.Matcher, error) {
+	globs := make([]string, 0, len(match))
+	for _, g := range match {
+		if g = strings.TrimSpace(g); g != "" {
+			globs = append(globs, g)
 		}
-		if len(globs) > 0 {
-			inner := make([]string, 0, len(globs))
-			for _, g := range globs {
-				rgx := globToRegexp(g)
-				rgx = strings.TrimPrefix(rgx, "^")
-				rgx = strings.TrimSuffix(rgx, "$")
-				inner = append(inner, rgx)
-			}
-			pattern = "^(" + strings.Join(inner, "|") + ")$"
-		}
-		rules = append(rules, fmt.Sprintf("BodyJSON(%q, %q)", "model", pattern))
 	}
-	if m.Path != "" {
-		rules = append(rules, fmt.Sprintf("PathPrefix(%q)", m.Path))
+	if len(globs) == 0 {
+		return nil, fmt.Errorf("match is required")
 	}
-	if m.Host != "" {
-		rules = append(rules, fmt.Sprintf("HostRegexp(%q)", m.Host))
+
+	inner := make([]string, 0, len(globs))
+	for _, g := range globs {
+		rgx := globToRegexp(g)
+		rgx = strings.TrimPrefix(rgx, "^")
+		rgx = strings.TrimSuffix(rgx, "$")
+		inner = append(inner, rgx)
 	}
-	if len(rules) == 0 {
-		return nil, nil
-	}
-	return xrouting.NewMatcher(strings.Join(rules, " && "))
+	pattern := "^(" + strings.Join(inner, "|") + ")$"
+	return xrouting.NewMatcher(fmt.Sprintf("BodyJSON(%q, %q)", "model", pattern))
 }
 
 // globToRegexp converts a small glob (* only) to an anchored Go regexp.
@@ -297,7 +299,7 @@ func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Fac
 			}
 
 			name := rewriterName(r.Name, n.Name)
-			target, err := compileRouteNode(p, n, r)
+			target, err := compileRouteNode(p, n)
 			if err != nil {
 				if errors.Is(err, errModelDisabled) {
 					registry.RewriterRegistry().Unregister(name)
@@ -311,7 +313,7 @@ func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Fac
 			protocol := string(target.api)
 
 			registry.RewriterRegistry().Unregister(name)
-			if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(cfg, r, target), p.Name, protocol, facts)); err != nil {
+			if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(target), p.Name, protocol, facts)); err != nil {
 				return fmt.Errorf("register rewriter %s: %w", name, err)
 			}
 		}
@@ -319,27 +321,15 @@ func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Fac
 	return nil
 }
 
-func newNodeEngine(cfg *gwconfig.Config, r gwconfig.Route, target upstreamTarget) *engine.Engine {
+func newNodeEngine(target upstreamTarget) *engine.Engine {
 	targetModel := target.targetModel
 	engineProto := engineProtocol(target.api)
-	routeModel := r.Match.Model
 	return engine.New(engine.Options{
 		Model:     targetModel,
 		MaxTokens: 8192,
 		Cache:     "memory",
-		ResolveModel: func(clientModel, _ string) (string, string, string) {
-			logical := routeModel
-			if logical == "" {
-				// A catch-all route has no logical model of its own. Keep an
-				// alias (or the client model) only as the stats label; the
-				// target and protocol stay the "*" target chosen when the
-				// route was compiled.
-				logical = cfg.ResolveAlias(clientModel)
-				if logical == "" {
-					logical = strings.TrimSpace(clientModel)
-				}
-			}
-			return targetModel, engineProto, logical
+		ResolveModel: func(string, string) (string, string, string) {
+			return targetModel, engineProto, ""
 		},
 	})
 }

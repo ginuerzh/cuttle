@@ -87,17 +87,13 @@ func TestProviderCapabilities(t *testing.T) {
 			Anthropic: up.srv.URL,
 			Keys:      []string{"sk-oc"},
 		}}
-		cfg.Nodes = []gwconfig.Node{{
-			Name:     "n",
-			Provider: "oc",
-			Models: map[string]string{
-				"fast":   "deepseek-v4-flash",
-				"strong": "glm-4.8",
-			},
-		}}
+		cfg.Nodes = []gwconfig.Node{
+			{Name: "n-fast", Provider: "oc", Model: "deepseek-v4-flash"},
+			{Name: "n-strong", Provider: "oc", Model: "glm-4.8"},
+		}
 		cfg.Routes = []gwconfig.Route{
-			{Name: "fast", Nodes: []string{"n"}, Match: gwconfig.Match{Model: "fast"}},
-			{Name: "strong", Nodes: []string{"n"}, Match: gwconfig.Match{Model: "strong"}},
+			{Name: "fast", Nodes: []string{"n-fast"}},
+			{Name: "strong", Nodes: []string{"n-strong"}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -164,7 +160,7 @@ func TestProviderCapabilities(t *testing.T) {
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
 			Provider: "ds",
-			Models:   map[string]string{"fast": "deepseek-v4-flash"},
+			Model:    "deepseek-v4-flash",
 		}}
 		gw := startGateway(t, cfg)
 
@@ -201,7 +197,7 @@ func TestProviderCapabilities(t *testing.T) {
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
 			Provider: "ds",
-			Models:   map[string]string{"fast": "deepseek-v4-flash"},
+			Model:    "deepseek-v4-flash",
 		}}
 		gw := startGateway(t, cfg)
 
@@ -226,7 +222,7 @@ func TestProviderCapabilities(t *testing.T) {
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
 			Provider: "ds",
-			Models:   map[string]string{"fast": "deepseek-v4-flash"},
+			Model:    "deepseek-v4-flash",
 		}}
 		gw := startGateway(t, cfg)
 
@@ -251,7 +247,7 @@ func TestProviderCapabilities(t *testing.T) {
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
 			Provider: "cc",
-			Models:   map[string]string{"strong": "claude-sonnet-4"},
+			Model:    "claude-sonnet-4",
 		}}
 		gw := startGateway(t, cfg)
 
@@ -282,7 +278,7 @@ func TestProviderCapabilities(t *testing.T) {
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
 			Provider: "gm",
-			Models:   map[string]string{"fast": "gemini-2.5-pro"},
+			Model:    "gemini-2.5-pro",
 		}}
 		gw := startGateway(t, cfg)
 
@@ -311,7 +307,7 @@ func TestProviderCapabilities(t *testing.T) {
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
 			Provider: "oc",
-			Models:   map[string]string{"fast": "model-not-in-the-catalog"},
+			Model:    "model-not-in-the-catalog",
 		}}
 		gw := startGateway(t, cfg)
 
@@ -341,9 +337,10 @@ func TestProviderCapabilities(t *testing.T) {
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
 				Provider: "gm",
-				Models:   map[string]string{"fast": "chat-model"},
+				Model:    "chat-model",
 			}},
-			Routes: []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}, Match: gwconfig.Match{Model: "fast"}}},
+			Entrypoints: []gwconfig.Entrypoint{{Name: "fast", Match: []string{"fast"}, Route: "fast"}},
+			Routes:      []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -374,9 +371,10 @@ func TestProviderCapabilities(t *testing.T) {
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
 				Provider: "gm",
-				Models:   map[string]string{"fast": "unknown-model"},
+				Model:    "unknown-model",
 			}},
-			Routes: []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}, Match: gwconfig.Match{Model: "fast"}}},
+			Entrypoints: []gwconfig.Entrypoint{{Name: "fast", Match: []string{"fast"}, Route: "fast"}},
+			Routes:      []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -402,9 +400,10 @@ func TestProviderCapabilities(t *testing.T) {
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
 				Provider: "gm",
-				Models:   map[string]string{"*": "deepseek-v4-flash"},
+				Model:    "deepseek-v4-flash",
 			}},
-			Routes: []gwconfig.Route{{Name: "all", Nodes: []string{"n"}}},
+			Entrypoints: []gwconfig.Entrypoint{{Name: "all", Match: []string{"*"}, Route: "all"}},
+			Routes:      []gwconfig.Route{{Name: "all", Nodes: []string{"n"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -443,13 +442,10 @@ func TestProviderCapabilities(t *testing.T) {
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
 				Provider: "oc",
-				Models:   map[string]string{"claude-*": "glm-4.8"},
+				Model:    "glm-4.8",
 			}},
-			Routes: []gwconfig.Route{{
-				Name:  "claude",
-				Nodes: []string{"n"},
-				Match: gwconfig.Match{Model: "claude-*"},
-			}},
+			Entrypoints: []gwconfig.Entrypoint{{Name: "claude", Match: []string{"claude-*"}, Route: "claude"}},
+			Routes:      []gwconfig.Route{{Name: "claude", Nodes: []string{"n"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -487,13 +483,10 @@ func TestProviderCapabilities(t *testing.T) {
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
 				Provider: "ds",
-				Models:   map[string]string{"fast": "deepseek-v4-flash"},
+				Model:    "deepseek-v4-flash",
 			}},
-			Routes: []gwconfig.Route{{
-				Name:  "fast",
-				Nodes: []string{"n"},
-				Match: gwconfig.Match{Model: "fast"},
-			}},
+			Entrypoints: []gwconfig.Entrypoint{{Name: "fast", Match: []string{"fast"}, Route: "fast"}},
+			Routes:      []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -529,13 +522,10 @@ func TestProviderCapabilities(t *testing.T) {
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
 				Provider: "oc",
-				Models:   map[string]string{"claude-*": "glm-4.8"},
+				Model:    "glm-4.8",
 			}},
-			Routes: []gwconfig.Route{{
-				Name:  "claude",
-				Nodes: []string{"n"},
-				Match: gwconfig.Match{Model: "claude-*"},
-			}},
+			Entrypoints: []gwconfig.Entrypoint{{Name: "claude", Match: []string{"claude-*"}, Route: "claude"}},
+			Routes:      []gwconfig.Route{{Name: "claude", Nodes: []string{"n"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -630,13 +620,13 @@ func TestRewriterNameCannotCollide(t *testing.T) {
 func capabilityConfig() *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
-		Aliases: []gwconfig.Alias{
-			{Match: "gpt-4.5*", Model: "fast"},
-			{Match: "claude-*", Model: "strong"},
+		Entrypoints: []gwconfig.Entrypoint{
+			{Name: "fast", Match: []string{"gpt-4.5*"}, Route: "fast"},
+			{Name: "strong", Match: []string{"claude-*"}, Route: "strong"},
 		},
 		Routes: []gwconfig.Route{
-			{Name: "fast", Nodes: []string{"n"}, Match: gwconfig.Match{Model: "fast"}},
-			{Name: "strong", Nodes: []string{"n"}, Match: gwconfig.Match{Model: "strong"}},
+			{Name: "fast", Nodes: []string{"n"}},
+			{Name: "strong", Nodes: []string{"n"}},
 		},
 	}
 }

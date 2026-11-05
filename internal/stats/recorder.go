@@ -83,7 +83,6 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		}
 		req.Protocol = fact.Protocol
 		req.ClientModel = fact.ClientModel
-		req.LogicalModel = fact.LogicalModel
 		req.Model = fact.Model
 		req.Effort = fact.Effort
 		req.InputTokens = int64(fact.InputTokens)

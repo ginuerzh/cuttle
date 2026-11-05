@@ -24,6 +24,10 @@ func TestLoadExpandsEnvAndValidates(t *testing.T) {
 	c, err := Load(writeConfig(t, `
 gateway:
   listen: "127.0.0.1:0"
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: default
 providers:
   - name: deepseek
     type: generic
@@ -35,11 +39,10 @@ providers:
 nodes:
   - name: deepseek
     provider: deepseek
+    model: deepseek-chat
 routes:
   - name: default
     nodes: [deepseek]
-    match:
-      model: "*"
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +57,10 @@ routes:
 
 func TestLoadAppliesDefaults(t *testing.T) {
 	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: "  default  "
+    match: ["  *  ", "", "*"]
+    route: "  r  "
 providers:
   - name: a
     type: generic
@@ -61,8 +68,9 @@ providers:
 nodes:
   - name: n
     provider: a
+    model: "  m1  "
 routes:
-  - name: r
+  - name: "  r  "
     nodes: [n]
 `))
 	if err != nil {
@@ -77,10 +85,26 @@ routes:
 	if c.Providers[0].TLS.Secure == nil || !*c.Providers[0].TLS.Secure {
 		t.Fatal("tls.secure should default to true")
 	}
+	if c.Nodes[0].Model != "m1" || c.Nodes[0].Weight != 1 {
+		t.Fatalf("node defaults = %+v, want model m1 and weight 1", c.Nodes[0])
+	}
+	if c.Routes[0].Name != "r" || c.Routes[0].Strategy != "round" {
+		t.Fatalf("route defaults = %+v, want name r and strategy round", c.Routes[0])
+	}
+	if c.Entrypoints[0].Name != "default" || c.Entrypoints[0].Route != "r" {
+		t.Fatalf("entrypoint defaults = %+v", c.Entrypoints[0])
+	}
+	if got := c.Entrypoints[0].Match; len(got) != 1 || got[0] != "*" {
+		t.Fatalf("match = %#v, want deduplicated [*]", got)
+	}
 }
 
 func TestLoadKeepsCustomAuthHeaderWithoutPrefix(t *testing.T) {
 	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
 providers:
   - name: a
     type: generic
@@ -90,6 +114,7 @@ providers:
 nodes:
   - name: n
     provider: a
+    model: m1
 routes:
   - name: r
     nodes: [n]
@@ -102,11 +127,112 @@ routes:
 	}
 }
 
+func TestResolveEntrypointOrder(t *testing.T) {
+	c := &Config{Entrypoints: []Entrypoint{
+		{Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
+		{Name: "fallback", Match: []string{"*"}, Route: "b"},
+	}}
+
+	ep, ok := c.ResolveEntrypoint("GPT-5.5")
+	if !ok || ep.Name != "specific" || ep.Route != "a" {
+		t.Fatalf("specific = %+v, %v", ep, ok)
+	}
+	ep, ok = c.ResolveEntrypoint("other")
+	if !ok || ep.Name != "fallback" || ep.Route != "b" {
+		t.Fatalf("fallback = %+v, %v", ep, ok)
+	}
+	if got := c.ResolveEntrypointName("gpt-5.5"); got != "specific" {
+		t.Fatalf("ResolveEntrypointName = %q, want specific", got)
+	}
+	noCatchAll := &Config{Entrypoints: []Entrypoint{
+		{Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
+	}}
+	if got := noCatchAll.ResolveEntrypointName("unmatched"); got != "" {
+		t.Fatalf("ResolveEntrypointName(unmatched) = %q, want empty", got)
+	}
+}
+
+func TestResolveEntrypointMultipleGlobsAndCase(t *testing.T) {
+	c := &Config{Entrypoints: []Entrypoint{
+		{Name: "claude", Match: []string{"claude-*", "claude*"}, Route: "r"},
+	}}
+	ep, ok := c.ResolveEntrypoint("CLAUDE-OPUS-4-5")
+	if !ok || ep.Name != "claude" || ep.Route != "r" {
+		t.Fatalf("ResolveEntrypoint = %+v, %v", ep, ok)
+	}
+}
+
+func TestValidateEntrypoints(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Gateway:   Gateway{Listen: ":8787"},
+			Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1"}},
+			Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
+			Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
+		}
+	}
+	cases := []struct {
+		name string
+		ep   Entrypoint
+	}{
+		{"empty name", Entrypoint{Match: []string{"*"}, Route: "r"}},
+		{"slash name", Entrypoint{Name: "a/b", Match: []string{"*"}, Route: "r"}},
+		{"empty match", Entrypoint{Name: "e", Route: "r"}},
+		{"empty match entries", Entrypoint{Name: "e", Match: []string{"", "  "}, Route: "r"}},
+		{"unknown route", Entrypoint{Name: "e", Match: []string{"*"}, Route: "missing"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := base()
+			c.Entrypoints = []Entrypoint{tc.ep}
+			if err := Validate(c); err == nil {
+				t.Fatalf("%+v should not validate", tc.ep)
+			}
+		})
+	}
+
+	t.Run("duplicate name", func(t *testing.T) {
+		c := base()
+		c.Entrypoints = []Entrypoint{
+			{Name: "e", Match: []string{"a*"}, Route: "r"},
+			{Name: "e", Match: []string{"b*"}, Route: "r"},
+		}
+		if err := Validate(c); err == nil {
+			t.Fatal("duplicate entrypoint names should not validate")
+		}
+	})
+}
+
+func TestValidateNodeRequiresModel(t *testing.T) {
+	c := &Config{
+		Gateway:   Gateway{Listen: ":8787"},
+		Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1"}},
+		Nodes:     []Node{{Name: "n", Provider: "p"}},
+		Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
+	}
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "model") {
+		t.Fatalf("err = %v, want missing model error", err)
+	}
+}
+
+func TestValidateRejectsDuplicateRouteNode(t *testing.T) {
+	c := &Config{
+		Gateway:   Gateway{Listen: ":8787"},
+		Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1"}},
+		Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
+		Routes:    []Route{{Name: "r", Nodes: []string{"n", "n"}}},
+	}
+	if err := Validate(c); err == nil {
+		t.Fatal("duplicate route node references should not validate")
+	}
+}
+
 func TestValidateRejectsUnknownProvider(t *testing.T) {
 	c := &Config{
 		Gateway:   Gateway{Listen: ":8787"},
 		Providers: []Provider{{Name: "a", Type: "generic", Chat: "https://a.example/v1"}},
-		Nodes:     []Node{{Name: "n", Provider: "missing"}},
+		Nodes:     []Node{{Name: "n", Provider: "missing", Model: "m1"}},
 		Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
 	}
 	if err := Validate(c); err == nil {
@@ -126,8 +252,63 @@ routes: []
 	}
 }
 
+func TestLoadRejectsLegacyAliasConfig(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+gateway:
+  listen: ":8787"
+aliases:
+  - match: "*"
+    model: fast
+providers:
+  - name: a
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: a
+    model: m1
+routes:
+  - name: r
+    nodes: [n]
+`))
+	if err == nil || !strings.Contains(err.Error(), "aliases") {
+		t.Fatalf("err = %v, want an aliases unknown-field error", err)
+	}
+}
+
+func TestNodeModelExpandsEnv(t *testing.T) {
+	t.Setenv("MODEL", "deepseek-v4-flash")
+	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: a
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: a
+    model: "${MODEL}"
+routes:
+  - name: r
+    nodes: [n]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Nodes[0].Model; got != "deepseek-v4-flash" {
+		t.Fatalf("model = %q, want expanded value", got)
+	}
+}
+
 func TestLoadRejectsEmptyKey(t *testing.T) {
 	_, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
 providers:
   - name: a
     type: generic
@@ -136,62 +317,13 @@ providers:
 nodes:
   - name: n
     provider: a
+    model: m1
 routes:
   - name: r
     nodes: [n]
 `))
 	if err == nil || !strings.Contains(err.Error(), "keys[0]") {
 		t.Fatalf("err = %v, want empty key error", err)
-	}
-}
-
-func TestResolveAliasAndEffectiveModel(t *testing.T) {
-	c := &Config{
-		Aliases: []Alias{
-			{Match: "claude-opus*", Model: "strong"},
-			{Match: "gpt-5.5*", Model: "strong"},
-			{Match: "*", Model: "fast"},
-		},
-		Providers: []Provider{{Name: "p"}},
-		Nodes: []Node{{
-			Name:     "n",
-			Provider: "p",
-			Models: map[string]string{
-				"strong": "deepseek-v4-pro",
-				"fast":   "deepseek-v4-flash",
-				"*":      "deepseek-v4-flash",
-			},
-		}},
-	}
-
-	cases := map[string]string{
-		"claude-opus-4-5": "strong",
-		"gpt-5.5":         "strong",
-		"claude-sonnet-4": "fast",
-		"unknown-model":   "fast",
-	}
-	for model, want := range cases {
-		if got := c.ResolveAlias(model); got != want {
-			t.Fatalf("ResolveAlias(%q) = %q, want %q", model, got, want)
-		}
-	}
-
-	if got := c.ResolveAliasMatch("claude-opus-4-5"); got != "claude-opus*" {
-		t.Fatalf("ResolveAliasMatch = %q, want claude-opus*", got)
-	}
-	if got := c.ResolveAliasMatch("unknown-model"); got != "*" {
-		t.Fatalf("ResolveAliasMatch fallback = %q, want *", got)
-	}
-
-	n := c.Nodes[0]
-	if got := n.EffectiveModel("strong"); got != "deepseek-v4-pro" {
-		t.Fatalf("strong = %q", got)
-	}
-	if got := n.EffectiveModel("fast"); got != "deepseek-v4-flash" {
-		t.Fatalf("fast = %q", got)
-	}
-	if got := n.EffectiveModel("missing"); got != "deepseek-v4-flash" {
-		t.Fatalf("missing = %q, want * fallback", got)
 	}
 }
 
@@ -213,6 +345,7 @@ providers:
 nodes:
   - name: n
     provider: a
+    model: m1
 routes:
   - name: r
     nodes: [n]
@@ -230,6 +363,7 @@ providers:
 nodes:
   - name: n
     provider: a
+    model: m1
 routes:
   - name: r
     nodes: [n]
@@ -248,6 +382,7 @@ providers:
 nodes:
   - name: n
     provider: a
+    model: m1
 routes:
   - name: r
     nodes: [n]
@@ -273,6 +408,10 @@ admin:
 stats:
   path: "stats.sqlite"
   retainRequests: 168h
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
 providers:
   - name: a
     type: generic
@@ -283,6 +422,7 @@ providers:
 nodes:
   - name: n
     provider: a
+    model: m1
 routes:
   - name: r
     nodes: [n]
@@ -314,6 +454,9 @@ routes:
 	}
 	if again.Providers[0].Name != "a" || again.Routes[0].Name != "r" {
 		t.Fatalf("round trip mismatch: %+v", again)
+	}
+	if again.Entrypoints[0].Name != "default" || again.Nodes[0].Model != "m1" {
+		t.Fatalf("entrypoint/model lost in round trip: %+v", again)
 	}
 	if !again.Providers[0].ModelDisabled("m1") {
 		t.Fatalf("model override lost in round trip: %+v", again.Providers[0].Models)
@@ -501,6 +644,10 @@ func TestProviderAPIRejectsUnknownType(t *testing.T) {
 func TestProviderModelOverrides(t *testing.T) {
 	t.Setenv("MODEL_ID", "glm-5.3")
 	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
 providers:
   - name: p
     type: generic
@@ -513,6 +660,7 @@ providers:
 nodes:
   - name: n
     provider: p
+    model: m1
 routes:
   - name: r
     nodes: [n]
@@ -596,79 +744,12 @@ providers:
 	}
 }
 
-func TestValidateAliasRequiresExistingLogicalModel(t *testing.T) {
-	base := func() *Config {
-		return &Config{
-			Gateway: Gateway{Listen: "127.0.0.1:0"},
-			Providers: []Provider{{
-				Name: "p", Type: "generic", Chat: "https://a.example/v1",
-			}},
-			Nodes: []Node{{Name: "n", Provider: "p"}},
-			Routes: []Route{{
-				Name: "strong", Nodes: []string{"n"}, Match: Match{Model: "strong"},
-			}},
-		}
-	}
-
-	t.Run("accepts a route logical model", func(t *testing.T) {
-		c := base()
-		c.Aliases = []Alias{{Match: "claude-opus*", Model: " Strong "}}
-		if err := Validate(c); err != nil {
-			t.Fatalf("Validate: %v", err)
-		}
-	})
-
-	t.Run("rejects a missing logical model", func(t *testing.T) {
-		c := base()
-		c.Aliases = []Alias{{Match: "claude-opus*", Model: "missing"}}
-		err := Validate(c)
-		if err == nil || !strings.Contains(err.Error(), `aliases[0]`) || !strings.Contains(err.Error(), `"missing"`) {
-			t.Fatalf("err = %v", err)
-		}
-	})
-
-	t.Run("rejects a catch-all route as the target", func(t *testing.T) {
-		c := base()
-		c.Routes[0].Match.Model = ""
-		c.Aliases = []Alias{{Match: "*", Model: "strong"}}
-		if err := Validate(c); err == nil {
-			t.Fatal("expected an error for a catch-all target")
-		}
-	})
-}
-
-func TestLogicalModelHelpers(t *testing.T) {
-	c := &Config{
-		Routes: []Route{
-			{Name: "a", Match: Match{Model: "Strong"}},
-			{Name: "b", Match: Match{Model: "fast"}},
-			{Name: "c", Match: Match{Model: ""}},
-			{Name: "d", Match: Match{Model: " strong "}},
-		},
-		Aliases: []Alias{
-			{Match: "claude*", Model: "strong"},
-			{Match: "gpt*", Model: "STRONG"},
-			{Match: "*", Model: "fast"},
-		},
-	}
-
-	if got := c.LogicalModels(); len(got) != 2 || got[0] != "Strong" || got[1] != "fast" {
-		t.Fatalf("LogicalModels = %#v", got)
-	}
-	if !c.HasLogicalModel("  strong ") || c.HasLogicalModel("missing") || c.HasLogicalModel("") {
-		t.Fatal("HasLogicalModel mismatch")
-	}
-	if got := c.AliasMatchesForModel("strong"); len(got) != 2 || got[0] != "claude*" || got[1] != "gpt*" {
-		t.Fatalf("AliasMatchesForModel = %#v", got)
-	}
-}
-
 func TestTopologyIncludes(t *testing.T) {
 	c := &Config{
 		Routes: []Route{{Name: "fast", Nodes: []string{"n1", "n2"}}},
 		Nodes: []Node{
-			{Name: "n1", Provider: "p"},
-			{Name: "n2", Provider: "q"},
+			{Name: "n1", Provider: "p", Model: "m1"},
+			{Name: "n2", Provider: "q", Model: "m2"},
 		},
 	}
 

@@ -16,13 +16,13 @@ import (
 
 // Config is the top-level llm-gw configuration.
 type Config struct {
-	Gateway   Gateway    `yaml:"gateway" json:"gateway"`
-	Admin     Admin      `yaml:"admin" json:"admin"`
-	Stats     Stats      `yaml:"stats" json:"stats"`
-	Aliases   []Alias    `yaml:"aliases" json:"aliases"`
-	Providers []Provider `yaml:"providers" json:"providers"`
-	Nodes     []Node     `yaml:"nodes" json:"nodes"`
-	Routes    []Route    `yaml:"routes" json:"routes"`
+	Gateway     Gateway      `yaml:"gateway" json:"gateway"`
+	Admin       Admin        `yaml:"admin" json:"admin"`
+	Stats       Stats        `yaml:"stats" json:"stats"`
+	Entrypoints []Entrypoint `yaml:"entrypoints" json:"entrypoints"`
+	Providers   []Provider   `yaml:"providers" json:"providers"`
+	Nodes       []Node       `yaml:"nodes" json:"nodes"`
+	Routes      []Route      `yaml:"routes" json:"routes"`
 }
 
 // Gateway holds data-plane settings.
@@ -48,10 +48,12 @@ type Stats struct {
 	StoreBody      bool     `yaml:"storeBody" json:"storeBody"`
 }
 
-// Alias maps a client-facing model glob to a logical model.
-type Alias struct {
-	Match string `yaml:"match" json:"match"`
-	Model string `yaml:"model" json:"model"`
+// Entrypoint is the client-facing ingress: it owns the model globs that select
+// it and exactly one route.
+type Entrypoint struct {
+	Name  string   `yaml:"name" json:"name"`
+	Match []string `yaml:"match" json:"match"`
+	Route string   `yaml:"route" json:"route"`
 }
 
 // Provider is an upstream LLM endpoint: which APIs it serves, how to connect
@@ -102,16 +104,16 @@ func IsProviderType(typ string) bool {
 	return ok
 }
 
-// Node is one concrete use of a provider: the model mapping and the local
-// routing policy (backup, weight). The same provider can back several nodes
-// with different mappings.
+// Node is one concrete use of a provider: exactly one provider model plus the
+// local routing policy (backup, weight). The same provider can back several
+// nodes with different models.
 type Node struct {
-	Name     string            `yaml:"name" json:"name"`
-	Provider string            `yaml:"provider" json:"provider"`
-	Models   map[string]string `yaml:"models,omitempty" json:"models,omitempty"`
-	Backup   bool              `yaml:"backup,omitempty" json:"backup,omitempty"`
-	Weight   int               `yaml:"weight,omitempty" json:"weight,omitempty"`
-	Enabled  *bool             `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Name     string `yaml:"name" json:"name"`
+	Provider string `yaml:"provider" json:"provider"`
+	Model    string `yaml:"model" json:"model"`
+	Backup   bool   `yaml:"backup,omitempty" json:"backup,omitempty"`
+	Weight   int    `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Enabled  *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 // Auth describes how the provider key is injected into upstream requests.
@@ -144,19 +146,12 @@ type TLS struct {
 	Secure     *bool  `yaml:"secure,omitempty" json:"secure,omitempty"`
 }
 
-// Route maps client requests to a set of providers.
+// Route maps client requests to a set of nodes. The entrypoint selects the
+// route; the route only decides which node serves it.
 type Route struct {
 	Name     string   `yaml:"name" json:"name"`
 	Nodes    []string `yaml:"nodes" json:"nodes"`
 	Strategy string   `yaml:"strategy,omitempty" json:"strategy,omitempty"`
-	Match    Match    `yaml:"match" json:"match"`
-}
-
-// Match filters requests. An empty Match is a catch-all.
-type Match struct {
-	Model string `yaml:"model,omitempty" json:"model,omitempty"`
-	Path  string `yaml:"path,omitempty" json:"path,omitempty"`
-	Host  string `yaml:"host,omitempty" json:"host,omitempty"`
 }
 
 // Duration is a time.Duration that unmarshals from strings like "12h".
@@ -304,9 +299,13 @@ func (c *Config) expandEnv() {
 	c.Gateway.Listen = ExpandEnv(c.Gateway.Listen)
 	c.Admin.Listen = ExpandEnv(c.Admin.Listen)
 	c.Stats.Path = ExpandEnv(c.Stats.Path)
-	for i := range c.Aliases {
-		c.Aliases[i].Match = ExpandEnv(c.Aliases[i].Match)
-		c.Aliases[i].Model = ExpandEnv(c.Aliases[i].Model)
+	for i := range c.Entrypoints {
+		e := &c.Entrypoints[i]
+		e.Name = ExpandEnv(e.Name)
+		e.Route = ExpandEnv(e.Route)
+		for j := range e.Match {
+			e.Match[j] = ExpandEnv(e.Match[j])
+		}
 	}
 	for i := range c.Providers {
 		p := &c.Providers[i]
@@ -348,9 +347,7 @@ func (c *Config) expandEnv() {
 		n := &c.Nodes[i]
 		n.Name = ExpandEnv(n.Name)
 		n.Provider = ExpandEnv(n.Provider)
-		for k, v := range n.Models {
-			n.Models[ExpandEnv(k)] = ExpandEnv(v)
-		}
+		n.Model = ExpandEnv(n.Model)
 	}
 	for i := range c.Routes {
 		r := &c.Routes[i]
@@ -358,9 +355,6 @@ func (c *Config) expandEnv() {
 		for j := range r.Nodes {
 			r.Nodes[j] = ExpandEnv(r.Nodes[j])
 		}
-		r.Match.Model = ExpandEnv(r.Match.Model)
-		r.Match.Path = ExpandEnv(r.Match.Path)
-		r.Match.Host = ExpandEnv(r.Match.Host)
 	}
 }
 
@@ -412,12 +406,41 @@ func (c *Config) applyDefaults() {
 			}
 		}
 	}
+	for i := range c.Entrypoints {
+		e := &c.Entrypoints[i]
+		e.Name = strings.TrimSpace(e.Name)
+		e.Route = strings.TrimSpace(e.Route)
+		seen := make(map[string]struct{}, len(e.Match))
+		match := make([]string, 0, len(e.Match))
+		for _, m := range e.Match {
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			key := strings.ToLower(m)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			match = append(match, m)
+		}
+		if len(match) == 0 {
+			e.Match = nil
+		} else {
+			e.Match = match
+		}
+	}
 	for i := range c.Nodes {
+		c.Nodes[i].Model = strings.TrimSpace(c.Nodes[i].Model)
 		if c.Nodes[i].Weight == 0 {
 			c.Nodes[i].Weight = 1
 		}
 	}
 	for i := range c.Routes {
+		c.Routes[i].Name = strings.TrimSpace(c.Routes[i].Name)
+		for j := range c.Routes[i].Nodes {
+			c.Routes[i].Nodes[j] = strings.TrimSpace(c.Routes[i].Nodes[j])
+		}
 		if c.Routes[i].Strategy == "" {
 			c.Routes[i].Strategy = "round"
 		}
@@ -470,20 +493,6 @@ func Validate(c *Config) error {
 	}
 	if strings.TrimSpace(c.Gateway.Listen) == "" {
 		return fmt.Errorf("gateway.listen is required")
-	}
-	logical := make(map[string]bool, len(c.Routes))
-	for _, r := range c.Routes {
-		if model := strings.TrimSpace(r.Match.Model); model != "" {
-			logical[strings.ToLower(model)] = true
-		}
-	}
-	for i, a := range c.Aliases {
-		if strings.TrimSpace(a.Match) == "" || strings.TrimSpace(a.Model) == "" {
-			return fmt.Errorf("aliases[%d]: match and model are required", i)
-		}
-		if !logical[strings.ToLower(strings.TrimSpace(a.Model))] {
-			return fmt.Errorf("aliases[%d]: unknown logical model %q (no route defines it)", i, a.Model)
-		}
 	}
 
 	seen := make(map[string]bool, len(c.Providers))
@@ -561,6 +570,9 @@ func Validate(c *Config) error {
 		if !seen[provider] {
 			return fmt.Errorf("node %q: unknown provider %q", name, provider)
 		}
+		if strings.TrimSpace(n.Model) == "" {
+			return fmt.Errorf("node %q: model is required", name)
+		}
 		if n.Weight < 0 {
 			return fmt.Errorf("node %q: weight must be >= 0", name)
 		}
@@ -588,59 +600,75 @@ func Validate(c *Config) error {
 		default:
 			return fmt.Errorf("route %q: strategy must be fifo, round or random", name)
 		}
+		used := make(map[string]bool, len(r.Nodes))
 		for _, ref := range r.Nodes {
-			if !nodeNames[strings.TrimSpace(ref)] {
+			ref = strings.TrimSpace(ref)
+			if !nodeNames[ref] {
 				return fmt.Errorf("route %q: unknown node %q", name, ref)
 			}
+			if used[ref] {
+				return fmt.Errorf("route %q: duplicate node %q", name, ref)
+			}
+			used[ref] = true
+		}
+	}
+
+	entrypointNames := make(map[string]bool, len(c.Entrypoints))
+	for i := range c.Entrypoints {
+		e := &c.Entrypoints[i]
+		name := strings.TrimSpace(e.Name)
+		if name == "" {
+			return fmt.Errorf("entrypoints[%d]: name is required", i)
+		}
+		if strings.Contains(name, "/") {
+			return fmt.Errorf("entrypoint %q: name must not contain '/'", name)
+		}
+		if entrypointNames[name] {
+			return fmt.Errorf("entrypoints[%d]: duplicate name %q", i, name)
+		}
+		entrypointNames[name] = true
+
+		hasMatch := false
+		for _, m := range e.Match {
+			if strings.TrimSpace(m) != "" {
+				hasMatch = true
+				break
+			}
+		}
+		if !hasMatch {
+			return fmt.Errorf("entrypoint %q: match is required", name)
+		}
+		route := strings.TrimSpace(e.Route)
+		if route == "" {
+			return fmt.Errorf("entrypoint %q: route is required", name)
+		}
+		if !routes[route] {
+			return fmt.Errorf("entrypoint %q: unknown route %q", name, route)
 		}
 	}
 	return nil
 }
 
-// LogicalModels returns non-empty route logical models in route order,
-// dropping case-insensitive duplicates.
-func (c *Config) LogicalModels() []string {
-	seen := make(map[string]bool, len(c.Routes))
-	out := make([]string, 0, len(c.Routes))
-	for _, r := range c.Routes {
-		model := strings.TrimSpace(r.Match.Model)
-		if model == "" || seen[strings.ToLower(model)] {
-			continue
+// ResolveEntrypoint returns the first entrypoint, in declaration order, with a
+// match glob for clientModel.
+func (c *Config) ResolveEntrypoint(clientModel string) (*Entrypoint, bool) {
+	for i := range c.Entrypoints {
+		for _, pattern := range c.Entrypoints[i].Match {
+			if globMatch(pattern, clientModel) {
+				return &c.Entrypoints[i], true
+			}
 		}
-		seen[strings.ToLower(model)] = true
-		out = append(out, model)
 	}
-	return out
+	return nil, false
 }
 
-// HasLogicalModel reports whether a route defines name, ignoring case and
-// surrounding space.
-func (c *Config) HasLogicalModel(name string) bool {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return false
+// ResolveEntrypointName returns the name of the entrypoint that handles
+// clientModel, or an empty string when none matches.
+func (c *Config) ResolveEntrypointName(clientModel string) string {
+	if ep, ok := c.ResolveEntrypoint(clientModel); ok {
+		return ep.Name
 	}
-	for _, r := range c.Routes {
-		if r.Match.Model != "" && strings.EqualFold(strings.TrimSpace(r.Match.Model), name) {
-			return true
-		}
-	}
-	return false
-}
-
-// AliasMatchesForModel returns the match globs of aliases targeting name.
-func (c *Config) AliasMatchesForModel(name string) []string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil
-	}
-	var out []string
-	for _, a := range c.Aliases {
-		if strings.EqualFold(strings.TrimSpace(a.Model), name) {
-			out = append(out, a.Match)
-		}
-	}
-	return out
+	return ""
 }
 
 // TopologyIncludes reports whether a stats row belongs to the current route
@@ -682,37 +710,6 @@ func (c *Config) TopologyIncludes(route, node, provider string) bool {
 		return provider == "" || strings.EqualFold(strings.TrimSpace(c.Nodes[i].Provider), strings.TrimSpace(provider))
 	}
 	return false
-}
-
-// ResolveAliasMatch returns the glob of the first alias matching clientModel.
-// An empty result means no alias matched.
-func (c *Config) ResolveAliasMatch(clientModel string) string {
-	for _, a := range c.Aliases {
-		if globMatch(a.Match, clientModel) {
-			return a.Match
-		}
-	}
-	return ""
-}
-
-// ResolveAlias maps a client-facing model name to a logical model using the
-// ordered alias list. An empty result means no alias matched.
-func (c *Config) ResolveAlias(clientModel string) string {
-	for _, a := range c.Aliases {
-		if globMatch(a.Match, clientModel) {
-			return a.Model
-		}
-	}
-	return ""
-}
-
-// EffectiveModel resolves the provider model for a logical model: the exact
-// mapping first, then the "*" fallback.
-func (n Node) EffectiveModel(logical string) string {
-	if model := strings.TrimSpace(n.Models[logical]); model != "" {
-		return model
-	}
-	return strings.TrimSpace(n.Models["*"])
 }
 
 // EnabledValue reports whether the node is enabled (default true).

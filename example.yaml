@@ -12,19 +12,23 @@ stats:
   retainRollups: 2160h
   storeBody: false
 
-aliases:
-  - match: "claude-opus*"
-    model: strong
-  - match: "gpt-5.5*"
-    model: strong
-  - match: "claude-sonnet*"
-    model: fast
-  - match: "gpt-4.5*"
-    model: fast
-  - match: "claude-haiku*"
-    model: fast
-  - match: "*"
-    model: fast
+# An entrypoint is the client-facing ingress. Its match globs are checked in
+# declaration order; the first entrypoint with a matching client model wins.
+entrypoints:
+  - name: strong
+    match:
+      - "claude-opus*"
+      - "gpt-5.5*"
+    route: strong
+  - name: fast
+    match:
+      - "claude-sonnet*"
+      - "gpt-4.5*"
+      - "claude-haiku*"
+    route: fast
+  - name: default
+    match: ["*"]
+    route: fast
 
 # A provider declares which wire APIs it serves and where; type selects the
 # adapter. An empty API field means the provider does not serve that API.
@@ -46,22 +50,22 @@ providers:
     #   deepseek-v4-flash:
     #     disabled: true
 
-# A node is one concrete use of a provider: model mapping + routing policy.
-# The same provider can back several nodes with different mappings.
+# A node binds one provider model plus routing policy. backup: true makes it a
+# fallback; weight controls the round-robin share.
 nodes:
-  - name: deepseek
+  - name: deepseek-fast
     provider: deepseek
-    models:
-      fast: deepseek-v4-flash
-      strong: deepseek-v4-pro
-      "*": deepseek-v4-flash
+    model: deepseek-v4-flash
+  - name: deepseek-strong
+    provider: deepseek
+    model: deepseek-v4-pro
 
+# A route contains only nodes and a selection strategy. The entrypoint decides
+# which route handles a request.
 routes:
   - name: strong
-    nodes: [deepseek]
-    match:
-      model: strong
+    nodes: [deepseek-strong]
+    strategy: round
   - name: fast
-    nodes: [deepseek]
-    match:
-      model: fast
+    nodes: [deepseek-fast]
+    strategy: round

@@ -39,11 +39,11 @@ type configView struct {
 		Listen     string          `json:"listen"`
 		SessionTTL config.Duration `json:"sessionTTL"`
 	} `json:"admin"`
-	Stats     config.Stats   `json:"stats"`
-	Aliases   []config.Alias `json:"aliases"`
-	Providers []providerView `json:"providers"`
-	Nodes     []config.Node  `json:"nodes"`
-	Routes    []config.Route `json:"routes"`
+	Stats       config.Stats        `json:"stats"`
+	Entrypoints []config.Entrypoint `json:"entrypoints"`
+	Providers   []providerView      `json:"providers"`
+	Nodes       []config.Node       `json:"nodes"`
+	Routes      []config.Route      `json:"routes"`
 }
 
 func (s *Server) viewProvider(p config.Provider) providerView {
@@ -171,7 +171,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	v.Admin.Listen = s.cfg.Admin.Listen
 	v.Admin.SessionTTL = s.cfg.Admin.SessionTTL
 	v.Stats = s.cfg.Stats
-	v.Aliases = nonNilSlice(s.cfg.Aliases)
+	v.Entrypoints = nonNilSlice(s.cfg.Entrypoints)
 	v.Nodes = nonNilSlice(s.cfg.Nodes)
 	v.Routes = nonNilSlice(s.cfg.Routes)
 	v.Providers = make([]providerView, 0, len(s.cfg.Providers))
@@ -447,7 +447,6 @@ func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	rt.Match.Model = strings.TrimSpace(rt.Match.Model)
 
 	err := s.mutate(func(c *config.Config) error {
 		for _, existing := range c.Routes {
@@ -482,47 +481,7 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 			if c.Routes[i].Name != name {
 				continue
 			}
-			oldRaw := c.Routes[i].Match.Model
-			old := strings.TrimSpace(oldRaw)
-			next := strings.TrimSpace(rt.Match.Model)
-			if old != "" && strings.EqualFold(old, next) {
-				// Case/space-only edits keep the stored key so Node.Models
-				// lookups do not silently fall through to "*".
-				rt.Match.Model = oldRaw
-				c.Routes[i] = rt
-				return nil
-			}
-			rt.Match.Model = next
 			c.Routes[i] = rt
-			if old == "" {
-				return nil
-			}
-			remaining := false
-			for _, r := range c.Routes {
-				if r.Name != name && r.Match.Model != "" && strings.EqualFold(strings.TrimSpace(r.Match.Model), old) {
-					remaining = true
-					break
-				}
-			}
-			if remaining {
-				return nil
-			}
-			matches := c.AliasMatchesForModel(old)
-			if next == "" {
-				if len(matches) > 0 {
-					return fmt.Errorf("route %q: aliases still reference logical model %q (%s); update or delete them first",
-						name, old, strings.Join(matches, ", "))
-				}
-				return nil
-			}
-			if err := migrateRouteNodeModels(c, rt.Nodes, old, next); err != nil {
-				return fmt.Errorf("route %q: %w", name, err)
-			}
-			for j := range c.Aliases {
-				if strings.EqualFold(strings.TrimSpace(c.Aliases[j].Model), old) {
-					c.Aliases[j].Model = next
-				}
-			}
 			return nil
 		}
 		return fmt.Errorf("route %q not found", name)
@@ -534,54 +493,14 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// migrateRouteNodeModels moves a renamed logical-model mapping on the nodes
-// used by the route. A conflicting target already mapped under the new name is
-// rejected: merging the two names would silently change that route's upstream
-// model.
-func migrateRouteNodeModels(c *config.Config, refs []string, old, next string) error {
-	used := make(map[string]bool, len(refs))
-	for _, ref := range refs {
-		used[strings.TrimSpace(ref)] = true
-	}
-	for i := range c.Nodes {
-		n := &c.Nodes[i]
-		if !used[n.Name] {
-			continue
-		}
-		from, ok := n.Models[old]
-		if !ok {
-			continue
-		}
-		if to, exists := n.Models[next]; exists && to != from {
-			return fmt.Errorf("node %q maps %q to %q but %q is already mapped to %q",
-				n.Name, old, from, next, to)
-		}
-	}
-	for i := range c.Nodes {
-		n := &c.Nodes[i]
-		if !used[n.Name] {
-			continue
-		}
-		from, ok := n.Models[old]
-		if !ok {
-			continue
-		}
-		n.Models[next] = from
-		delete(n.Models, old)
-	}
-	return nil
-}
-
 func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	err := s.mutate(func(c *config.Config) error {
 		out := c.Routes[:0]
-		removed := config.Route{}
 		found := false
 		for _, rt := range c.Routes {
 			if rt.Name == name {
-				removed = rt
 				found = true
 				continue
 			}
@@ -590,14 +509,17 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 		if !found {
 			return fmt.Errorf("route %q not found", name)
 		}
-		c.Routes = out
-		old := strings.TrimSpace(removed.Match.Model)
-		if old != "" && !c.HasLogicalModel(old) {
-			if matches := c.AliasMatchesForModel(old); len(matches) > 0 {
-				return fmt.Errorf("route %q: still referenced by aliases %s; update or delete them first",
-					name, strings.Join(matches, ", "))
+		var refs []string
+		for _, e := range c.Entrypoints {
+			if strings.EqualFold(strings.TrimSpace(e.Route), name) {
+				refs = append(refs, e.Name)
 			}
 		}
+		if len(refs) > 0 {
+			return fmt.Errorf("route %q: still referenced by entrypoints %s; update or delete them first",
+				name, strings.Join(refs, ", "))
+		}
+		c.Routes = out
 		return nil
 	})
 	if err != nil {
@@ -607,20 +529,20 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleGetAliases(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetEntrypoints(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	writeJSON(w, http.StatusOK, nonNilSlice(s.cfg.Aliases))
+	writeJSON(w, http.StatusOK, nonNilSlice(s.cfg.Entrypoints))
 }
 
-func (s *Server) handlePutAliases(w http.ResponseWriter, r *http.Request) {
-	var aliases []config.Alias
-	if err := decode(w, r, &aliases); err != nil {
+func (s *Server) handlePutEntrypoints(w http.ResponseWriter, r *http.Request) {
+	var entrypoints []config.Entrypoint
+	if err := decode(w, r, &entrypoints); err != nil {
 		return
 	}
 
 	err := s.mutate(func(c *config.Config) error {
-		c.Aliases = aliases
+		c.Entrypoints = entrypoints
 		return nil
 	})
 	if err != nil {
@@ -665,42 +587,6 @@ func applyAuthConfig(req *http.Request, a config.Auth, key string) {
 	for k, v := range a.Extra {
 		req.Header.Set(k, v)
 	}
-}
-
-func (s *Server) handleRouteOrder(w http.ResponseWriter, r *http.Request) {
-	var names []string
-	if err := decode(w, r, &names); err != nil {
-		return
-	}
-
-	err := s.mutate(func(c *config.Config) error {
-		if len(names) != len(c.Routes) {
-			return fmt.Errorf("order must list every route (got %d, want %d)", len(names), len(c.Routes))
-		}
-		byName := make(map[string]config.Route, len(c.Routes))
-		for _, rt := range c.Routes {
-			byName[rt.Name] = rt
-		}
-		out := make([]config.Route, 0, len(names))
-		for _, name := range names {
-			rt, ok := byName[name]
-			if !ok {
-				return fmt.Errorf("unknown route %q", name)
-			}
-			out = append(out, rt)
-			delete(byName, name)
-		}
-		if len(byName) != 0 {
-			return fmt.Errorf("order is missing routes")
-		}
-		c.Routes = out
-		return nil
-	})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request) {

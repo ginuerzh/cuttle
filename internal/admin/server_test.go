@@ -140,7 +140,7 @@ func TestAuthAndCSRF(t *testing.T) {
 	}
 
 	client, csrf := login(t, ts.URL)
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/aliases", `[{"match":"*","model":"fast"}]`, ""); resp.StatusCode != http.StatusForbidden {
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, ""); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("missing csrf status = %d, want 403", resp.StatusCode)
 	}
 	if rel.calls != 0 {
@@ -151,18 +151,18 @@ func TestAuthAndCSRF(t *testing.T) {
 		path, body string
 	}{
 		{"/api/providers", providerBody("p", "https://a.example")},
-		{"/api/nodes", `{"name":"n","provider":"p"}`},
-		{"/api/routes", `{"name":"fast","nodes":["n"],"match":{"model":"fast"}}`},
+		{"/api/nodes", `{"name":"n","provider":"p","model":"m1"}`},
+		{"/api/routes", `{"name":"fast","nodes":["n"]}`},
 	} {
 		if resp := doJSON(t, client, http.MethodPost, ts.URL+tc.path, tc.body, csrf); resp.StatusCode != http.StatusCreated {
 			t.Fatalf("create %s status = %d", tc.path, resp.StatusCode)
 		}
 	}
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/aliases", `[{"match":"*","model":"fast"}]`, csrf); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("put aliases status = %d", resp.StatusCode)
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("put entrypoints status = %d", resp.StatusCode)
 	}
-	if len(rel.cfg.Aliases) != 1 || rel.cfg.Aliases[0].Model != "fast" {
-		t.Fatalf("aliases not applied: %+v", rel.cfg.Aliases)
+	if len(rel.cfg.Entrypoints) != 1 || rel.cfg.Entrypoints[0].Route != "fast" {
+		t.Fatalf("entrypoints not applied: %+v", rel.cfg.Entrypoints)
 	}
 
 	cfgResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/config", "", "")
@@ -207,7 +207,7 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 		t.Fatalf("keys were cleared by an update without keys: %+v", rel.cfg.Providers[0].Keys)
 	}
 
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n1","provider":"p1"}`, csrf); resp.StatusCode != http.StatusCreated {
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n1","provider":"p1","model":"m1"}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create node status = %d", resp.StatusCode)
 	}
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"r1","nodes":["n1"]}`, csrf); resp.StatusCode != http.StatusCreated {
@@ -235,14 +235,14 @@ func TestReloadFailureKeepsFileAndMemory(t *testing.T) {
 	client, csrf := login(t, ts.URL)
 
 	rel.err = errors.New("boom")
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/aliases", `[{"match":"*","model":"fast"}]`, csrf); resp.StatusCode != http.StatusBadRequest {
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("config file should not exist after a failed reload: %v", err)
 	}
-	if len(s.cfg.Aliases) != 0 {
-		t.Fatalf("in-memory config changed after a failed reload: %+v", s.cfg.Aliases)
+	if len(s.cfg.Entrypoints) != 0 {
+		t.Fatalf("in-memory config changed after a failed reload: %+v", s.cfg.Entrypoints)
 	}
 }
 
@@ -843,7 +843,7 @@ func TestEmptyListsReturnArrays(t *testing.T) {
 	_, _, _, ts := newTestAdmin(t)
 	client, _ := login(t, ts.URL)
 
-	for _, path := range []string{"/api/requests", "/api/routes", "/api/aliases", "/api/nodes"} {
+	for _, path := range []string{"/api/requests", "/api/routes", "/api/entrypoints", "/api/nodes"} {
 		resp := doJSON(t, client, http.MethodGet, ts.URL+path, "", "")
 		b, _ := io.ReadAll(resp.Body)
 		if got := strings.TrimSpace(string(b)); got != "[]" {
@@ -856,7 +856,7 @@ func TestEmptyListsReturnArrays(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"aliases", "providers", "nodes", "routes"} {
+	for _, key := range []string{"entrypoints", "providers", "nodes", "routes"} {
 		if got := string(v[key]); got != "[]" {
 			t.Fatalf("config.%s = %s, want []", key, got)
 		}

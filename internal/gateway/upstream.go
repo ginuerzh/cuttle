@@ -29,18 +29,17 @@ type upstreamTarget struct {
 	auth        gwconfig.Auth
 }
 
-// compileRouteNode resolves the upstream target for one node in one route.
-//
-// The route, not the client model, decides the logical model: Match.Model for
-// a normal route, or "" (the node's "*" mapping) for a catch-all. That keeps
-// path rewrites and the runtime engine on the same route identity even when
-// the node has an exact mapping for a model the client names differently.
-func compileRouteNode(p gwconfig.Provider, n gwconfig.Node, r gwconfig.Route) (upstreamTarget, error) {
+// compileRouteNode resolves the upstream target for one node. A node binds
+// exactly one provider model; the route and the client model do not change it.
+func compileRouteNode(p gwconfig.Provider, n gwconfig.Node) (upstreamTarget, error) {
+	targetModel := strings.TrimSpace(n.Model)
+	if targetModel == "" {
+		return upstreamTarget{}, fmt.Errorf("node %q: model is required", n.Name)
+	}
 	prov, err := provider.New(p)
 	if err != nil {
 		return upstreamTarget{}, err
 	}
-	targetModel := n.EffectiveModel(r.Match.Model)
 	if p.ModelDisabled(targetModel) {
 		return upstreamTarget{}, fmt.Errorf("%w: %s", errModelDisabled, targetModel)
 	}

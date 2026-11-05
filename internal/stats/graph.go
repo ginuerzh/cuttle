@@ -42,25 +42,25 @@ type GraphMetrics struct {
 	Errors []ErrorRow             `json:"errors"`
 }
 
-// AliasResolver maps a client model to the alias glob that handled it.
-type AliasResolver func(clientModel string) string
+// EntrypointResolver maps a client model to the entrypoint that handled it.
+type EntrypointResolver func(clientModel string) string
 
 // Graph aggregates the request detail into node/edge metrics for a window.
 func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, error) {
-	return s.GraphWithAliases(ctx, from, to, nil)
+	return s.GraphWithEntrypoints(ctx, from, to, nil)
 }
 
 // RowFilter reports whether a request row belongs to the current topology.
 type RowFilter func(route, node, provider string) bool
 
-// GraphWithAliases also attributes requests to alias nodes when resolve can
-// map the client model back to an alias glob.
-func (s *Store) GraphWithAliases(ctx context.Context, from, to time.Time, resolve AliasResolver) (GraphMetrics, error) {
+// GraphWithEntrypoints also attributes requests to entrypoint nodes when
+// resolve can map the client model back to an entrypoint name.
+func (s *Store) GraphWithEntrypoints(ctx context.Context, from, to time.Time, resolve EntrypointResolver) (GraphMetrics, error) {
 	return s.GraphWithFilter(ctx, from, to, resolve, nil)
 }
 
 // GraphWithFilter drops rows outside the current topology before aggregating.
-func (s *Store) GraphWithFilter(ctx context.Context, from, to time.Time, resolve AliasResolver, include RowFilter) (GraphMetrics, error) {
+func (s *Store) GraphWithFilter(ctx context.Context, from, to time.Time, resolve EntrypointResolver, include RowFilter) (GraphMetrics, error) {
 	g := GraphMetrics{
 		Nodes:  make(map[string]NodeMetrics),
 		Edges:  make(map[string]EdgeMetrics),
@@ -125,12 +125,12 @@ func (s *Store) GraphWithFilter(ctx context.Context, from, to time.Time, resolve
 
 		if resolve != nil && clientModel != "" {
 			if match := resolve(clientModel); match != "" {
-				aliasKey := "alias:" + match
-				addNode(aliasKey, failed, in, out, cached, dur)
+				entrypointKey := "entrypoint:" + match
+				addNode(entrypointKey, failed, in, out, cached, dur)
 				if route == "" {
-					addEdge(aliasKey+"->unrouted", failed)
+					addEdge(entrypointKey+"->unrouted", failed)
 				} else {
-					addEdge(aliasKey+"->route:"+route, failed)
+					addEdge(entrypointKey+"->route:"+route, failed)
 				}
 			}
 		}

@@ -55,10 +55,11 @@ func disabledModelConfig(upstreamURL string) *gwconfig.Config {
 				"disabled-model": {Disabled: true},
 			},
 		}},
+		Entrypoints: []gwconfig.Entrypoint{{Name: "default", Match: []string{"*"}, Route: "default"}},
 		Nodes: []gwconfig.Node{{
 			Name:     "up",
 			Provider: "up",
-			Models:   map[string]string{"*": "disabled-model"},
+			Model:    "disabled-model",
 		}},
 		Routes: []gwconfig.Route{{Name: "default", Nodes: []string{"up"}}},
 	}
@@ -98,17 +99,18 @@ func TestDisabledTargetModelFallsBackToOtherNode(t *testing.T) {
 				Chat: backupSrv.URL,
 			},
 		},
+		Entrypoints: []gwconfig.Entrypoint{{Name: "default", Match: []string{"*"}, Route: "default"}},
 		Nodes: []gwconfig.Node{
 			{
 				Name:     "primary",
 				Provider: "primary",
-				Models:   map[string]string{"*": "disabled-model"},
+				Model:    "disabled-model",
 			},
 			{
 				Name:     "backup",
 				Provider: "backup",
 				Backup:   true,
-				Models:   map[string]string{"*": "enabled-model"},
+				Model:    "enabled-model",
 			},
 		},
 		Routes: []gwconfig.Route{{Name: "default", Nodes: []string{"primary", "backup"}}},
@@ -141,6 +143,7 @@ func TestDisabledTargetModelCanReload(t *testing.T) {
 	enabled.Nodes[0].Name = nodeName
 	enabled.Routes[0].Name = routeName
 	enabled.Routes[0].Nodes = []string{nodeName}
+	enabled.Entrypoints[0].Route = routeName
 
 	gw := startGateway(t, enabled)
 	rewriter := rewriterName(routeName, nodeName)
@@ -159,6 +162,7 @@ func TestDisabledTargetModelCanReload(t *testing.T) {
 	disabled.Nodes[0].Name = nodeName
 	disabled.Routes[0].Name = routeName
 	disabled.Routes[0].Nodes = []string{nodeName}
+	disabled.Entrypoints[0].Route = routeName
 	if err := gw.Reload(disabled); err != nil {
 		t.Fatalf("reload with a disabled target model must succeed: %v", err)
 	}

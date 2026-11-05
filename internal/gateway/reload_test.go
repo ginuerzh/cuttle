@@ -41,7 +41,8 @@ func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 
 	gw := startGateway(t, testConfig(upA.URL))
 
-	resp, err := http.Get("http://" + gw.Addr().String() + "/stream")
+	resp, err := http.Post("http://"+gw.Addr().String()+"/stream", "application/json",
+		strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,8 @@ func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 func getBody(t *testing.T, gw *Gateway) string {
 	t.Helper()
 
-	resp, err := http.Get("http://" + gw.Addr().String() + "/")
+	resp, err := http.Post("http://"+gw.Addr().String()+"/", "application/json",
+		strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

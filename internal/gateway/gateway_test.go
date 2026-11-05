@@ -15,6 +15,9 @@ import (
 func testConfig(upstreamURL string) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Entrypoints: []gwconfig.Entrypoint{{
+			Name: "default", Match: []string{"*"}, Route: "default",
+		}},
 		Providers: []gwconfig.Provider{{
 			Name: "up",
 			Type: "generic",
@@ -24,6 +27,7 @@ func testConfig(upstreamURL string) *gwconfig.Config {
 		Nodes: []gwconfig.Node{{
 			Name:     "up",
 			Provider: "up",
+			Model:    "deepseek-chat",
 		}},
 		Routes: []gwconfig.Route{{
 			Name:  "default",
@@ -103,7 +107,8 @@ func TestGatewayPassesThroughUnmappedPathWithoutKey(t *testing.T) {
 	cfg.Providers[0].Keys = nil
 	gw := startGateway(t, cfg)
 
-	resp, err := http.Get("http://" + gw.Addr().String() + "/unknown")
+	resp, err := http.Post("http://"+gw.Addr().String()+"/unknown", "application/json",
+		strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

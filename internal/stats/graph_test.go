@@ -82,7 +82,7 @@ func TestParseNodeName(t *testing.T) {
 	}
 }
 
-func TestGraphAliasMetrics(t *testing.T) {
+func TestGraphEntrypointMetrics(t *testing.T) {
 	s := newStore(t)
 	base := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
 
@@ -101,32 +101,66 @@ func TestGraphAliasMetrics(t *testing.T) {
 	resolve := func(clientModel string) string {
 		switch clientModel {
 		case "claude-sonnet-4-5":
-			return "claude-sonnet*"
+			return "claude"
 		case "gpt-4.5":
-			return "gpt-4.5*"
+			return "fast"
 		default:
 			return ""
 		}
 	}
-	g, err := s.GraphWithAliases(context.Background(), base.Add(-time.Hour), base.Add(time.Hour), resolve)
+	g, err := s.GraphWithEntrypoints(context.Background(), base.Add(-time.Hour), base.Add(time.Hour), resolve)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got := g.Nodes["alias:claude-sonnet*"]; got.Requests != 2 || got.Errors != 1 || got.P50MS != 20 {
-		t.Fatalf("claude alias = %+v", got)
+	if got := g.Nodes["entrypoint:claude"]; got.Requests != 2 || got.Errors != 1 || got.P50MS != 20 {
+		t.Fatalf("claude entrypoint = %+v", got)
 	}
-	if got := g.Nodes["alias:gpt-4.5*"]; got.Requests != 1 || got.Errors != 0 {
-		t.Fatalf("gpt alias = %+v", got)
+	if got := g.Nodes["entrypoint:fast"]; got.Requests != 1 || got.Errors != 0 {
+		t.Fatalf("fast entrypoint = %+v", got)
 	}
-	if _, ok := g.Nodes["alias:direct-model"]; ok {
-		t.Fatalf("unexpected alias metrics for an unmatched client model: %+v", g.Nodes)
+	if _, ok := g.Nodes["entrypoint:direct-model"]; ok {
+		t.Fatalf("unexpected entrypoint metrics for an unmatched client model: %+v", g.Nodes)
 	}
-	if got := g.Edges["alias:claude-sonnet*->route:fast"]; got.Requests != 2 || got.Errors != 1 {
-		t.Fatalf("alias edge = %+v", got)
+	if got := g.Edges["entrypoint:claude->route:fast"]; got.Requests != 2 || got.Errors != 1 {
+		t.Fatalf("claude edge = %+v", got)
 	}
-	if got := g.Edges["alias:gpt-4.5*->route:fast"]; got.Requests != 1 {
-		t.Fatalf("gpt alias edge = %+v", got)
+	if got := g.Edges["entrypoint:fast->route:fast"]; got.Requests != 1 {
+		t.Fatalf("fast edge = %+v", got)
+	}
+}
+
+// TestGraphEntrypointsUseRowRoute: attribution uses the route recorded on the
+// request, not the entrypoint's current configured route.
+func TestGraphEntrypointsUseRowRoute(t *testing.T) {
+	s := newStore(t)
+	base := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+
+	for _, r := range []Request{
+		{ID: "r1", TS: base, ClientModel: "gpt-4.5", Route: "old", Node: "n", Provider: "p", Status: 200},
+		{ID: "r2", TS: base.Add(time.Minute), ClientModel: "gpt-4.5", Route: "new", Node: "n", Provider: "p", Status: 200},
+	} {
+		if err := s.Insert(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	g, err := s.GraphWithEntrypoints(context.Background(), base.Add(-time.Hour), base.Add(time.Hour),
+		func(string) string { return "fast" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Edges["entrypoint:fast->route:old"]; got.Requests != 1 {
+		t.Fatalf("old route edge = %+v", got)
+	}
+	if got := g.Edges["entrypoint:fast->route:new"]; got.Requests != 1 {
+		t.Fatalf("new route edge = %+v", got)
+	}
+	if got := g.Edges["entrypoint:fast->route:configured"]; got.Requests != 0 {
+		t.Fatalf("unexpected configured-route edge = %+v", got)
+	}
+	if _, ok := g.Nodes["alias:gpt-4.5"]; ok {
+		t.Fatalf("alias node still present: %+v", g.Nodes)
 	}
 }
 

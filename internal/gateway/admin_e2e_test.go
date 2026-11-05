@@ -87,11 +87,14 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	if code := do(http.MethodPost, "/api/providers", provider); code != http.StatusCreated {
 		t.Fatalf("create provider = %d", code)
 	}
-	if code := do(http.MethodPost, "/api/nodes", `{"name":"p","provider":"p"}`); code != http.StatusCreated {
+	if code := do(http.MethodPost, "/api/nodes", `{"name":"p","provider":"p","model":"m1"}`); code != http.StatusCreated {
 		t.Fatalf("create node = %d", code)
 	}
 	if code := do(http.MethodPost, "/api/routes", `{"name":"r","nodes":["p"]}`); code != http.StatusCreated {
 		t.Fatalf("create route = %d", code)
+	}
+	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"route":"r"}]`); code != http.StatusNoContent {
+		t.Fatalf("put entrypoints = %d", code)
 	}
 
 	resp, err = http.Post("http://"+gw.Addr().String()+"/v1/chat/completions", "application/json",
