@@ -428,12 +428,12 @@ git commit -m "feat(admin): persist topology positions in sqlite"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-05 / complete
+- Repo/commit: llm-gw / 8d4a2548 (code, spec and plan); this record commit is the follow-up
+- Files changed: `internal/stats/store.go`, `internal/stats/store_test.go`, `internal/admin/handlers_topology.go`, `internal/admin/server.go`, `internal/admin/topology_test.go`, `docs/superpowers/specs/2026-11-05-topology-layout-persistence-design.md`, `docs/superpowers/plans/2026-11-05-topology-layout-persistence.md`
+- Tests/commands and results: `GOWORK=off go test ./internal/stats -run TestTopologyPositions -count=1` PASS; `GOWORK=off go test ./internal/admin -run TestTopologyPositionsAPI -count=1` PASS; `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./...` PASS; `GOWORK=off go test ./... -count=1` PASS (root, admin, config, gateway, provider, stats).
+- Review findings and fixes: The table is created by `migrate`, so existing databases gain it without destructive migration. Save is a single transaction and clears the map when empty. The handler validates empty/long IDs and the 10,000-entry cap, returns 503 when the admin server has no store, and relies on the existing session/CSRF middleware for auth. JSON decoding already rejects NaN/Infinity; the finite check remains defensive. No interface conflict with the web task: `stats.Position` and the `{"positions": ...}` envelope are used directly.
+- Deferred items/limitations: Stored IDs are not pruned against the current graph; stale IDs are harmless and are dropped when the client next resets or saves a pruned map. Concurrent editors still use last-write-wins.
 
 ---
 
