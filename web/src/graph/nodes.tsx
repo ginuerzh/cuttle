@@ -50,12 +50,13 @@ const box: React.CSSProperties = {
   boxShadow: 'var(--gw-node-shadow)',
 };
 
-function selectionStyle(selected: boolean | undefined, color: string) {
+export function selectionStyle(selected: boolean | undefined, color: string) {
   return {
     borderColor: selected ? '#0ea5e9' : color,
-    borderWidth: selected ? 2.5 : 1.5,
+    // Draw the selected outline inside the box so the node size, and therefore
+    // its handles and edges, never moves when selection changes.
     boxShadow: selected
-      ? '0 0 0 3px rgba(14, 165, 233, 0.22), var(--gw-node-shadow)'
+      ? 'inset 0 0 0 2px #0ea5e9, var(--gw-node-shadow)'
       : 'var(--gw-node-shadow)',
   };
 }

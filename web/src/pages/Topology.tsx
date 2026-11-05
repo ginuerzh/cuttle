@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Background,
+  applyEdgeChanges,
   Controls,
   MiniMap,
   Panel,
@@ -9,6 +10,7 @@ import {
   type Edge,
   type EdgeMouseHandler,
   type NodeMouseHandler,
+  type OnEdgesChange,
   useNodesState,
   type OnNodeDrag,
   type XYPosition,
@@ -93,6 +95,9 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
 
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>(structure.nodes);
   const [edges, setEdges] = useState<Edge[]>(structure.edges.map((e) => decorateEdge(e, metrics)));
+  const onEdgesChange: OnEdgesChange = (changes) => {
+    setEdges((current) => applyEdgeChanges(changes, current));
+  };
 
   // Persist the first layout for every node. Without this, only dragged nodes
   // have saved positions and any config change (adding/deleting an edge)
@@ -143,6 +148,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={onNodeClick}
