@@ -424,7 +424,6 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
           responses: String(v.responses ?? '').trim(),
           anthropic: String(v.anthropic ?? '').trim(),
           gemini: String(v.gemini ?? '').trim(),
-          enabled: v.enabled,
         },
         { models: provider.models ?? {} },
       );
@@ -466,7 +465,6 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         responses: provider.responses ?? '',
         anthropic: provider.anthropic ?? '',
         gemini: provider.gemini ?? '',
-        enabled: provider.enabled !== false,
       }}
     >
       <Typography.Title level={5} style={{ marginTop: 0 }}>
@@ -515,9 +513,6 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         onDelete={deleteKey}
         onAdd={() => setKeyRows((rows) => [...rows, { value: '' }])}
       />
-      <Form.Item name="enabled" label="enabled" valuePropName="checked">
-        <Switch size="small" />
-      </Form.Item>
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
         {tr('至少填写一个 API base URL。模型映射与 backup/weight 在 Node 上配置；同一个 Provider 可以被多个 Node 引用。')}
       </Typography.Paragraph>
