@@ -100,7 +100,7 @@ export function AliasNode({ data, selected }: NodeProps<GraphNode>) {
       <IconBadge color="#6366f1">
         <TagOutlined />
       </IconBadge>
-      <Body label={data.label} sub={data.sub} />
+      <Body label={data.label} sub={data.sub} metrics={data.metrics} />
       <Handle type="source" position={Position.Right} style={{ background: '#6366f1' }} />
     </div>
   );
