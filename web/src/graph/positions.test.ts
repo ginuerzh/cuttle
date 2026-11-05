@@ -27,16 +27,31 @@ describe('pickInitialPositions', () => {
   it('uses a non-empty server map and ignores the local map', () => {
     const server = { a: { x: 1, y: 2 } };
     const local = { a: { x: 9, y: 9 } };
-    expect(pickInitialPositions(server, local)).toEqual({ positions: server, seed: null });
+    expect(pickInitialPositions(server, local, false, false)).toEqual({ positions: server, seed: null });
   });
 
   it('uses the local map as a seed when the server is empty', () => {
     const local = { a: { x: 3, y: 4 } };
-    expect(pickInitialPositions({}, local)).toEqual({ positions: local, seed: local });
+    expect(pickInitialPositions({}, local, false, false)).toEqual({ positions: local, seed: local });
   });
 
   it('starts empty when both stores are empty', () => {
-    expect(pickInitialPositions({}, {})).toEqual({ positions: {}, seed: null });
+    expect(pickInitialPositions({}, {}, false, false)).toEqual({ positions: {}, seed: null });
+  });
+
+  it('keeps a pending local map over a non-empty server map', () => {
+    const server = { a: { x: 1, y: 2 } };
+    const local = { a: { x: 9, y: 9 } };
+    expect(pickInitialPositions(server, local, true, false)).toEqual({
+      positions: local,
+      seed: local,
+    });
+  });
+
+  it('keeps the current map when a local edit raced the server read', () => {
+    expect(
+      pickInitialPositions({ a: { x: 1, y: 2 } }, { a: { x: 9, y: 9 } }, false, true),
+    ).toEqual({ positions: null, seed: null });
   });
 });
 

@@ -66,6 +66,7 @@ function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
 }
 
 const POSITIONS_KEY = 'llm-gw.positions';
+const PENDING_KEY = 'llm-gw.positions.pending';
 
 function loadLocalPositions(): PositionMap {
   try {
@@ -76,9 +77,22 @@ function loadLocalPositions(): PositionMap {
   }
 }
 
-function saveLocalPositions(p: PositionMap) {
+function loadLocalPending(): boolean {
+  try {
+    return localStorage.getItem(PENDING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveLocalPositions(p: PositionMap, pending: boolean) {
   try {
     localStorage.setItem(POSITIONS_KEY, JSON.stringify(p));
+    if (pending) {
+      localStorage.setItem(PENDING_KEY, '1');
+    } else {
+      localStorage.removeItem(PENDING_KEY);
+    }
   } catch {
     /* ignore quota/private mode */
   }
@@ -87,18 +101,31 @@ function saveLocalPositions(p: PositionMap) {
 export function Topology({ config, metrics, onSelect, editable, onConnect }: Props) {
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
   const [serverReady, setServerReady] = useState(false);
+  const [serverReadOK, setServerReadOK] = useState(false);
+  const mutatedRef = useRef(false);
+  const saveVersionRef = useRef(0);
   const saveToServerRef = useRef(createPositionSaver(putTopologyPositions));
   const saveToServer = saveToServerRef.current;
 
   const persist = useCallback(
     (next: PositionMap) => {
-      saveLocalPositions(next);
-      void saveToServer(next).catch(() => {
-        message.warning({
-          content: t('拓扑布局已保存到本地，但同步服务端失败'),
-          key: 'topology-save',
+      mutatedRef.current = true;
+      const version = ++saveVersionRef.current;
+      saveLocalPositions(next, true);
+      void saveToServer(next)
+        .then(() => {
+          // Only the latest edit may clear the pending marker; an older save
+          // finishing later must not mask a newer unsynced map.
+          if (version === saveVersionRef.current) {
+            saveLocalPositions(next, false);
+          }
+        })
+        .catch(() => {
+          message.warning({
+            content: t('拓扑布局已保存到本地，但同步服务端失败'),
+            key: 'topology-save',
+          });
         });
-      });
     },
     [saveToServer],
   );
@@ -108,17 +135,21 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
     getTopologyPositions()
       .then((server) => {
         if (!active) return;
-        const picked = pickInitialPositions(server, loadLocalPositions());
-        setPositions(picked.positions);
-        saveLocalPositions(picked.positions);
-        if (picked.seed) {
-          void saveToServer(picked.seed).catch(() => {
-            message.warning({
-              content: t('拓扑布局已保存到本地，但同步服务端失败'),
-              key: 'topology-save',
-            });
-          });
+        const local = loadLocalPositions();
+        const pending = loadLocalPending();
+        const picked = pickInitialPositions(server, local, pending, mutatedRef.current);
+        if (picked.positions !== null) {
+          setPositions(picked.positions);
+          if (picked.seed) {
+            persist(picked.seed);
+          } else {
+            saveLocalPositions(picked.positions, false);
+          }
+        } else if (pending && Object.keys(local).length > 0) {
+          // The server read raced a local edit whose save failed; retry it.
+          persist(local);
         }
+        setServerReadOK(true);
       })
       .catch(() => {
         if (!active) return;
@@ -133,7 +164,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
     return () => {
       active = false;
     };
-  }, [saveToServer]);
+  }, [persist, saveToServer]);
 
   // Structure (positions from dagre or the saved layout) only changes with the
   // config; metrics must not rebuild it, otherwise a poll resets the node
@@ -161,8 +192,8 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
     const next = mergePositions(positions, structure.nodes);
     if (next === positions) return;
     setPositions(next);
-    persist(next);
-  }, [persist, positions, serverReady, structure.nodes]);
+    if (serverReadOK) persist(next);
+  }, [persist, positions, serverReadOK, serverReady, structure.nodes]);
 
   useEffect(() => {
     setNodes(structure.nodes);

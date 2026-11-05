@@ -24,7 +24,18 @@ export function mergePositions(
 export function pickInitialPositions(
   server: PositionMap,
   local: PositionMap,
-): { positions: PositionMap; seed: PositionMap | null } {
+  pending = false,
+  mutated = false,
+): { positions: PositionMap | null; seed: PositionMap | null } {
+  // A local edit happened before the server read resolved; keep the in-memory
+  // map instead of letting a stale snapshot snap the graph back.
+  if (mutated) {
+    return { positions: null, seed: null };
+  }
+  // Local changes that never reached the server are newer than the server map.
+  if (pending && Object.keys(local).length > 0) {
+    return { positions: local, seed: local };
+  }
   if (Object.keys(server).length > 0) {
     return { positions: server, seed: null };
   }

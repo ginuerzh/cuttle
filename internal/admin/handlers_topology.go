@@ -16,6 +16,10 @@ type topologyPositionsView struct {
 	Positions map[string]stats.Position `json:"positions"`
 }
 
+type topologyPositionsInput struct {
+	Positions *map[string]stats.Position `json:"positions"`
+}
+
 func (s *Server) handleGetTopologyPositions(w http.ResponseWriter, r *http.Request) {
 	if s.stats == nil {
 		writeError(w, http.StatusServiceUnavailable, "stats store is not available")
@@ -37,17 +41,22 @@ func (s *Server) handlePutTopologyPositions(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusServiceUnavailable, "stats store is not available")
 		return
 	}
-	var in topologyPositionsView
+	var in topologyPositionsInput
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err := dec.Decode(&in); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateTopologyPositions(in.Positions); err != nil {
+	if in.Positions == nil {
+		writeError(w, http.StatusBadRequest, "positions is required")
+		return
+	}
+	positions := *in.Positions
+	if err := validateTopologyPositions(positions); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.stats.SaveTopologyPositions(r.Context(), in.Positions); err != nil {
+	if err := s.stats.SaveTopologyPositions(r.Context(), positions); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
