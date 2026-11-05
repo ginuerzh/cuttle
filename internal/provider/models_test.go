@@ -777,3 +777,41 @@ func TestModelsCommandCodeContextLength(t *testing.T) {
 		t.Fatalf("context = %d, want 1000000", m.Context)
 	}
 }
+
+func TestModelsDeepSeekMetadata(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"object":"list","data":[{
+			"id":"deepseek-v4.1-flash",
+			"object":"model",
+			"owned_by":"deepseek",
+			"name":"DeepSeek V4.1 Flash",
+			"context_window":1000000,
+			"max_output_tokens":384000,
+			"input_modalities":["text","image"],
+			"output_modalities":["text"]
+		}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "deepseek",
+		Type: "deepseek",
+		Chat: srv.URL + "/v1",
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := findModel(models, "deepseek-v4.1-flash")
+	if !ok {
+		t.Fatalf("models = %+v, want deepseek-v4.1-flash", models)
+	}
+	if m.Context != 1000000 || m.Output != 384000 {
+		t.Fatalf("limits = context %d output %d, want 1000000/384000", m.Context, m.Output)
+	}
+	if !slices.Equal(m.Inputs, []string{"text", "image"}) || !slices.Equal(m.Outputs, []string{"text"}) {
+		t.Fatalf("modalities = %v -> %v", m.Inputs, m.Outputs)
+	}
+	if m.Price != nil {
+		t.Fatalf("price = %+v, want nil (DeepSeek list has no price)", m.Price)
+	}
+}

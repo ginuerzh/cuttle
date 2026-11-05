@@ -162,13 +162,17 @@ func ModelsURL(base string, api API) string {
 // metadata is kept raw so a malformed metadata block cannot fail the whole
 // catalog.
 type openAIModelJSON struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	DisplayName   string          `json:"display_name"`
-	ContextLength int             `json:"context_length"`
-	Modalities    json.RawMessage `json:"modalities"`
-	Limit         json.RawMessage `json:"limit"`
-	Cost          json.RawMessage `json:"cost"`
+	ID               string          `json:"id"`
+	Name             string          `json:"name"`
+	DisplayName      string          `json:"display_name"`
+	ContextLength    int             `json:"context_length"`
+	ContextWindow    int             `json:"context_window"`
+	MaxOutputTokens  int             `json:"max_output_tokens"`
+	InputModalities  []string        `json:"input_modalities"`
+	OutputModalities []string        `json:"output_modalities"`
+	Modalities       json.RawMessage `json:"modalities"`
+	Limit            json.RawMessage `json:"limit"`
+	Cost             json.RawMessage `json:"cost"`
 }
 
 type openAIModalitiesJSON struct {
@@ -250,16 +254,28 @@ func (m openAIModelJSON) toItem() modelItem {
 	}
 	item.Inputs = normalizeModalities(modalities.Input)
 	item.Outputs = normalizeModalities(modalities.Output)
+	if len(item.Inputs) == 0 {
+		item.Inputs = normalizeModalities(m.InputModalities)
+	}
+	if len(item.Outputs) == 0 {
+		item.Outputs = normalizeModalities(m.OutputModalities)
+	}
 
 	var limit openAILimitJSON
 	if len(m.Limit) > 0 {
 		_ = json.Unmarshal(m.Limit, &limit)
 	}
 	item.Context, item.Input, item.Output = limit.Context, limit.Input, limit.Output
-	// commandcode lists the context window as a top-level context_length
-	// instead of the OpenAI-style limit object.
+	// Vendor-specific top-level metadata: commandcode uses context_length,
+	// DeepSeek uses context_window plus max_output_tokens.
+	if item.Context <= 0 && m.ContextWindow > 0 {
+		item.Context = m.ContextWindow
+	}
 	if item.Context <= 0 && m.ContextLength > 0 {
 		item.Context = m.ContextLength
+	}
+	if item.Output <= 0 && m.MaxOutputTokens > 0 {
+		item.Output = m.MaxOutputTokens
 	}
 
 	var cost openAICostJSON
