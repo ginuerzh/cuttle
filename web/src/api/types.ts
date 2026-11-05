@@ -118,6 +118,7 @@ export interface EdgeMetrics {
 export interface ErrorRow {
   requestId: string;
   ts: string;
+  entrypoint?: string;
   route: string;
   node?: string;
   provider: string;

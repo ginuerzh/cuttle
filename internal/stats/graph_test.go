@@ -128,6 +128,9 @@ func TestGraphEntrypointMetrics(t *testing.T) {
 	if got := g.Edges["entrypoint:fast->route:fast"]; got.Requests != 1 {
 		t.Fatalf("fast edge = %+v", got)
 	}
+	if len(g.Errors) != 1 || g.Errors[0].Entrypoint != "claude" {
+		t.Fatalf("error rows = %+v, want the claude entrypoint", g.Errors)
+	}
 }
 
 // TestGraphEntrypointsUseRowRoute: attribution uses the route recorded on the

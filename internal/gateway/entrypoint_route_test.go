@@ -134,3 +134,54 @@ func TestRouteWithOnlyDisabledNodesIsUnrouted(t *testing.T) {
 		t.Fatalf("a disabled provider reached the upstream: %q", hit.path)
 	}
 }
+
+func TestEntrypointGlobIsCaseInsensitive(t *testing.T) {
+	strongSrv, strongHit := captureUpstream(t)
+	fastSrv, fastHit := captureUpstream(t)
+
+	cfg := testConfig(fastSrv.URL)
+	cfg.Nodes[0].Model = "fast-model"
+	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
+		Name: "strong",
+		Type: "generic",
+		Chat: strongSrv.URL,
+	})
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
+		Name:     "strong",
+		Provider: "strong",
+		Model:    "strong-model",
+	})
+	cfg.Routes = []gwconfig.Route{
+		{Name: "default", Nodes: []string{"up"}},
+		{Name: "specific", Nodes: []string{"strong"}},
+	}
+	cfg.Entrypoints = []gwconfig.Entrypoint{
+		{Name: "specific", Match: []string{"gpt-5.5*"}, Route: "specific"},
+		{Name: "default", Match: []string{"*"}, Route: "default"},
+	}
+	gw := startGateway(t, cfg)
+
+	if code := postModel(t, gw, "/v1/chat/completions", `{"model":"GPT-5.5","messages":[]}`); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if strongHit.path == "" || fastHit.path != "" {
+		t.Fatalf("mixed-case model routed to wrong node: strong=%q fast=%q", strongHit.path, fastHit.path)
+	}
+}
+
+func TestCatchAllMatchesBodylessRequest(t *testing.T) {
+	up, hit := captureUpstream(t)
+	gw := startGateway(t, testConfig(up.URL))
+
+	resp, err := http.Get("http://" + gw.Addr().String() + "/unknown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for the catch-all entrypoint", resp.StatusCode)
+	}
+	if hit.path != "/unknown" {
+		t.Fatalf("upstream path = %q, want /unknown", hit.path)
+	}
+}

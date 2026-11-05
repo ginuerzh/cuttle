@@ -23,15 +23,17 @@ import (
 )
 
 type recordingReloader struct {
-	cfg   *config.Config
-	err   error
-	calls int
-	store *stats.Store
+	cfg      *config.Config
+	err      error
+	calls    int
+	attempts int
+	store    *stats.Store
 }
 
 func (r *recordingReloader) Stats() *stats.Store { return r.store }
 
 func (r *recordingReloader) Reload(c *config.Config) error {
+	r.attempts++
 	if r.err != nil {
 		return r.err
 	}
@@ -234,15 +236,39 @@ func TestReloadFailureKeepsFileAndMemory(t *testing.T) {
 	s, rel, path, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)
 
+	for _, tc := range []struct {
+		path, body string
+	}{
+		{"/api/providers", providerBody("p", "https://a.example")},
+		{"/api/nodes", `{"name":"n","provider":"p","model":"m1"}`},
+		{"/api/routes", `{"name":"fast","nodes":["n"]}`},
+	} {
+		if resp := doJSON(t, client, http.MethodPost, ts.URL+tc.path, tc.body, csrf); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create %s = %d", tc.path, resp.StatusCode)
+		}
+	}
+
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempts := rel.attempts
 	rel.err = errors.New("boom")
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("config file should not exist after a failed reload: %v", err)
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("config file changed after a failed reload:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 	if len(s.cfg.Entrypoints) != 0 {
 		t.Fatalf("in-memory config changed after a failed reload: %+v", s.cfg.Entrypoints)
+	}
+	if rel.attempts != attempts+1 {
+		t.Fatalf("reload attempts = %d, want %d", rel.attempts, attempts+1)
 	}
 }
 

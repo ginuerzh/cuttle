@@ -241,12 +241,16 @@ func buildEntrypointMatcher(match []string) (corerouting.Matcher, error) {
 
 	inner := make([]string, 0, len(globs))
 	for _, g := range globs {
+		if g == "*" {
+			// An explicit catch-all matches requests without a model body too.
+			return nil, nil
+		}
 		rgx := globToRegexp(g)
 		rgx = strings.TrimPrefix(rgx, "^")
 		rgx = strings.TrimSuffix(rgx, "$")
 		inner = append(inner, rgx)
 	}
-	pattern := "^(" + strings.Join(inner, "|") + ")$"
+	pattern := "(?i)^(" + strings.Join(inner, "|") + ")$"
 	return xrouting.NewMatcher(fmt.Sprintf("BodyJSON(%q, %q)", "model", pattern))
 }
 

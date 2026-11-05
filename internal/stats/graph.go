@@ -26,13 +26,14 @@ type EdgeMetrics struct {
 
 // ErrorRow is one recent failure for the monitor panel.
 type ErrorRow struct {
-	RequestID string `json:"requestId"`
-	TS        string `json:"ts"`
-	Route     string `json:"route"`
-	Node      string `json:"node"`
-	Provider  string `json:"provider"`
-	Status    int    `json:"status"`
-	Message   string `json:"message"`
+	RequestID  string `json:"requestId"`
+	TS         string `json:"ts"`
+	Entrypoint string `json:"entrypoint,omitempty"`
+	Route      string `json:"route"`
+	Node       string `json:"node"`
+	Provider   string `json:"provider"`
+	Status     int    `json:"status"`
+	Message    string `json:"message"`
 }
 
 // GraphMetrics is the payload of GET /api/stats/graph.
@@ -123,8 +124,10 @@ func (s *Store) GraphWithFilter(ctx context.Context, from, to time.Time, resolve
 		}
 		addNode(routeKey, failed, in, out, cached, dur)
 
+		entrypoint := ""
 		if resolve != nil && clientModel != "" {
 			if match := resolve(clientModel); match != "" {
+				entrypoint = match
 				entrypointKey := "entrypoint:" + match
 				addNode(entrypointKey, failed, in, out, cached, dur)
 				if route == "" {
@@ -148,13 +151,14 @@ func (s *Store) GraphWithFilter(ctx context.Context, from, to time.Time, resolve
 				msg = http.StatusText(status)
 			}
 			g.Errors = append(g.Errors, ErrorRow{
-				RequestID: id,
-				TS:        time.UnixMilli(ts).UTC().Format(time.RFC3339),
-				Route:     route,
-				Node:      node,
-				Provider:  provider,
-				Status:    status,
-				Message:   msg,
+				RequestID:  id,
+				TS:         time.UnixMilli(ts).UTC().Format(time.RFC3339),
+				Entrypoint: entrypoint,
+				Route:      route,
+				Node:       node,
+				Provider:   provider,
+				Status:     status,
+				Message:    msg,
 			})
 		}
 	}

@@ -575,7 +575,7 @@ git commit -m "refactor(web)!: author named entrypoints and the new topology"
 - Consumes Task 1's `config.Load`, `gateway.New`, `gateway.Start`.
 - Consumes Task 2's web build; no new production interfaces.
 
-- [ ] **Step 1: Add the end-to-end test**
+- [x] **Step 1: Add the end-to-end test**
 
 In `internal/gateway/entrypoint_e2e_test.go` (package `gateway_test`):
 
@@ -608,13 +608,13 @@ func TestExampleConfigLoads(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the end-to-end tests to verify they pass**
+- [x] **Step 2: Run the end-to-end tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestEntrypointConfigEndToEnd' -count=1` and `GOWORK=off go test ./internal/config -run 'TestExampleConfigLoads' -count=1`.
 
 Expected: PASS. If they fail, fix the backend, not the assertions.
 
-- [ ] **Step 3: Run the full regression gate**
+- [x] **Step 3: Run the full regression gate**
 
 ```bash
 GOWORK=off go build ./...
@@ -625,7 +625,7 @@ cd web && npm test && npm run build
 
 Expected: all PASS.
 
-- [ ] **Step 4: Search for leftovers**
+- [x] **Step 4: Search for leftovers**
 
 ```bash
 rg -n 'Alias|aliases|logical|LogicalModel|logical_model|match\.model|\.models\b' \
@@ -635,7 +635,7 @@ rg -n 'Alias|aliases|logical|LogicalModel|logical_model|match\.model|\.models\b'
 Expected: only historical `logical_model` compatibility notes in the design doc
 and the inert column comment/tests; no live logical-model routing code.
 
-- [ ] **Step 5: Fill the Implementation record and commit**
+- [x] **Step 5: Fill the Implementation record and commit**
 
 Fill the record below, then:
 
@@ -651,3 +651,12 @@ git commit -m "test: verify entrypoint routing end to end"
 - Tests: `GOWORK=off go test ./internal/gateway -run TestEntrypointConfigEndToEnd -count=1` PASS; `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1` PASS; `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS; `cd web && npm test` PASS (9 files, 75 tests); `npm run build` PASS.
 - Review findings/fixes: the end-to-end test loads a real YAML file, routes four client models through the loaded config, then rewrites the entrypoint order and calls `gw.Reload` to prove precedence changes without a restart. `example.yaml` loads with `DEEPSEEK_API_KEY` set and every entrypoint route resolves. The leftover scan found only historical design-doc mentions and the deliberate legacy-config rejection test; the built `internal/admin/dist` bundle was excluded from the scan.
 - Deferred/limitations: the upstream in the e2e test is a local httptest server, not a live DeepSeek/OpenAI endpoint. The inert `logical_model` SQLite column is still present in pre-existing databases. The route-order path edge from Task 1 remains.
+
+## Final review fix pass (2026-11-05)
+
+- Fixed the data-plane glob matcher to be case-insensitive (`(?i)`), matching the config/stats resolver.
+- An entrypoint whose match list contains `*` now uses an unconditional hop matcher, so the catch-all also covers bodyless pass-through requests.
+- `TestReloadFailureKeepsFileAndMemory` now creates a valid provider/node/route, asserts the reload was actually attempted, and compares the config file before/after instead of asserting it does not exist.
+- `stats.ErrorRow` now carries the resolved entrypoint name, and the web node panel filters entrypoint errors through `errorMatchesNodeId`.
+- Added `TestEntrypointGlobIsCaseInsensitive`, `TestCatchAllMatchesBodylessRequest`, and an entrypoint-error assertion in `TestGraphEntrypointMetrics`.
+- Verification: `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS; `npx tsc --noEmit`, `npm test` (76 tests), `npm run build` PASS.

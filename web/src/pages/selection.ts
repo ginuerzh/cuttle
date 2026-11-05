@@ -1,4 +1,4 @@
-import type { Entrypoint } from '../api/types';
+import type { Entrypoint, ErrorRow } from '../api/types';
 
 export function splitId(id: string): [string, string] {
   const i = id.indexOf(':');
@@ -19,4 +19,21 @@ export function entrypointFromNodeId(
   if (kind !== 'entrypoint') return null;
   const index = entrypoints.findIndex((e) => e.name === name);
   return index < 0 ? null : { entrypoint: entrypoints[index], index };
+}
+
+/** errorMatchesNodeId reports whether a graph node id owns an error row. */
+export function errorMatchesNodeId(id: string, e: ErrorRow): boolean {
+  const [kind, name] = splitId(id);
+  switch (kind) {
+    case 'provider':
+      return e.provider === name;
+    case 'route':
+      return e.route === name;
+    case 'node':
+      return e.node === name;
+    case 'entrypoint':
+      return e.entrypoint === name;
+    default:
+      return false;
+  }
 }

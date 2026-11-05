@@ -41,6 +41,7 @@ import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
 import { Topology, type Selection } from './pages/Topology';
+import { errorMatchesNodeId } from './pages/selection';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
 
@@ -95,20 +96,7 @@ function rate(m?: { requests: number; errors: number }): string {
 }
 
 function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics; errors: ErrorRow[] }) {
-  const [kind, name] = id.split(/:(.*)/s);
-  const mine = useMemo(
-    () =>
-      errors.filter((e) =>
-        kind === 'provider'
-          ? e.provider === name
-          : kind === 'route'
-            ? e.route === name
-            : kind === 'node'
-              ? e.node === name
-              : false,
-      ),
-    [errors, kind, name],
-  );
+  const mine = useMemo(() => errors.filter((e) => errorMatchesNodeId(id, e)), [errors, id]);
 
   return (
     <div>
