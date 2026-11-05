@@ -1,19 +1,16 @@
 import { useState } from 'react';
-import { Button, Drawer, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Drawer, Popconfirm, Space, Typography, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import { deleteRoute, reorderRoutes } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse, Route } from '../api/types';
 import { AddRouteModal, RouteForm } from './Edit';
-import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
+import { ListPage } from '../components/ListPage';
 
 export function RoutesPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
-  const isMobile = useIsMobile();
   const [editing, setEditing] = useState<Route | null>(null);
   const [adding, setAdding] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
@@ -38,49 +35,10 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
     }
   };
 
-  const columns: ColumnsType<Route> = [
-    {
-      title: t('顺序'),
-      width: 60,
-      render: (_, __, i) => <Typography.Text type="secondary">{i + 1}</Typography.Text>,
-    },
-    { title: t('名称'), dataIndex: 'name', width: 160, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
-    {
-      title: t('逻辑模型'),
-      width: 140,
-      render: (_, r) => r.match?.model || <Tag>catch-all</Tag>,
-    },
-    {
-      title: 'nodes',
-      render: (_, r) => (
-        <Space wrap size={2}>
-          {(r.nodes ?? []).map((n) => (
-            <Tag key={n}>{n}</Tag>
-          ))}
-        </Space>
-      ),
-    },
-    { title: 'strategy', dataIndex: 'strategy', width: 90, responsive: ['lg'] },
-    {
-      title: t('操作'),
-      width: 140,
-      render: (_, r) => (
-        <Space size={4}>
-          <Button size="small" onClick={() => setEditing(r)}>
-            {t('编辑')}
-          </Button>
-          <Popconfirm title={t('删除 {name}?', { name: r.name })} onConfirm={() => void remove(r.name)}>
-            <Button size="small" danger>
-              {t('删除')}
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
+
 
   return (
-    <div style={{ padding: isMobile ? 12 : 20, width: '100%', overflowX: 'hidden' }}>
+    <ListPage>
       <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           Routes
@@ -90,49 +48,25 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
         </Button>
       </Space>
       <Typography.Paragraph type="secondary">
-        {isMobile ? t('用 ↑ ↓ 调整顺序；顺序即 FIFO 优先级，catch-all 应放在最后。') : t('拖动行调整顺序：顺序即 FIFO 优先级，catch-all 应放在最后。')}
+        {t('用 ↑ ↓ 调整顺序；顺序即 FIFO 优先级，catch-all 应放在最后。')}
       </Typography.Paragraph>
-      {isMobile ? (
-        <div>
-          {config.routes.map((r, i) => {
-            return (
-              <ListCard
-                key={r.name}
-                title={`${i + 1}. ${r.name}`}
-                subtitle={`${r.match?.model || 'catch-all'} · ${r.strategy || 'round'} · ${(r.nodes ?? []).join(', ') || 'no nodes'}`}
-                actions={
-                  <>
-                    <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
-                    <Button size="small" disabled={i === config.routes.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
-                    <Button size="small" onClick={() => setEditing(r)}>{t('编辑')}</Button>
-                    <Popconfirm title={t('删除 {name}?', { name: r.name })} onConfirm={() => void remove(r.name)}>
-                      <Button size="small" danger>{t('删除')}</Button>
-                    </Popconfirm>
-                  </>
-                }
-              />
-            );
-          })}
-        </div>
-      ) : (
-      <Table
-        rowKey="name"
-        size="small"
-        columns={columns}
-        dataSource={config.routes}
-        pagination={false}
-        onRow={(_, index) => ({
-          draggable: true,
-          onDragStart: () => setDragIndex(index ?? null),
-          onDragOver: (e) => e.preventDefault(),
-          onDrop: () => {
-            if (dragIndex !== null && index !== undefined) void move(dragIndex, index);
-            setDragIndex(null);
-          },
-          style: { cursor: 'grab' },
-        })}
-      />
-      )}
+      {config.routes.map((r, i) => (
+        <ListCard
+          key={r.name}
+          title={`${i + 1}. ${r.name}`}
+          subtitle={`${r.match?.model || 'catch-all'} · ${r.strategy || 'round'} · ${(r.nodes ?? []).join(', ') || 'no nodes'}`}
+          actions={
+            <>
+              <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
+              <Button size="small" disabled={i === config.routes.length - 1} onClick={() => void move(i, i + 1)}>↓</Button>
+              <Button size="small" onClick={() => setEditing(r)}>{t('编辑')}</Button>
+              <Popconfirm title={t('删除 {name}?', { name: r.name })} onConfirm={() => void remove(r.name)}>
+                <Button size="small" danger>{t('删除')}</Button>
+              </Popconfirm>
+            </>
+          }
+        />
+      ))}
 
       <Drawer width={420} title={editing ? t('编辑 {name}', { name: editing.name }) : ''} open={!!editing} onClose={() => setEditing(null)} destroyOnClose>
         {editing ? (
@@ -156,6 +90,6 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
         }}
         onError={(s) => message.error(s)}
       />
-    </div>
+    </ListPage>
   );
 }
