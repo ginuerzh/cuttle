@@ -52,15 +52,6 @@ jobs:
           ref: e4c7c1a339426a62b157968641e5ca9735d270b7
           path: src/llm-api-converter
 
-      - name: Prepare build context
-        run: |
-          cat > src/.dockerignore <<'EOF'
-          **/.git
-          **/node_modules
-          **/internal/admin/dist
-          **/*.sqlite
-          **/*.db
-          EOF
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
