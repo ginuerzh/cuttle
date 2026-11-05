@@ -17,6 +17,7 @@ import {
   normalizedModalities,
   presetFormValues,
   providerPayload,
+  routeLogicalModels,
   toggleModelOverride,
   unknownModels,
 } from './presets';
@@ -482,5 +483,19 @@ describe('providerPayload', () => {
   it('includes keys only when the provider carries them', () => {
     expect(providerPayload({ ...full, keys: ['sk-1'] })).toMatchObject({ keys: ['sk-1'] });
     expect(providerPayload(full)).not.toHaveProperty('keys');
+  });
+});
+
+describe('routeLogicalModels', () => {
+  it('keeps route order and drops empty or duplicate models', () => {
+    expect(
+      routeLogicalModels([
+        { name: 'a', nodes: [], match: { model: 'Strong' } },
+        { name: 'b', nodes: [], match: { model: 'fast' } },
+        { name: 'c', nodes: [], match: { model: '' } },
+        { name: 'd', nodes: [], match: { model: ' strong ' } },
+        { name: 'e', nodes: [], match: {} },
+      ]),
+    ).toEqual(['Strong', 'fast']);
   });
 });

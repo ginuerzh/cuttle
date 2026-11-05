@@ -47,6 +47,7 @@ import {
   presetFormValues,
   providerPayload,
   PROVIDER_TYPES,
+  routeLogicalModels,
   unknownModels,
 } from './presets';
 import { mapToRows, rowsToMap, type MapRow } from '../components/MapFields';
@@ -58,9 +59,6 @@ interface Props {
   onReload: () => Promise<void>;
 }
 
-function logicalModels(config: ConfigResponse): string[] {
-  return config.routes.map((r) => r.match?.model || '').filter(Boolean);
-}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -149,7 +147,7 @@ function ModelMapField({
                   <Form.Item name={[field.name, 'key']} noStyle>
                     <AutoComplete
                       style={{ flex: 1, minWidth: 0 }}
-                      options={[...logicalModels(config), '*'].map((v) => ({ value: v }))}
+                      options={[...routeLogicalModels(config.routes), '*'].map((v) => ({ value: v }))}
                       placeholder={tr('快速 / *')}
                     />
                   </Form.Item>
@@ -533,7 +531,11 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {route.name}
       </Typography.Title>
-      <Form.Item name="model" label={tr('逻辑模型（空 = catch-all）')}>
+      <Form.Item
+        name="model"
+        label={tr('逻辑模型（空 = catch-all）')}
+        extra={tr('创建或重命名逻辑模型；Alias 只能引用这里定义的名称。')}
+      >
         <Input />
       </Form.Item>
       <Form.Item name="strategy" label="strategy">
@@ -672,7 +674,7 @@ export function AliasForm({
 }) {
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
-  const models = logicalModels(config);
+  const models = routeLogicalModels(config.routes);
 
   const save = async () => {
     const v = await form.validateFields();
@@ -715,12 +717,23 @@ export function AliasForm({
       <Form.Item name="match" label={tr('客户端模型 glob')} rules={[{ required: true }]}>
         <Input />
       </Form.Item>
-      <Form.Item name="model" label={tr('逻辑模型')} rules={[{ required: true }]}>
-        <AutoComplete options={models.map((m) => ({ value: m }))} placeholder="strong / fast" />
+      <Form.Item
+        name="model"
+        label={tr('逻辑模型')}
+        rules={[{ required: true }]}
+        extra={models.length === 0 ? tr('请先创建 Route 并填写逻辑模型。') : tr('只能选择 Route 中定义的逻辑模型。')}
+      >
+        <Select
+          showSearch
+          optionFilterProp="label"
+          disabled={models.length === 0}
+          options={models.map((m) => ({ value: m, label: m }))}
+          placeholder="strong / fast"
+        />
       </Form.Item>
       <Divider />
       <Space>
-        <Button type="primary" loading={busy} onClick={save}>
+        <Button type="primary" loading={busy} onClick={save} disabled={models.length === 0}>
           {tr('保存')}
         </Button>
         <Button danger loading={busy} onClick={remove}>
@@ -1215,7 +1228,11 @@ export function AddRouteModal({
         <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="strong" />
         </Form.Item>
-        <Form.Item name="model" label={tr('逻辑模型（alias 的 model 指向它）')}>
+        <Form.Item
+          name="model"
+          label={tr('逻辑模型（alias 的 model 指向它）')}
+          extra={tr('创建或重命名逻辑模型；Alias 只能引用这里定义的名称。')}
+        >
           <Input placeholder="strong" />
         </Form.Item>
         <Form.Item name="strategy" label="strategy" initialValue="round">
@@ -1244,7 +1261,7 @@ export function AddAliasModal({
 }) {
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
-  const models = logicalModels(config);
+  const models = routeLogicalModels(config.routes);
 
   const submit = async () => {
     const v = await form.validateFields();
@@ -1261,13 +1278,32 @@ export function AddAliasModal({
   };
 
   return (
-    <Modal open={open} title={tr('添加 Alias')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
+    <Modal
+      open={open}
+      title={tr('添加 Alias')}
+      onCancel={onClose}
+      onOk={submit}
+      confirmLoading={busy}
+      okButtonProps={{ disabled: models.length === 0 }}
+      destroyOnClose
+    >
       <Form form={form} layout="vertical" size="small">
         <Form.Item name="match" label={tr('客户端模型 glob')} rules={[{ required: true }]}>
           <Input placeholder="claude-opus*" />
         </Form.Item>
-        <Form.Item name="model" label={tr('逻辑模型')} rules={[{ required: true }]}>
-          <AutoComplete options={models.map((m) => ({ value: m }))} placeholder="strong" />
+        <Form.Item
+          name="model"
+          label={tr('逻辑模型')}
+          rules={[{ required: true }]}
+          extra={models.length === 0 ? tr('请先创建 Route 并填写逻辑模型。') : tr('只能选择 Route 中定义的逻辑模型。')}
+        >
+          <Select
+            showSearch
+            optionFilterProp="label"
+            disabled={models.length === 0}
+            options={models.map((m) => ({ value: m, label: m }))}
+            placeholder="strong"
+          />
         </Form.Item>
       </Form>
     </Modal>
