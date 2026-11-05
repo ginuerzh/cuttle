@@ -44,7 +44,7 @@ import { Topology, type Selection } from './pages/Topology';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
 
-const { Header, Sider, Content } = Layout;
+const { Header, Content } = Layout;
 
 const NAV_ITEMS = [
   { key: 'topology', icon: <PartitionOutlined />, label: '拓扑' },
@@ -340,48 +340,31 @@ export default function App() {
           paddingInline: isMobile ? 12 : 20,
         }}
       >
-        {isMobile ? (
-          <Button icon={<MenuOutlined />} onClick={() => setNavOpen(true)} aria-label="menu" />
-        ) : null}
+        <Button icon={<MenuOutlined />} onClick={() => setNavOpen(true)} aria-label="menu" />
         <Typography.Text strong style={{ fontSize: 16 }}>
           llm-gw
         </Typography.Text>
       </Header>
 
       <Layout style={{ background: 'var(--gw-bg)' }}>
-        {isMobile ? (
-          <Drawer
-            placement="left"
-            open={navOpen}
-            onClose={() => setNavOpen(false)}
-            width={230}
-            styles={{ body: { padding: 0 } }}
-          >
-            <Sidebar
-              page={page}
-              onPage={(next) => {
-                setPage(next);
-                setNavOpen(false);
-              }}
-              themeMode={themeMode}
-              onThemeMode={setThemeMode}
-              onLogout={() => void handleLogout()}
-            />
-          </Drawer>
-        ) : (
-          <Sider
-            width={190}
-            style={{ background: 'var(--gw-surface)', borderRight: '1px solid var(--gw-border)' }}
-          >
-            <Sidebar
-              page={page}
-              onPage={setPage}
-              themeMode={themeMode}
-              onThemeMode={setThemeMode}
-              onLogout={() => void handleLogout()}
-            />
-          </Sider>
-        )}
+        <Drawer
+          placement="left"
+          open={navOpen}
+          onClose={() => setNavOpen(false)}
+          width={230}
+          styles={{ body: { padding: 0 } }}
+        >
+          <Sidebar
+            page={page}
+            onPage={(next) => {
+              setPage(next);
+              setNavOpen(false);
+            }}
+            themeMode={themeMode}
+            onThemeMode={setThemeMode}
+            onLogout={() => void handleLogout()}
+          />
+        </Drawer>
 
         <Content style={{ display: 'flex', minWidth: 0 }}>
           <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
