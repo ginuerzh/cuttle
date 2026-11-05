@@ -249,14 +249,80 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
+type providerKeyUpdate struct {
+	// Index is nil for an appended key.
+	Index  *int   `json:"index,omitempty"`
+	Key    string `json:"key,omitempty"`
+	Delete bool   `json:"delete,omitempty"`
+}
+
+type providerUpdate struct {
+	config.Provider
+	KeyUpdates []providerKeyUpdate `json:"keyUpdates,omitempty"`
+}
+
+// applyProviderKeyUpdates applies per-index replacements/deletions and appends
+// new keys without exposing the existing secrets to the client.
+func applyProviderKeyUpdates(keys []string, updates []providerKeyUpdate) ([]string, error) {
+	replaced := make(map[int]string, len(updates))
+	deleted := make(map[int]bool, len(updates))
+	var appended []string
+	for _, u := range updates {
+		key := strings.TrimSpace(u.Key)
+		if u.Index == nil {
+			if u.Delete || key == "" {
+				return nil, fmt.Errorf("new key requires a non-empty key")
+			}
+			appended = append(appended, key)
+			continue
+		}
+		i := *u.Index
+		if i < 0 || i >= len(keys) {
+			return nil, fmt.Errorf("key index %d out of range", i)
+		}
+		if _, ok := replaced[i]; ok || deleted[i] {
+			return nil, fmt.Errorf("duplicate operation for key index %d", i)
+		}
+		if u.Delete {
+			if key != "" {
+				return nil, fmt.Errorf("key index %d: delete and key are mutually exclusive", i)
+			}
+			deleted[i] = true
+			continue
+		}
+		if key == "" {
+			return nil, fmt.Errorf("key index %d: key is required", i)
+		}
+		replaced[i] = key
+	}
+
+	out := make([]string, 0, len(keys)-len(deleted)+len(appended))
+	for i, key := range keys {
+		if deleted[i] {
+			continue
+		}
+		if next, ok := replaced[i]; ok {
+			out = append(out, next)
+			continue
+		}
+		out = append(out, key)
+	}
+	return append(out, appended...), nil
+}
+
 func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	var p config.Provider
-	if err := decode(w, r, &p); err != nil {
+	var in providerUpdate
+	if err := decode(w, r, &in); err != nil {
 		return
 	}
+	p := in.Provider
 	if p.Name != "" && p.Name != name {
 		writeError(w, http.StatusBadRequest, "name in body does not match the path")
+		return
+	}
+	if len(in.KeyUpdates) > 0 && len(p.Keys) > 0 {
+		writeError(w, http.StatusBadRequest, "keys and keyUpdates cannot both be set")
 		return
 	}
 	p.Name = name
@@ -266,8 +332,16 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 			if c.Providers[i].Name != name {
 				continue
 			}
-			if len(p.Keys) == 0 {
-				p.Keys = c.Providers[i].Keys
+			current := c.Providers[i]
+			switch {
+			case len(in.KeyUpdates) > 0:
+				keys, err := applyProviderKeyUpdates(current.Keys, in.KeyUpdates)
+				if err != nil {
+					return fmt.Errorf("provider %q: %w", name, err)
+				}
+				p.Keys = keys
+			case len(p.Keys) == 0:
+				p.Keys = current.Keys
 			}
 			c.Providers[i] = p
 			return nil
