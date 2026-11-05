@@ -411,10 +411,36 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 
 	err := s.mutate(func(c *config.Config) error {
 		for i := range c.Routes {
-			if c.Routes[i].Name == name {
-				c.Routes[i] = rt
+			if c.Routes[i].Name != name {
+				continue
+			}
+			old := strings.TrimSpace(c.Routes[i].Match.Model)
+			next := strings.TrimSpace(rt.Match.Model)
+			c.Routes[i] = rt
+			if old == "" || strings.EqualFold(old, next) {
 				return nil
 			}
+			remaining := false
+			for _, r := range c.Routes {
+				if r.Name != name && r.Match.Model != "" && strings.EqualFold(strings.TrimSpace(r.Match.Model), old) {
+					remaining = true
+					break
+				}
+			}
+			if remaining {
+				return nil
+			}
+			matches := c.AliasMatchesForModel(old)
+			if next == "" && len(matches) > 0 {
+				return fmt.Errorf("route %q: aliases still reference logical model %q (%s); update or delete them first",
+					name, old, strings.Join(matches, ", "))
+			}
+			for j := range c.Aliases {
+				if strings.EqualFold(strings.TrimSpace(c.Aliases[j].Model), old) {
+					c.Aliases[j].Model = next
+				}
+			}
+			return nil
 		}
 		return fmt.Errorf("route %q not found", name)
 	})
@@ -430,9 +456,11 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 
 	err := s.mutate(func(c *config.Config) error {
 		out := c.Routes[:0]
+		removed := config.Route{}
 		found := false
 		for _, rt := range c.Routes {
 			if rt.Name == name {
+				removed = rt
 				found = true
 				continue
 			}
@@ -442,6 +470,13 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 			return fmt.Errorf("route %q not found", name)
 		}
 		c.Routes = out
+		old := strings.TrimSpace(removed.Match.Model)
+		if old != "" && !c.HasLogicalModel(old) {
+			if matches := c.AliasMatchesForModel(old); len(matches) > 0 {
+				return fmt.Errorf("route %q: still referenced by aliases %s; update or delete them first",
+					name, strings.Join(matches, ", "))
+			}
+		}
 		return nil
 	})
 	if err != nil {
