@@ -116,8 +116,13 @@ func TestProbeOnce(t *testing.T) {
 }
 
 func TestGraphAPI(t *testing.T) {
-	_, rel, _, ts := newTestAdmin(t)
+	srv, rel, _, ts := newTestAdmin(t)
 	client, _ := login(t, ts.URL)
+
+	srv.mu.Lock()
+	srv.cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"n"}}}
+	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p"}}
+	srv.mu.Unlock()
 
 	base := time.Now().Add(-time.Hour)
 	for _, row := range []stats.Request{
@@ -172,6 +177,8 @@ func TestGraphAliasAPI(t *testing.T) {
 
 	srv.mu.Lock()
 	srv.cfg.Aliases = []config.Alias{{Match: "claude*", Model: "r"}}
+	srv.cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"n"}}}
+	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p"}}
 	srv.mu.Unlock()
 
 	base := time.Now().Add(-time.Hour)

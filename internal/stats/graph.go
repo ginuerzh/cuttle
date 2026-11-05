@@ -50,9 +50,17 @@ func (s *Store) Graph(ctx context.Context, from, to time.Time) (GraphMetrics, er
 	return s.GraphWithAliases(ctx, from, to, nil)
 }
 
+// RowFilter reports whether a request row belongs to the current topology.
+type RowFilter func(route, node, provider string) bool
+
 // GraphWithAliases also attributes requests to alias nodes when resolve can
 // map the client model back to an alias glob.
 func (s *Store) GraphWithAliases(ctx context.Context, from, to time.Time, resolve AliasResolver) (GraphMetrics, error) {
+	return s.GraphWithFilter(ctx, from, to, resolve, nil)
+}
+
+// GraphWithFilter drops rows outside the current topology before aggregating.
+func (s *Store) GraphWithFilter(ctx context.Context, from, to time.Time, resolve AliasResolver, include RowFilter) (GraphMetrics, error) {
 	g := GraphMetrics{
 		Nodes:  make(map[string]NodeMetrics),
 		Edges:  make(map[string]EdgeMetrics),
@@ -99,6 +107,9 @@ func (s *Store) GraphWithAliases(ctx context.Context, from, to time.Time, resolv
 		if err := rows.Scan(&id, &ts, &route, &node, &provider, &clientModel, &status, &errStr,
 			&dur, &in, &out, &cached); err != nil {
 			return g, err
+		}
+		if include != nil && !include(route, node, provider) {
+			continue
 		}
 
 		failed := status >= 400 || errStr != ""

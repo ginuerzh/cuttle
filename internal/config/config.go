@@ -643,6 +643,47 @@ func (c *Config) AliasMatchesForModel(name string) []string {
 	return out
 }
 
+// TopologyIncludes reports whether a stats row belongs to the current route
+// topology: the route must exist, reference the node, and the node's provider
+// must match. Unrouted rows are always kept.
+func (c *Config) TopologyIncludes(route, node, provider string) bool {
+	route = strings.TrimSpace(route)
+	if route == "" {
+		return true
+	}
+	var target *Route
+	for i := range c.Routes {
+		if c.Routes[i].Name == route {
+			target = &c.Routes[i]
+			break
+		}
+	}
+	if target == nil {
+		return false
+	}
+	node = strings.TrimSpace(node)
+	if node == "" {
+		return true
+	}
+	referenced := false
+	for _, ref := range target.Nodes {
+		if strings.TrimSpace(ref) == node {
+			referenced = true
+			break
+		}
+	}
+	if !referenced {
+		return false
+	}
+	for i := range c.Nodes {
+		if c.Nodes[i].Name != node {
+			continue
+		}
+		return provider == "" || strings.EqualFold(strings.TrimSpace(c.Nodes[i].Provider), strings.TrimSpace(provider))
+	}
+	return false
+}
+
 // ResolveAliasMatch returns the glob of the first alias matching clientModel.
 // An empty result means no alias matched.
 func (c *Config) ResolveAliasMatch(clientModel string) string {

@@ -100,9 +100,13 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 	from, to := parseRange(r)
 	// Snapshot the alias list so the stats query does not hold the config lock.
 	s.mu.Lock()
-	cfg := &config.Config{Aliases: append([]config.Alias(nil), s.cfg.Aliases...)}
+	cfg := &config.Config{
+		Aliases: append([]config.Alias(nil), s.cfg.Aliases...),
+		Routes:  append([]config.Route(nil), s.cfg.Routes...),
+		Nodes:   append([]config.Node(nil), s.cfg.Nodes...),
+	}
 	s.mu.Unlock()
-	g, err := s.stats.GraphWithAliases(r.Context(), from, to, cfg.ResolveAliasMatch)
+	g, err := s.stats.GraphWithFilter(r.Context(), from, to, cfg.ResolveAliasMatch, cfg.TopologyIncludes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

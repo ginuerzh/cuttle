@@ -662,3 +662,32 @@ func TestLogicalModelHelpers(t *testing.T) {
 		t.Fatalf("AliasMatchesForModel = %#v", got)
 	}
 }
+
+func TestTopologyIncludes(t *testing.T) {
+	c := &Config{
+		Routes: []Route{{Name: "fast", Nodes: []string{"n1", "n2"}}},
+		Nodes: []Node{
+			{Name: "n1", Provider: "p"},
+			{Name: "n2", Provider: "q"},
+		},
+	}
+
+	cases := []struct {
+		route, node, provider string
+		want                  bool
+	}{
+		{"fast", "n1", "p", true},
+		{"fast", "n2", "q", true},
+		{"", "orphan", "p", true},
+		{"fast", "", "", true},
+		{"missing", "n1", "p", false},
+		{"fast", "orphan", "p", false},
+		{"fast", "n1", "wrong", false},
+	}
+	for _, tc := range cases {
+		if got := c.TopologyIncludes(tc.route, tc.node, tc.provider); got != tc.want {
+			t.Fatalf("TopologyIncludes(%q,%q,%q) = %v, want %v",
+				tc.route, tc.node, tc.provider, got, tc.want)
+		}
+	}
+}

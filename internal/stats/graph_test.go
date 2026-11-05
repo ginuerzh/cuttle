@@ -129,3 +129,48 @@ func TestGraphAliasMetrics(t *testing.T) {
 		t.Fatalf("gpt alias edge = %+v", got)
 	}
 }
+
+func TestGraphTopologyFilter(t *testing.T) {
+	s := newStore(t)
+	base := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+
+	rows := []Request{
+		{ID: "current", TS: base, Route: "fast", Node: "n", Provider: "p", Status: 200, DurationMS: 10},
+		{ID: "stale", TS: base.Add(time.Minute), Route: "fast", Node: "old", Provider: "q", Status: 200, DurationMS: 20},
+		{ID: "unrouted", TS: base.Add(2 * time.Minute), Provider: "p", Status: 200, DurationMS: 30},
+	}
+	for _, r := range rows {
+		if err := s.Insert(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	include := func(route, node, provider string) bool {
+		return route == "" || node == "n"
+	}
+	g, err := s.GraphWithFilter(context.Background(), base.Add(-time.Hour), base.Add(time.Hour), nil, include)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Nodes["node:n"]; got.Requests != 1 {
+		t.Fatalf("node:n = %+v", got)
+	}
+	if _, ok := g.Nodes["node:old"]; ok {
+		t.Fatalf("stale node metrics = %+v", g.Nodes["node:old"])
+	}
+	if _, ok := g.Nodes["provider:q"]; ok {
+		t.Fatalf("stale provider metrics = %+v", g.Nodes["provider:q"])
+	}
+	if got := g.Nodes["provider:p"]; got.Requests != 2 {
+		t.Fatalf("provider:p = %+v, want current + unrouted", got)
+	}
+	if got := g.Nodes["route:fast"]; got.Requests != 1 {
+		t.Fatalf("route:fast = %+v", got)
+	}
+	if got := g.Nodes["unrouted"]; got.Requests != 1 {
+		t.Fatalf("unrouted = %+v", got)
+	}
+	if got := g.Edges["node:old|provider:q"]; got.Requests != 0 {
+		t.Fatalf("stale edge = %+v", got)
+	}
+}
