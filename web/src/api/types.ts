@@ -90,6 +90,11 @@ export interface Entrypoint {
   route: string;
 }
 
+export interface TopologyPosition {
+  x: number;
+  y: number;
+}
+
 export interface ConfigResponse {
   gateway: { listen: string };
   admin: { listen: string; sessionTTL: string };

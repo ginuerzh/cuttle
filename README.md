@@ -197,7 +197,9 @@ file and reload.
 
 The topology view has monitor and edit modes. In monitor mode nodes are fixed;
 in edit mode you can drag an entrypoint onto a route or a route onto a node to
-change the configuration. Node positions are persisted.
+change the configuration. Node positions are stored in the stats SQLite
+database and shared by every admin; `localStorage` keeps a local backup and is
+used if the server cannot be reached.
 
 ## Configuration reference
 
@@ -377,6 +379,7 @@ GET|PUT       /api/entrypoints
 
 GET  /api/stats/summary
 GET  /api/stats/graph
+GET|PUT /api/topology/positions
 GET  /api/requests
 GET  /api/requests/{id}
 PUT  /api/admin/password
@@ -384,6 +387,9 @@ PUT  /api/admin/password
 
 `PUT /api/entrypoints` replaces the whole ordered list. Entrypoint order is
 precedence, so the list is edited and saved as one unit.
+
+`GET /api/topology/positions` returns the shared layout map and `PUT` replaces
+it. The layout lives in the `topology_positions` table of `stats.sqlite`.
 
 ## Docker
 

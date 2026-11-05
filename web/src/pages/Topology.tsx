@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   applyEdgeChanges,
@@ -13,12 +13,18 @@ import {
   type OnEdgesChange,
   useNodesState,
   type OnNodeDrag,
-  type XYPosition,
 } from '@xyflow/react';
+import { message } from 'antd';
 import type { ConfigResponse, GraphMetrics, NodeMetrics } from '../api/types';
+import { getTopologyPositions, putTopologyPositions } from '../api/client';
 import { buildGraph, type GraphNode } from '../graph/build';
 import { layoutGraph } from '../graph/layout';
-import { mergePositions } from '../graph/positions';
+import {
+  createPositionSaver,
+  mergePositions,
+  pickInitialPositions,
+  type PositionMap,
+} from '../graph/positions';
 import { nodeTypes } from '../graph/nodes';
 import { edgeTypes } from './edges';
 import { translate as t } from '../i18n';
@@ -61,16 +67,16 @@ function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
 
 const POSITIONS_KEY = 'llm-gw.positions';
 
-function loadPositions(): Record<string, XYPosition> {
+function loadLocalPositions(): PositionMap {
   try {
     const raw = localStorage.getItem(POSITIONS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, XYPosition>) : {};
+    return raw ? (JSON.parse(raw) as PositionMap) : {};
   } catch {
     return {};
   }
 }
 
-function savePositions(p: Record<string, XYPosition>) {
+function saveLocalPositions(p: PositionMap) {
   try {
     localStorage.setItem(POSITIONS_KEY, JSON.stringify(p));
   } catch {
@@ -79,7 +85,55 @@ function savePositions(p: Record<string, XYPosition>) {
 }
 
 export function Topology({ config, metrics, onSelect, editable, onConnect }: Props) {
-  const [positions, setPositions] = useState<Record<string, XYPosition>>(loadPositions);
+  const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
+  const [serverReady, setServerReady] = useState(false);
+  const saveToServerRef = useRef(createPositionSaver(putTopologyPositions));
+  const saveToServer = saveToServerRef.current;
+
+  const persist = useCallback(
+    (next: PositionMap) => {
+      saveLocalPositions(next);
+      void saveToServer(next).catch(() => {
+        message.warning({
+          content: t('拓扑布局已保存到本地，但同步服务端失败'),
+          key: 'topology-save',
+        });
+      });
+    },
+    [saveToServer],
+  );
+
+  useEffect(() => {
+    let active = true;
+    getTopologyPositions()
+      .then((server) => {
+        if (!active) return;
+        const picked = pickInitialPositions(server, loadLocalPositions());
+        setPositions(picked.positions);
+        saveLocalPositions(picked.positions);
+        if (picked.seed) {
+          void saveToServer(picked.seed).catch(() => {
+            message.warning({
+              content: t('拓扑布局已保存到本地，但同步服务端失败'),
+              key: 'topology-save',
+            });
+          });
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        message.warning({
+          content: t('无法读取服务端拓扑布局，已使用本地备份'),
+          key: 'topology-load',
+        });
+      })
+      .finally(() => {
+        if (active) setServerReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [saveToServer]);
 
   // Structure (positions from dagre or the saved layout) only changes with the
   // config; metrics must not rebuild it, otherwise a poll resets the node
@@ -103,11 +157,12 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
   // have saved positions and any config change (adding/deleting an edge)
   // re-runs dagre for the rest of the graph.
   useEffect(() => {
+    if (!serverReady) return;
     const next = mergePositions(positions, structure.nodes);
     if (next === positions) return;
     setPositions(next);
-    savePositions(next);
-  }, [positions, structure.nodes]);
+    persist(next);
+  }, [persist, positions, serverReady, structure.nodes]);
 
   useEffect(() => {
     setNodes(structure.nodes);
@@ -131,15 +186,17 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
     onSelect({ kind: 'edge', id: edge.id });
   };
   const onNodeDragStop: OnNodeDrag<GraphNode> = (_event, node) => {
-    setPositions((prev) => {
-      const next = { ...prev, [node.id]: node.position };
-      savePositions(next);
-      return next;
-    });
+    const next = { ...positions, [node.id]: node.position };
+    setPositions(next);
+    persist(next);
   };
   const resetLayout = () => {
-    setPositions({});
-    savePositions({});
+    const raw = buildGraph(config);
+    const laid = layoutGraph(raw.nodes, raw.edges);
+    const next: PositionMap = {};
+    for (const n of laid) next[n.id] = n.position;
+    setPositions(next);
+    persist(next);
   };
 
   return (

@@ -149,6 +149,8 @@ export const enUS: Record<string, string> = {
   '当前密码': 'Current password',
   '新密码（至少 8 位）': 'New password (at least 8 characters)',
   '重置布局': 'Reset layout',
+  '无法读取服务端拓扑布局，已使用本地备份': 'Could not load the server topology layout; using the local backup',
+  '拓扑布局已保存到本地，但同步服务端失败': 'Topology layout saved locally but could not sync to the server',
   'backup：主节点失败时作为备用；weight：轮询权重。': 'backup: use as a fallback when the primary fails; weight: round-robin weight.',
   '免费': 'Free',
   '输入 ${price}/M': 'Input ${price}/M',

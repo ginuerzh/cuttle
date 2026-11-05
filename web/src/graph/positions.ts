@@ -1,5 +1,7 @@
 import type { XYPosition } from '@xyflow/react';
 
+export type PositionMap = Record<string, XYPosition>;
+
 /**
  * Keep every node's position across config changes. Nodes that were never
  * dragged still get their first layout position persisted, so adding or
@@ -16,4 +18,30 @@ export function mergePositions(
     next[node.id] = node.position;
   }
   return next;
+}
+
+/** Server positions win; an empty server is seeded from the local backup. */
+export function pickInitialPositions(
+  server: PositionMap,
+  local: PositionMap,
+): { positions: PositionMap; seed: PositionMap | null } {
+  if (Object.keys(server).length > 0) {
+    return { positions: server, seed: null };
+  }
+  if (Object.keys(local).length > 0) {
+    return { positions: local, seed: local };
+  }
+  return { positions: {}, seed: null };
+}
+
+/** Serialize full-map saves so the last caller wins on the server. */
+export function createPositionSaver(
+  save: (positions: PositionMap) => Promise<void>,
+): (positions: PositionMap) => Promise<void> {
+  let chain: Promise<void> = Promise.resolve();
+  return (positions) => {
+    const next = chain.then(() => save(positions));
+    chain = next.catch(() => {});
+    return next;
+  };
 }

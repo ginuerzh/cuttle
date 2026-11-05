@@ -1,4 +1,4 @@
-import type { ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route } from './types';
+import type { ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -77,6 +77,19 @@ export function getGraph(from: Date, to: Date): Promise<GraphMetrics> {
     to: to.toISOString(),
   });
   return request<GraphMetrics>('GET', `/api/stats/graph?${q.toString()}`);
+}
+
+export function getTopologyPositions(): Promise<Record<string, TopologyPosition>> {
+  return request<{ positions?: Record<string, TopologyPosition> }>(
+    'GET',
+    '/api/topology/positions',
+  ).then((data) => data.positions ?? {});
+}
+
+export function putTopologyPositions(
+  positions: Record<string, TopologyPosition>,
+): Promise<void> {
+  return request<void>('PUT', '/api/topology/positions', { positions });
 }
 
 export async function login(password: string, remember = false): Promise<void> {

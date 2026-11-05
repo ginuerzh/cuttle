@@ -113,6 +113,9 @@ Entrypoint -> Route -> Node -> Provider model
   reload the data plane, then write the config. Do not apply invalid config.
 - `GET /api/entrypoints` returns the ordered list; `PUT /api/entrypoints`
   replaces the whole list. Order is precedence.
+- `GET /api/topology/positions` returns the shared layout map; `PUT` replaces it
+  in one transaction. Reject empty IDs and maps above 10,000 entries; return
+  `503` when the stats store is unavailable.
 - Deleting a route still referenced by an entrypoint must fail and list the
   referencing entrypoints. Deleting a node still referenced by a route must
   fail.
@@ -158,8 +161,10 @@ Entrypoint -> Route -> Node -> Provider model
   longer have order controls.
 - The topology has monitor and edit modes. Monitor mode must not allow node
   dragging. Selection must not change node size, and the detail panel stays
-  hidden until a node or edge is selected. Positions are persisted after layout
-  and after edits. Time presets are `1m, 5m, 15m, 30m, 1h, 6h, 12h, 24h`.
+  hidden until a node or edge is selected. Positions are persisted server-side
+  in the `topology_positions` table (shared by all admins) and mirrored to
+  `localStorage` as a backup/fallback. Time presets are
+  `1m, 5m, 15m, 30m, 1h, 6h, 12h, 24h`.
 - Requests show client model and target model; there is no logical model.
 
 ## Testing
