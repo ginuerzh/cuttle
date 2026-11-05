@@ -132,6 +132,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
   const [models, setModels] = useState<{ name: string; list: ProviderModel[] } | null>(null);
   const [modelsError, setModelsError] = useState('');
   const [modelsBusy, setModelsBusy] = useState(false);
+  const [providerBusy, setProviderBusy] = useState('');
 
   const test = async (name: string) => {
     try {
@@ -140,6 +141,18 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       else message.error(`${name}: ${r.error || `status ${r.status}`}`);
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const toggleProvider = async (provider: Provider, enabled: boolean) => {
+    setProviderBusy(provider.name);
+    try {
+      await updateProvider(provider.name, providerPayload({ ...provider, enabled }));
+      await onReload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setProviderBusy('');
     }
   };
 
@@ -183,22 +196,22 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     }
   };
 
-  const setAllModelsDisabled = async (disabled: boolean) => {
+  const setAllModelsEnabled = async (enabled: boolean) => {
     if (!models) return;
     const provider = config.providers.find((p) => p.name === models.name);
     if (!provider) {
       message.error(`未找到 Provider ${models.name}`);
       return;
     }
-    const next = disabled
-      ? Object.fromEntries(models.list.map((m) => [m.id, { disabled: true }]))
-      : {};
+    const next = enabled
+      ? {}
+      : Object.fromEntries(models.list.map((m) => [m.id, { disabled: true }]));
     setModelsBusy(true);
     try {
       await updateProvider(provider.name, providerPayload(provider, { models: next }));
       setModels((cur) =>
         cur && cur.name === provider.name
-          ? { ...cur, list: cur.list.map((m) => ({ ...m, disabled })) }
+          ? { ...cur, list: cur.list.map((m) => ({ ...m, disabled: !enabled })) }
           : cur,
       );
       await onReload();
@@ -231,7 +244,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     );
   };
 
-  const allDisabled = !!models && models.list.length > 0 && models.list.every((m) => m.disabled);
+  const anyEnabled = !!models && models.list.some((m) => !m.disabled);
 
   const columns: ColumnsType<Provider> = [
     { title: '名称', dataIndex: 'name', width: 180, render: (v) => <Typography.Text strong>{v}</Typography.Text> },
@@ -262,11 +275,18 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
         ),
     },
     {
-      title: '状态',
+      title: '启用',
       dataIndex: 'enabled',
-      width: 90,
-      render: (enabled: boolean | undefined) =>
-        enabled === false ? <Tag>disabled</Tag> : <Tag color="green">enabled</Tag>,
+      width: 70,
+      render: (enabled: boolean | undefined, p) => (
+        <Switch
+          size="small"
+          checked={enabled !== false}
+          disabled={providerBusy === p.name}
+          onChange={(checked) => void toggleProvider(p, checked)}
+          aria-label={`切换 ${p.name}`}
+        />
+      ),
     },
     {
       title: '操作',
@@ -305,13 +325,22 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
               title={p.name}
               subtitle={`${p.type} · ${configuredAPIs(p).join(' / ') || 'no API'}`}
               tags={
-                p.probe ? (
-                  <Tag color={p.probe.ok ? 'green' : 'red'}>
-                    {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
-                  </Tag>
-                ) : (
-                  <Tag>{p.keysSet} keys</Tag>
-                )
+                <Space direction="vertical" align="end" size={2}>
+                  <Switch
+                    size="small"
+                    checked={p.enabled !== false}
+                    disabled={providerBusy === p.name}
+                    onChange={(checked) => void toggleProvider(p, checked)}
+                    aria-label={`切换 ${p.name}`}
+                  />
+                  {p.probe ? (
+                    <Tag color={p.probe.ok ? 'green' : 'red'}>
+                      {p.probe.ok ? `${p.probe.latencyMs}ms` : p.probe.error || 'fail'}
+                    </Tag>
+                  ) : (
+                    <Tag>{p.keysSet} keys</Tag>
+                  )}
+                </Space>
               }
               actions={
                 <>
@@ -357,12 +386,12 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
             <Space size={4}>
               <Switch
                 size="small"
-                checked={allDisabled}
+                checked={anyEnabled}
                 disabled={modelsBusy || !models?.list.length}
-                onChange={(checked) => void setAllModelsDisabled(checked)}
-                aria-label="全局禁用"
+                onChange={(checked) => void setAllModelsEnabled(checked)}
+                aria-label="全局启用"
               />
-              <span style={{ fontSize: 12 }}>全局禁用</span>
+              <span style={{ fontSize: 12 }}>全局启用</span>
             </Space>
             <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.name, true)}>
               刷新
