@@ -134,6 +134,11 @@ func (s *Store) migrate() error {
 			token_hash TEXT PRIMARY KEY,
 			expires INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS topology_positions (
+			node_id TEXT PRIMARY KEY,
+			x REAL NOT NULL,
+			y REAL NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS rollups (
 			bucket TEXT NOT NULL,
 			provider TEXT NOT NULL DEFAULT '',
@@ -186,6 +191,59 @@ func (s *Store) ensureColumns(table string, cols map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// Position is one topology node position in graph coordinates.
+type Position struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+// LoadTopologyPositions returns the shared topology position map.
+func (s *Store) LoadTopologyPositions(ctx context.Context) (map[string]Position, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT node_id, x, y FROM topology_positions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]Position)
+	for rows.Next() {
+		var id string
+		var p Position
+		if err := rows.Scan(&id, &p.X, &p.Y); err != nil {
+			return nil, err
+		}
+		out[id] = p
+	}
+	return out, rows.Err()
+}
+
+// SaveTopologyPositions replaces the whole shared topology position map.
+func (s *Store) SaveTopologyPositions(ctx context.Context, positions map[string]Position) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM topology_positions`); err != nil {
+		return err
+	}
+	if len(positions) > 0 {
+		stmt, err := tx.PrepareContext(ctx,
+			`INSERT INTO topology_positions(node_id, x, y) VALUES(?, ?, ?)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for id, p := range positions {
+			if _, err := stmt.ExecContext(ctx, id, p.X, p.Y); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 // PutSession stores (or refreshes) a persistent session.

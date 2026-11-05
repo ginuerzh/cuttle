@@ -122,6 +122,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/requests", s.handleRequests)
 	api.HandleFunc("GET /api/requests/{id}", s.handleRequest)
 	api.HandleFunc("GET /api/stats/graph", s.handleGraph)
+	api.HandleFunc("GET /api/topology/positions", s.handleGetTopologyPositions)
+	api.HandleFunc("PUT /api/topology/positions", s.handlePutTopologyPositions)
 	api.HandleFunc("PUT /api/admin/password", s.handlePassword)
 
 	mux.Handle("/api/", s.requireAuth(api))

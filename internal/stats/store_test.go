@@ -3,6 +3,7 @@ package stats
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -122,5 +123,56 @@ func TestRequestsSchemaHasNoHeadersOrBody(t *testing.T) {
 		if strings.Contains(lower, "header") || strings.Contains(lower, "body") || strings.Contains(lower, "auth") {
 			t.Fatalf("requests table must not store %q", name)
 		}
+	}
+}
+
+func TestTopologyPositions(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	empty, err := s.LoadTopologyPositions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("initial positions = %+v, want empty", empty)
+	}
+
+	first := map[string]Position{
+		"entrypoint:fast": {X: 10, Y: 20},
+		"node:deepseek":   {X: 30, Y: 40},
+	}
+	if err := s.SaveTopologyPositions(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LoadTopologyPositions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, first) {
+		t.Fatalf("positions = %+v, want %+v", got, first)
+	}
+
+	second := map[string]Position{"route:fast": {X: -5.5, Y: 99}}
+	if err := s.SaveTopologyPositions(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.LoadTopologyPositions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, second) {
+		t.Fatalf("replaced positions = %+v, want %+v", got, second)
+	}
+
+	if err := s.SaveTopologyPositions(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.LoadTopologyPositions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("cleared positions = %+v, want empty", got)
 	}
 }
