@@ -6,6 +6,8 @@
 export const enUS: Record<string, string> = {
   '拓扑': 'Topology',
   '提供商': 'Providers',
+  '节点 · {name}': 'Node · {name}',
+  '{count} 个模型': '{count} models',
   '节点': 'Nodes',
   '路由': 'Routes',
   '别名': 'Aliases',
@@ -155,7 +157,7 @@ export const enUS: Record<string, string> = {
   '当前密码': 'Current password',
   '新密码（至少 8 位）': 'New password (at least 8 characters)',
   '重置布局': 'Reset layout',
-  'backup：主节点失败时作为备用；enabled：是否启用；weight：轮询权重。': 'backup: use as a fallback when the primary fails; enabled: whether this node is active; weight: round-robin weight.',
+  'backup：主节点失败时作为备用；weight：轮询权重。': 'backup: use as a fallback when the primary fails; weight: round-robin weight.',
   '免费': 'Free',
   '输入 ${price}/M': 'Input ${price}/M',
   '输出 ${price}/M': 'Output ${price}/M',

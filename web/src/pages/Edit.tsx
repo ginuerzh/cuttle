@@ -632,7 +632,7 @@ export function NodeForm({
         provider: v.provider,
         backup: v.backup,
         weight: v.weight,
-        enabled: v.enabled,
+        enabled: node.enabled,
         models: rowsToMap(v.models, tr('逻辑模型')),
       });
       message.success(tr('已保存'));
@@ -673,7 +673,6 @@ export function NodeForm({
         models: mapToRows(node.models),
         backup: node.backup,
         weight: node.weight ?? 1,
-        enabled: node.enabled !== false,
       }}
     >
       <Typography.Title level={5} style={{ marginTop: 0 }}>
@@ -688,13 +687,10 @@ export function NodeForm({
       <DerivedTargetAPIHint provider={provider} models={models} rows={modelRows} />
       <ModelCatalogHint models={models} error={modelsError} rows={modelRows} />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-        {tr('backup：主节点失败时作为备用；enabled：是否启用；weight：轮询权重。')}
+        {tr('backup：主节点失败时作为备用；weight：轮询权重。')}
       </Typography.Paragraph>
       <Space size={16} wrap align="start">
         <Form.Item name="backup" label="backup" valuePropName="checked" style={{ marginBottom: 0 }}>
-          <Switch size="small" />
-        </Form.Item>
-        <Form.Item name="enabled" label="enabled" valuePropName="checked" style={{ marginBottom: 0 }}>
           <Switch size="small" />
         </Form.Item>
         <Form.Item name="weight" label="weight" style={{ marginBottom: 0 }}>

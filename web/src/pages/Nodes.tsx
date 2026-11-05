@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Button, Drawer, Empty, Popconfirm, Space, Tag, Typography, message } from 'antd';
+import { Button, Drawer, Empty, Popconfirm, Space, Switch, Tag, Typography, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import { deleteNode } from '../api/client';
+import { deleteNode, updateNode } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse, Node } from '../api/types';
 import { AddNodeModal, NodeForm } from './Edit';
@@ -17,6 +17,26 @@ export function NodesPage({
 }) {
   const [editing, setEditing] = useState<Node | null>(null);
   const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const toggle = async (n: Node, enabled: boolean) => {
+    setBusy(n.name);
+    try {
+      await updateNode(n.name, {
+        name: n.name,
+        provider: n.provider,
+        models: n.models ?? {},
+        backup: n.backup,
+        weight: n.weight,
+        enabled,
+      });
+      await onReload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const remove = async (name: string) => {
     try {
@@ -47,11 +67,18 @@ export function NodesPage({
             <ListCard
               key={n.name}
               title={n.name}
-              subtitle={`${n.provider} · ${models} models`}
+              subtitle={`${n.provider} · ${t('{count} 个模型', { count: models })}`}
+              tagsAlign="center"
               tags={
-                <Space size={2}>
+                <Space direction="vertical" align="end" size={2}>
                   {n.backup ? <Tag color="purple">backup</Tag> : null}
-                  {n.enabled === false ? <Tag>off</Tag> : <Tag color="green">on</Tag>}
+                  <Switch
+                    size="small"
+                    checked={n.enabled !== false}
+                    disabled={busy === n.name}
+                    onChange={(checked) => void toggle(n, checked)}
+                    aria-label={t('切换 {name}', { name: n.name })}
+                  />
                 </Space>
               }
               actions={
@@ -69,7 +96,7 @@ export function NodesPage({
       <Drawer
         open={!!editing}
         width={420}
-        title={editing ? `Node · ${editing.name}` : 'Node'}
+        title={editing ? t('节点 · {name}', { name: editing.name }) : t('节点')}
         onClose={() => setEditing(null)}
         destroyOnClose
       >
