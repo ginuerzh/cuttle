@@ -380,6 +380,7 @@ func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	rt.Match.Model = strings.TrimSpace(rt.Match.Model)
 
 	err := s.mutate(func(c *config.Config) error {
 		for _, existing := range c.Routes {
@@ -414,10 +415,19 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 			if c.Routes[i].Name != name {
 				continue
 			}
-			old := strings.TrimSpace(c.Routes[i].Match.Model)
+			oldRaw := c.Routes[i].Match.Model
+			old := strings.TrimSpace(oldRaw)
 			next := strings.TrimSpace(rt.Match.Model)
+			if old != "" && strings.EqualFold(old, next) {
+				// Case/space-only edits keep the stored key so Node.Models
+				// lookups do not silently fall through to "*".
+				rt.Match.Model = oldRaw
+				c.Routes[i] = rt
+				return nil
+			}
+			rt.Match.Model = next
 			c.Routes[i] = rt
-			if old == "" || strings.EqualFold(old, next) {
+			if old == "" {
 				return nil
 			}
 			remaining := false
@@ -431,9 +441,15 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 			matches := c.AliasMatchesForModel(old)
-			if next == "" && len(matches) > 0 {
-				return fmt.Errorf("route %q: aliases still reference logical model %q (%s); update or delete them first",
-					name, old, strings.Join(matches, ", "))
+			if next == "" {
+				if len(matches) > 0 {
+					return fmt.Errorf("route %q: aliases still reference logical model %q (%s); update or delete them first",
+						name, old, strings.Join(matches, ", "))
+				}
+				return nil
+			}
+			if err := migrateRouteNodeModels(c, rt.Nodes, old, next); err != nil {
+				return fmt.Errorf("route %q: %w", name, err)
 			}
 			for j := range c.Aliases {
 				if strings.EqualFold(strings.TrimSpace(c.Aliases[j].Model), old) {
@@ -449,6 +465,44 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// migrateRouteNodeModels moves a renamed logical-model mapping on the nodes
+// used by the route. A conflicting target already mapped under the new name is
+// rejected: merging the two names would silently change that route's upstream
+// model.
+func migrateRouteNodeModels(c *config.Config, refs []string, old, next string) error {
+	used := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		used[strings.TrimSpace(ref)] = true
+	}
+	for i := range c.Nodes {
+		n := &c.Nodes[i]
+		if !used[n.Name] {
+			continue
+		}
+		from, ok := n.Models[old]
+		if !ok {
+			continue
+		}
+		if to, exists := n.Models[next]; exists && to != from {
+			return fmt.Errorf("node %q maps %q to %q but %q is already mapped to %q",
+				n.Name, old, from, next, to)
+		}
+	}
+	for i := range c.Nodes {
+		n := &c.Nodes[i]
+		if !used[n.Name] {
+			continue
+		}
+		from, ok := n.Models[old]
+		if !ok {
+			continue
+		}
+		n.Models[next] = from
+		delete(n.Models, old)
+	}
+	return nil
 }
 
 func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
