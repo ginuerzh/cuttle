@@ -204,12 +204,12 @@ git commit -m "feat(bootstrap): generate zero-config first run"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files actually changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: llm-gw / `<sha>` (`feat(bootstrap): generate zero-config first run`); this record commit is the follow-up
+- Files actually changed: `internal/bootstrap/bootstrap.go`, `internal/bootstrap/bootstrap_test.go`, this plan
+- Tests/commands and results: `GOWORK=off go test ./internal/bootstrap -count=1` -> `ok github.com/go-gost/llm-gw/internal/bootstrap` (0.587s)
+- Review findings and fixes: generation writes the config before printing, env values only affect a generated config, and ignored env values warn only when they differ from the loaded config; `loadConfig` is the only test seam
+- Deferred items/limitations: none
 
 ---
 
