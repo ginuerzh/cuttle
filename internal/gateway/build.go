@@ -47,9 +47,9 @@ func nextBuildGeneration() string {
 // followed by the entrypoint's fallback entry. The FIFO group selector then
 // makes entrypoint order the single precedence rule. The returned names are the
 // rewriters registered for this build; the caller owns their lifecycle.
-func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, []string, error) {
+func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, []string, *countTokensPolicy, error) {
 	if err := registerHeaderRewriter(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	routes := make(map[string]gwconfig.Route, len(cfg.Routes))
@@ -62,7 +62,7 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 	for _, e := range cfg.Entrypoints {
 		r, ok := routes[e.Route]
 		if !ok {
-			return nil, rewriters, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+			return nil, rewriters, nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
 		}
 		plan, ok := routePlans[r.Name]
 		if !ok {
@@ -72,7 +72,7 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 				rewriters = append(rewriters, plan.rewriters...)
 			}
 			if err != nil {
-				return nil, rewriters, fmt.Errorf("route %q: %w", r.Name, err)
+				return nil, rewriters, nil, fmt.Errorf("route %q: %w", r.Name, err)
 			}
 			routePlans[r.Name] = plan
 		}
@@ -84,32 +84,39 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 			}
 			m, err := buildProtocolMatcher(e.Match, group.pathPattern)
 			if err != nil {
-				return nil, rewriters, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+				return nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 			}
 			entries = append(entries, xhop.NewHopEntry(h, m, nil))
 		}
 
 		m, err := buildEntrypointMatcher(e.Match)
 		if err != nil {
-			return nil, rewriters, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+			return nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 		}
 		entries = append(entries, xhop.NewHopEntry(plan.hops[""], m, nil))
 	}
+
+	policy, err := buildCountTokensPolicy(cfg, routePlans)
+	if err != nil {
+		return nil, rewriters, nil, err
+	}
+
 	return xhop.NewHopGroup(
 		xhop.WithEntriesOption(entries...),
 		xhop.WithGroupSelectorOption(xs.NewSelector(xs.FIFOStrategy[hop.Hop]())),
 		xhop.WithGroupLoggerOption(log.WithFields(map[string]any{
 			"kind": "hopGroup",
 		})),
-	), rewriters, nil
+	), rewriters, policy, nil
 }
 
 // routePlan holds the compiled hops for one route: the fallback variant under
 // the empty API key and one variant per inbound protocol that changes at least
 // one node's target API. rewriters are the names registered by this plan.
 type routePlan struct {
-	hops      map[provider.API]hop.Hop
-	rewriters []string
+	hops                map[provider.API]hop.Hop
+	rewriters           []string
+	countTokensEstimate bool
 }
 
 // nodePlan is one enabled node and its compiled target plan.
@@ -156,7 +163,10 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 		plans = append(plans, nodePlan{provider: p, node: n, targets: targets})
 	}
 
-	plan := &routePlan{hops: make(map[provider.API]hop.Hop, len(inboundGroups)+1)}
+	plan := &routePlan{
+		hops:                make(map[provider.API]hop.Hop, len(inboundGroups)+1),
+		countTokensEstimate: routeNeedsCountTokensEstimate(plans),
+	}
 	def, err := buildVariantHop(r, build, "", plans, log, facts, captureMgr, &plan.rewriters)
 	if err != nil {
 		return plan, err

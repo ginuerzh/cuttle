@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	corechain "github.com/go-gost/core/chain"
@@ -31,21 +32,22 @@ import (
 // Gateway owns the data plane: one service, one forward handler and a hop
 // group that can be replaced at runtime.
 type Gateway struct {
-	buildMu   sync.Mutex
-	mu        sync.Mutex
-	cfg       *gwconfig.Config
-	log       logger.Logger
-	router    *xchain.Router
-	handler   handler.Handler
-	forwarder handler.Forwarder
-	hop       hop.Hop
-	rewriters []string
-	ln        listener.Listener
-	svc       service.Service
-	facts     *stats.Facts
-	store     *stats.Store
-	capture   *capture.Manager
-	cancel    context.CancelFunc
+	buildMu     sync.Mutex
+	mu          sync.Mutex
+	cfg         *gwconfig.Config
+	log         logger.Logger
+	router      *xchain.Router
+	handler     handler.Handler
+	forwarder   handler.Forwarder
+	hop         hop.Hop
+	rewriters   []string
+	countTokens atomic.Pointer[countTokensPolicy]
+	ln          listener.Listener
+	svc         service.Service
+	facts       *stats.Facts
+	store       *stats.Store
+	capture     *capture.Manager
+	cancel      context.CancelFunc
 }
 
 // New builds the data plane from cfg. The listener is bound but not serving
@@ -190,7 +192,7 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	defer g.buildMu.Unlock()
 
 	build := nextBuildGeneration()
-	group, rewriters, err := buildHopGroup(cfg, build, g.log, g.facts, g.capture)
+	group, rewriters, policy, err := buildHopGroup(cfg, build, g.log, g.facts, g.capture)
 	if err != nil {
 		// The old hop is untouched; drop the rewriters this failed build
 		// registered so they cannot leak.
@@ -206,6 +208,7 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	g.rewriters = rewriters
 	g.mu.Unlock()
 
+	g.countTokens.Store(policy)
 	g.forwarder.Forward(group)
 	if g.capture != nil {
 		g.capture.SetPolicy(capturePolicy(cfg.Stats.Capture))
