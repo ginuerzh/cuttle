@@ -382,12 +382,16 @@ git commit -m "feat(stats): persist streaming TTFT"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository + commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: `llm-gw` `8b149e71` (code); this docs commit follows
+- Files changed: `internal/stats/store.go`, `internal/stats/graph.go`, `internal/stats/recorder.go`, `internal/stats/store_test.go`, `internal/stats/recorder_test.go`
 - Tests/commands:
-- Review findings/fixes:
-- Deferred items/limitations:
+  - RED: `GOWORK=off go test ./internal/stats -run 'TestTTFTRoundTrip|TestOpenMigratesMonotonicSeq' -count=1` → build failed, `Request.TTFTMS` undefined.
+  - GREEN: the same command after implementation → `ok`.
+  - Recorder RED/GREEN: `GOWORK=off go test ./internal/stats -run 'TestRecorderStoresStreamTTFT|TestRecorderSkipsTTFTForNonStreaming' -count=1` → `ok` after the recorder change.
+  - Package gate: `GOWORK=off go test ./internal/stats -count=1` → `ok`.
+- Review findings/fixes: the old-schema migration test was extended to insert and read back `TTFTMS`; no other findings.
+- Deferred items/limitations: existing rows keep `ttft_ms = 0`; non-streaming rows never get a TTFT.
 
 ---
 
