@@ -143,6 +143,10 @@ Entrypoint -> Route -> Node -> Provider model
 
 - Public routes: `GET /api/health`, `POST /api/login`, `POST /api/logout`.
   Everything else under `/api/` requires a session cookie.
+- `GET /api/events` is a WebSocket subscription under `requireAuth`. Validate
+  `Origin` against `Host` (empty Origin is allowed for non-browser clients),
+  accept `range`, `since` or `reset=1`, and push absolute snapshots. Close
+  sockets with 4401 on logout or session expiry, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
 - Create endpoints return `201 Created` with an empty body. The web client must
   tolerate empty success responses.
@@ -204,6 +208,13 @@ Entrypoint -> Route -> Node -> Provider model
 - Rollups store `cached_tokens`; `Store.ProviderUsage` aggregates them by
   provider for the Usage page. The column is additive; old rollup rows read 0
   cached tokens and are not backfilled.
+- The live monitor tails `requests` by `rowid` in insertion order, never by
+  `ts`; a long request can complete after its start time. `GraphAggregate`
+  seeds the window and `ForEachRequestAfter` reads new rows. Deduplicate by
+  request ID so a replaced row cannot double count.
+- A live snapshot is cumulative from a fixed `since`. Counts and tokens are
+  monotonic between resets; P50/P95 are percentiles over the same window and
+  may move either way.
 
 ## Web invariants
 
@@ -221,6 +232,10 @@ Entrypoint -> Route -> Node -> Provider model
   in the `topology_positions` table (shared by all admins) and mirrored to
   `localStorage` as a backup/fallback. Time presets are
   `1m, 5m, 15m, 30m, 1h, 6h, 12h, 24h`.
+- The topology monitor uses the `/api/events` WebSocket, not polling. The time
+  preset sets the initial lookback (`since = now - range`); Reset clears the
+  display and reconnects with `reset=1`; the status shows the last update and
+  the session start.
 - Requests show client model and target model; there is no logical model.
 
 ## Testing
@@ -268,6 +283,9 @@ GOWORK=off go test ./internal/stats -count=1
 
 - `internal/admin/dist` is ignored but required by `go:embed all:dist`. A plain
   `go build` fails on a fresh checkout until the web bundle is built.
+- WebSocket `/api/events` needs `ws: true` in the Vite proxy and Upgrade
+  forwarding plus `Host` preservation in a reverse proxy, or the Origin check
+  rejects the handshake.
 - Route variants multiply hop entries and rewriters by inbound protocol. Build
   one route plan and register rewriters from that plan; never recompute the
   target API separately, or path, body protocol and stats can diverge.

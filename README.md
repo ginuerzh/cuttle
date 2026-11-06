@@ -275,6 +275,15 @@ change the configuration. Node positions are stored in the stats SQLite
 database and shared by every admin; `localStorage` keeps a local backup and is
 used if the server cannot be reached.
 
+The monitor streams live data over the `GET /api/events` WebSocket. The time
+selector picks the initial lookback; the end is always the current time, so
+request, error and token totals only increase until you start a new session.
+The selector keeps its labels but now means "look back this far when the
+session starts". **Reset stats** clears the display and reconnects with
+`reset=1`, starting at zero without querying history. P50/P95 are percentiles
+over the accumulated window, not cumulative sums. See [Admin API](#admin-api)
+for the reverse-proxy requirements.
+
 ## Configuration reference
 
 `config.Load` uses strict YAML decoding. Unknown fields fail the load, which is
@@ -512,6 +521,7 @@ GET|PUT       /api/entrypoints
 
 GET  /api/stats/summary
 GET  /api/stats/graph
+GET  /api/events                      (WebSocket)
 GET|PUT /api/topology/positions
 GET  /api/requests
 GET  /api/requests/{id}
@@ -523,6 +533,14 @@ PUT  /api/admin/password
 
 `GET /api/requests` accepts `errors=1` and `captured=1`. Request detail includes
 an optional `capture` object; the list only reports a cheap `hasCapture` flag.
+
+`GET /api/events` is a WebSocket subscription. It accepts `range=...`,
+`since=<RFC3339>` to resume a session, or `reset=1` to start at zero. The server
+pushes absolute `{type:"snapshot",since,to,metrics}` messages every second.
+Reverse proxies must forward the WebSocket Upgrade for `/api/events` and
+preserve the `Host` header; the server checks `Origin` against it. Vite's dev
+proxy uses `ws: true`. The HTTP `GET /api/stats/graph` endpoint remains
+available to API clients.
 
 ## Request correlation and capture
 
@@ -712,7 +730,8 @@ DOCKER.md               image build and CI notes
   other. The config file is `0600`.
 - The admin API is HTTP only. The binary binds to loopback by default; the
   Docker image binds `:8788` for first-run onboarding. Put a TLS reverse proxy
-  in front of it before exposing it on a network.
+  in front of it before exposing it on a network. The proxy must forward the
+  WebSocket Upgrade for `/api/events` and preserve the `Host` header.
 - `LLM_GW_ADMIN_PASSWORD` is visible in the container environment; use an env
   file or an orchestrator secret to inject it.
 - `admin.passwordHash` empty disables the admin server entirely, including the
