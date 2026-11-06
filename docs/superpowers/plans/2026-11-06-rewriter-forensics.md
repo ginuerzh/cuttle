@@ -550,12 +550,12 @@ git commit -m "feat(capture): persist captures and expose admin API"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / 119cba65 (persistence, recorder, admin API and plan); this record commit is the follow-up
+- Files changed: `internal/stats/store.go`, `internal/stats/store_test.go`, `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `internal/rewriter/rewriter.go`, `internal/gateway/build.go`, `internal/gateway/gateway.go`, `internal/admin/handlers_capture.go`, `internal/admin/capture_test.go`, `internal/admin/server.go`, `internal/admin/server_test.go`, `internal/admin/handlers_stats.go`, plan.
+- Tests/commands and results: `GOWORK=off go test ./internal/stats ./internal/rewriter ./internal/gateway ./internal/admin -count=1` PASS; `go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS. New tests cover capture round-trip/cleanup, hasCapture/detail, error-mode discard, capture CRUD/auth, and the `captured=1` filter.
+- Review findings and fixes: The admin request list can exclude a row on the millisecond `to` boundary, so the new test uses a row one minute old. `RecordingReloader` now supplies a capture manager for admin tests. Capture is persisted after the request insert; a failed capture insert is logged but does not lose the request row. `errors` mode calls `Finish` for every request but drops successful captures in the recorder. The rewriter calls `Start` only for request direction and `Offer` for both directions, including failed rewrites with a nil rewritten body.
+- Deferred items/limitations: Web UI, documentation and the final full gate are Task 4. Header capture is out of scope. Request ID still does not cover gateway-generated 502/503 or request-side connection drops.
 
 ---
 
