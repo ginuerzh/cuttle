@@ -3,7 +3,7 @@ module github.com/go-gost/llm-gw
 go 1.26.4
 
 require (
-	github.com/ginuerzh/llm-api-converter v0.5.0
+	github.com/ginuerzh/llm-api-converter v0.5.1
 	github.com/go-gost/core v0.6.1
 	github.com/go-gost/x v0.29.0
 	golang.org/x/crypto v0.55.0
