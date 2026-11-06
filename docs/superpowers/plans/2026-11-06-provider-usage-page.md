@@ -187,7 +187,7 @@ Implementation rules:
   - Build `GET` request with `context`.
   - `req.Header.Set("User-Agent", "llm-gw")`.
   - `applyAuth(req, p.Auth(Chat), key)`.
-  - On non-2xx, read at most 1 MiB, take at most 200 bytes, replace `key` with `***`, set `Error: fmt.Sprintf("status %d: %s", code, snippet)`.
+  - On non-2xx, read at most 1 MiB, replace `key` with `***`, then take at most 200 bytes, and set `Error: fmt.Sprintf("status %d: %s", code, snippet)`.
   - On success, read at most 1 MiB, parse, set `Balance`, `Windows`, `CheckedAt: time.Now().UTC()`.
   - Any error is redacted with `strings.ReplaceAll(msg, key, "***")`.
 - `parseDeepSeekUsage`: decode `balance_infos`; accept string or number fields; error when the list is empty.
@@ -1065,3 +1065,14 @@ git commit -m "docs: document provider usage and balances"
 - Manual verification: started a temporary config on ports 19787/19788 with a known test password and a temp stats database. `GET /api/provider-usage?refresh=1` returned 200, one card per provider, a real DeepSeek CNY balance (`103.04`), clear 401 errors for the demo's placeholder CommandCode/OpenCode Go keys (not silent zeros), and no raw key in the JSON. A second request returned `cached: true` for all providers with the balance preserved. The temporary process and files were removed; the original demo process was left running.
 - Review findings and fixes: Self-review confirmed the docs match the implemented endpoint, cache, support matrix and additive `cached_tokens` migration. No fixes were needed after the gates.
 - Deferred items/limitations: CommandCode and OpenCode Go live values were not verified because the demo uses placeholder keys; their error paths were. No balance history, generic custom balance URL, per-card refresh or browser visual regression test.
+
+
+## Final review fix pass (2026-11-06)
+
+- Important: a `refresh=1` that started before an admin save could write its pre-save view back after `invalidateUsageLocked`, leaking the old key's balance onto the new key. Added a usage generation captured with the provider snapshot and checked in `storeUsage`; `TestProviderUsageCacheInvalidationRace` pins it.
+- Important: a canceled admin request was cached as a 60-second vendor failure. The handler now stores only when `r.Context().Err() == nil`; `TestProviderUsageCanceledRequestNotCached` pins it.
+- Important: keyless or disabled OpenCode Zen / generic cards said `supported:true` and "no API key configured". Type support is resolved before the disabled/keyless early returns; `TestProviderUsageUnsupportedKeyless` pins the Zen console note and generic note with zero calls.
+- Minor promoted to fix (security): a vendor error body was truncated to 200 bytes before key redaction, leaking a key prefix when the key straddled the cut. Redaction now runs first; `TestUsageErrorRedactsKeyBeforeTruncating` pins it.
+- Minor: provider-level `checkedAt` is now set only when a query is attempted; the disabled, keyless and unsupported tests assert it stays empty.
+- Deferred minor: overlapping range loads on the Usage page have no sequence guard; this is recorded in the ledger.
+- Fix commit: this commit. Verification: `go test ./internal/admin -run 'TestProviderUsage' -count=1`, `go test ./internal/provider -run 'TestUsage' -count=1`, `go test -race ./internal/admin ./internal/provider`, and the full Go/web gates with the parent workspace.

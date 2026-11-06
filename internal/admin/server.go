@@ -45,8 +45,9 @@ type Server struct {
 	stats    *stats.Store
 	capture  *capture.Manager
 
-	usageMu    sync.Mutex
-	usageCache map[string]usageCacheEntry
+	usageMu         sync.Mutex
+	usageCache      map[string]usageCacheEntry
+	usageGeneration uint64
 
 	modelsCache    map[string]modelsCacheEntry
 	modelsInflight map[string]*modelsFlight

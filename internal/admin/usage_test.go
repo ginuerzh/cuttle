@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -210,10 +211,12 @@ func TestProviderUsageDisabledAndNoKey(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatalf("calls = %d, want 0", calls.Load())
 	}
-	if got.Providers[0].Enabled || got.Providers[0].Note != "provider is disabled" || len(got.Providers[0].Accounts) != 0 {
+	if got.Providers[0].Enabled || got.Providers[0].Note != "provider is disabled" ||
+		len(got.Providers[0].Accounts) != 0 || got.Providers[0].CheckedAt != "" {
 		t.Fatalf("disabled = %+v", got.Providers[0])
 	}
-	if got.Providers[1].Note != "no API key configured" || len(got.Providers[1].Accounts) != 0 {
+	if got.Providers[1].Note != "no API key configured" ||
+		len(got.Providers[1].Accounts) != 0 || got.Providers[1].CheckedAt != "" {
 		t.Fatalf("nokey = %+v", got.Providers[1])
 	}
 }
@@ -299,5 +302,134 @@ func TestProviderUsageLocalError(t *testing.T) {
 	if len(got.Providers) != 1 || len(got.Providers[0].Accounts) != 1 ||
 		len(got.Providers[0].Accounts[0].Balance) != 1 {
 		t.Fatalf("providers = %+v", got.Providers)
+	}
+}
+
+func TestProviderUsageCacheInvalidationRace(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	var calls atomic.Int32
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Header.Get("Authorization") == "Bearer sk-old-1111" {
+			once.Do(func() { close(started) })
+			<-release
+			w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":"111"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("new key failed"))
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-old-1111"},
+	})
+	client, _ := login(t, ts.URL)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		resp, err := client.Get(ts.URL + "/api/provider-usage?refresh=1")
+		if err == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+	}()
+	<-started
+
+	srv.mu.Lock()
+	next := *srv.cfg
+	next.Providers = []config.Provider{{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-new-2222"},
+	}}
+	srv.mu.Unlock()
+	srv.SetConfig(&next)
+	close(release)
+	<-done
+
+	got, _ := decodeUsage(t, doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage?refresh=1", "", ""))
+	if len(got.Providers) != 1 || len(got.Providers[0].Accounts) != 1 {
+		t.Fatalf("providers = %+v", got.Providers)
+	}
+	a := got.Providers[0].Accounts[0]
+	if a.KeyPreview != "sk-...2222" {
+		t.Fatalf("preview = %q", a.KeyPreview)
+	}
+	if len(a.Balance) != 0 {
+		t.Fatalf("old key's balance leaked to the new key: %+v", a)
+	}
+	if !strings.Contains(a.Error, "500") {
+		t.Fatalf("error = %q", a.Error)
+	}
+}
+
+func TestProviderUsageCanceledRequestNotCached(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	var calls atomic.Int32
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		once.Do(func() { close(started) })
+		<-release
+		w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":"1"}]}`))
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-test"},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/api/provider-usage?refresh=1", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.handleProviderUsage(rec, req)
+	}()
+	<-started
+	cancel()
+	close(release)
+	<-done
+
+	client, _ := login(t, ts.URL)
+	got, _ := decodeUsage(t, doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage", "", ""))
+	if calls.Load() != 2 {
+		t.Fatalf("calls = %d, want 2: canceled request was cached", calls.Load())
+	}
+	a := got.Providers[0].Accounts[0]
+	if a.Error != "" || len(a.Balance) != 1 || a.Balance[0].Total != 1 {
+		t.Fatalf("account = %+v", a)
+	}
+}
+
+func TestProviderUsageUnsupportedKeyless(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	var calls atomic.Int32
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Write([]byte(`{}`))
+	}))
+	defer vendor.Close()
+	disabled := false
+	setUsageProviders(t, srv,
+		config.Provider{Name: "zen", Type: "opencode-zen", Chat: vendor.URL + "/zen/v1"},
+		config.Provider{Name: "generic", Type: "generic", Chat: vendor.URL + "/v1"},
+		config.Provider{Name: "off-zen", Type: "opencode-zen", Chat: vendor.URL + "/zen/v1", Enabled: &disabled},
+	)
+
+	client, _ := login(t, ts.URL)
+	got, _ := decodeUsage(t, doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage?refresh=1", "", ""))
+	if calls.Load() != 0 {
+		t.Fatalf("calls = %d, want 0", calls.Load())
+	}
+	for i, wantNote := range []string{"https://opencode.ai/console", "no known balance query", "https://opencode.ai/console"} {
+		if got.Providers[i].Supported || !strings.Contains(got.Providers[i].Note, wantNote) ||
+			got.Providers[i].CheckedAt != "" {
+			t.Fatalf("provider %d = %+v", i, got.Providers[i])
+		}
 	}
 }

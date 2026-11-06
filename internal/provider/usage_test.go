@@ -316,3 +316,26 @@ func TestUsageCanceledContext(t *testing.T) {
 		t.Fatalf("accounts = %+v", accounts)
 	}
 }
+
+func TestUsageErrorRedactsKeyBeforeTruncating(t *testing.T) {
+	const key = "sk-secret-1234"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(strings.Repeat("x", 195) + " " + key))
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []string{key},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+	msg := accounts[0].Error
+	if strings.Contains(msg, "sk-") {
+		t.Fatalf("error leaked a key prefix after truncation: %q", msg)
+	}
+}

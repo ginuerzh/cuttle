@@ -61,6 +61,9 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	providers := append([]config.Provider(nil), s.cfg.Providers...)
 	statsStore := s.stats
+	s.usageMu.Lock()
+	generation := s.usageGeneration
+	s.usageMu.Unlock()
 	s.mu.Unlock()
 
 	localMap := map[string]stats.ProviderUsage{}
@@ -101,7 +104,9 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 				view.Cached = true
 			} else {
 				view = s.buildProviderUsage(r.Context(), p, old)
-				s.storeUsage(p.Name, view, now)
+				if r.Context().Err() == nil {
+					s.storeUsage(p.Name, view, now, generation)
+				}
 			}
 			if statsStore != nil {
 				local := localMap[p.Name]
@@ -131,9 +136,13 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 		Enabled:   cfg.EnabledValue(),
 		Supported: true,
 		Accounts:  []accountUsageView{},
-		CheckedAt: formatCheckedAt(now),
 	}
 
+	if supported, note := provider.UsageSupport(cfg.Type); !supported {
+		view.Supported = false
+		view.Note = note
+		return view
+	}
 	if !view.Enabled {
 		view.Note = "provider is disabled"
 		return view
@@ -155,6 +164,7 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 		view.Note = "provider does not support usage queries"
 		return view
 	}
+	view.CheckedAt = formatCheckedAt(now)
 	accounts, err := up.Usage(ctx)
 	if err != nil {
 		var ue *provider.UsageUnsupportedError
@@ -210,15 +220,19 @@ func (s *Server) cachedUsage(name string) (providerUsageView, bool) {
 	return e.view, true
 }
 
-func (s *Server) storeUsage(name string, view providerUsageView, now time.Time) {
+func (s *Server) storeUsage(name string, view providerUsageView, now time.Time, generation uint64) {
 	s.usageMu.Lock()
 	defer s.usageMu.Unlock()
+	if generation != s.usageGeneration {
+		return
+	}
 	s.usageCache[name] = usageCacheEntry{view: view, fetchedAt: now}
 }
 
 func (s *Server) invalidateUsageLocked() {
 	s.usageMu.Lock()
 	defer s.usageMu.Unlock()
+	s.usageGeneration++
 	s.usageCache = make(map[string]usageCacheEntry)
 }
 

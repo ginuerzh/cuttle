@@ -19,6 +19,11 @@ const (
 	usageTimeout      = 5 * time.Second
 	usageBodyLimit    = 1 << 20
 	usageErrorSnippet = 200
+
+	// OpenCodeZenUsageNote explains why Zen has no per-key balance.
+	OpenCodeZenUsageNote = "OpenCode Zen exposes credits only in the OpenCode console: https://opencode.ai/console"
+	// GenericUsageNote is returned for provider types without a known contract.
+	GenericUsageNote = "provider type has no known balance query"
 )
 
 // BalancePart is one currency's remaining balance.
@@ -72,10 +77,30 @@ func (e *UsageUnsupportedError) Error() string {
 	return "usage is not supported"
 }
 
+// UsageSupport reports whether typ has a known balance/quota contract and,
+// when it does not, the operator-facing reason.
+func UsageSupport(typ string) (bool, string) {
+	switch strings.ToLower(strings.TrimSpace(typ)) {
+	case "deepseek", "commandcode", "opencode-go":
+		return true, ""
+	case "opencode-zen":
+		return false, OpenCodeZenUsageNote
+	default:
+		return false, GenericUsageNote
+	}
+}
+
 // Usage queries the configured upstream balance and quota windows, one report
 // per configured key.
 func (p *baseProvider) Usage(ctx context.Context) ([]AccountUsage, error) {
 	typ := strings.ToLower(strings.TrimSpace(p.cfg.Type))
+	if supported, note := UsageSupport(typ); !supported {
+		return nil, &UsageUnsupportedError{
+			Provider: p.cfg.Name,
+			Type:     p.cfg.Type,
+			Note:     note,
+		}
+	}
 	var kind string
 	switch typ {
 	case "deepseek":
@@ -84,18 +109,6 @@ func (p *baseProvider) Usage(ctx context.Context) ([]AccountUsage, error) {
 		kind = "commandcode"
 	case "opencode-go":
 		kind = "opencode-go"
-	case "opencode-zen":
-		return nil, &UsageUnsupportedError{
-			Provider: p.cfg.Name,
-			Type:     p.cfg.Type,
-			Note:     "OpenCode Zen exposes credits only in the OpenCode console: https://opencode.ai/console",
-		}
-	default:
-		return nil, &UsageUnsupportedError{
-			Provider: p.cfg.Name,
-			Type:     p.cfg.Type,
-			Note:     "provider type has no known balance query",
-		}
 	}
 
 	if p.usageBaseURL() == "" {
@@ -198,11 +211,12 @@ func (p *baseProvider) usageAccount(ctx context.Context, kind, key string, index
 		return acc
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet := strings.TrimSpace(string(body))
-		if len(snippet) > usageErrorSnippet {
-			snippet = snippet[:usageErrorSnippet]
+		msg := fmt.Sprintf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		msg = redactUsageText(msg, key)
+		if len(msg) > usageErrorSnippet {
+			msg = msg[:usageErrorSnippet]
 		}
-		acc.Error = redactUsageError(fmt.Errorf("status %d: %s", resp.StatusCode, snippet), key)
+		acc.Error = msg
 		return acc
 	}
 
@@ -431,13 +445,16 @@ func usageClampPercent(v float64) float64 {
 	return math.Max(0, math.Min(100, v))
 }
 
+func redactUsageText(s, key string) string {
+	if key == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, key, "***")
+}
+
 func redactUsageError(err error, key string) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
-	if key != "" {
-		msg = strings.ReplaceAll(msg, key, "***")
-	}
-	return msg
+	return redactUsageText(err.Error(), key)
 }

@@ -402,8 +402,8 @@ keys, and page type.
 - Keys never appear in JSON, logs, stats or errors; only the existing masked
   preview does.
 - Outbound queries send the key only to the configured provider base host.
-- Response bodies are capped at 1 MiB and error text is truncated to 200 bytes
-  before the key is redacted.
+- Response bodies are capped at 1 MiB; error text is redacted first, then
+  truncated to 200 bytes so a key that straddles the cut cannot leak a prefix.
 - Balances are account metadata; they are not persisted, so they disappear on
   restart.
 
