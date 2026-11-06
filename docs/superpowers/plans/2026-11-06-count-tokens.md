@@ -401,7 +401,7 @@ git commit -m "docs(plan): record task 1"
   - `buildHopGroup(...) (hop.Hop, []string, *countTokensPolicy, error)`
   - `Gateway.countTokens atomic.Pointer[countTokensPolicy]`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `internal/gateway/count_tokens_policy_test.go`:
 
@@ -509,13 +509,13 @@ func TestGatewayCompilesCountTokensPolicy(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestRouteNeedsCountTokensEstimate|TestCountTokensPolicy|TestBuildCountTokensPolicy|TestGatewayCompilesCountTokensPolicy' -count=1`
 
 Expected: FAIL because the policy types and `Gateway.countTokens` are undefined.
 
-- [ ] **Step 3: Implement the policy file**
+- [x] **Step 3: Implement the policy file**
 
 Create `internal/gateway/count_tokens_policy.go`:
 
@@ -523,7 +523,7 @@ Create `internal/gateway/count_tokens_policy.go`:
 - `routeNeedsCountTokensEstimate(plans []nodePlan) bool` uses the Anthropic variant when present else the default target, and returns true for the first non-`provider.Anthropic` target.
 - `buildCountTokensPolicy(cfg, plans)` compiles `modelGlobPattern` for each entrypoint in order, looks up `plans[e.Route]`, sets `matcher` only when the pattern is not a catch-all, and returns an error naming the entrypoint or route when either is missing.
 
-- [ ] **Step 4: Wire the policy into route compilation**
+- [x] **Step 4: Wire the policy into route compilation**
 
 In `internal/gateway/build.go`:
 
@@ -531,33 +531,33 @@ In `internal/gateway/build.go`:
 - After `plans` is built in `buildRoutePlan`, set `plan.countTokensEstimate = routeNeedsCountTokensEstimate(plans)`.
 - Change `buildHopGroup` to return `(hop.Hop, []string, *countTokensPolicy, error)`. Build the policy after the route plans are complete with `buildCountTokensPolicy(cfg, routePlans)` and return it. Every error return gains a `nil` policy.
 
-- [ ] **Step 5: Store the policy on the gateway**
+- [x] **Step 5: Store the policy on the gateway**
 
 In `internal/gateway/gateway.go`:
 
 - Add `countTokens atomic.Pointer[countTokensPolicy]` to `Gateway` and import `sync/atomic`.
 - In `apply`, receive the policy from `buildHopGroup` and call `g.countTokens.Store(policy)` after the hop swap.
 
-- [ ] **Step 6: Run the focused tests**
+- [x] **Step 6: Run the focused tests**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestRouteNeedsCountTokensEstimate|TestCountTokensPolicy|TestBuildCountTokensPolicy|TestGatewayCompilesCountTokensPolicy' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 7: Run the gateway package**
+- [x] **Step 7: Run the gateway package**
 
 Run: `GOWORK=off go test ./internal/gateway -count=1`
 
 Expected: PASS (the existing `count_tokens is not converted` test still passes because the wrapper does not exist yet).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/gateway/count_tokens_policy.go internal/gateway/count_tokens_policy_test.go internal/gateway/build.go internal/gateway/gateway.go
 git commit -m "feat(gateway): compile count_tokens estimate policy"
 ```
 
-- [ ] **Step 9: Record the task**
+- [x] **Step 9: Record the task**
 
 Fill the Implementation record below with the code commit SHA from Step 8, the files changed, the commands run, and the results. Then:
 
@@ -567,12 +567,15 @@ git commit -m "docs(plan): record task 2"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository/commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository/commit: `llm-gw` `99713cc2` (code); this docs commit follows
+- Files changed: `internal/gateway/count_tokens_policy.go`, `internal/gateway/count_tokens_policy_test.go`, `internal/gateway/build.go`, `internal/gateway/gateway.go`
 - Tests/commands/results:
-- Review findings/fixes:
-- Deferred/limitations:
+  - RED: `GOWORK=off go test ./internal/gateway -run 'TestRouteNeedsCountTokensEstimate|TestCountTokensPolicy|TestBuildCountTokensPolicy|TestGatewayCompilesCountTokensPolicy' -count=1` → build failed with undefined `routeNeedsCountTokensEstimate`, `countTokensPolicy`, `countTokensEntry`, `buildCountTokensPolicy`, `routePlan.countTokensEstimate` and `Gateway.countTokens`.
+  - GREEN: the same focused command → `ok`.
+  - Full package: `GOWORK=off go test ./internal/gateway -count=1` → `ok` (3.322s), including the existing `count_tokens is not converted` assertion, which still holds because the wrapper does not exist yet.
+- Review findings/fixes: none; `buildHopGroup`'s error returns gained a `nil` policy and the final return builds the policy after all route plans are compiled.
+- Deferred/limitations: a request racing a reload can use the new policy with the old hop for a few microseconds; the decision only toggles estimate vs pass-through, so the spec accepts it.
 
 ---
 
