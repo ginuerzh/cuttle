@@ -29,31 +29,99 @@ type upstreamTarget struct {
 	auth        gwconfig.Auth
 }
 
-// compileRouteNode resolves the upstream target for one node. A node binds
-// exactly one provider model; the route and the client model do not change it.
+// nodeTargets is the compiled API plan for one node. defaultTarget is used for
+// the fallback group and for every inbound group that has no distinct variant.
+type nodeTargets struct {
+	defaultTarget upstreamTarget
+	variants      map[provider.API]upstreamTarget
+}
+
+// compileRouteNode resolves the fallback target for one node.
 func compileRouteNode(p gwconfig.Provider, n gwconfig.Node) (upstreamTarget, error) {
+	targets, err := compileNodeTargets(p, n)
+	if err != nil {
+		return upstreamTarget{}, err
+	}
+	return targets.defaultTarget, nil
+}
+
+// compileNodeTargets resolves the default target and the per-protocol variants
+// for one node. A pinned API bypasses default selection entirely; otherwise the
+// default follows the model's static classification and each protocol variant
+// is used only when the provider can serve that protocol for this model.
+func compileNodeTargets(p gwconfig.Provider, n gwconfig.Node) (nodeTargets, error) {
 	targetModel := strings.TrimSpace(n.Model)
 	if targetModel == "" {
-		return upstreamTarget{}, fmt.Errorf("node %q: model is required", n.Name)
+		return nodeTargets{}, fmt.Errorf("node %q: model is required", n.Name)
 	}
 	prov, err := provider.New(p)
 	if err != nil {
-		return upstreamTarget{}, err
+		return nodeTargets{}, err
 	}
 	if p.ModelDisabled(targetModel) {
-		return upstreamTarget{}, fmt.Errorf("%w: %s", errModelDisabled, targetModel)
+		return nodeTargets{}, fmt.Errorf("%w: %s", errModelDisabled, targetModel)
 	}
-	api, _, err := selectAPI(context.Background(), prov, targetModel)
+
+	if pinned := strings.TrimSpace(n.API); pinned != "" {
+		target, err := compileTarget(prov, p, n, provider.API(pinned))
+		if err != nil {
+			return nodeTargets{}, err
+		}
+		return nodeTargets{defaultTarget: target}, nil
+	}
+
+	api, model, err := selectAPI(context.Background(), prov, targetModel)
 	if err != nil {
-		return upstreamTarget{}, err
+		return nodeTargets{}, err
 	}
-	baseURL, _ := prov.BaseURL(api)
+	def, err := compileTarget(prov, p, n, api)
+	if err != nil {
+		return nodeTargets{}, err
+	}
+	out := nodeTargets{defaultTarget: def}
+	for _, inbound := range []provider.API{provider.Chat, provider.Responses, provider.Anthropic, provider.Gemini} {
+		if inbound == api {
+			continue
+		}
+		if _, ok := prov.BaseURL(inbound); !ok {
+			continue
+		}
+		if len(model.APIs) > 0 && !containsAPI(model.APIs, inbound) {
+			continue
+		}
+		target, err := compileTarget(prov, p, n, inbound)
+		if err != nil {
+			return nodeTargets{}, err
+		}
+		if out.variants == nil {
+			out.variants = make(map[provider.API]upstreamTarget)
+		}
+		out.variants[inbound] = target
+	}
+	return out, nil
+}
+
+// compileTarget builds one concrete upstream target for api.
+func compileTarget(prov provider.Provider, _ gwconfig.Provider, n gwconfig.Node, api provider.API) (upstreamTarget, error) {
+	baseURL, ok := prov.BaseURL(api)
+	if !ok {
+		return upstreamTarget{}, fmt.Errorf("node %q: API %q has no base URL", n.Name, api)
+	}
 	return upstreamTarget{
 		baseURL:     baseURL,
 		api:         api,
-		targetModel: targetModel,
+		targetModel: strings.TrimSpace(n.Model),
 		auth:        prov.Auth(api),
 	}, nil
+}
+
+func containsAPI(apis []provider.API, api provider.API) bool {
+	for _, candidate := range apis {
+		if candidate == api {
+			return true
+		}
+	}
+	return false
 }
 
 // selectAPI resolves modelID and picks the first API the provider both

@@ -133,7 +133,7 @@ git commit -m "feat(config): add node api selection"
   ```
   `compileNodeTargets` must skip `selectAPI` entirely when `n.API` is pinned.
 
-- [ ] **Step 1: Write failing target tests**
+- [x] **Step 1: Write failing target tests**
 
 Add `internal/gateway/upstream_target_test.go` with table tests:
 
@@ -161,13 +161,13 @@ func TestCompileNodeTargetsPinnedMissingBase(t *testing.T)
 // naming the node and API.
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/gateway -run TestCompileNodeTargets -count=1`
 
 Expected: FAIL because `compileNodeTargets` and `nodeTargets` do not exist.
 
-- [ ] **Step 3: Implement target compilation**
+- [x] **Step 3: Implement target compilation**
 
 In `internal/gateway/upstream.go`:
 
@@ -181,13 +181,13 @@ In `internal/gateway/upstream.go`:
 - `compileTarget` validates the base URL and returns `upstreamTarget{baseURL, api, targetModel, auth: prov.Auth(api)}`.
 - Keep the existing `compileRouteNode` call shape temporarily by making it return `compileNodeTargets(...).defaultTarget`, so `build.go` still compiles until Task 3.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestCompileNodeTargets|TestBuildNodes|TestProtocolMatrix' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Fill the Implementation record and commit**
+- [x] **Step 5: Fill the Implementation record and commit**
 
 ```bash
 git add internal/gateway/upstream.go internal/gateway/upstream_target_test.go docs/superpowers/plans/2026-11-06-node-protocol-auto-match.md
@@ -195,12 +195,12 @@ git commit -m "feat(gateway): plan per-protocol node targets"
 ```
 
 **Implementation record** (fill after completion):
-- Date/status:
-- Repository + commit SHA:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
+- Files changed: `internal/gateway/upstream.go`, `internal/gateway/upstream_target_test.go`, plan
+- Tests/commands and results: `GOWORK=off go test ./internal/gateway -run TestCompileNodeTargets -count=1` FAILED before implementation (undefined symbols), PASS after; `GOWORK=off go test ./internal/gateway -run 'TestCompileNodeTargets|TestBuildNodes|TestProtocolMatrix' -count=1` PASS; `GOWORK=off go test ./internal/gateway -count=1` PASS.
+- Review findings and fixes: none.
+- Deferred items/limitations: `compileRouteNode` is kept only as a temporary wrapper until Task 3.
 
 ---
 
