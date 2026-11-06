@@ -634,12 +634,12 @@ git commit -m "feat(web): show rewrite forensics and capture controls"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / dc1bcf35 (web, capture JSON tags and docs); this record commit is the follow-up
+- Files changed: `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/api/client.test.ts`, `web/src/pages/Requests.tsx`, `web/src/locales/en-US.ts`, `internal/capture/capture.go`, `README.md`, `AGENTS.md`, plan.
+- Tests/commands and results: `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS; web 86/86, `npx tsc --noEmit`, `npm run build` PASS. Manual: created a one-shot capture rule for route `fast`, made a request, received `X-LLM-GW-Request-ID`, then `GET /api/requests?captured=1` and the detail returned request/response original+rewritten previews and hashes; the header ID matched the stats row.
+- Review findings and fixes: the request list does not carry bodies, so selecting a row now fetches `GET /api/requests/{id}` to populate the capture section. `internal/capture` types gained JSON tags so the web sees `requestRewritten`/`hasCapture` style keys. The Requests page marks any row with an error red, adds a captured-only filter, copyable request ID, structured error/protocol/SSE fields, capture previews and a rule-management modal. Documentation records capture privacy, x rewrite blind spots and the node-forwarded-only request ID scope.
+- Deferred items/limitations: request IDs are absent on gateway-generated 502/503 and request-side drops; headers are not captured; full SSE streams and prompt redaction are out of scope. `stats.storeBody` is removed, so old configs using it fail strict YAML.
 
 ## Self-Review
 
