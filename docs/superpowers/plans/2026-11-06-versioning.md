@@ -231,9 +231,9 @@ git commit -m "feat(version): report the build identity"
 **Implementation record**:
 - Date/status: 2026-11-06 / complete
 - Repository + commit SHA: `llm-gw` @ `a649295a`
-- Files changed: `internal/version/version.go`, `internal/version/version_test.go`, `main.go`, `main_test.go`, design spec, plan
+- Files changed: `internal/version/version.go`, `internal/version/version_test.go`, `main.go`, `main_test.go` (added `TestPrintVersion`; existing tests restored during the final review fix), design spec, plan
 - Tests/commands and results: version tests RED (`undefined: Version`) then PASS; `TestPrintVersion` RED (`undefined: printVersion`) then PASS; `GOWORK=off go test ./internal/version . -count=1` PASS.
-- Review findings and fixes: none.
+- Review findings and fixes: the final review found that creating `main_test.go` had replaced the existing `TestParseServeArgs`, `TestResetAdminSessions`, `TestApplySessionReset` and `mustLoadSessions`. Restored them alongside `TestPrintVersion`; `GOWORK=off go test . -count=1` PASS.
 - Deferred items/limitations: none.
 
 ---
@@ -630,6 +630,15 @@ git commit -m "build: inject the version into images"
 - Deferred items/limitations: the Docker image was not built locally (multi-stage network build); the next CI run validates the Dockerfile and build args. UI placement is covered by Vitest/TypeScript/build only.
 
 ---
+
+## Final review
+
+Fresh-context subagent review of `694deb53..989aaca8`, re-run after the fix.
+
+- Critical: none.
+- Important: `main_test.go` accidentally replaced the existing CLI and session-reset tests. Fixed by restoring `TestParseServeArgs`, `TestResetAdminSessions`, `TestApplySessionReset` and `mustLoadSessions` next to `TestPrintVersion`; `GOWORK=off go test . -count=1` and the full Go gate pass.
+- Minor (deferred): branch builds repeat the short commit in CLI/startup output; `versionLabel` assumes a 200 health payload always contains `version`; `TestPrintVersion` does not assert the literal default `llm-gw dev`; the health test bypasses the router; CI does not smoke-test the built image; the README/AGENTS layout tables do not mention the `version` command.
+- Declined to judge: real multi-arch image build and browser layout at 230px (both recorded as deferred in the task records); release tagging remains out of scope.
 
 ## Post-plan release (do not execute without explicit approval)
 
