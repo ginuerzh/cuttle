@@ -45,6 +45,9 @@ type Server struct {
 	stats    *stats.Store
 	capture  *capture.Manager
 
+	usageMu    sync.Mutex
+	usageCache map[string]usageCacheEntry
+
 	modelsCache    map[string]modelsCacheEntry
 	modelsInflight map[string]*modelsFlight
 }
@@ -73,6 +76,7 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 		cfg:            cfg,
 		sessions:       make(map[string]time.Time),
 		probes:         make(map[string]probeResult),
+		usageCache:     make(map[string]usageCacheEntry),
 		modelsCache:    make(map[string]modelsCacheEntry),
 		modelsInflight: make(map[string]*modelsFlight),
 	}
@@ -103,6 +107,7 @@ func (s *Server) SetConfig(cfg *config.Config) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.invalidateModelsLocked(cfg)
+	s.invalidateUsageLocked()
 	s.cfg = cfg
 	s.passwordHash = cfg.Admin.PasswordHash
 }
@@ -137,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/entrypoints", s.handleGetEntrypoints)
 	api.HandleFunc("PUT /api/entrypoints", s.handlePutEntrypoints)
 	api.HandleFunc("GET /api/stats/summary", s.handleSummary)
+	api.HandleFunc("GET /api/provider-usage", s.handleProviderUsage)
 	api.HandleFunc("GET /api/requests", s.handleRequests)
 	api.HandleFunc("GET /api/requests/{id}", s.handleRequest)
 	api.HandleFunc("GET /api/captures", s.handleListCaptures)

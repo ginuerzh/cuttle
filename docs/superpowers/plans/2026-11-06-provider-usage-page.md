@@ -669,12 +669,12 @@ git commit -m "feat(admin): expose provider usage and balances"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / this commit
+- Files changed: `internal/admin/handlers_usage.go`, `internal/admin/usage_test.go`, `internal/admin/server.go` (route, cache fields, invalidation), `internal/admin/handlers.go` (cache invalidation on save), plan record.
+- Tests/commands and results: `GOWORK=off go test ./internal/admin -run 'TestProviderUsage' -count=1` PASS; `GOWORK=off go test ./internal/admin -count=1` PASS. Tests cover local/upstream join, cache hit and forced refresh, multiple keys and previews, stale-on-error with cached failure, disabled/no-key/unsupported no-network paths, unauthenticated 401, config-reload cache clearing, and local-stats failure.
+- Review findings and fixes: Self-review confirmed the handler snapshots providers under `s.mu` but never holds it across network I/O; per-provider queries run concurrently; cache reads/writes use `usageMu`; upstream views are cached without local totals; the raw key is never placed in the response. No fixes were needed after the focused tests.
+- Deferred items/limitations: No per-card refresh parameter, no balance history and no generic custom balance URL. Upstream values depend on live vendor endpoints; CommandCode and OpenCode Go were not verified with real keys in the demo.
 
 ---
 

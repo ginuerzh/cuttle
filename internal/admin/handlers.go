@@ -109,6 +109,7 @@ func (s *Server) replaceLocked(c *config.Config) error {
 		return err
 	}
 	s.invalidateModelsLocked(c)
+	s.invalidateUsageLocked()
 	s.cfg = c
 	logging.Apply(s.log, c.Log.Level, c.Log.Format)
 	return nil
