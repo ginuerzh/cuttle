@@ -47,7 +47,7 @@
   - `tokenest.DefaultSafetyFactor = 1.1`
   - unexported `estimateText(text string) float64` (the calibration test calls it directly)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `internal/tokenest/estimate_test.go`:
 
@@ -212,13 +212,13 @@ func TestCalibration(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/tokenest -run 'TestEstimate|TestCalibration' -count=1`
 
 Expected: FAIL because `EstimateAnthropic`, `DefaultSafetyFactor` and `estimateText` are undefined.
 
-- [ ] **Step 3: Implement the estimator**
+- [x] **Step 3: Implement the estimator**
 
 Create `internal/tokenest/estimate.go` with:
 
@@ -245,13 +245,13 @@ var runCoef  = [6]float64{0.4920, 0.0000, 0.0000, 0.9205, 0.0000, 0.3490}
 - `countBlock(json.RawMessage) float64`: `text` → text; `thinking`/`redacted_thinking` → thinking; `tool_use` → name + input JSON; `tool_result` → nested content; `image` → `imageTokens`; `document` → `documentTokens`; default → the block's raw JSON.
 - `EstimateAnthropic` returns an error for an empty body, a non-object body, or invalid JSON.
 
-- [ ] **Step 4: Run the focused tests**
+- [x] **Step 4: Run the focused tests**
 
 Run: `GOWORK=off go test ./internal/tokenest -run 'TestEstimate|TestEstimateText' -count=1`
 
 Expected: PASS. `TestCalibration` still fails because the fixture is missing.
 
-- [ ] **Step 5: Add the fixture generator and generate the fixture**
+- [x] **Step 5: Add the fixture generator and generate the fixture**
 
 Create `scripts/gen-count-tokens-fixtures.py`:
 
@@ -338,26 +338,26 @@ Expected: `wrote 141 rows to internal/tokenest/testdata/calibration.jsonl`.
 
 Do not regenerate the fixture after later tasks change these files; it is a fixed regression corpus.
 
-- [ ] **Step 6: Run the calibration test**
+- [x] **Step 6: Run the calibration test**
 
 Run: `GOWORK=off go test ./internal/tokenest -run TestCalibration -count=1 -v`
 
 Expected: PASS with `fixture rows = 141`.
 
-- [ ] **Step 7: Run the package gate**
+- [x] **Step 7: Run the package gate**
 
 Run: `GOWORK=off go test ./internal/tokenest -count=1 && GOWORK=off go vet ./internal/tokenest`
 
 Expected: PASS and clean vet.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/tokenest scripts/gen-count-tokens-fixtures.py
 git commit -m "feat(tokenest): add conservative anthropic token estimator"
 ```
 
-- [ ] **Step 9: Record the task**
+- [x] **Step 9: Record the task**
 
 Fill the Implementation record below with the code commit SHA from Step 8, the files changed, the commands run, and the results. Then:
 
@@ -367,12 +367,17 @@ git commit -m "docs(plan): record task 1"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository/commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository/commit: `llm-gw` `6e69ad93` (code); this docs commit follows
+- Files changed: `internal/tokenest/estimate.go`, `internal/tokenest/estimate_test.go`, `internal/tokenest/testdata/calibration.jsonl`, `scripts/gen-count-tokens-fixtures.py`
 - Tests/commands/results:
-- Review findings/fixes:
-- Deferred/limitations:
+  - RED: `GOWORK=off go test ./internal/tokenest -run 'TestEstimate|TestCalibration' -count=1` → build failed with `undefined: EstimateAnthropic` and `undefined: DefaultSafetyFactor`.
+  - GREEN (non-calibration): the same command after the implementation → `ok`, with `TestCalibration` still missing its fixture.
+  - Fixture: `scripts/gen-count-tokens-fixtures.py --tokenizer /tmp/opencode/ds-tokenizer/deepseek_v4_tokenizer/tokenizer.json --out internal/tokenest/testdata/calibration.jsonl` → `wrote 141 rows`; `testdata/` was created first with `mkdir -p`.
+  - Calibration: `GOWORK=off go test ./internal/tokenest -run TestCalibration -count=1 -v` → PASS; measured MAPE 14.12%, under-estimated 4.0%.
+  - Package gate: `GOWORK=off go test ./internal/tokenest -count=1` → PASS; `GOWORK=off go vet ./internal/tokenest` → clean.
+- Review findings/fixes: none; the only adjustment was creating `testdata/` before generation.
+- Deferred/limitations: the heuristic is calibrated on DeepSeek V4 text, not full chat templates; images use a fixed 1600 and documents a fixed 2000; no runtime tokenizer.
 
 ---
 
