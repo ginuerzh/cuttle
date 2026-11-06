@@ -100,6 +100,70 @@ routes:
 	}
 }
 
+func TestNodeAPIAcceptedAndNormalized(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: a
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: auto
+    provider: a
+    model: m1
+    api: AUTO
+  - name: mixed
+    provider: a
+    model: m1
+    api: Anthropic
+  - name: absent
+    provider: a
+    model: m1
+routes:
+  - name: r
+    nodes: [auto, mixed, absent]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"", "anthropic", ""}
+	for i, api := range want {
+		if got := c.Nodes[i].API; got != api {
+			t.Fatalf("nodes[%d].api = %q, want %q", i, got, api)
+		}
+	}
+}
+
+func TestNodeAPIRejectsUnknown(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: a
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: a
+    model: m1
+    api: grpc
+routes:
+  - name: r
+    nodes: [n]
+`))
+	if err == nil {
+		t.Fatal("Load accepted api: grpc")
+	}
+	if !strings.Contains(err.Error(), `node "n"`) || !strings.Contains(err.Error(), "api") {
+		t.Fatalf("error = %v, want it to name the node and api", err)
+	}
+}
+
 func TestLoadKeepsCustomAuthHeaderWithoutPrefix(t *testing.T) {
 	c, err := Load(writeConfig(t, `
 entrypoints:

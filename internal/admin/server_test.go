@@ -239,6 +239,34 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 	}
 }
 
+func TestNodeAPIRoundTripThroughAdmin(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", providerBody("p", "https://a.example"), csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create provider status = %d", resp.StatusCode)
+	}
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n","provider":"p","model":"m1","api":"anthropic"}`, csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create node status = %d", resp.StatusCode)
+	}
+
+	list := doJSON(t, client, http.MethodGet, ts.URL+"/api/nodes", "", "")
+	var nodes []config.Node
+	if err := json.NewDecoder(list.Body).Decode(&nodes); err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].API != "anthropic" {
+		t.Fatalf("nodes = %+v, want one node with api anthropic", nodes)
+	}
+
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/nodes/n", `{"name":"n","provider":"p","model":"m1","api":"auto"}`, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("update node status = %d", resp.StatusCode)
+	}
+	if len(rel.cfg.Nodes) != 1 || rel.cfg.Nodes[0].API != "" {
+		t.Fatalf("stored node = %+v, want api normalized away", rel.cfg.Nodes)
+	}
+}
+
 func TestReloadFailureKeepsFileAndMemory(t *testing.T) {
 	s, rel, path, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)

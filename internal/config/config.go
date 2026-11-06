@@ -128,6 +128,7 @@ type Node struct {
 	Name     string `yaml:"name" json:"name"`
 	Provider string `yaml:"provider" json:"provider"`
 	Model    string `yaml:"model" json:"model"`
+	API      string `yaml:"api,omitempty" json:"api,omitempty"`
 	Backup   bool   `yaml:"backup,omitempty" json:"backup,omitempty"`
 	Weight   int    `yaml:"weight,omitempty" json:"weight,omitempty"`
 	Enabled  *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
@@ -494,9 +495,14 @@ func (c *Config) applyDefaults() {
 		}
 	}
 	for i := range c.Nodes {
-		c.Nodes[i].Model = strings.TrimSpace(c.Nodes[i].Model)
-		if c.Nodes[i].Weight == 0 {
-			c.Nodes[i].Weight = 1
+		n := &c.Nodes[i]
+		n.Model = strings.TrimSpace(n.Model)
+		n.API = strings.ToLower(strings.TrimSpace(n.API))
+		if n.API == "auto" {
+			n.API = ""
+		}
+		if n.Weight == 0 {
+			n.Weight = 1
 		}
 	}
 	for i := range c.Routes {
@@ -660,6 +666,11 @@ func Validate(c *Config) error {
 		}
 		if strings.TrimSpace(n.Model) == "" {
 			return fmt.Errorf("node %q: model is required", name)
+		}
+		switch n.API {
+		case "", "chat", "responses", "anthropic", "gemini":
+		default:
+			return fmt.Errorf("node %q: api must be auto, chat, responses, anthropic or gemini", name)
 		}
 		if n.Weight < 0 {
 			return fmt.Errorf("node %q: weight must be >= 0", name)
