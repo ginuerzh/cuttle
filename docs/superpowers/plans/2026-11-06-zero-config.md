@@ -119,12 +119,12 @@ git commit -m "feat(bootstrap): resolve zero-config file locations"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files actually changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: llm-gw `<sha>` (`feat(bootstrap): resolve zero-config file locations`)
+- Files actually changed: `internal/bootstrap/bootstrap.go`, `internal/bootstrap/bootstrap_test.go`, this plan
+- Tests/commands and results: `GOWORK=off go test ./internal/bootstrap -count=1` -> `ok github.com/go-gost/llm-gw/internal/bootstrap`
+- Review findings and fixes: none; self-review confirmed explicit/data/legacy precedence, absolute data dir, and `LLM_GW_DATA` error naming
+- Deferred items/limitations: explicit path may point at a directory; `config.Load` reports that in Task 2
 
 ---
 
