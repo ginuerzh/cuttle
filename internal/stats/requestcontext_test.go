@@ -43,6 +43,34 @@ func TestRequestContext(t *testing.T) {
 	}
 }
 
+func TestRequestContextPrefersOriginalHeaders(t *testing.T) {
+	ro := &xrecorder.HandlerRecorderObject{
+		HTTP: &xrecorder.HTTPRecorderObject{
+			Method: "POST",
+			URI:    "/v1/messages",
+			Request: xrecorder.HTTPRequestRecorderObject{
+				Header: http.Header{
+					"User-Agent":      {"llm-gw/main-test"},
+					"X-Forwarded-For": {"10.0.0.1"},
+				},
+			},
+			OriginalRequest: &xrecorder.HTTPRequestRecorderObject{
+				Header: http.Header{
+					"User-Agent":      {"claude-cli/2.1.318"},
+					"X-Forwarded-For": {"203.0.113.9"},
+				},
+			},
+		},
+	}
+	_, _, clientIP, userAgent, _ := requestContext(ro)
+	if userAgent != "claude-cli/2.1.318" {
+		t.Fatalf("userAgent = %q", userAgent)
+	}
+	if clientIP != "203.0.113.9" {
+		t.Fatalf("clientIP = %q", clientIP)
+	}
+}
+
 func TestRequestContextFallsBackToClientAddr(t *testing.T) {
 	ro := &xrecorder.HandlerRecorderObject{
 		ClientAddr: "10.0.0.5:12345",

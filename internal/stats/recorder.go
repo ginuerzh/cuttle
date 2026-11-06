@@ -121,7 +121,7 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		if c, ok := r.capture.Finish(req.SID); ok {
 			cap = c
 			if ro.HTTP != nil {
-				cap.RequestHeaders = captureHeaders(ro.HTTP.Request.Header)
+				cap.RequestHeaders = captureHeaders(clientRequestHeaders(&ro))
 				cap.ResponseHeaders = captureHeaders(ro.HTTP.Response.Header)
 			}
 		}
