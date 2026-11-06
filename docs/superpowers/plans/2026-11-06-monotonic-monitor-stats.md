@@ -513,7 +513,7 @@ git commit -m "docs: describe real-time monotonic monitoring"
 
 **Implementation record (fill after completion):**
 - Date/status: 2026-11-06 — complete.
-- Repo + commit: llm-gw `feat/monotonic-monitor` (docs commit; SHA recorded in the follow-up `docs(plan)` commit).
+- Repo + commit: llm-gw `feat/monotonic-monitor` `a49dcf91` (docs); record finalized in the follow-up `docs(plan)` commit.
 - Files changed: `README.md`, `AGENTS.md`, plan.
 - Tests/commands and results: `GOWORK=off go build ./...` → PASS; `GOWORK=off go vet ./...` → PASS; `GOWORK=off go test ./... -count=1` → PASS (all packages); `cd web && npm test` → 18 files / 122 tests PASS; `npx tsc --noEmit` → PASS; `npm run build` → PASS; `GOWORK=off go build -o /tmp/llm-gw .` → PASS.
 - Review findings and fixes: README and AGENTS now document the WebSocket endpoint, fixed-start monotonic semantics, reset-by-reconnect, rowid cursor, Origin/Host checks and reverse-proxy Upgrade requirements.
