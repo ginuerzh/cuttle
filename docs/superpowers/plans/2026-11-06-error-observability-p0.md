@@ -24,7 +24,7 @@ Tests are run from the `llm-gw` directory unless stated otherwise.
 ### Implementation record
 
 - Date/status: 2026-11-06, complete.
-- Repository + commit: `llm-gw` `5ba89476`.
+- Repository + commit: `llm-gw` `be783983`.
 - Files changed: `internal/rewriter/errorbody.go` (new), `internal/rewriter/errorbody_test.go` (new), `internal/rewriter/rewriter.go`, `internal/rewriter/rewriter_test.go`, `internal/stats/facts.go`, `internal/stats/errorclass.go` (new), `internal/stats/errorclass_test.go` (new), `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `internal/stats/store.go`, `internal/stats/store_test.go`.
 - Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/rewriter ./internal/stats -count=1` passed.
 - Review findings and fixes: redaction replacement initially dropped the `:` separator; changed the pattern to capture it. `error_class` is derived from status/stage/message; no message means the class still explains 4xx/5xx.
