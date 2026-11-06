@@ -13,6 +13,7 @@ import {
   type OnEdgesChange,
   useNodesState,
   type OnNodeDrag,
+  type Viewport,
 } from '@xyflow/react';
 import { message } from 'antd';
 import type { ConfigResponse, GraphMetrics, NodeMetrics } from '../api/types';
@@ -87,6 +88,22 @@ function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
 const POSITIONS_KEY = 'llm-gw.positions';
 const PENDING_KEY = 'llm-gw.positions.pending';
 
+/**
+ * Edit mode mounts a second Topology, so the React Flow viewport must survive
+ * a component remount; otherwise every mode switch fits the graph again.
+ */
+let lastViewport: Viewport | null = null;
+
+export interface ViewportInit {
+  fitView: boolean;
+  defaultViewport?: Viewport;
+}
+
+/** Fit only until the canvas has been seen; restore the saved view afterwards. */
+export function viewportInit(saved: Viewport | null): ViewportInit {
+  return saved ? { fitView: false, defaultViewport: saved } : { fitView: true };
+}
+
 function loadLocalPositions(): PositionMap {
   try {
     const raw = localStorage.getItem(POSITIONS_KEY);
@@ -119,6 +136,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
 
 export function Topology({ config, metrics, onSelect, editable, onConnect }: Props) {
   const canEdit = canEditTopology(editable);
+  const [initialViewport] = useState(() => viewportInit(lastViewport));
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
   const [serverReady, setServerReady] = useState(false);
   const [serverReadOK, setServerReadOK] = useState(false);
@@ -264,13 +282,17 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
         onPaneClick={() => onSelect(null)}
         onConnect={canEdit ? onConnect : undefined}
         onNodeDragStop={canEdit ? onNodeDragStop : undefined}
+        onMoveEnd={(_event, viewport) => {
+          lastViewport = viewport;
+        }}
         nodesConnectable={canEdit}
         nodesDraggable={canEdit}
         connectOnClick={canEdit}
         edgesReconnectable={canEdit}
         deleteKeyCode={null}
         connectionLineStyle={{ stroke: '#0ea5e9', strokeWidth: 2 }}
-        fitView
+        fitView={initialViewport.fitView}
+        defaultViewport={initialViewport.defaultViewport}
         minZoom={0.2}
         maxZoom={1.6}
         proOptions={{ hideAttribution: true }}

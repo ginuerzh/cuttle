@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { canEditTopology, edgeLabel } from './Topology';
+import { canEditTopology, edgeLabel, viewportInit } from './Topology';
+
+describe('viewportInit', () => {
+  it('fits the graph on the first visit', () => {
+    expect(viewportInit(null)).toEqual({ fitView: true });
+  });
+
+  it('restores the saved viewport across a remount instead of fitting again', () => {
+    const saved = { x: 120, y: -40, zoom: 1.35 };
+    expect(viewportInit(saved)).toEqual({ fitView: false, defaultViewport: saved });
+  });
+});
 
 describe('canEditTopology', () => {
   it('keeps monitor mode read-only when editable is omitted', () => {
