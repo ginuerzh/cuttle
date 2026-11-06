@@ -33,6 +33,7 @@ type Request struct {
 	Effort          string           `json:"effort"`
 	Status          int              `json:"status"`
 	Error           string           `json:"error,omitempty"`
+	ErrorClass      string           `json:"errorClass,omitempty"`
 	DurationMS      int64            `json:"durationMs"`
 	InputTokens     int64            `json:"inputTokens"`
 	OutputTokens    int64            `json:"outputTokens"`
@@ -200,6 +201,7 @@ func (s *Store) migrate() error {
 		"inbound_protocol": "TEXT NOT NULL DEFAULT ''",
 		"error_stage":      "TEXT NOT NULL DEFAULT ''",
 		"error_direction":  "TEXT NOT NULL DEFAULT ''",
+		"error_class":      "TEXT NOT NULL DEFAULT ''",
 		"sse_phase":        "TEXT NOT NULL DEFAULT ''",
 		"event_index":      "INTEGER NOT NULL DEFAULT 0",
 	}); err != nil {
@@ -367,12 +369,12 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 	_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO requests
 		(request_id, sid, ts, model, client_model, provider, route, node,
 		 protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
-		 effort, status, error, duration_ms,
+		 effort, status, error, error_class, duration_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node,
 		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
-		r.Effort, r.Status, r.Error, r.DurationMS,
+		r.Effort, r.Status, r.Error, r.ErrorClass, r.DurationMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut))
 	if err != nil {
 		return err
@@ -434,7 +436,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 	}
 	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
-		effort, status, error,
+		effort, status, error, error_class,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
@@ -452,7 +454,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
-		effort, status, error,
+		effort, status, error, error_class,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests WHERE request_id = ?`
@@ -546,7 +548,7 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel,
 			&r.Provider, &r.Route, &r.Node, &r.Protocol,
 			&r.InboundProtocol, &r.ErrorStage, &r.ErrorDirection, &r.SSEPhase, &r.EventIndex,
-			&r.Effort, &r.Status, &r.Error, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
+			&r.Effort, &r.Status, &r.Error, &r.ErrorClass, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut, &hasCapture); err != nil {
 			return nil, err
 		}

@@ -16,6 +16,8 @@ type Fact struct {
 	InboundProtocol string
 	ErrorStage      string
 	ErrorDirection  string
+	UpstreamError   string
+	UpstreamErrorTy string
 	SSEPhase        string
 	EventIndex      int
 	ClientModel     string
@@ -106,6 +108,22 @@ func (f *Facts) AddRewriteError(sid, stage, direction, ssePhase string, eventInd
 	fact.ErrorDirection = direction
 	fact.SSEPhase = ssePhase
 	fact.EventIndex = eventIndex
+	fact.Updated = time.Now()
+	f.m[sid] = fact
+}
+
+// AddUpstreamError records a sanitized error summary observed in an upstream
+// response body. The recorder uses it when the transport error is empty.
+func (f *Facts) AddUpstreamError(sid, message, typ string) {
+	if f == nil || sid == "" || message == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	fact := f.m[sid]
+	fact.UpstreamError = message
+	fact.UpstreamErrorTy = typ
 	fact.Updated = time.Now()
 	f.m[sid] = fact
 }

@@ -42,6 +42,35 @@ func TestRecorderCopiesRewriteFields(t *testing.T) {
 	}
 }
 
+func TestRecorderUsesUpstreamErrorSummary(t *testing.T) {
+	s := newStore(t)
+	facts := NewFacts()
+	ctx := context.Background()
+	sid := "rid"
+
+	facts.AddUpstreamError(sid, "rate limit exceeded", "rate_limit_error")
+	body, err := json.Marshal(map[string]any{
+		"sid":  sid,
+		"node": "route/provider/node",
+		"time": time.Now().UTC(),
+		"http": map[string]any{"statusCode": 429},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, facts, nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Get(ctx, sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.Error != "rate limit exceeded" || got.ErrorClass != ErrorClassUpstreamQuota {
+		t.Fatalf("row = %+v", got)
+	}
+}
+
 func TestRecorderCaptureErrorMode(t *testing.T) {
 	s := newStore(t)
 	facts := NewFacts()

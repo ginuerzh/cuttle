@@ -97,7 +97,11 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		req.OutputTokens = int64(fact.OutputTokens)
 		req.CachedTokens = int64(fact.CachedTokens)
 		req.Stream = fact.Stream
+		if req.Error == "" && fact.UpstreamError != "" {
+			req.Error = fact.UpstreamError
+		}
 	}
+	req.ErrorClass = ClassifyError(req.Status, req.Error, req.ErrorStage)
 
 	var cap *capture.Capture
 	if r.capture != nil {

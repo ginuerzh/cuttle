@@ -188,6 +188,7 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 		InboundProtocol: "anthropic",
 		ErrorStage:      "stream_rewrite",
 		ErrorDirection:  "response",
+		ErrorClass:      ErrorClassUpstreamTruncated,
 		SSEPhase:        "end",
 		EventIndex:      7,
 	}
@@ -199,8 +200,8 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 		t.Fatalf("get = %+v err=%v", got, err)
 	}
 	if got.InboundProtocol != want.InboundProtocol || got.ErrorStage != want.ErrorStage ||
-		got.ErrorDirection != want.ErrorDirection || got.SSEPhase != want.SSEPhase ||
-		got.EventIndex != want.EventIndex {
+		got.ErrorDirection != want.ErrorDirection || got.ErrorClass != want.ErrorClass ||
+		got.SSEPhase != want.SSEPhase || got.EventIndex != want.EventIndex {
 		t.Fatalf("fields = %+v", got)
 	}
 }

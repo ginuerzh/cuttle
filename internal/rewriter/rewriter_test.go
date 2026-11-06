@@ -1,9 +1,42 @@
 package rewriter
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/ginuerzh/llm-api-converter/engine"
+	corerewriter "github.com/go-gost/core/rewriter"
 )
+
+type sinkStub struct {
+	sid, message, typ string
+}
+
+func (s *sinkStub) Add(string, string, string, engine.Result)           {}
+func (s *sinkStub) AddInboundProtocol(string, string)                   {}
+func (s *sinkStub) AddRewriteError(string, string, string, string, int) {}
+func (s *sinkStub) AddUpstreamError(sid, message, typ string) {
+	s.sid, s.message, s.typ = sid, message, typ
+}
+
+func TestRewriteReportsUpstreamError(t *testing.T) {
+	sink := &sinkStub{}
+	rw := New(engine.New(engine.Options{}), Options{Sink: sink, Protocol: "chat"})
+	_, err := rw.Rewrite(context.Background(),
+		[]byte(`{"error":{"message":"boom","type":"overloaded_error"}}`),
+		corerewriter.MetadataRewriteOption(map[string]any{
+			"sid":       "sid-1",
+			"direction": "response",
+			"uri":       "/v1/chat/completions",
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sink.message != "boom" || sink.typ != "overloaded_error" || sink.sid != "sid-1" {
+		t.Fatalf("sink = %+v", sink)
+	}
+}
 
 func TestReplaceModelField(t *testing.T) {
 	in := []byte(`{"model":"claude-sonnet","messages":[{"role":"user","content":"hi"}],"n":1}`)
