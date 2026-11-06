@@ -105,7 +105,7 @@ git commit -m "feat(config): add node api selection"
 
 **Implementation record** (fill after completion):
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` — this task's commit (see `git log -1`)
+- Repository + commit SHA: `llm-gw` @ `2bdd263d`
 - Files changed: `internal/config/config.go`, `internal/config/config_test.go`, `internal/admin/server_test.go`, design spec, plan
 - Tests/commands and results: `GOWORK=off go test ./internal/config ./internal/admin -run TestNodeAPI -count=1` PASS; `GOWORK=off go test ./internal/config ./internal/admin -count=1` PASS.
 - Review findings and fixes: none.
@@ -196,7 +196,7 @@ git commit -m "feat(gateway): plan per-protocol node targets"
 
 **Implementation record** (fill after completion):
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
+- Repository + commit SHA: `llm-gw` @ `b703950b`
 - Files changed: `internal/gateway/upstream.go`, `internal/gateway/upstream_target_test.go`, plan
 - Tests/commands and results: `GOWORK=off go test ./internal/gateway -run TestCompileNodeTargets -count=1` FAILED before implementation (undefined symbols), PASS after; `GOWORK=off go test ./internal/gateway -run 'TestCompileNodeTargets|TestBuildNodes|TestProtocolMatrix' -count=1` PASS; `GOWORK=off go test ./internal/gateway -count=1` PASS.
 - Review findings and fixes: none.
@@ -361,11 +361,11 @@ git commit -m "feat(gateway): match upstream api to inbound protocol"
 
 **Implementation record** (fill after completion):
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
-- Files changed: `internal/gateway/protocol.go`, `internal/gateway/build.go`, `internal/gateway/upstream.go`, `internal/gateway/protocol_auto_test.go`, `internal/gateway/provider_capabilities_test.go`, `internal/gateway/model_disabled_test.go`, plan
+- Repository + commit SHA: `llm-gw` @ `110be113`
+- Files changed: `internal/gateway/protocol.go`, `internal/gateway/build.go`, `internal/gateway/gateway.go`, `internal/gateway/upstream.go`, `internal/gateway/protocol_auto_test.go`, `internal/gateway/provider_capabilities_test.go`, `internal/gateway/model_disabled_test.go`, plan
 - Tests/commands and results: focused auto-protocol tests PASS; `GOWORK=off go test ./internal/gateway -count=1` PASS; `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./internal/gateway` PASS.
-- Review findings and fixes: disabled-model reload required unregistering all variant rewriter keys; added `unregisterNodeRewriters`.
-- Deferred items/limitations: stale rewriters for removed/disabled nodes remain a pre-existing leak; only disabled models are cleaned up.
+- Review findings and fixes: the final review found that x resolves rewriter names lazily, so registering a new build under stable names lets the old hop serve new body conversion against old paths/auth after a failed reload. Fixed with generation-scoped rewriter keys, a serialized build mutex, a two-phase swap and a 30-second drain before unregistering the old generation. Removed `unregisterNodeRewriters`. Regression `TestFailedReloadKeepsOldRewriters` was watched failing with a stable-name simulation and passes with the generation-scoped names.
+- Deferred items/limitations: minors reported by the final review remain deferred: count_tokens stats/captures, model-less count_tokens through non-catch-all entrypoints, pinned-API error wording, stale comments, and additional UI/reload test coverage.
 
 ---
 
@@ -466,7 +466,7 @@ git commit -m "feat(gateway): route anthropic count_tokens natively"
 
 **Implementation record** (fill after completion):
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
+- Repository + commit SHA: `llm-gw` @ `fd2b3239`
 - Files changed: `internal/gateway/upstream.go`, `internal/gateway/protocol_auto_test.go`, `internal/gateway/build.go`, `internal/rewriter/rewriter.go`, `internal/rewriter/helpers_test.go`, `internal/rewriter/rewriter_test.go`, plan
 - Tests/commands and results: focused count_tokens tests PASS; `GOWORK=off go test ./internal/gateway ./internal/rewriter -count=1` PASS; `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./internal/gateway ./internal/rewriter` PASS.
 - Review findings and fixes: count_tokens was initially routed to the Anthropic host without the base path; added `anthropicPath` and a dedicated rewrite source.
@@ -552,7 +552,7 @@ Note: `internal/admin/dist` is git-ignored; do not add it. Rebuild it locally wi
 
 **Implementation record** (fill after completion):
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
+- Repository + commit SHA: `llm-gw` @ `b6c52b47`
 - Files changed: `web/src/api/types.ts`, `web/src/pages/presets.ts`, `web/src/pages/presets.test.ts`, `web/src/pages/Edit.tsx`, `web/src/pages/Nodes.tsx`, `web/src/locales/en-US.ts`, plan
 - Tests/commands and results: `cd web && npm test` PASS (96/96); `npx tsc --noEmit` PASS; `npm run build` PASS; `GOWORK=off go build ./...` PASS.
 - Review findings and fixes: restored the NodeForm return/Form block after an editing slip; removed an unused `NodeAPI` import.
@@ -653,13 +653,22 @@ git -C /root/code/go-gost commit -m "docs(memory): record llm-gw protocol auto-m
 
 **Implementation record** (fill after completion):
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA (llm-gw and workspace memory): `llm-gw` docs commit + workspace memory commit (see ledger)
+- Repository + commit SHA (llm-gw and workspace memory): `llm-gw` @ `aaf2a4f5`; workspace memory @ `227eb44`
 - Files changed: `README.md`, `example.yaml`, `AGENTS.md`, `.memory/notes/llm-gw-provider-capabilities.md`, `.memory/MEMORY.md`, plan
 - Tests/commands and results: `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./...` PASS; `GOWORK=off go test ./... -count=1` PASS; `cd web && npm test` PASS (96/96), `npx tsc --noEmit` PASS, `npm run build` PASS; `TestExampleConfigLoads` PASS.
 - Review findings and fixes: none.
 - Deferred items/limitations: the design's deferred list remains: stale rewriter GC, default `anthropic-version`, per-entrypoint protocol override, Gemini inbound conversion.
 
 ---
+
+## Final Review Fix
+
+- Date/status: 2026-11-06 / complete
+- Finding (Critical): x's rewriter registry resolves names lazily. Registering a new build under stable `r/<route>/<variant>/<node>` names let the old hop serve new body conversion against old paths/auth during an in-flight build, and a later build failure left that corruption behind.
+- Fix: namespaced rewriter keys by build generation (`b/<generation>/r/...`), serialized `Gateway.apply` with a build mutex, registered only new-generation names, swapped the hop on success, drained the old generation for 30 seconds before unregistering, and unregistered only the new generation on failure.
+- Test: `TestFailedReloadKeepsOldRewriters` was watched failing with a stable-name simulation (`stats protocol = ""` after the failed reload) and passes with generation-scoped names. `TestSuccessfulReloadKeepsInFlightResponseRewriter` was watched failing with the same simulation (`stats protocol = "anthropic"` after the reload) and passes with generation-scoped names. `TestDisabledTargetModelCanReload` now asserts the new build's rewriter list is empty.
+- Files: `internal/gateway/build.go`, `internal/gateway/gateway.go`, `internal/gateway/protocol_auto_test.go`, `internal/gateway/model_disabled_test.go`, design spec, plan.
+- Commit: see `git log` for the `fix(gateway): isolate rewriter generations` commit.
 
 ## Self-Review Notes
 

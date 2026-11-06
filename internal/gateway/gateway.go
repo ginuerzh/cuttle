@@ -31,6 +31,7 @@ import (
 // Gateway owns the data plane: one service, one forward handler and a hop
 // group that can be replaced at runtime.
 type Gateway struct {
+	buildMu   sync.Mutex
 	mu        sync.Mutex
 	cfg       *gwconfig.Config
 	log       logger.Logger
@@ -38,6 +39,7 @@ type Gateway struct {
 	handler   handler.Handler
 	forwarder handler.Forwarder
 	hop       hop.Hop
+	rewriters []string
 	ln        listener.Listener
 	svc       service.Service
 	facts     *stats.Facts
@@ -183,15 +185,25 @@ func (g *Gateway) Reload(cfg *gwconfig.Config) error {
 }
 
 func (g *Gateway) apply(cfg *gwconfig.Config) error {
-	group, err := buildHopGroup(cfg, g.log, g.facts, g.capture)
+	// Serialize builds so two reloads cannot interleave registry writes.
+	g.buildMu.Lock()
+	defer g.buildMu.Unlock()
+
+	build := nextBuildGeneration()
+	group, rewriters, err := buildHopGroup(cfg, build, g.log, g.facts, g.capture)
 	if err != nil {
+		// The old hop is untouched; drop the rewriters this failed build
+		// registered so they cannot leak.
+		unregisterRewriters(rewriters)
 		return err
 	}
 
 	g.mu.Lock()
 	old := g.hop
+	oldRewriters := g.rewriters
 	g.hop = group
 	g.cfg = cfg
+	g.rewriters = rewriters
 	g.mu.Unlock()
 
 	g.forwarder.Forward(group)
@@ -200,9 +212,14 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	}
 
 	// In-flight requests hold the old nodes; give them time to finish before
-	// closing probe goroutines and node resources.
-	if closer, ok := old.(io.Closer); ok {
-		time.AfterFunc(30*time.Second, func() { closer.Close() })
+	// closing probe goroutines and releasing the old generation's rewriters.
+	if old != nil {
+		time.AfterFunc(30*time.Second, func() {
+			if closer, ok := old.(io.Closer); ok {
+				closer.Close()
+			}
+			unregisterRewriters(oldRewriters)
+		})
 	}
 	return nil
 }
@@ -214,6 +231,9 @@ func (g *Gateway) Stats() *stats.Store {
 
 // Close stops serving and releases the listener, hop and router.
 func (g *Gateway) Close() error {
+	g.buildMu.Lock()
+	defer g.buildMu.Unlock()
+
 	var err error
 	if g.svc != nil {
 		err = g.svc.Close()
@@ -221,11 +241,18 @@ func (g *Gateway) Close() error {
 
 	g.mu.Lock()
 	h := g.hop
+	names := g.rewriters
 	g.hop = nil
+	g.rewriters = nil
 	g.mu.Unlock()
 
 	if closer, ok := h.(io.Closer); ok {
 		closer.Close()
+	}
+	// Give in-flight requests the same drain window used by Reload before
+	// releasing the current generation's rewriters.
+	if len(names) > 0 {
+		time.AfterFunc(30*time.Second, func() { unregisterRewriters(names) })
 	}
 	if g.router != nil {
 		g.router.Close()

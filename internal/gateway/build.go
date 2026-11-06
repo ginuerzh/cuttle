@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/go-gost/core/hop"
 	"github.com/go-gost/core/logger"
@@ -30,13 +32,24 @@ import (
 	_ "github.com/go-gost/x/dialer/tcp"
 )
 
+// buildSeq namespaces rewriters per build so an old hop keeps resolving its own
+// targets while a new build is being prepared. x's rewriter registry resolves
+// names lazily, so reusing a name would mutate the live data plane before the
+// hop swap.
+var buildSeq atomic.Uint64
+
+func nextBuildGeneration() string {
+	return strconv.FormatUint(buildSeq.Add(1), 10)
+}
+
 // buildHopGroup compiles the configured routes into a hop group and emits one
 // entry per entrypoint and inbound protocol group, in declaration order,
 // followed by the entrypoint's fallback entry. The FIFO group selector then
-// makes entrypoint order the single precedence rule.
-func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, error) {
+// makes entrypoint order the single precedence rule. The returned names are the
+// rewriters registered for this build; the caller owns their lifecycle.
+func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, []string, error) {
 	if err := registerHeaderRewriter(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	routes := make(map[string]gwconfig.Route, len(cfg.Routes))
@@ -44,18 +57,22 @@ func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts, 
 		routes[r.Name] = r
 	}
 	routePlans := make(map[string]*routePlan, len(cfg.Routes))
+	var rewriters []string
 	entries := make([]*xhop.HopEntry, 0, len(cfg.Entrypoints)*(len(inboundGroups)+1))
 	for _, e := range cfg.Entrypoints {
 		r, ok := routes[e.Route]
 		if !ok {
-			return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+			return nil, rewriters, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
 		}
 		plan, ok := routePlans[r.Name]
 		if !ok {
 			var err error
-			plan, err = buildRoutePlan(cfg, r, log, facts, captureMgr)
+			plan, err = buildRoutePlan(cfg, build, r, log, facts, captureMgr)
+			if plan != nil {
+				rewriters = append(rewriters, plan.rewriters...)
+			}
 			if err != nil {
-				return nil, fmt.Errorf("route %q: %w", r.Name, err)
+				return nil, rewriters, fmt.Errorf("route %q: %w", r.Name, err)
 			}
 			routePlans[r.Name] = plan
 		}
@@ -67,14 +84,14 @@ func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts, 
 			}
 			m, err := buildProtocolMatcher(e.Match, group.pathPattern)
 			if err != nil {
-				return nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+				return nil, rewriters, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 			}
 			entries = append(entries, xhop.NewHopEntry(h, m, nil))
 		}
 
 		m, err := buildEntrypointMatcher(e.Match)
 		if err != nil {
-			return nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+			return nil, rewriters, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 		}
 		entries = append(entries, xhop.NewHopEntry(plan.hops[""], m, nil))
 	}
@@ -84,14 +101,15 @@ func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts, 
 		xhop.WithGroupLoggerOption(log.WithFields(map[string]any{
 			"kind": "hopGroup",
 		})),
-	), nil
+	), rewriters, nil
 }
 
 // routePlan holds the compiled hops for one route: the fallback variant under
 // the empty API key and one variant per inbound protocol that changes at least
-// one node's target API.
+// one node's target API. rewriters are the names registered by this plan.
 type routePlan struct {
-	hops map[provider.API]hop.Hop
+	hops      map[provider.API]hop.Hop
+	rewriters []string
 }
 
 // nodePlan is one enabled node and its compiled target plan.
@@ -101,7 +119,7 @@ type nodePlan struct {
 	targets  nodeTargets
 }
 
-func buildRoutePlan(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
+func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
 	providers := make(map[string]gwconfig.Provider, len(cfg.Providers))
 	for _, p := range cfg.Providers {
 		providers[p.Name] = p
@@ -131,7 +149,6 @@ func buildRoutePlan(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger, f
 		if err != nil {
 			if errors.Is(err, errModelDisabled) {
 				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
-				unregisterNodeRewriters(r.Name, n.Name)
 				continue
 			}
 			return nil, fmt.Errorf("node %q: %w", n.Name, err)
@@ -140,9 +157,9 @@ func buildRoutePlan(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger, f
 	}
 
 	plan := &routePlan{hops: make(map[provider.API]hop.Hop, len(inboundGroups)+1)}
-	def, err := buildVariantHop(r, "", plans, log, facts, captureMgr)
+	def, err := buildVariantHop(r, build, "", plans, log, facts, captureMgr, &plan.rewriters)
 	if err != nil {
-		return nil, err
+		return plan, err
 	}
 	plan.hops[""] = def
 
@@ -156,9 +173,9 @@ func buildRoutePlan(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger, f
 		if !needed[group.api] {
 			continue
 		}
-		h, err := buildVariantHop(r, group.api, plans, log, facts, captureMgr)
+		h, err := buildVariantHop(r, build, group.api, plans, log, facts, captureMgr, &plan.rewriters)
 		if err != nil {
-			return nil, err
+			return plan, err
 		}
 		plan.hops[group.api] = h
 	}
@@ -167,7 +184,7 @@ func buildRoutePlan(cfg *gwconfig.Config, r gwconfig.Route, log logger.Logger, f
 
 // buildVariantHop compiles one route variant. inbound is empty for the fallback
 // variant; otherwise every node uses its per-protocol target when it has one.
-func buildVariantHop(r gwconfig.Route, inbound provider.API, plans []nodePlan, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, error) {
+func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans []nodePlan, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager, names *[]string) (hop.Hop, error) {
 	variant := variantKey(inbound)
 	var nodes []*xconfig.NodeConfig
 	for _, np := range plans {
@@ -177,10 +194,11 @@ func buildVariantHop(r gwconfig.Route, inbound provider.API, plans []nodePlan, l
 				target = t
 			}
 		}
-		name := rewriterName(r.Name, variant, np.node.Name)
+		name := buildRewriterName(build, r.Name, variant, np.node.Name)
 		if err := registerRewriter(name, np.provider, np.node, target, r.Name, facts, captureMgr, log); err != nil {
 			return nil, err
 		}
+		*names = append(*names, name)
 		ns, err := buildNodes(np.provider, np.node, r.Name, target, name)
 		if err != nil {
 			return nil, fmt.Errorf("node %q: %w", np.node.Name, err)
@@ -363,15 +381,18 @@ func registerHeaderRewriter() error {
 	return nil
 }
 
-// unregisterNodeRewriters removes every route-variant rewriter for a node that
-// is no longer compiled, such as a newly disabled target model.
-func unregisterNodeRewriters(route, node string) {
-	variants := []string{variantKey("")}
-	for _, group := range inboundGroups {
-		variants = append(variants, variantKey(group.api))
-	}
-	for _, variant := range variants {
-		registry.RewriterRegistry().Unregister(rewriterName(route, variant, node))
+// buildRewriterName namespaces a rewriter by build generation. x resolves
+// rewriter names lazily, so a stable name would let a new build mutate the old
+// hop before the swap.
+func buildRewriterName(build, route, variant, node string) string {
+	return "b/" + build + "/" + rewriterName(route, variant, node)
+}
+
+// unregisterRewriters removes names registered by one build or retained for the
+// drain window of a previous build.
+func unregisterRewriters(names []string) {
+	for _, name := range names {
+		registry.RewriterRegistry().Unregister(name)
 	}
 }
 

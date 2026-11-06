@@ -7,8 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/go-gost/x/registry"
-
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
 )
 
@@ -132,7 +130,7 @@ func TestDisabledTargetModelFallsBackToOtherNode(t *testing.T) {
 func TestDisabledTargetModelCanReload(t *testing.T) {
 	upstream, hits := countingUpstream(t)
 
-	// Unique route/node names keep the global rewriter registry assertions
+	// Unique route/node names keep the per-build rewriter list assertions
 	// independent of the other gateway tests.
 	const (
 		routeName = "md-reload"
@@ -146,9 +144,8 @@ func TestDisabledTargetModelCanReload(t *testing.T) {
 	enabled.Entrypoints[0].Route = routeName
 
 	gw := startGateway(t, enabled)
-	rewriter := rewriterName(routeName, "default", nodeName)
-	if !registry.RewriterRegistry().IsRegistered(rewriter) {
-		t.Fatalf("rewriter %q is not registered for an enabled target", rewriter)
+	if len(gw.rewriters) == 0 {
+		t.Fatal("no rewriters registered for an enabled target")
 	}
 
 	if code := postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[]}`); code != http.StatusOK {
@@ -166,8 +163,8 @@ func TestDisabledTargetModelCanReload(t *testing.T) {
 	if err := gw.Reload(disabled); err != nil {
 		t.Fatalf("reload with a disabled target model must succeed: %v", err)
 	}
-	if registry.RewriterRegistry().IsRegistered(rewriter) {
-		t.Fatalf("rewriter %q is still registered after the target model was disabled", rewriter)
+	if len(gw.rewriters) != 0 {
+		t.Fatalf("new build registered rewriters for a disabled target: %v", gw.rewriters)
 	}
 
 	if code := postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[]}`); code < 500 {

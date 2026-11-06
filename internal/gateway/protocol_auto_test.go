@@ -1,10 +1,15 @@
 package gateway
 
 import (
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-gost/core/hop"
 	xlogger "github.com/go-gost/x/logger"
@@ -200,7 +205,7 @@ func TestRouteVariantKeepsBackupMetadata(t *testing.T) {
 	}
 	route := gwconfig.Route{Name: "plan-test", Nodes: []string{"n", "backup", "off"}}
 
-	plan, err := buildRoutePlan(cfg, route, xlogger.Nop(), stats.NewFacts(), capture.NewManager(capture.Policy{Mode: "off"}))
+	plan, err := buildRoutePlan(cfg, "test-build", route, xlogger.Nop(), stats.NewFacts(), capture.NewManager(capture.Policy{Mode: "off"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,6 +263,170 @@ func TestGeminiAutoProtocol(t *testing.T) {
 	rows := waitCapabilityStats(t, gw, 1)
 	if rows[0].Protocol != "gemini" || rows[0].InboundProtocol != "gemini" {
 		t.Fatalf("stats = protocol %q inbound %q, want gemini/gemini", rows[0].Protocol, rows[0].InboundProtocol)
+	}
+}
+
+func TestFailedReloadKeepsOldRewriters(t *testing.T) {
+	up := newCapabilityUpstream(t)
+	cfg := &gwconfig.Config{
+		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
+		Entrypoints: []gwconfig.Entrypoint{
+			{Name: "a", Match: []string{"a-model"}, Route: "ra"},
+			{Name: "b", Match: []string{"b-model"}, Route: "rb"},
+		},
+		Providers: []gwconfig.Provider{
+			{Name: "pa", Type: "generic", Chat: up.srv.URL + "/a/chat"},
+			{Name: "pb", Type: "generic", Chat: up.srv.URL + "/b/chat"},
+		},
+		Nodes: []gwconfig.Node{
+			{Name: "na", Provider: "pa", Model: "deepseek-chat"},
+			{Name: "nb", Provider: "pb", Model: "deepseek-chat"},
+		},
+		Routes: []gwconfig.Route{
+			{Name: "ra", Nodes: []string{"na"}},
+			{Name: "rb", Nodes: []string{"nb"}},
+		},
+	}
+	gw := startGateway(t, cfg)
+
+	const chatBody = `{"model":"a-model","messages":[{"role":"user","content":"hi"}]}`
+	if code := postModel(t, gw, "/v1/chat/completions", chatBody); code != http.StatusOK {
+		t.Fatalf("status before reload = %d", code)
+	}
+	if got := up.last(t).path; got != "/a/chat/chat/completions" {
+		t.Fatalf("upstream path before reload = %q", got)
+	}
+
+	// Route A moves to anthropic; route B is invalid because pb has no
+	// anthropic base. The build must fail after route A's rewriter would have
+	// been registered under its old name.
+	bad := *cfg
+	bad.Providers = append([]gwconfig.Provider(nil), cfg.Providers...)
+	bad.Providers[0].Anthropic = up.srv.URL + "/a/anthropic"
+	bad.Nodes = append([]gwconfig.Node(nil), cfg.Nodes...)
+	bad.Nodes[0].API = "anthropic"
+	bad.Nodes[1].API = "anthropic"
+	if err := gw.Reload(&bad); err == nil {
+		t.Fatal("Reload accepted an invalid route B")
+	}
+
+	if code := postModel(t, gw, "/v1/chat/completions", chatBody); code != http.StatusOK {
+		t.Fatalf("status after failed reload = %d", code)
+	}
+	hit := up.last(t)
+	if hit.path != "/a/chat/chat/completions" {
+		t.Fatalf("upstream path after failed reload = %q, want the old chat path", hit.path)
+	}
+	v := decodeBody(t, hit.body)
+	if _, ok := v["max_tokens"]; ok {
+		t.Fatalf("failed reload leaked the new anthropic rewriter into the old hop: %s", hit.body)
+	}
+	if _, ok := v["messages"]; !ok {
+		t.Fatalf("old hop body is not chat-shaped: %s", hit.body)
+	}
+
+	rows := waitCapabilityStats(t, gw, 2)
+	for _, row := range rows {
+		if row.Protocol != "chat" {
+			t.Fatalf("stats protocol = %q after a failed reload, want chat", row.Protocol)
+		}
+	}
+}
+
+func TestSuccessfulReloadKeepsInFlightResponseRewriter(t *testing.T) {
+	gotRequest := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	var mu sync.Mutex
+	var gotPath string
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		mu.Lock()
+		gotPath = r.URL.Path
+		mu.Unlock()
+		if strings.HasSuffix(r.URL.Path, "/chat/chat/completions") {
+			once.Do(func() { close(gotRequest) })
+			<-release
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, openAIChatResponse)
+	}))
+	t.Cleanup(upstream.Close)
+
+	cfg := &gwconfig.Config{
+		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
+		Entrypoints: []gwconfig.Entrypoint{
+			{Name: "a", Match: []string{"a-model"}, Route: "ra"},
+		},
+		Providers: []gwconfig.Provider{{
+			Name: "pa", Type: "generic", Chat: upstream.URL + "/a/chat",
+		}},
+		Nodes:  []gwconfig.Node{{Name: "na", Provider: "pa", Model: "deepseek-chat"}},
+		Routes: []gwconfig.Route{{Name: "ra", Nodes: []string{"na"}}},
+	}
+	gw := startGateway(t, cfg)
+
+	type result struct {
+		status int
+		body   string
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := http.Post(
+			"http://"+gw.Addr().String()+"/v1/chat/completions",
+			"application/json",
+			strings.NewReader(`{"model":"a-model","messages":[{"role":"user","content":"hi"}]}`),
+		)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		done <- result{status: resp.StatusCode, body: string(b)}
+	}()
+
+	select {
+	case <-gotRequest:
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not receive the in-flight request")
+	}
+
+	// Reload route A to a different target API while the response is in flight.
+	good := *cfg
+	good.Providers = append([]gwconfig.Provider(nil), cfg.Providers...)
+	good.Providers[0].Anthropic = upstream.URL + "/a/anthropic"
+	good.Nodes = append([]gwconfig.Node(nil), cfg.Nodes...)
+	good.Nodes[0].API = "anthropic"
+	if err := gw.Reload(&good); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+
+	res := <-done
+	if res.err != nil {
+		t.Fatal(res.err)
+	}
+	if res.status != http.StatusOK {
+		t.Fatalf("status = %d: %s", res.status, res.body)
+	}
+	v := decodeBody(t, res.body)
+	if _, ok := v["choices"]; !ok {
+		t.Fatalf("in-flight response used the new target rewriter: %s", res.body)
+	}
+	mu.Lock()
+	path := gotPath
+	mu.Unlock()
+	if path != "/a/chat/chat/completions" {
+		t.Fatalf("in-flight upstream path = %q, want the old chat path", path)
+	}
+	rows := waitCapabilityStats(t, gw, 1)
+	if rows[0].Protocol != "chat" {
+		t.Fatalf("in-flight stats protocol = %q, want the old chat target", rows[0].Protocol)
 	}
 }
 

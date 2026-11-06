@@ -205,16 +205,23 @@ live in separate hops, so names never collide in a selected hop and
 ### Rewriter registration
 
 Body rewriters are currently registered per `(route, node)` and must stay
-aligned with the path and target API that produced the x node.
+aligned with the path and target API that produced the x node. x's rewriter
+registry resolves names lazily, so reusing a name would mutate the live hop
+before the new hop is swapped in.
 
-- The rewriter key becomes `r/<route>/<variant>/<node>`, where `variant` is
-  `default` or the protocol group name.
+- The logical key is `r/<route>/<variant>/<node>`, where `variant` is `default`
+  or the protocol group name.
+- The registry key is namespaced by build generation:
+  `b/<generation>/r/<route>/<variant>/<node>`.
+- A build registers only new-generation names; it never unregisters or replaces
+  a name the old hop may still resolve. Builds are serialized by a mutex.
+- After a successful build the hop is swapped, and the old generation's names
+  are unregistered after the 30-second in-flight drain.
+- A failed build unregisters only the names it registered; the old hop and its
+  rewriters remain untouched.
 - Registration and hop construction consume the same compiled route variant
   plan, so the target API used for URL rewrites, body conversion and stats can
   never diverge.
-- Old keys are unregistered before each registration, as today. Stale keys for
-  removed nodes remain a pre-existing, harmless registry leak; this work does
-  not expand scope to garbage-collect them.
 
 ### Path rewrites
 
