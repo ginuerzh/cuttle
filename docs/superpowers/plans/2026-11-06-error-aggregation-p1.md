@@ -19,12 +19,12 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `a3eca549`.
+- Files changed: `internal/stats/errorsummary.go` (new), `internal/stats/errorsummary_test.go` (new), `internal/stats/alerts.go` (new), `internal/stats/store.go`, `internal/admin/handlers_stats.go`, `internal/admin/server.go`, `internal/admin/errors_test.go` (new).
+- Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/stats ./internal/admin -count=1` passed.
+- Review findings and fixes: aggregation reads raw retained rows and caps every list (50 groups, 20 client models, 20 fingerprints); fingerprints replace UUIDs/IPs/request IDs/hex before grouping. Alerts are computed on demand over 15 minutes; no background evaluator.
+- Deferred items: windows beyond `retainRequests` need error rollups (P2); alert thresholds are constants.
 
 ## Task 2: Capture headers and error-mode deployment
 
