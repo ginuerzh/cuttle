@@ -752,12 +752,19 @@ git commit -m "feat(web): show per-node output token rate"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository + commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: `llm-gw` `14f30305` (code); this docs commit follows
+- Files changed: `web/src/api/types.ts`, `web/src/time.ts`, `web/src/time.test.ts`, `web/src/graph/nodes.tsx`, `web/src/graph/nodes.test.tsx`, `web/src/useLiveGraph.test.tsx`, `web/src/App.tsx`, `web/src/App.test.tsx`, `web/src/locales/en-US.ts`, `README.md`
 - Tests/commands:
-- Review findings/fixes:
-- Deferred items/limitations:
+  - RED: `npx vitest run src/time.test.ts` → `formatTokenRate` undefined.
+  - GREEN: the same command → 8 tests passed.
+  - RED: `npx vitest run src/graph/nodes.test.tsx` → token rate missing from the stats line.
+  - GREEN: the same command → 10 tests passed.
+  - RED: `npx vitest run src/App.test.tsx` → `NodePanel` undefined.
+  - GREEN: the same command → 2 tests passed.
+  - Web gate: `npm test && npx tsc --noEmit && npm run build` → 20 files / 142 tests passed, build succeeded.
+- Review findings/fixes: the rate is shown only on binding nodes; the stats line ignores non-positive rates and non-binding node components do not request it.
+- Deferred items/limitations: no browser visual regression suite exists; verified through Vitest, TypeScript and the production build.
 
 ---
 
