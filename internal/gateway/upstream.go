@@ -36,15 +36,6 @@ type nodeTargets struct {
 	variants      map[provider.API]upstreamTarget
 }
 
-// compileRouteNode resolves the fallback target for one node.
-func compileRouteNode(p gwconfig.Provider, n gwconfig.Node) (upstreamTarget, error) {
-	targets, err := compileNodeTargets(p, n)
-	if err != nil {
-		return upstreamTarget{}, err
-	}
-	return targets.defaultTarget, nil
-}
-
 // compileNodeTargets resolves the default target and the per-protocol variants
 // for one node. A pinned API bypasses default selection entirely; otherwise the
 // default follows the model's static classification and each protocol variant

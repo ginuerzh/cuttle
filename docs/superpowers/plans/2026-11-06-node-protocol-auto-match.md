@@ -233,7 +233,7 @@ git commit -m "feat(gateway): plan per-protocol node targets"
   ```
   `rewriterName("r", "default", "n")` returns `"r/r/default/n"`; variant is `"default"` or the API name.
 
-- [ ] **Step 1: Write failing gateway tests**
+- [x] **Step 1: Write failing gateway tests**
 
 Create `internal/gateway/protocol_auto_test.go`. Use one `httptest` upstream whose base paths distinguish the APIs, for example:
 
@@ -299,13 +299,13 @@ Update `TestRewriterNameCannotCollide` to the three-argument signature and the `
 
 Update the existing generic test in `provider_capabilities_test.go` (`generic routing ignores catalog APIs and uses canonical order`) to expect the inbound-matching API now: a Responses request with Chat and Responses bases must hit `/v1/responses`, and rename the subtest to describe auto matching.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestAutoProtocol|TestGenericAutoProtocol|TestPinnedNodeAPI|TestEntrypointOrderWithProtocolVariants|TestRouteVariantKeepsBackupMetadata|TestGeminiAutoProtocol|TestReloadKeepsOldDataPlane' -count=1`
 
 Expected: FAIL with the old chat-only upstream paths.
 
-- [ ] **Step 3: Add protocol group and matcher helpers**
+- [x] **Step 3: Add protocol group and matcher helpers**
 
 In `internal/gateway/protocol.go`:
 
@@ -327,7 +327,7 @@ func modelGlobPattern(match []string) (pattern string, catchAll bool, err error)
 `buildEntrypointMatcher` keeps returning `nil` for catch-all and otherwise builds `BodyJSON("model", pattern)`.
 `buildProtocolMatcher` returns `PathRegexp(pathPattern)` for catch-all and `PathRegexp(pathPattern) && BodyJSON("model", pattern)` otherwise. Use `%q` for quoting in the DSL.
 
-- [ ] **Step 4: Replace rewriter pre-registration with route plans**
+- [x] **Step 4: Replace rewriter pre-registration with route plans**
 
 In `internal/gateway/build.go`:
 
@@ -340,32 +340,32 @@ In `internal/gateway/build.go`:
 - Hop names become `route/<route>/<variant>` so logs distinguish variants.
 - `registerHeaderRewriter` stays unchanged.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestAutoProtocol|TestGenericAutoProtocol|TestPinnedNodeAPI|TestEntrypointOrderWithProtocolVariants|TestRouteVariantKeepsBackupMetadata|TestGeminiAutoProtocol|TestReloadKeepsOldDataPlane|TestProtocolMatrix|TestEntrypoint|TestRewriterName' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 6: Run the full gateway package**
+- [x] **Step 6: Run the full gateway package**
 
 Run: `GOWORK=off go test ./internal/gateway -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 7: Fill the Implementation record and commit**
+- [x] **Step 7: Fill the Implementation record and commit**
 
 ```bash
-git add internal/gateway/protocol.go internal/gateway/build.go internal/gateway/protocol_auto_test.go internal/gateway/provider_capabilities_test.go docs/superpowers/plans/2026-11-06-node-protocol-auto-match.md
+git add internal/gateway/protocol.go internal/gateway/build.go internal/gateway/protocol_auto_test.go internal/gateway/provider_capabilities_test.go internal/gateway/model_disabled_test.go docs/superpowers/plans/2026-11-06-node-protocol-auto-match.md
 git commit -m "feat(gateway): match upstream api to inbound protocol"
 ```
 
 **Implementation record** (fill after completion):
-- Date/status:
-- Repository + commit SHA:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
+- Files changed: `internal/gateway/protocol.go`, `internal/gateway/build.go`, `internal/gateway/upstream.go`, `internal/gateway/protocol_auto_test.go`, `internal/gateway/provider_capabilities_test.go`, `internal/gateway/model_disabled_test.go`, plan
+- Tests/commands and results: focused auto-protocol tests PASS; `GOWORK=off go test ./internal/gateway -count=1` PASS; `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./internal/gateway` PASS.
+- Review findings and fixes: disabled-model reload required unregistering all variant rewriter keys; added `unregisterNodeRewriters`.
+- Deferred items/limitations: stale rewriters for removed/disabled nodes remain a pre-existing leak; only disabled models are cleaned up.
 
 ---
 

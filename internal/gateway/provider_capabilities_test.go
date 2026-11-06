@@ -356,7 +356,7 @@ func TestProviderCapabilities(t *testing.T) {
 		}
 	})
 
-	t.Run("generic routing ignores catalog APIs and uses canonical order", func(t *testing.T) {
+	t.Run("generic routing matches the inbound protocol when the base exists", func(t *testing.T) {
 		up := newCapabilityUpstream(t)
 		cfg := &gwconfig.Config{
 			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
@@ -381,8 +381,8 @@ func TestProviderCapabilities(t *testing.T) {
 		if code := postModel(t, gw, "/v1/responses", `{"model":"fast","input":"hi"}`); code != http.StatusOK {
 			t.Fatalf("status = %d", code)
 		}
-		if got := up.last(t).path; got != "/v1/chat/completions" {
-			t.Fatalf("upstream path = %q, want the canonical chat fallback", got)
+		if got := up.last(t).path; got != "/v1/responses" {
+			t.Fatalf("upstream path = %q, want the inbound-matching responses API", got)
 		}
 	})
 
@@ -557,7 +557,7 @@ func TestBuildNodesSkipsEmptyHeaderWhenKeyless(t *testing.T) {
 			Extra:  map[string]string{"X-Org": "acme"},
 		},
 	}
-	nodes, err := buildNodes(p, n, "route", target)
+	nodes, err := buildNodes(p, n, "route", target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +590,7 @@ func TestBuildNodesExtraWinsOverKeyHeaders(t *testing.T) {
 			},
 		},
 	}
-	nodes, err := buildNodes(p, n, "route", target)
+	nodes, err := buildNodes(p, n, "route", target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,12 +607,12 @@ func TestBuildNodesExtraWinsOverKeyHeaders(t *testing.T) {
 }
 
 func TestRewriterNameCannotCollide(t *testing.T) {
-	if got := rewriterName("r", "n"); got != "r/r/n" {
-		t.Fatalf("rewriterName(r, n) = %q, want r/r/n", got)
+	if got := rewriterName("r", "default", "n"); got != "r/r/default/n" {
+		t.Fatalf("rewriterName(r, default, n) = %q, want r/r/default/n", got)
 	}
 	// ':' was ambiguous as a separator; with '/', which route/node names
 	// forbid, these two pairs necessarily differ.
-	if rewriterName("a:b", "c") == rewriterName("a", "b:c") {
+	if rewriterName("a:b", "default", "c") == rewriterName("a", "default", "b:c") {
 		t.Fatal("rewriter names collide for names containing ':'")
 	}
 }

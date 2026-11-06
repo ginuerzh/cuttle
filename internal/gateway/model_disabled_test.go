@@ -146,7 +146,7 @@ func TestDisabledTargetModelCanReload(t *testing.T) {
 	enabled.Entrypoints[0].Route = routeName
 
 	gw := startGateway(t, enabled)
-	rewriter := rewriterName(routeName, nodeName)
+	rewriter := rewriterName(routeName, "default", nodeName)
 	if !registry.RewriterRegistry().IsRegistered(rewriter) {
 		t.Fatalf("rewriter %q is not registered for an enabled target", rewriter)
 	}
