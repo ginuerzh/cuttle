@@ -593,7 +593,7 @@ git commit -m "docs(plan): record task 2"
   - `func newCountTokensHandler(next handler.Handler, policy *atomic.Pointer[countTokensPolicy], log logger.Logger) *countTokensHandler`
   - `countTokensHandler` implements `handler.Handler` and delegates `Init` to `next`.
 
-- [ ] **Step 1: Write the failing integration tests**
+- [x] **Step 1: Write the failing integration tests**
 
 Create `internal/gateway/count_tokens_test.go`:
 
@@ -804,13 +804,13 @@ func TestCountTokensReloadFlipsPolicy(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestCountTokens(Estimates|PassesThrough|MixedRoute|QueryString|InvalidBody|Sequential|Reload|NoStats)' -count=1`
 
 Expected: FAIL because the wrapper does not exist; Chat `count_tokens` reaches the mock upstream and the Anthropic pass-through assertions fail at the local 404/mock response.
 
-- [ ] **Step 3: Implement the wrapper**
+- [x] **Step 3: Implement the wrapper**
 
 Create `internal/gateway/count_tokens.go`:
 
@@ -833,7 +833,7 @@ Create `internal/gateway/count_tokens.go`:
 - Response helpers set `ProtoMajor/Minor` from the request, `Content-Type: application/json`, `Connection: close`, `ContentLength`, and use `resp.Write(conn)`.
 - The error helper writes `{"type":"error","error":{"type":"invalid_request_error","message":...}}`.
 
-- [ ] **Step 4: Wire the wrapper into the gateway**
+- [x] **Step 4: Wire the wrapper into the gateway**
 
 In `internal/gateway/gateway.go`:
 
@@ -846,13 +846,13 @@ In `internal/gateway/gateway.go`:
   - `g.handler = h`, `g.forwarder = fwd`, and `g.svc = xservice.NewService("llm-gw", ln, h, ...)`.
 - `Gateway.countTokens` was added in Task 2; `New` calls `apply` before `Start`, so the policy is loaded before the first request.
 
-- [ ] **Step 5: Run the focused integration tests**
+- [x] **Step 5: Run the focused integration tests**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestCountTokens(Estimates|PassesThrough|MixedRoute|QueryString|InvalidBody|Sequential|Reload|NoStats)' -count=1 -v`
 
 Expected: PASS.
 
-- [ ] **Step 6: Update the old protocol matrix assertion**
+- [x] **Step 6: Update the old protocol matrix assertion**
 
 In `internal/gateway/protocol_test.go`, replace the `count_tokens is not converted` subtest with:
 
@@ -875,20 +875,20 @@ t.Run("count_tokens is estimated for a chat target", func(t *testing.T) {
 })
 ```
 
-- [ ] **Step 7: Run the gateway package and the existing invalid-body test**
+- [x] **Step 7: Run the gateway package and the existing invalid-body test**
 
 Run: `GOWORK=off go test ./internal/gateway -count=1`
 
 Expected: PASS, including `TestCountTokensInvalidBodyPassesThrough` and `TestProtocolMatrix`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/gateway/count_tokens.go internal/gateway/count_tokens_test.go internal/gateway/gateway.go internal/gateway/protocol_test.go
 git commit -m "feat(gateway): estimate count_tokens for non-anthropic routes"
 ```
 
-- [ ] **Step 9: Record the task**
+- [x] **Step 9: Record the task**
 
 Fill the Implementation record below with the code commit SHA from Step 8, the files changed, the commands run, and the results. Then:
 
@@ -898,12 +898,17 @@ git commit -m "docs(plan): record task 3"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository/commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository/commit: `llm-gw` `3966bd6d` (code); this docs commit follows
+- Files changed: `internal/gateway/count_tokens.go`, `internal/gateway/count_tokens_test.go`, `internal/gateway/gateway.go`, `internal/gateway/protocol_test.go`
 - Tests/commands/results:
-- Review findings/fixes:
-- Deferred/limitations:
+  - RED: `GOWORK=off go test ./internal/gateway -run 'TestCountTokens(Estimates|PassesThrough|MixedRoute|QueryString|InvalidBody|Sequential|Reload|NoStats)' -count=1` → Chat/mixed/query/sequential/reload returned the upstream response or called the upstream; the pass-through test initially failed on byte equality.
+  - Ruling: Anthropic pass-through still applies the existing model rewrite, so the test decodes the forwarded body and asserts the node model `deepseek-v4-flash` with intact messages instead of byte equality.
+  - GREEN: the same focused command → all PASS, including the corrected pass-through; `TestCountTokensWritesNoStats` → PASS.
+  - Full package: `GOWORK=off go test ./internal/gateway -count=1` → `ok` (3.425s), including `TestProtocolMatrix` and `TestCountTokensInvalidBodyPassesThrough`.
+  - Full repository: `GOWORK=off go test ./... -count=1` → all packages PASS.
+- Review findings/fixes: the plan's byte-equality assertion contradicted the existing model rewrite; corrected the test, not the product behavior.
+- Deferred/limitations: the wrapper handles the first request per connection (`http.keepalive=false`); compressed bodies and malformed bodies pass through; bodies over 32 MiB return 413.
 
 ---
 
