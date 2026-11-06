@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { NodeBody, handleStyle, selectionStyle } from './nodes';
+import { NodeBody, NodeStats, handleStyle, selectionStyle } from './nodes';
 
 describe('selectionStyle', () => {
   it('draws selection inside the box without changing its size', () => {
@@ -21,11 +21,22 @@ describe('handleStyle', () => {
 });
 
 describe('NodeBody', () => {
-  it('reserves the metrics row even when metrics are unavailable', () => {
-    const empty = renderToStaticMarkup(<NodeBody label="route" />);
-    const withMetrics = renderToStaticMarkup(
-      <NodeBody
-        label="route"
+  it('renders only the stable label and sub-lines', () => {
+    const html = renderToStaticMarkup(<NodeBody label="route" sub="4 nodes · round" />);
+    expect(html).toContain('route');
+    expect(html).toContain('4 nodes · round');
+    expect(html).not.toContain('position:absolute');
+  });
+});
+
+describe('NodeStats', () => {
+  it('renders nothing when metrics are unavailable', () => {
+    expect(renderToStaticMarkup(<NodeStats />)).toBe('');
+  });
+
+  it('renders the metrics outside the node flow', () => {
+    const html = renderToStaticMarkup(
+      <NodeStats
         metrics={{
           requests: 10,
           errors: 0,
@@ -38,17 +49,11 @@ describe('NodeBody', () => {
       />,
     );
 
-    // Same reserved row in both edit (no metrics) and monitor (metrics) modes,
-    // so switching modes cannot resize the node or move its edges.
-    expect(empty).toContain('height:15px');
-    expect(empty).toContain('width:170px');
-    expect(withMetrics).toContain('height:15px');
-    expect(withMetrics).toContain('width:170px');
-    expect(withMetrics).toContain('10 req');
-  });
-
-  it('omits the metrics row for nodes that never have stats', () => {
-    const html = renderToStaticMarkup(<NodeBody label="unrouted" stats={false} />);
-    expect(html).not.toContain('height:15px');
+    // Absolute and anchored to the card bottom: the caption must never change
+    // the node size, otherwise switching edit/monitor moves every edge.
+    expect(html).toContain('position:absolute');
+    expect(html).toContain('top:100%');
+    expect(html).toContain('text-align:center');
+    expect(html).toContain('10 req');
   });
 });

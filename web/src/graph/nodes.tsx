@@ -39,7 +39,7 @@ function metricsLine(m?: NodeMetrics): string {
 const box: React.CSSProperties = {
   position: 'relative',
   display: 'flex',
-  alignItems: 'flex-start',
+  alignItems: 'center',
   gap: 10,
   borderRadius: 10,
   border: '1.5px solid',
@@ -93,44 +93,42 @@ export function handleStyle(color: string): React.CSSProperties {
   };
 }
 
-export function NodeBody({
-  label,
-  sub,
-  metrics,
-  stats = true,
-}: {
-  label: string;
-  sub?: string;
-  metrics?: NodeMetrics;
-  stats?: boolean;
-}) {
+export function NodeBody({ label, sub }: { label: string; sub?: string }) {
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>{label}</div>
       {sub ? <div style={{ color: 'var(--gw-node-text-muted)', fontSize: 11, marginTop: 2 }}>{sub}</div> : null}
-      {stats ? (
-        // Always reserve the metrics row. Monitor mode adds the line when data
-        // arrives, so rendering it conditionally would resize every node (and
-        // move its edges) when switching between edit and monitor.
-        <div
-          title={metrics ? metricsLine(metrics) : undefined}
-          style={{
-            marginTop: 6,
-            height: 15,
-            // A fixed box (not min/max) keeps the node width independent of the
-            // metric text, which only exists in monitor mode.
-            width: 170,
-            fontSize: 11,
-            lineHeight: '15px',
-            color: 'var(--gw-text-metrics)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {metrics ? metricsLine(metrics) : null}
-        </div>
-      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Metrics live outside the card flow so they never resize the node. They only
+ * appear in monitor mode; keeping them absolute means switching modes cannot
+ * move the node box, its handles or its edges.
+ */
+export function NodeStats({ metrics }: { metrics?: NodeMetrics }) {
+  if (!metrics) return null;
+  return (
+    <div
+      title={metricsLine(metrics)}
+      style={{
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
+        marginTop: 4,
+        fontSize: 11,
+        lineHeight: '15px',
+        color: 'var(--gw-text-metrics)',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        textAlign: 'center',
+        pointerEvents: 'none',
+      }}
+    >
+      {metricsLine(metrics)}
     </div>
   );
 }
@@ -141,7 +139,8 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
       <IconBadge color="#6366f1">
         <TagOutlined />
       </IconBadge>
-      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <NodeBody label={data.label} sub={data.sub} />
+      <NodeStats metrics={data.metrics} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#6366f1')} />
     </div>
   );
@@ -161,7 +160,8 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
       <IconBadge color="#0ea5e9">
         <BranchesOutlined />
       </IconBadge>
-      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <NodeBody label={data.label} sub={data.sub} />
+      <NodeStats metrics={data.metrics} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
     </div>
@@ -184,7 +184,8 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
       <IconBadge color="#0891b2">
         <ApiOutlined />
       </IconBadge>
-      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <NodeBody label={data.label} sub={data.sub} />
+      <NodeStats metrics={data.metrics} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>
@@ -206,7 +207,8 @@ export function ProviderNode({ data, selected, isConnectable }: NodeProps<GraphN
       <IconBadge color="#10b981">
         <CloudServerOutlined />
       </IconBadge>
-      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <NodeBody label={data.label} sub={data.sub} />
+      <NodeStats metrics={data.metrics} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#10b981')} />
     </div>
   );
@@ -218,7 +220,7 @@ export function UnroutedNode({ data, selected, isConnectable }: NodeProps<GraphN
       <IconBadge color="#dc2626">
         <WarningOutlined />
       </IconBadge>
-      <NodeBody label={data.label} sub={data.sub} stats={false} />
+      <NodeBody label={data.label} sub={data.sub} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#dc2626')} />
     </div>
   );
