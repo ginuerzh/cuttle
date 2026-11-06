@@ -19,6 +19,7 @@ import (
 	"github.com/go-gost/llm-gw/internal/gateway"
 	"github.com/go-gost/llm-gw/internal/logging"
 	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/go-gost/llm-gw/internal/version"
 )
 
 func main() {
@@ -29,8 +30,14 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) > 0 && args[0] == "hash-password" {
-		return runHashPassword()
+	if len(args) > 0 {
+		switch args[0] {
+		case "version", "-v", "--version":
+			printVersion(os.Stdout)
+			return nil
+		case "hash-password":
+			return runHashPassword()
+		}
 	}
 
 	configPath, err := parseServeArgs(args)
@@ -53,6 +60,7 @@ func run(args []string) error {
 		return err
 	}
 	log.SetDefault()
+	log.Infof("llm-gw %s starting", version.String())
 
 	for _, warning := range res.Warnings {
 		log.Warnf("%s", warning)
@@ -156,9 +164,13 @@ func runHashPassword() error {
 	return nil
 }
 
+func printVersion(w io.Writer) {
+	fmt.Fprintf(w, "llm-gw %s\n", version.String())
+}
+
 func parseServeArgs(args []string) (string, error) {
 	if len(args) == 0 || args[0] != "serve" {
-		return "", errors.New("usage: llm-gw serve [-c <config>]")
+		return "", errors.New("usage: llm-gw <serve [-c <config>] | version | hash-password>")
 	}
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
