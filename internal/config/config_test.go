@@ -936,6 +936,26 @@ func TestGatewayReadTimeoutDefaultsAndValidation(t *testing.T) {
 	}
 }
 
+func TestUserAgentAndHeaderValidation(t *testing.T) {
+	c, err := Load(writeConfig(t, "gateway:\n  listen: \"127.0.0.1:0\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(c.Gateway.UserAgent, "llm-gw/") {
+		t.Fatalf("gateway.userAgent = %q", c.Gateway.UserAgent)
+	}
+	for _, body := range []string{
+		"gateway:\n  listen: \"127.0.0.1:0\"\nproviders:\n  - name: p\n    type: generic\n    chat: https://example.com/v1\n    headers:\n      Host: evil\n",
+		"gateway:\n  listen: \"127.0.0.1:0\"\nproviders:\n  - name: p\n    type: generic\n    chat: https://example.com/v1\n    headers:\n      Accept-Encoding: gzip\n",
+		"gateway:\n  listen: \"127.0.0.1:0\"\nproviders:\n  - name: p\n    type: generic\n    chat: https://example.com/v1\n    headers:\n      Bad Header: x\n",
+		"gateway:\n  listen: \"127.0.0.1:0\"\nproviders:\n  - name: p\n    type: generic\n    chat: https://example.com/v1\n    userAgent: \"bad\\nvalue\"\n",
+	} {
+		if _, err := Load(writeConfig(t, body)); err == nil {
+			t.Fatalf("expected error for %q", body)
+		}
+	}
+}
+
 func TestCaptureExplicitZeroSampleRate(t *testing.T) {
 	c, err := Load(writeConfig(t, `
 gateway:

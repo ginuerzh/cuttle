@@ -172,6 +172,13 @@ export const enUS: Record<string, string> = {
   '请求头': 'Request headers',
   '响应头': 'Response headers',
   '{errors} 错误 / {total} 请求': '{errors} errors / {total} requests',
+  'headers 必须是 JSON 对象': 'headers must be a JSON object',
+  'header {name} 的值必须是字符串': 'header {name} must be a string',
+  '留空使用 gateway.userAgent；headers 中的 User-Agent 会覆盖它。':
+    'Empty uses gateway.userAgent; a User-Agent in headers overrides it.',
+  'upstream headers（JSON）': 'upstream headers (JSON)',
+  '额外请求头，例如 {"X-Custom":"value"}；Host、Content-Length、Accept-Encoding 由网关管理。':
+    'Extra request headers, e.g. {"X-Custom":"value"}; Host, Content-Length and Accept-Encoding are managed by the gateway.',
   '请求路径': 'Request path',
   '流式终止': 'Stream termination',
   '已截断': 'Truncated',

@@ -10,12 +10,14 @@ import {
   formatModalities,
   formatPrice,
   genericCanonicalNote,
+  headersText,
   isBaseURLLocked,
   modelApiLabel,
   modelDirectionRows,
   modelOption,
   nodeAPIOptions,
   normalizedModalities,
+  parseHeadersText,
   presetFormValues,
   providerKeyRows,
   providerKeyUpdates,
@@ -468,6 +470,8 @@ describe('providerPayload', () => {
       auth: { header: 'Authorization' },
       health: { api: 'chat', path: '/models' },
       tls: { secure: false },
+      userAgent: '',
+      headers: {},
       enabled: false,
       models: { m1: { disabled: true } },
     });
@@ -495,6 +499,20 @@ describe('providerPayload', () => {
   it('includes keys only when the provider carries them', () => {
     expect(providerPayload({ ...full, keys: ['sk-1'] })).toMatchObject({ keys: ['sk-1'] });
     expect(providerPayload(full)).not.toHaveProperty('keys');
+  });
+});
+
+describe('provider headers', () => {
+  it('round-trips a header map through the form text', () => {
+    const headers = { 'User-Agent': 'llm-gw/1.0', 'X-Custom': 'yes' };
+    expect(parseHeadersText(headersText(headers))).toEqual(headers);
+    expect(headersText({})).toBe('');
+    expect(parseHeadersText('')).toEqual({});
+  });
+
+  it('rejects non-objects and non-string values', () => {
+    expect(() => parseHeadersText('[]')).toThrow();
+    expect(() => parseHeadersText('{"X-Custom": 1}')).toThrow();
   });
 });
 

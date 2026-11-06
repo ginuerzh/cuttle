@@ -41,8 +41,10 @@ import {
   disabledTargets,
   enabledModels,
   genericCanonicalNote,
+  headersText,
   isBaseURLLocked,
   nodeAPIOptions,
+  parseHeadersText,
   presetFormValues,
   providerKeyRows,
   providerKeyUpdates,
@@ -352,11 +354,13 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
   const [form] = Form.useForm();
   const [keyRows, setKeyRows] = useState<ProviderKeyRow[]>(() => providerKeyRows(provider.keyPreviews));
   const [deletedKeys, setDeletedKeys] = useState<number[]>([]);
+  const [headersJSON, setHeadersJSON] = useState(() => headersText(provider.headers));
 
   useEffect(() => {
     setKeyRows(providerKeyRows(provider.keyPreviews));
     setDeletedKeys([]);
-  }, [provider.name, provider.keyPreviews]);
+    setHeadersJSON(headersText(provider.headers));
+  }, [provider.name, provider.keyPreviews, provider.headers]);
 
   const deleteKey = (i: number) => {
     const row = keyRows[i];
@@ -369,6 +373,13 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
 
   const save = async () => {
     const v = await form.validateFields();
+    let headers: Record<string, string>;
+    try {
+      headers = parseHeadersText(headersJSON);
+    } catch (err) {
+      message.error(errorText(err));
+      return;
+    }
     setBusy(true);
     try {
       const payload = providerPayload(
@@ -379,6 +390,8 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
           responses: String(v.responses ?? '').trim(),
           anthropic: String(v.anthropic ?? '').trim(),
           gemini: String(v.gemini ?? '').trim(),
+          userAgent: String(v.userAgent ?? '').trim(),
+          headers,
         },
         { models: provider.models ?? {} },
       );
@@ -420,6 +433,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         responses: provider.responses ?? '',
         anthropic: provider.anthropic ?? '',
         gemini: provider.gemini ?? '',
+        userAgent: provider.userAgent ?? '',
       }}
     >
       <Typography.Title level={5} style={{ marginTop: 0 }}>
@@ -461,6 +475,24 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         extra={tr('Gemini API 端点，通常以 /v1beta 结尾；留空表示不提供。')}
       >
         <Input disabled={baseURLLocked} placeholder="https://generativelanguage.googleapis.com/v1beta" />
+      </Form.Item>
+      <Form.Item
+        name="userAgent"
+        label="upstream User-Agent"
+        extra={tr('留空使用 gateway.userAgent；headers 中的 User-Agent 会覆盖它。')}
+      >
+        <Input placeholder="llm-gw/..." />
+      </Form.Item>
+      <Form.Item
+        label={tr('upstream headers（JSON）')}
+        extra={tr('额外请求头，例如 {"X-Custom":"value"}；Host、Content-Length、Accept-Encoding 由网关管理。')}
+      >
+        <Input.TextArea
+          rows={4}
+          value={headersJSON}
+          onChange={(e) => setHeadersJSON(e.target.value)}
+          placeholder='{"X-Custom":"value"}'
+        />
       </Form.Item>
       <ProviderKeyEditor
         rows={keyRows}

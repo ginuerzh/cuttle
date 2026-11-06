@@ -12,7 +12,10 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/net/http/httpguts"
 	"gopkg.in/yaml.v3"
+
+	"github.com/go-gost/llm-gw/internal/version"
 )
 
 // Config is the top-level llm-gw configuration.
@@ -31,6 +34,9 @@ type Config struct {
 type Gateway struct {
 	Listen      string   `yaml:"listen" json:"listen"`
 	ReadTimeout Duration `yaml:"readTimeout" json:"readTimeout"`
+	// UserAgent is sent to upstream providers instead of the client's
+	// User-Agent. A provider can override it.
+	UserAgent string `yaml:"userAgent,omitempty" json:"userAgent,omitempty"`
 }
 
 // Admin holds the management API settings.
@@ -92,6 +98,11 @@ type Provider struct {
 	Health    Health   `yaml:"health,omitempty" json:"health,omitempty"`
 	TLS       TLS      `yaml:"tls,omitempty" json:"tls,omitempty"`
 	Enabled   *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// UserAgent overrides gateway.userAgent for this provider.
+	UserAgent string `yaml:"userAgent,omitempty" json:"userAgent,omitempty"`
+	// Headers adds or overrides upstream request headers. They are applied
+	// after provider auth and before auth.extra.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	// Models holds local per-model overrides keyed by model ID. The upstream
 	// catalog stays authoritative; overrides only add local policy such as
 	// disabling a model. Unknown model IDs are allowed because the catalog can
@@ -338,6 +349,7 @@ func (c *Config) Normalize() {
 
 func (c *Config) expandEnv() {
 	c.Gateway.Listen = ExpandEnv(c.Gateway.Listen)
+	c.Gateway.UserAgent = ExpandEnv(c.Gateway.UserAgent)
 	c.Admin.Listen = ExpandEnv(c.Admin.Listen)
 	c.Stats.Path = ExpandEnv(c.Stats.Path)
 	c.Log.Level = ExpandEnv(c.Log.Level)
@@ -358,6 +370,10 @@ func (c *Config) expandEnv() {
 		p.Responses = ExpandEnv(p.Responses)
 		p.Anthropic = ExpandEnv(p.Anthropic)
 		p.Gemini = ExpandEnv(p.Gemini)
+		p.UserAgent = ExpandEnv(p.UserAgent)
+		for k, v := range p.Headers {
+			p.Headers[k] = ExpandEnv(v)
+		}
 		p.Health.API = ExpandEnv(p.Health.API)
 		p.Health.Path = ExpandEnv(p.Health.Path)
 		for j := range p.Keys {
@@ -407,6 +423,10 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Gateway.ReadTimeout == 0 {
 		c.Gateway.ReadTimeout = Duration(60 * time.Second)
+	}
+	c.Gateway.UserAgent = strings.TrimSpace(c.Gateway.UserAgent)
+	if c.Gateway.UserAgent == "" {
+		c.Gateway.UserAgent = "llm-gw/" + version.Current().Version
 	}
 	if c.Admin.Listen == "" {
 		c.Admin.Listen = "127.0.0.1:8788"
@@ -548,6 +568,44 @@ func providerAPIBase(p *Provider, api string) string {
 	return ""
 }
 
+func validateUserAgent(scope, ua string) error {
+	ua = strings.TrimSpace(ua)
+	if ua == "" {
+		return nil
+	}
+	if !httpguts.ValidHeaderFieldValue(ua) {
+		return fmt.Errorf("%s: userAgent contains invalid characters", scope)
+	}
+	return nil
+}
+
+var forbiddenHeader = map[string]bool{
+	"host":                true,
+	"content-length":      true,
+	"transfer-encoding":   true,
+	"connection":          true,
+	"proxy-connection":    true,
+	"upgrade":             true,
+	"accept-encoding":     true,
+	"proxy-authorization": true,
+}
+
+func validateHeaders(scope string, headers map[string]string) error {
+	for key, value := range headers {
+		name := strings.TrimSpace(key)
+		if !httpguts.ValidHeaderFieldName(name) {
+			return fmt.Errorf("%s: invalid header name %q", scope, key)
+		}
+		if forbiddenHeader[strings.ToLower(name)] {
+			return fmt.Errorf("%s: header %q is managed by the gateway and cannot be overridden", scope, name)
+		}
+		if !httpguts.ValidHeaderFieldValue(value) {
+			return fmt.Errorf("%s: header %q contains invalid characters", scope, name)
+		}
+	}
+	return nil
+}
+
 func validateProviderBaseURL(name, field, raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" {
@@ -566,6 +624,9 @@ func Validate(c *Config) error {
 	}
 	if strings.TrimSpace(c.Gateway.Listen) == "" {
 		return fmt.Errorf("gateway.listen is required")
+	}
+	if err := validateUserAgent("gateway", c.Gateway.UserAgent); err != nil {
+		return err
 	}
 	if c.Gateway.ReadTimeout != 0 &&
 		(c.Gateway.ReadTimeout < Duration(time.Second) || c.Gateway.ReadTimeout > Duration(300*time.Second)) {
@@ -616,6 +677,12 @@ func Validate(c *Config) error {
 			return fmt.Errorf("provider %q: type is required", name)
 		} else if !IsProviderType(typ) {
 			return fmt.Errorf("provider %q: unknown type %q", name, typ)
+		}
+		if err := validateUserAgent("provider "+name, p.UserAgent); err != nil {
+			return err
+		}
+		if err := validateHeaders("provider "+name, p.Headers); err != nil {
+			return err
 		}
 		var hasAPI bool
 		for _, b := range providerAPIBaseURLs(p) {

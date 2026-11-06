@@ -49,6 +49,10 @@ export interface Provider {
   auth?: AuthConfig;
   health?: HealthConfig;
   tls?: Record<string, unknown>;
+  /** Overrides gateway.userAgent for this provider. */
+  userAgent?: string;
+  /** Extra upstream request headers; auth.extra is applied after these. */
+  headers?: Record<string, string>;
   keys?: string[];
   enabled?: boolean;
   /** Per-model local overrides, keyed by model ID; preserved on every save. */

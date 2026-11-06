@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -27,6 +28,7 @@ import (
 	"github.com/go-gost/llm-gw/internal/provider"
 	gwrewriter "github.com/go-gost/llm-gw/internal/rewriter"
 	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/go-gost/llm-gw/internal/version"
 
 	_ "github.com/go-gost/x/connector/http"
 	_ "github.com/go-gost/x/dialer/tcp"
@@ -152,6 +154,9 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 		if !p.EnabledValue() {
 			continue
 		}
+		if strings.TrimSpace(p.UserAgent) == "" {
+			p.UserAgent = cfg.Gateway.UserAgent
+		}
 		targets, err := compileNodeTargets(p, n)
 		if err != nil {
 			if errors.Is(err, errModelDisabled) {
@@ -270,7 +275,7 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 
 	nodes := make([]*xconfig.NodeConfig, 0, len(keys))
 	for i, key := range keys {
-		headers := make(map[string]string, len(auth.Extra)+5)
+		headers := make(map[string]string, len(auth.Extra)+len(p.Headers)+6)
 		// The gateway owns upstream authentication. Inbound credentials, such
 		// as the Authorization header Claude Code sends or an SDK's x-api-key,
 		// must never be forwarded: some upstreams (DeepSeek's Anthropic
@@ -290,6 +295,18 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 				}
 				headers[kh.Header] = kh.Prefix + key
 			}
+		}
+		// Own the upstream User-Agent. Forwarding an arbitrary client UA
+		// (Python-urllib, for example) can trigger Cloudflare bot rules; a
+		// stable gateway UA is safe and still leaves client attribution in
+		// stats. Provider headers can override it, and auth.extra wins last.
+		ua := strings.TrimSpace(p.UserAgent)
+		if ua == "" {
+			ua = "llm-gw/" + version.Current().Version
+		}
+		headers["User-Agent"] = ua
+		for k, v := range p.Headers {
+			headers[http.CanonicalHeaderKey(k)] = v
 		}
 		// Extra is the user's final override: apply it after every
 		// key-derived header so an explicit value always wins.

@@ -89,11 +89,37 @@ export function providerPayload(
     auth: p.auth ?? {},
     health: p.health ?? {},
     tls: p.tls ?? {},
+    userAgent: p.userAgent ?? '',
+    headers: p.headers ?? {},
     enabled: p.enabled !== false,
     models: overrides?.models ?? p.models ?? {},
   };
   if (p.keys && p.keys.length > 0) payload.keys = p.keys;
   return payload;
+}
+
+/** Render upstream headers as an editable JSON object. */
+export function headersText(headers?: Record<string, string>): string {
+  if (!headers || Object.keys(headers).length === 0) return '';
+  return JSON.stringify(headers, null, 2);
+}
+
+/** Parse the provider form's header JSON and reject non-string values. */
+export function parseHeadersText(text: string): Record<string, string> {
+  const raw = text.trim();
+  if (!raw) return {};
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(t('headers 必须是 JSON 对象'));
+  }
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== 'string') {
+      throw new Error(t('header {name} 的值必须是字符串', { name: key }));
+    }
+    out[key] = value;
+  }
+  return out;
 }
 
 /** APIs a provider has configured a base URL for, in canonical order. */

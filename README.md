@@ -315,6 +315,7 @@ routes: [ ... ]
 | --- | --- | --- |
 | `listen` | `:8787` | Data-plane listen address |
 | `readTimeout` | `60s` | Deadline for reading upstream HTTP response headers; 1s–300s |
+| `userAgent` | `llm-gw/<version>` | Upstream User-Agent; provider-level `userAgent` or `headers` can override it |
 
 ### `admin`
 
@@ -413,6 +414,8 @@ union.
 | `keys` | no | API keys; expanded from the environment |
 | `models` | no | Local overrides, currently `disabled: true` |
 | `auth` | no | Header/prefix/key-header overrides |
+| `userAgent` | no | Overrides `gateway.userAgent` for this provider |
+| `headers` | no | Extra upstream request headers; applied after auth and before `auth.extra` |
 | `health` | no | Probe API, path, interval (default `30s`), timeout (default `5s`) |
 | `tls` | no | `serverName`, `secure` (default `true`) |
 | `enabled` | no | Set `false` to remove the provider from routing |
@@ -435,6 +438,15 @@ key and never forwards inbound client credentials. `Authorization`, `x-api-key`,
 applied; `auth.extra` is applied last and still wins. This matters when a client
 such as Claude Code sends its own `Authorization` header, because upstreams may
 prefer it over the injected `x-api-key` and reject the provider key.
+
+The gateway also owns the upstream `User-Agent`: it sends
+`gateway.userAgent` (default `llm-gw/<version>`) instead of the client's UA.
+`provider.userAgent` overrides it, and `provider.headers` can add or replace
+any header except `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`,
+`Proxy-Connection`, `Upgrade`, `Accept-Encoding` and `Proxy-Authorization`.
+This prevents clients such as `Python-urllib` from being rejected by
+Cloudflare bot rules (CommandCode `error code: 1010`). The client's own UA is
+still recorded in `stats.requests.user_agent` for attribution.
 
 With the quick-start example above, Claude Code talking Anthropic Messages to
 `/v1/messages` is forwarded to DeepSeek's native
