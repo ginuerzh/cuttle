@@ -53,8 +53,9 @@ docker build -t llm-gw .
 | `main.go` | CLI: `serve`, `hash-password`, `SIGHUP` reload; first-run bootstrap wiring and session reset. The admin server starts only when `admin.passwordHash` is set. |
 | `internal/bootstrap` | Zero-config path resolution, first-run config generation, admin password generation, and ignored-env warnings. |
 | `internal/config` | Strict YAML schema, environment expansion, defaults, validation, atomic `0600` writes. |
-| `internal/gateway/build.go` | Compiles one hop entry per entrypoint, with route hops cached by route name. |
-| `internal/gateway/upstream.go` | Resolves one upstream target per node and rewrites inbound paths/models. |
+| `internal/gateway/build.go` | Compiles one hop entry per entrypoint and inbound protocol variant, with route plans cached by route name. |
+| `internal/gateway/protocol.go` | Inbound protocol path groups and path/model matcher construction. |
+| `internal/gateway/upstream.go` | Resolves default and per-protocol upstream targets per node and rewrites inbound paths/models. |
 | `internal/provider` | Provider adapters, model catalogs, API classification, auth. |
 | `internal/rewriter` | Body protocol conversion through `llm-api-converter`. |
 | `internal/admin` | Management API, sessions, configuration mutation, embedded console. |
@@ -76,13 +77,19 @@ Entrypoint -> Route -> Node -> Provider model
   order semantic.
 - An entrypoint has a name, a non-empty list of client-model globs and exactly
   one route. `*` is an explicit catch-all.
-- Only the request body's `model` field is matched. There is no path or host
-  matching and no client-model pass-through.
+- Only the request body's `model` field is matched for routing. Paths never
+  affect entrypoint precedence or route choice; they only select the upstream
+  wire API inside a matched entrypoint. There is no host matching and no
+  client-model pass-through.
 - A route contains only nodes and a strategy (`fifo`, `round`, `random`). It
   does not match anything itself.
 - A node binds exactly one provider and exactly one provider model.
   `Node.Models`, `EffectiveModel`, logical models and `*` model fallbacks must
   not come back.
+- `node.api` is `auto` by default. Auto matches the inbound protocol group
+  (`chat`, `responses`, `anthropic`, `gemini`) to a configured provider API and
+  falls back to the model's default API. A pinned `api` bypasses default
+  resolution and requires the matching base URL.
 - Disabled providers, disabled nodes and provider-disabled models are skipped at
   compile time. If every node is skipped, the request fails; never fall through
   to another route or send the client model upstream.
@@ -100,7 +107,8 @@ Entrypoint -> Route -> Node -> Provider model
 - Validation errors must name the offending provider, node, route or entrypoint.
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
   `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`32768`/`24h`,
-  provider health `30s`/`5s`, node weight `1`, route strategy `round`.
+  provider health `30s`/`5s`, node weight `1`, node API `auto` (stored as an
+  empty string), route strategy `round`.
 - `LLM_GW_LISTEN` (`:8787`), `LLM_GW_ADMIN_LISTEN` (`127.0.0.1:8788`; the
   Docker image sets `:8788`) and `LLM_GW_ADMIN_PASSWORD` (unset) are first-run
   defaults: they are used only when a new config is generated. `LLM_GW_DATA`
@@ -260,6 +268,9 @@ GOWORK=off go test ./internal/stats -count=1
 
 - `internal/admin/dist` is ignored but required by `go:embed all:dist`. A plain
   `go build` fails on a fresh checkout until the web bundle is built.
+- Route variants multiply hop entries and rewriters by inbound protocol. Build
+  one route plan and register rewriters from that plan; never recompute the
+  target API separately, or path, body protocol and stats can diverge.
 - Admin config writes require a writable config file. With a Docker `:ro` mount,
   console edits fail; edit the host file and send `SIGHUP`.
 - First-run config and stats live in `$LLM_GW_DATA` (default `/data`). The

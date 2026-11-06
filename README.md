@@ -46,6 +46,10 @@ Entrypoint ──► Route ──► Node ──► Provider model
   anything by itself.
 - A **node** binds one provider and one provider model. `backup` marks fallback
   nodes; `weight` controls the round-robin share.
+- A node's target API is `auto` by default. The gateway matches the inbound wire
+  API (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, or
+  `/v1beta/models/...`) to a configured provider API and converts only when the
+  provider has no matching base URL. Set `api` on the node to pin one API.
 - Disabling a provider, a node, or a provider model removes that node from the
   compiled route. A route with no usable nodes fails the request instead of
   passing the client model through.
@@ -157,6 +161,7 @@ nodes:
   - name: deepseek-fast
     provider: deepseek
     model: deepseek-v4-flash
+    # api: auto
 
 routes:
   - name: default
@@ -374,9 +379,22 @@ union.
 | `tls` | no | `serverName`, `secure` (default `true`) |
 | `enabled` | no | Set `false` to remove the provider from routing |
 
-An empty API base URL means the provider does not serve that API. The gateway
-picks the first API the node's model advertises and the provider has a base URL
-for, in `chat`, `responses`, `anthropic`, `gemini` order.
+An empty API base URL means the provider does not serve that API. A node's
+target API is chosen as follows:
+
+- `auto` (the default) matches the inbound wire API to a configured provider
+  API: `/v1/messages` uses `anthropic`, `/v1/responses` uses `responses`,
+  `/v1/chat/completions` uses `chat`, and Gemini paths use `gemini`.
+- When the matching base URL is missing, or the model's static classification
+  excludes it, the gateway keeps the model's default API and converts the body.
+- A pinned `node.api` bypasses default resolution and always uses that API.
+  Generic providers have no static model classification, so auto matching is
+  how their configured base URLs are selected.
+
+With the quick-start example above, Claude Code talking Anthropic Messages to
+`/v1/messages` is forwarded to DeepSeek's native
+`https://api.deepseek.com/anthropic` endpoint instead of being converted to the
+chat API.
 
 ### `nodes[]`
 
@@ -384,6 +402,7 @@ for, in `chat`, `responses`, `anthropic`, `gemini` order.
 - name: deepseek-fast
   provider: deepseek
   model: deepseek-v4-flash
+  api: auto
   backup: false
   weight: 1
   enabled: true
@@ -394,6 +413,7 @@ for, in `chat`, `responses`, `anthropic`, `gemini` order.
 | `name` | yes | Unique node name; no `/` |
 | `provider` | yes | Existing provider name |
 | `model` | yes | Exactly one provider model ID |
+| `api` | no | `auto` (default), `chat`, `responses`, `anthropic` or `gemini`; a pinned API requires the matching base URL |
 | `backup` | no | Mark as a fallback node |
 | `weight` | no | Selection weight; default `1`, must be `>= 0` |
 | `enabled` | no | Set `false` to remove the node from routing |

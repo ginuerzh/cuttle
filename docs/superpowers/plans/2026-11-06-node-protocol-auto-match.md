@@ -573,7 +573,7 @@ Note: `internal/admin/dist` is git-ignored; do not add it. Rebuild it locally wi
 - Consumes: all behavior from Tasks 1-5.
 - Produces: user-facing docs and a verified full gate.
 
-- [ ] **Step 1: Update the user documentation**
+- [x] **Step 1: Update the user documentation**
 
 In `README.md`:
 
@@ -591,7 +591,7 @@ In `example.yaml`, add an optional commented `api` line to the node section:
     # api: auto   # auto matches the client protocol; pin chat/responses/anthropic/gemini to force one
 ```
 
-- [ ] **Step 2: Update the repository guidance**
+- [x] **Step 2: Update the repository guidance**
 
 In `AGENTS.md`, refine the routing invariant:
 
@@ -600,7 +600,7 @@ In `AGENTS.md`, refine the routing invariant:
 - Document `node.api` and the four protocol groups.
 - Add a gotcha that route variants multiply hops/rewriters and that rewriter registration must stay plan-driven.
 
-- [ ] **Step 3: Update workspace memory**
+- [x] **Step 3: Update workspace memory**
 
 In `/root/code/go-gost/.memory/notes/llm-gw-provider-capabilities.md`, append the decision:
 
@@ -608,7 +608,7 @@ In `/root/code/go-gost/.memory/notes/llm-gw-provider-capabilities.md`, append th
 
 Update the index entry in `/root/code/go-gost/.memory/MEMORY.md` if the summary line needs the new fact.
 
-- [ ] **Step 4: Run the full Go gate**
+- [x] **Step 4: Run the full Go gate**
 
 Run:
 
@@ -620,7 +620,7 @@ GOWORK=off go test ./... -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Run the full web gate**
+- [x] **Step 5: Run the full web gate**
 
 Run:
 
@@ -633,13 +633,13 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 6: Verify the example config loads**
+- [x] **Step 6: Verify the example config loads**
 
 Run: `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 7: Fill the Implementation record and commit**
+- [x] **Step 7: Fill the Implementation record and commit**
 
 Commit the llm-gw docs and example separately from workspace memory:
 
@@ -652,12 +652,12 @@ git -C /root/code/go-gost commit -m "docs(memory): record llm-gw protocol auto-m
 ```
 
 **Implementation record** (fill after completion):
-- Date/status:
-- Repository + commit SHA (llm-gw and workspace memory):
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit SHA (llm-gw and workspace memory): `llm-gw` docs commit + workspace memory commit (see ledger)
+- Files changed: `README.md`, `example.yaml`, `AGENTS.md`, `.memory/notes/llm-gw-provider-capabilities.md`, `.memory/MEMORY.md`, plan
+- Tests/commands and results: `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./...` PASS; `GOWORK=off go test ./... -count=1` PASS; `cd web && npm test` PASS (96/96), `npx tsc --noEmit` PASS, `npm run build` PASS; `TestExampleConfigLoads` PASS.
+- Review findings and fixes: none.
+- Deferred items/limitations: the design's deferred list remains: stale rewriter GC, default `anthropic-version`, per-entrypoint protocol override, Gemini inbound conversion.
 
 ---
 
