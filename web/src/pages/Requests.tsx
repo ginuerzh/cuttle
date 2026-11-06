@@ -52,6 +52,33 @@ function Preview({ label, text }: { label: string; text?: string }) {
   );
 }
 
+export function statusLabel(r: RequestRow): string {
+  if (r.status === 0) {
+    return r.errorClass === 'gateway_timeout' ? t('502 网关超时') : t('502 上游失败');
+  }
+  return String(r.status);
+}
+
+const ERROR_CLASS_LABELS: Record<string, string> = {
+  upstream_auth: '上游认证失败',
+  upstream_forbidden: '上游拒绝',
+  upstream_not_found: '上游 404',
+  upstream_quota: '上游限流/额度',
+  upstream_bad_request: '上游请求错误',
+  upstream_unavailable: '上游不可用',
+  upstream_truncated: '上游流截断',
+  upstream_error: '上游错误',
+  gateway_timeout: '网关超时',
+  network: '网络错误',
+  rewrite_error: '改写错误',
+  client_error: '客户端错误',
+};
+
+export function errorClassLabel(r: RequestRow): string {
+  if (!r.errorClass) return '';
+  return t(ERROR_CLASS_LABELS[r.errorClass] || r.errorClass);
+}
+
 export function RequestsPage() {
   const isMobile = useIsMobile();
   const [rangeMs, setRangeMs] = useState(60 * 60_000);
@@ -207,15 +234,17 @@ export function RequestsPage() {
 
       {rows.map((r) => {
         const failed = r.status >= 400 || !!r.error;
+        const classLabel = errorClassLabel(r);
         return (
           <ListCard
             key={r.requestId}
             title={r.clientModel || r.model || r.requestId}
-            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok${r.error ? ` · ${r.error}` : ''}`}
+            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
             tags={
               <Space size={4}>
+                {r.truncated ? <Tag color="volcano">{t('已截断')}</Tag> : null}
                 {r.hasCapture ? <Tag color="blue">{t('已捕获')}</Tag> : null}
-                <Tag color={failed ? 'red' : r.status >= 300 ? 'orange' : 'green'}>{r.status || '—'}</Tag>
+                <Tag color={failed ? 'red' : r.status >= 300 ? 'orange' : 'green'}>{statusLabel(r)}</Tag>
               </Space>
             }
             onClick={() => void openRequest(r)}
@@ -246,14 +275,21 @@ export function RequestsPage() {
               <Descriptions.Item label="provider model">{selected.model}</Descriptions.Item>
               <Descriptions.Item label={t('入站协议')}>{selected.inboundProtocol || '—'}</Descriptions.Item>
               <Descriptions.Item label={t('上游协议')}>{selected.protocol || '—'}</Descriptions.Item>
+              <Descriptions.Item label={t('请求路径')}>
+                {`${selected.method || '—'} ${selected.uri || '—'}`}
+              </Descriptions.Item>
+              <Descriptions.Item label="client ip">{selected.clientIp || '—'}</Descriptions.Item>
+              <Descriptions.Item label="user agent">{selected.userAgent || '—'}</Descriptions.Item>
+              <Descriptions.Item label="upstream">{selected.upstream || '—'}</Descriptions.Item>
               <Descriptions.Item label={t('错误阶段')}>{selected.errorStage || '—'}</Descriptions.Item>
               <Descriptions.Item label={t('错误方向')}>{selected.errorDirection || '—'}</Descriptions.Item>
+              <Descriptions.Item label={t('错误分类')}>{errorClassLabel(selected) || '—'}</Descriptions.Item>
               <Descriptions.Item label="SSE phase / index">
                 {selected.ssePhase ? `${selected.ssePhase} / ${selected.eventIndex ?? 0}` : '— / —'}
               </Descriptions.Item>
               <Descriptions.Item label="status / error">
-                <Typography.Text type={selected.error ? 'danger' : undefined}>
-                  {`${selected.status} ${selected.error || ''}`}
+                <Typography.Text type={selected.error || selected.status >= 400 ? 'danger' : undefined}>
+                  {`${statusLabel(selected)}${selected.clientStatus && selected.clientStatus !== selected.status ? ` (client ${selected.clientStatus})` : ''} ${selected.error || ''}`}
                 </Typography.Text>
               </Descriptions.Item>
               <Descriptions.Item label={t('耗时')}>{`${selected.durationMs} ms`}</Descriptions.Item>
@@ -264,6 +300,11 @@ export function RequestsPage() {
                 {`${selected.bytesIn} in / ${selected.bytesOut} out`}
               </Descriptions.Item>
               <Descriptions.Item label="stream">{selected.stream ? t('是') : t('否')}</Descriptions.Item>
+              <Descriptions.Item label={t('流式终止')}>
+                {selected.stream
+                  ? `${selected.finishReason || '—'} / done=${selected.sawDone ? t('是') : t('否')}${selected.truncated ? ` / ${t('已截断')}` : ''}`
+                  : '—'}
+              </Descriptions.Item>
             </Descriptions>
 
             <Typography.Title level={5} style={{ marginTop: 20 }}>
