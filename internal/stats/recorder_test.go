@@ -44,6 +44,66 @@ func TestRecorderCopiesRewriteFields(t *testing.T) {
 	}
 }
 
+func TestRecorderStoresStreamTTFT(t *testing.T) {
+	s := newStore(t)
+	facts := NewFacts()
+	ctx := context.Background()
+	sid := "ttft-rec"
+	start := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+
+	facts.Add(sid, "", "", engine.Result{Stream: true})
+	facts.MarkFirstResponse(sid, start.Add(400*time.Millisecond))
+
+	body, err := json.Marshal(map[string]any{
+		"sid": sid, "node": "route/provider/node",
+		"time": start, "duration": 2 * time.Second,
+		"http": map[string]any{"statusCode": 200},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, facts, nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Get(ctx, sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if !got.Stream || got.TTFTMS != 400 {
+		t.Fatalf("stream/ttft = %v/%d, want true/400", got.Stream, got.TTFTMS)
+	}
+}
+
+func TestRecorderSkipsTTFTForNonStreaming(t *testing.T) {
+	s := newStore(t)
+	facts := NewFacts()
+	ctx := context.Background()
+	sid := "ttft-plain"
+	start := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+
+	facts.MarkFirstResponse(sid, start.Add(200*time.Millisecond))
+	body, err := json.Marshal(map[string]any{
+		"sid": sid, "node": "route/provider/node",
+		"time": start, "duration": time.Second,
+		"http": map[string]any{"statusCode": 200},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, facts, nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Get(ctx, sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.Stream || got.TTFTMS != 0 {
+		t.Fatalf("stream/ttft = %v/%d, want false/0", got.Stream, got.TTFTMS)
+	}
+}
+
 func TestRecorderUsesUpstreamErrorSummary(t *testing.T) {
 	s := newStore(t)
 	facts := NewFacts()

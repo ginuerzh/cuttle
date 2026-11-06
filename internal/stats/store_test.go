@@ -77,6 +77,28 @@ func TestInsertQuerySummary(t *testing.T) {
 	}
 }
 
+func TestTTFTRoundTrip(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
+
+	in := Request{
+		ID: "ttft-1", SID: "ttft-1", TS: base, Provider: "p", Model: "m",
+		Status: 200, DurationMS: 2000, TTFTMS: 450, OutputTokens: 80, Stream: true,
+	}
+	if err := s.Insert(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Get(ctx, "ttft-1")
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.TTFTMS != 450 {
+		t.Fatalf("ttft = %d, want 450", got.TTFTMS)
+	}
+}
+
 func TestCleanupKeepsRollups(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -314,6 +336,16 @@ func TestOpenMigratesMonotonicSeq(t *testing.T) {
 	}
 	if newSeq <= oldSeq {
 		t.Fatalf("new seq = %d, want greater than %d", newSeq, oldSeq)
+	}
+
+	if err := s.Insert(context.Background(), Request{
+		ID: "new-ttft", TS: time.Now(), Provider: "p", TTFTMS: 123,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(context.Background(), "new-ttft")
+	if err != nil || got == nil || got.TTFTMS != 123 {
+		t.Fatalf("old database did not gain ttft_ms: %+v err=%v", got, err)
 	}
 }
 

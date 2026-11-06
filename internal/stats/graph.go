@@ -60,6 +60,7 @@ type GraphRow struct {
 	Status       int
 	Error        string
 	DurationMS   int64
+	TTFTMS       int64
 	InputTokens  int64
 	OutputTokens int64
 	CachedTokens int64
@@ -341,7 +342,7 @@ func (s *Store) GraphAggregate(ctx context.Context, from, to time.Time) (*Aggreg
 
 	agg := NewAggregator()
 	rows, err := s.db.QueryContext(ctx, `SELECT request_id, ts, route, node, provider, client_model, status, error,
-		duration_ms, input_tokens, output_tokens, cached_tokens
+		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens
 		FROM requests WHERE seq <= ? AND ts >= ? AND ts < ? ORDER BY ts DESC`,
 		high, from.UnixMilli(), to.UnixMilli())
 	if err != nil {
@@ -353,7 +354,7 @@ func (s *Store) GraphAggregate(ctx context.Context, from, to time.Time) (*Aggreg
 		var row GraphRow
 		var errStr string
 		if err := rows.Scan(&row.ID, &row.TS, &row.Route, &row.Node, &row.Provider, &row.ClientModel,
-			&row.Status, &errStr, &row.DurationMS, &row.InputTokens, &row.OutputTokens, &row.CachedTokens); err != nil {
+			&row.Status, &errStr, &row.DurationMS, &row.TTFTMS, &row.InputTokens, &row.OutputTokens, &row.CachedTokens); err != nil {
 			return nil, 0, err
 		}
 		row.Error = errStr
@@ -371,7 +372,7 @@ func (s *Store) GraphAggregate(ctx context.Context, from, to time.Time) (*Aggreg
 // rescanned forever.
 func (s *Store) ForEachRequestAfter(ctx context.Context, afterSeq int64, fn func(GraphRow)) (int64, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT seq, request_id, ts, route, node, provider, client_model, status, error,
-		duration_ms, input_tokens, output_tokens, cached_tokens
+		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens
 		FROM requests WHERE seq > ? ORDER BY seq`, afterSeq)
 	if err != nil {
 		return afterSeq, err
@@ -384,7 +385,7 @@ func (s *Store) ForEachRequestAfter(ctx context.Context, afterSeq int64, fn func
 		var row GraphRow
 		var errStr string
 		if err := rows.Scan(&seq, &row.ID, &row.TS, &row.Route, &row.Node, &row.Provider, &row.ClientModel,
-			&row.Status, &errStr, &row.DurationMS, &row.InputTokens, &row.OutputTokens, &row.CachedTokens); err != nil {
+			&row.Status, &errStr, &row.DurationMS, &row.TTFTMS, &row.InputTokens, &row.OutputTokens, &row.CachedTokens); err != nil {
 			return last, err
 		}
 		row.Error = errStr

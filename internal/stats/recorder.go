@@ -98,6 +98,16 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		req.OutputTokens = int64(fact.OutputTokens)
 		req.CachedTokens = int64(fact.CachedTokens)
 		req.Stream = fact.Stream
+		if fact.Stream && !fact.FirstResponseAt.IsZero() {
+			ttft := fact.FirstResponseAt.Sub(ro.Time)
+			if ttft < 0 {
+				ttft = 0
+			}
+			if ttft > ro.Duration {
+				ttft = ro.Duration
+			}
+			req.TTFTMS = ttft.Milliseconds()
+		}
 		req.FinishReason = fact.FinishReason
 		req.SawDone = fact.SawDone
 		if req.Error == "" && fact.UpstreamError != "" {
