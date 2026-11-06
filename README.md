@@ -539,6 +539,18 @@ original/rewritten previews. The Capture control creates a rule for a route
 and/or client-model glob; use the "captured only" filter to find rows if the
 client cannot report an ID.
 
+Request rows also carry diagnostics that do not require body capture: `uri`,
+`method`, `clientIp`, `userAgent`, `upstream`, `errorClass`, `clientStatus`,
+`finishReason`, `sawDone` and `truncated`. `status` remains the upstream HTTP
+status (0 when no response arrived); `clientStatus` is what the client actually
+received (502 for a failed request with no upstream response). `errorClass` is
+one of `upstream_auth`, `upstream_forbidden`, `upstream_not_found`,
+`upstream_quota`, `upstream_bad_request`, `upstream_unavailable`,
+`upstream_truncated`, `upstream_error`, `gateway_timeout`, `network`,
+`rewrite_error` or `client_error`. `truncated` marks a streaming request that
+ended without a terminal `finish_reason`/`stop_reason` or `[DONE]`; it is how a
+clean-looking HTTP 200 cut is surfaced.
+
 `PUT /api/entrypoints` replaces the whole ordered list. Entrypoint order is
 precedence, so the list is edited and saved as one unit.
 

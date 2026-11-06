@@ -115,9 +115,9 @@ Tests are run from the `llm-gw` directory unless stated otherwise.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `<pending>`, workspace memory `<pending>`.
+- Files changed: `llm-gw/README.md`, `llm-gw/docs/superpowers/plans/2026-11-06-error-observability-p0.md`, `.memory/MEMORY.md`, `.memory/notes/llm-gw-error-observability.md`.
+- Tests/commands and results: `GOWORK=off go test ./... -count=1` passed; `GOWORK=off go vet ./...` passed; `npm test` 118 tests passed; `npx tsc --noEmit` passed; `npm run build` passed.
+- Review findings and fixes: README now documents the diagnostic fields and error classes; memory records the analysis, fixes and the unresolved CommandCode 403 cluster.
+- Deferred items: P1 capture/aggregation/alerting; the CommandCode 403 error body is still uncaptured.
