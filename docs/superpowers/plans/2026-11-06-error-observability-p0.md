@@ -62,12 +62,12 @@ Tests are run from the `llm-gw` directory unless stated otherwise.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `ad59c531`.
+- Files changed: `internal/config/config.go`, `internal/config/config_test.go`, `internal/gateway/gateway.go`, `internal/stats/store.go`, `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `internal/stats/store_test.go`, `README.md`.
+- Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/config ./internal/gateway ./internal/stats -count=1` passed.
+- Review findings and fixes: `Validate` accepts an unset `readTimeout` so configs validated before `Normalize` keep working; `gateway.New` also falls back to 60s defensively. `status` still means the upstream status; the new `client_status` carries the 502 the client saw.
+- Deferred items: read timeouts still do not fail over to the next node; retrying after the request body was sent is a P1/P2 decision.
 
 ## Task 4: Stream termination
 
