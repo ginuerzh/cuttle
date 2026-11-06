@@ -871,12 +871,15 @@ git commit -m "test(gateway): verify streaming TTFT capture"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository + commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: `llm-gw` `e4f17cc1` (test); this docs commit follows
+- Files changed: `internal/gateway/stats_test.go`
 - Tests/commands:
-- Review findings/fixes:
-- Deferred items/limitations:
+  - Gateway integration: `GOWORK=off go test ./internal/gateway -run TestStatsRecordsStreamTTFT -count=1 -v` → PASS.
+  - Full Go gate: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` → all packages ok.
+  - Full web gate: `npm test && npx tsc --noEmit && npm run build` → 20 files / 142 tests passed; build succeeded.
+- Review findings/fixes: none; the integration test confirms the rewriter sink, recorder, schema and graph read path agree.
+- Deferred items/limitations: TTFT is the first SSE response event; non-SSE streams and non-streaming requests have no rate.
 
 ---
 
