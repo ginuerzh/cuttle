@@ -120,7 +120,7 @@ git commit -m "feat(bootstrap): resolve zero-config file locations"
 
 **Implementation record**
 - Date/status: 2026-11-06 / complete
-- Repository + commit: llm-gw `<sha>` (`feat(bootstrap): resolve zero-config file locations`)
+- Repository + commit: llm-gw / `2d317976` (code, tests and plan); this record commit is the follow-up
 - Files actually changed: `internal/bootstrap/bootstrap.go`, `internal/bootstrap/bootstrap_test.go`, this plan
 - Tests/commands and results: `GOWORK=off go test ./internal/bootstrap -count=1` -> `ok github.com/go-gost/llm-gw/internal/bootstrap`
 - Review findings and fixes: none; self-review confirmed explicit/data/legacy precedence, absolute data dir, and `LLM_GW_DATA` error naming
