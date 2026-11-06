@@ -530,12 +530,15 @@ git commit -m "feat(stats): aggregate per-node streaming token rate"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository + commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: `llm-gw` `4bbf44b2` (code); this docs commit follows
+- Files changed: `internal/stats/graph.go`, `internal/stats/graph_test.go`
 - Tests/commands:
-- Review findings/fixes:
-- Deferred items/limitations:
+  - RED: `GOWORK=off go test ./internal/stats -run 'TestGraphComputesStreamingTokenRate|TestGraphOmitsTokenRateWithoutStreamingRows' -count=1` → `OutputTokensPerSecond` undefined.
+  - GREEN: `GOWORK=off go test ./internal/stats -run 'TestGraph|TestAggregator' -count=1` → `ok`.
+  - Package gate: `GOWORK=off go test ./internal/stats -count=1` → `ok`.
+- Review findings/fixes: weighted rate is computed from summed tokens and generation time, not averaged per request.
+- Deferred items/limitations: only streaming rows with TTFT and output tokens contribute.
 
 ---
 
