@@ -583,9 +583,9 @@ git commit -m "docs(memory): record llm-gw zero-config decision"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit(s): llm-gw `<sha>`; workspace `<sha>`
-- Files actually changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit(s): llm-gw `<sha>` (this plan record commit); workspace `bffbaf9`
+- Files actually changed: this plan; workspace `.memory/MEMORY.md` and `.memory/notes/llm-gw-zero-config.md`
+- Tests/commands and results: `GOWORK=/tmp/llm-gw-work/go.work go build ./...` PASS; `go vet ./...` PASS; `go test ./... -count=1` all packages PASS; web `npm test` 86/86 PASS, `npx tsc --noEmit` PASS, `npm run build` PASS; Docker fresh-volume smoke PASS (`/api/health` returned `{"ok":true}`, password line present, `/data/llm-gw.yaml` and `/data/stats.sqlite` present); legacy `/etc` mount PASS (loopback admin listen, no generated password, ignored `LLM_GW_ADMIN_LISTEN` warning)
+- Review findings and fixes: all gates green; no new code changes. The workspace had unrelated uncommitted memory/opencode changes, so only the new note and the single added `MEMORY.md` line were staged, leaving the other changes untouched.
+- Deferred items/limitations: the manual empty-state UI pass was not browser-verified; the Docker build from the live parent working tree is blocked by uncommitted `llm-api-converter` P1 changes, so the image was verified from a stable `7f18a6d` context.
