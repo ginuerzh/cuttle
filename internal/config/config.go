@@ -29,7 +29,8 @@ type Config struct {
 
 // Gateway holds data-plane settings.
 type Gateway struct {
-	Listen string `yaml:"listen" json:"listen"`
+	Listen      string   `yaml:"listen" json:"listen"`
+	ReadTimeout Duration `yaml:"readTimeout" json:"readTimeout"`
 }
 
 // Admin holds the management API settings.
@@ -404,6 +405,9 @@ func (c *Config) applyDefaults() {
 	if c.Gateway.Listen == "" {
 		c.Gateway.Listen = ":8787"
 	}
+	if c.Gateway.ReadTimeout == 0 {
+		c.Gateway.ReadTimeout = Duration(60 * time.Second)
+	}
 	if c.Admin.Listen == "" {
 		c.Admin.Listen = "127.0.0.1:8788"
 	}
@@ -562,6 +566,10 @@ func Validate(c *Config) error {
 	}
 	if strings.TrimSpace(c.Gateway.Listen) == "" {
 		return fmt.Errorf("gateway.listen is required")
+	}
+	if c.Gateway.ReadTimeout != 0 &&
+		(c.Gateway.ReadTimeout < Duration(time.Second) || c.Gateway.ReadTimeout > Duration(300*time.Second)) {
+		return fmt.Errorf("gateway.readTimeout must be between 1s and 300s")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Log.Level)) {
 	case "", "trace", "debug", "info", "warn", "error", "fatal":

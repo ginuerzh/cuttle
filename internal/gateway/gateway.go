@@ -97,9 +97,13 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 	}
 
 	h := newCountTokensHandler(base, &g.countTokens, log)
+	readTimeout := time.Duration(cfg.Gateway.ReadTimeout)
+	if readTimeout <= 0 {
+		readTimeout = 60 * time.Second
+	}
 	if err := h.Init(xmetadata.NewMetadata(map[string]any{
 		"sniffing":       true,
-		"readTimeout":    "15s",
+		"readTimeout":    readTimeout.String(),
 		"http.keepalive": false,
 	})); err != nil {
 		return nil, err

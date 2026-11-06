@@ -918,6 +918,24 @@ func TestCaptureDefaultsAndValidation(t *testing.T) {
 	}
 }
 
+func TestGatewayReadTimeoutDefaultsAndValidation(t *testing.T) {
+	c, err := Load(writeConfig(t, "gateway:\n  listen: \"127.0.0.1:0\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Gateway.ReadTimeout != Duration(60*time.Second) {
+		t.Fatalf("readTimeout = %v, want 60s", c.Gateway.ReadTimeout)
+	}
+	for _, body := range []string{
+		"gateway:\n  listen: \"127.0.0.1:0\"\n  readTimeout: 500ms\n",
+		"gateway:\n  listen: \"127.0.0.1:0\"\n  readTimeout: 301s\n",
+	} {
+		if _, err := Load(writeConfig(t, body)); err == nil {
+			t.Fatalf("expected error for %q", body)
+		}
+	}
+}
+
 func TestCaptureExplicitZeroSampleRate(t *testing.T) {
 	c, err := Load(writeConfig(t, `
 gateway:

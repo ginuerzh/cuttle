@@ -196,6 +196,7 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 		ClientIP:        "203.0.113.9",
 		UserAgent:       "claude-code/1.0",
 		Upstream:        "172.67.69.147:443/chat/completions",
+		ClientStatus:    502,
 	}
 	if err := s.Insert(ctx, want); err != nil {
 		t.Fatal(err)
@@ -208,7 +209,8 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 		got.ErrorDirection != want.ErrorDirection || got.ErrorClass != want.ErrorClass ||
 		got.SSEPhase != want.SSEPhase || got.EventIndex != want.EventIndex ||
 		got.URI != want.URI || got.Method != want.Method || got.ClientIP != want.ClientIP ||
-		got.UserAgent != want.UserAgent || got.Upstream != want.Upstream {
+		got.UserAgent != want.UserAgent || got.Upstream != want.Upstream ||
+		got.ClientStatus != want.ClientStatus {
 		t.Fatalf("fields = %+v", got)
 	}
 }

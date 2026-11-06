@@ -304,6 +304,7 @@ routes: [ ... ]
 | Field | Default | Description |
 | --- | --- | --- |
 | `listen` | `:8787` | Data-plane listen address |
+| `readTimeout` | `60s` | Deadline for reading upstream HTTP response headers; 1s–300s |
 
 ### `admin`
 

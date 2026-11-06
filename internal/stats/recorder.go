@@ -103,6 +103,12 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		}
 	}
 	req.ErrorClass = ClassifyError(req.Status, req.Error, req.ErrorStage)
+	req.ClientStatus = req.Status
+	if req.ClientStatus == 0 && req.Error != "" {
+		// The forward handler writes a 502 when the upstream produced no
+		// response at all; record what the client actually saw.
+		req.ClientStatus = 502
+	}
 
 	var cap *capture.Capture
 	if r.capture != nil {

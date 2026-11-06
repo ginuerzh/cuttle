@@ -110,6 +110,31 @@ func TestRecorderCopiesRequestContext(t *testing.T) {
 	}
 }
 
+func TestRecorderClientStatusForUpstreamFailure(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	sid := "timeout"
+	body, err := json.Marshal(map[string]any{
+		"sid":  sid,
+		"node": "route/provider/node",
+		"time": time.Now().UTC(),
+		"err":  "read tcp 10.0.0.1:1234->1.2.3.4:443: i/o timeout",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(ctx, sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.ClientStatus != 502 || got.ErrorClass != ErrorClassGatewayTimeout {
+		t.Fatalf("row = %+v", got)
+	}
+}
+
 func TestRecorderCaptureErrorMode(t *testing.T) {
 	s := newStore(t)
 	facts := NewFacts()
