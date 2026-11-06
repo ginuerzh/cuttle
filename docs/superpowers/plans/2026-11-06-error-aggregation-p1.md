@@ -41,12 +41,12 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete (deployment config pending).
+- Repository + commit: `llm-gw` `5f0384c3`.
+- Files changed: `internal/capture/capture.go`, `internal/stats/headers.go` (new), `internal/stats/headers_test.go` (new), `internal/stats/store.go`, `internal/stats/store_test.go`, `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `README.md`.
+- Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/stats ./internal/capture ./internal/admin -count=1` passed.
+- Review findings and fixes: headers are lower-cased and joined; the allowlist excludes authorization, cookie, set-cookie, x-api-key, x-goog-api-key and api-key. Existing capture rows get `{}` via migration.
+- Deferred items: the live config is still `capture.mode: off`; it will be switched after the P1 image is deployed.
 
 ## Task 3: Frontend error panel
 
