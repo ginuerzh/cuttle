@@ -544,6 +544,20 @@ precedence, so the list is edited and saved as one unit.
 `GET /api/topology/positions` returns the shared layout map and `PUT` replaces
 it. The layout lives in the `topology_positions` table of `stats.sqlite`.
 
+## Token counting
+
+Claude Code calls `POST /v1/messages/count_tokens` to size tool definitions,
+skills and conversation fragments.
+
+- Routes whose target API is Anthropic pass the request through unchanged.
+- Routes whose target API is Chat Completions, Responses or Gemini are
+  answered locally with a conservative estimate. No upstream request is made,
+  and the value is an approximation calibrated on DeepSeek V4; it is
+  intentionally biased high so context compaction is not delayed.
+- A route that mixes Anthropic and non-Anthropic nodes estimates for all
+  `count_tokens` requests.
+- Locally answered requests are not recorded in stats or captures.
+
 ## Provider usage and balances
 
 The Usage page shows one card per provider. Local totals (requests, errors,
