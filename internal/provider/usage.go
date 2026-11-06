@@ -159,6 +159,8 @@ func (p *baseProvider) usageURL(kind string) (string, bool) {
 		u.Path = "/user/balance"
 	case "commandcode":
 		u.Path = "/alpha/billing/credits"
+	case "commandcode-subscriptions":
+		u.Path = "/alpha/billing/subscriptions"
 	case "opencode-go":
 		path := strings.TrimRight(u.Path, "/")
 		switch {
@@ -198,33 +200,9 @@ func (p *baseProvider) usageAccount(ctx context.Context, kind, key string, index
 	ctx, cancel := context.WithTimeout(ctx, usageTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	body, err := p.usageBody(ctx, endpoint, key)
 	if err != nil {
 		acc.Error = redactUsageError(err, key)
-		return acc
-	}
-	req.Header.Set("User-Agent", "llm-gw")
-	applyAuth(req, p.Auth(Chat), key)
-
-	resp, err := NewHTTPClient(p.cfg.TLS, usageTimeout).Do(req)
-	if err != nil {
-		acc.Error = redactUsageError(err, key)
-		return acc
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, usageBodyLimit))
-	if err != nil {
-		acc.Error = redactUsageError(err, key)
-		return acc
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg := fmt.Sprintf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-		msg = redactUsageText(msg, key)
-		if len(msg) > usageErrorSnippet {
-			msg = msg[:usageErrorSnippet]
-		}
-		acc.Error = msg
 		return acc
 	}
 
@@ -234,7 +212,11 @@ func (p *baseProvider) usageAccount(ctx context.Context, kind, key string, index
 	case "deepseek":
 		balance, windows, err = parseDeepSeekUsage(body)
 	case "commandcode":
-		balance, windows, err = parseCommandCodeUsage(body)
+		var usage commandCodeUsage
+		usage, err = parseCommandCodeUsage(body)
+		if err == nil {
+			balance, windows = usage.Balance, p.enrichCommandCodeUsage(ctx, key, usage)
+		}
 	case "opencode-go":
 		balance, windows, err = parseOpenCodeGoUsage(body)
 	default:
@@ -249,6 +231,37 @@ func (p *baseProvider) usageAccount(ctx context.Context, kind, key string, index
 	acc.Windows = windows
 	acc.CheckedAt = time.Now().UTC()
 	return acc
+}
+
+// usageBody performs one authenticated usage request and returns the body of a
+// 2xx reply. Errors are already redacted so callers cannot leak a key.
+func (p *baseProvider) usageBody(ctx context.Context, endpoint, key string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "llm-gw")
+	applyAuth(req, p.Auth(Chat), key)
+
+	resp, err := NewHTTPClient(p.cfg.TLS, usageTimeout).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, usageBodyLimit))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := fmt.Sprintf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		msg = redactUsageText(msg, key)
+		if len(msg) > usageErrorSnippet {
+			msg = msg[:usageErrorSnippet]
+		}
+		return nil, errors.New(msg)
+	}
+	return body, nil
 }
 
 func parseDeepSeekUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {
@@ -290,10 +303,19 @@ type usageCommandWindow struct {
 	ResetAt any `json:"resetAt"`
 }
 
-func parseCommandCodeUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {
+type commandCodeUsage struct {
+	Balance          []BalancePart
+	Windows          []QuotaWindow
+	MonthlyRemaining float64
+	MonthlyGranted   float64
+	MonthlyKnown     bool
+}
+
+func parseCommandCodeUsage(body []byte) (commandCodeUsage, error) {
 	var r struct {
 		Credits struct {
 			Monthly   any `json:"monthlyCredits"`
+			Granted   any `json:"monthlyCreditsGranted"`
 			Purchased any `json:"purchasedCredits"`
 			Free      any `json:"freeCredits"`
 		} `json:"credits"`
@@ -303,10 +325,13 @@ func parseCommandCodeUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {
 		} `json:"windowLimits"`
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, nil, err
+		return commandCodeUsage{}, err
 	}
 
-	var balance []BalancePart
+	monthly, monthlyOK := usageNumber(r.Credits.Monthly)
+	granted, grantedOK := usageNumber(r.Credits.Granted)
+
+	var out commandCodeUsage
 	total := 0.0
 	known := false
 	for _, v := range []any{r.Credits.Monthly, r.Credits.Purchased, r.Credits.Free} {
@@ -316,10 +341,9 @@ func parseCommandCodeUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {
 		}
 	}
 	if known {
-		balance = []BalancePart{{Currency: "USD", Total: total}}
+		out.Balance = []BalancePart{{Currency: "USD", Total: total}}
 	}
 
-	var windows []QuotaWindow
 	add := func(name string, w *usageCommandWindow) {
 		if w == nil {
 			return
@@ -329,7 +353,7 @@ func parseCommandCodeUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {
 		if !ok1 || !ok2 || limit <= 0 {
 			return
 		}
-		windows = append(windows, QuotaWindow{
+		out.Windows = append(out.Windows, QuotaWindow{
 			Name:        name,
 			UsedPercent: usageClampPercent(100 * math.Max(0, used) / limit),
 			ResetsAt:    usageTime(w.ResetAt),
@@ -340,10 +364,125 @@ func parseCommandCodeUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {
 		add("weekly", r.Windows.Weekly)
 	}
 
-	if len(balance) == 0 && len(windows) == 0 {
-		return nil, nil, errors.New("no credits or windows in the reply")
+	if grantedOK && granted > 0 && monthlyOK {
+		out.Windows = append(out.Windows, commandCodeMonthlyWindow(granted, monthly, nil))
 	}
-	return balance, windows, nil
+	out.MonthlyRemaining = math.Max(0, monthly)
+	out.MonthlyGranted = granted
+	out.MonthlyKnown = monthlyOK
+
+	if len(out.Balance) == 0 && len(out.Windows) == 0 {
+		return commandCodeUsage{}, errors.New("no credits or windows in the reply")
+	}
+	return out, nil
+}
+
+func commandCodeMonthlyWindow(granted, remaining float64, reset *time.Time) QuotaWindow {
+	used := math.Max(0, granted-math.Max(0, remaining))
+	return QuotaWindow{
+		Name:        "monthly",
+		UsedPercent: usageClampPercent(100 * used / granted),
+		ResetsAt:    reset,
+	}
+}
+
+// enrichCommandCodeUsage adds the monthly usage window that the credits reply
+// does not carry directly. The vendor reports the remaining monthly credits and
+// the subscription plan; the plan maps to the monthly grant, and the
+// subscription's currentPeriodEnd is the reset time. A failed lookup leaves the
+// existing 5-hour and weekly windows untouched.
+func (p *baseProvider) enrichCommandCodeUsage(ctx context.Context, key string, usage commandCodeUsage) []QuotaWindow {
+	if !usage.MonthlyKnown {
+		return usage.Windows
+	}
+	sub, ok := p.commandCodeSubscription(ctx, key)
+	if !ok {
+		return usage.Windows
+	}
+	for i := range usage.Windows {
+		if usage.Windows[i].Name == "monthly" {
+			if usage.Windows[i].ResetsAt == nil {
+				usage.Windows[i].ResetsAt = sub.CurrentPeriodEnd
+			}
+			return usage.Windows
+		}
+	}
+	grant := usage.MonthlyGranted
+	if grant <= 0 {
+		grant, _ = commandCodeMonthlyGrant(sub.PlanID)
+	}
+	if grant > 0 && usage.MonthlyKnown {
+		usage.Windows = append(usage.Windows, commandCodeMonthlyWindow(grant, usage.MonthlyRemaining, sub.CurrentPeriodEnd))
+	}
+	return usage.Windows
+}
+
+type commandCodeSubscription struct {
+	PlanID           string
+	CurrentPeriodEnd *time.Time
+}
+
+func (p *baseProvider) commandCodeSubscription(ctx context.Context, key string) (commandCodeSubscription, bool) {
+	endpoint, ok := p.usageURL("commandcode-subscriptions")
+	if !ok {
+		return commandCodeSubscription{}, false
+	}
+	// The subscription lookup only enriches the monthly reset time. A short
+	// cap keeps a slow endpoint from delaying the credits report.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	body, err := p.usageBody(ctx, endpoint, key)
+	if err != nil {
+		return commandCodeSubscription{}, false
+	}
+	return parseCommandCodeSubscription(body)
+}
+
+func parseCommandCodeSubscription(body []byte) (commandCodeSubscription, bool) {
+	var r struct {
+		Success *bool `json:"success"`
+		Data    *struct {
+			PlanID           string `json:"planId"`
+			CurrentPeriodEnd any    `json:"currentPeriodEnd"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return commandCodeSubscription{}, false
+	}
+	if r.Success == nil || !*r.Success || r.Data == nil {
+		return commandCodeSubscription{}, false
+	}
+	planID := strings.TrimSpace(r.Data.PlanID)
+	if planID == "" {
+		return commandCodeSubscription{}, false
+	}
+	return commandCodeSubscription{
+		PlanID:           planID,
+		CurrentPeriodEnd: usageTime(r.Data.CurrentPeriodEnd),
+	}, true
+}
+
+// commandCodeMonthlyGrant maps the subscription plan ID to its monthly credit
+// allowance. CommandCode publishes these amounts on its pricing page; the
+// credits reply only reports the remaining balance.
+func commandCodeMonthlyGrant(planID string) (float64, bool) {
+	switch strings.ToLower(strings.TrimSpace(planID)) {
+	case "individual-go", "individual-go-v1":
+		return 10, true
+	case "individual-goat":
+		return 70, true
+	case "individual-pro":
+		return 30, true
+	case "individual-pro-v1":
+		return 80, true
+	case "individual-max":
+		return 150, true
+	case "individual-ultra":
+		return 300, true
+	default:
+		return 0, false
+	}
 }
 
 func parseOpenCodeGoUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {

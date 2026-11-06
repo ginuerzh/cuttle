@@ -58,16 +58,20 @@ func TestUsageDeepSeek(t *testing.T) {
 
 func TestUsageCommandCode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/alpha/billing/credits" {
-			t.Errorf("path = %q", r.URL.Path)
-		}
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
 			t.Errorf("auth = %q", got)
 		}
-		w.Write([]byte(`{"credits":{"monthlyCredits":12.3,"purchasedCredits":2,"freeCredits":0},
-			"windowLimits":{"limited":true,
-				"fiveHour":{"used":4.2,"cap":10,"resetAt":4102444800000},
-				"weekly":{"used":9,"cap":50,"resetAt":"2030-01-01T00:00:00Z"}}}`))
+		switch r.URL.Path {
+		case "/alpha/billing/credits":
+			w.Write([]byte(`{"credits":{"monthlyCredits":12.3,"monthlyCreditsGranted":50,"purchasedCredits":2,"freeCredits":0},
+				"windowLimits":{"limited":true,
+					"fiveHour":{"used":4.2,"cap":10,"resetAt":4102444800000},
+					"weekly":{"used":9,"cap":50,"resetAt":"2030-01-01T00:00:00Z"}}}`))
+		case "/alpha/billing/subscriptions":
+			w.Write([]byte(`{"success":true,"data":{"planId":"individual-goat","status":"active","currentPeriodEnd":"2026-11-26T04:38:52.000Z"}}`))
+		default:
+			t.Errorf("path = %q", r.URL.Path)
+		}
 	}))
 	defer srv.Close()
 
@@ -85,7 +89,7 @@ func TestUsageCommandCode(t *testing.T) {
 		math.Abs(acc.Balance[0].Total-14.3) > 1e-9 {
 		t.Fatalf("balance = %+v", acc.Balance)
 	}
-	if len(acc.Windows) != 2 {
+	if len(acc.Windows) != 3 {
 		t.Fatalf("windows = %+v", acc.Windows)
 	}
 	if acc.Windows[0].Name != "5h" || math.Abs(acc.Windows[0].UsedPercent-42) > 1e-9 {
@@ -94,8 +98,133 @@ func TestUsageCommandCode(t *testing.T) {
 	if acc.Windows[1].Name != "weekly" || math.Abs(acc.Windows[1].UsedPercent-18) > 1e-9 {
 		t.Fatalf("weekly = %+v", acc.Windows[1])
 	}
-	if acc.Windows[0].ResetsAt == nil || acc.Windows[1].ResetsAt == nil {
+	monthly := acc.Windows[2]
+	if monthly.Name != "monthly" || math.Abs(monthly.UsedPercent-75.4) > 1e-9 {
+		t.Fatalf("monthly = %+v", monthly)
+	}
+	if acc.Windows[0].ResetsAt == nil || acc.Windows[1].ResetsAt == nil || monthly.ResetsAt == nil {
 		t.Fatalf("resets = %+v", acc.Windows)
+	}
+}
+
+func TestUsageCommandCodeMonthlyFromPlan(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/alpha/billing/credits":
+			w.Write([]byte(`{"credits":{"monthlyCredits":40.16,"purchasedCredits":0,"freeCredits":0},
+				"windowLimits":{"limited":true,
+					"fiveHour":{"used":0.7968549067,"cap":14},
+					"weekly":{"used":19.9715245197,"cap":35}}}`))
+		case "/alpha/billing/subscriptions":
+			w.Write([]byte(`{"success":true,"data":{"planId":"individual-goat","status":"active","currentPeriodEnd":"2026-11-26T04:38:52.000Z"}}`))
+		default:
+			t.Errorf("path = %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc := accounts[0]
+	if acc.Error != "" || len(acc.Windows) != 3 {
+		t.Fatalf("account = %+v", acc)
+	}
+	monthly := acc.Windows[2]
+	want := 100 * (70 - 40.16) / 70
+	if monthly.Name != "monthly" || math.Abs(monthly.UsedPercent-want) > 1e-9 {
+		t.Fatalf("monthly = %+v, want %.6f", monthly, want)
+	}
+	if monthly.ResetsAt == nil {
+		t.Fatalf("monthly reset is nil")
+	}
+}
+
+func TestUsageCommandCodeGrantWithoutSubscription(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/alpha/billing/credits":
+			w.Write([]byte(`{"credits":{"monthlyCredits":12.3,"monthlyCreditsGranted":50},
+				"windowLimits":{"fiveHour":{"used":4.2,"cap":10}}}`))
+		case "/alpha/billing/subscriptions":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("path = %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc := accounts[0]
+	if acc.Error != "" || len(acc.Windows) != 2 {
+		t.Fatalf("account = %+v", acc)
+	}
+	monthly := acc.Windows[1]
+	if monthly.Name != "monthly" || math.Abs(monthly.UsedPercent-75.4) > 1e-9 {
+		t.Fatalf("monthly = %+v", monthly)
+	}
+	if monthly.ResetsAt != nil {
+		t.Fatalf("monthly reset = %v, want nil without a subscription", monthly.ResetsAt)
+	}
+}
+
+func TestUsageCommandCodeSubscriptionFailureKeepsWindows(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/alpha/billing/credits":
+			w.Write([]byte(`{"credits":{"monthlyCredits":12.3},
+				"windowLimits":{"fiveHour":{"used":4.2,"cap":10},"weekly":{"used":9,"cap":50}}}`))
+		case "/alpha/billing/subscriptions":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("path = %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc := accounts[0]
+	if acc.Error != "" || len(acc.Windows) != 2 {
+		t.Fatalf("account = %+v", acc)
+	}
+}
+
+func TestUsageCommandCodeUnknownPlanHasNoMonthly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/alpha/billing/credits":
+			w.Write([]byte(`{"credits":{"monthlyCredits":12.3},
+				"windowLimits":{"fiveHour":{"used":4.2,"cap":10}}}`))
+		case "/alpha/billing/subscriptions":
+			w.Write([]byte(`{"success":true,"data":{"planId":"individual-mystery","status":"active"}}`))
+		default:
+			t.Errorf("path = %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc := accounts[0]
+	if acc.Error != "" || len(acc.Windows) != 1 || acc.Windows[0].Name != "5h" {
+		t.Fatalf("account = %+v", acc)
 	}
 }
 
@@ -342,5 +471,47 @@ func TestUsageErrorRedactsKeyBeforeTruncating(t *testing.T) {
 	msg := accounts[0].Error
 	if strings.Contains(msg, "sk-") {
 		t.Fatalf("error leaked a key prefix after truncation: %q", msg)
+	}
+}
+
+func TestParseCommandCodeSubscription(t *testing.T) {
+	cases := []struct {
+		name   string
+		body   string
+		wantOK bool
+		plan   string
+	}{
+		{
+			name:   "active subscription",
+			body:   `{"success":true,"data":{"planId":"individual-goat","status":"active","currentPeriodEnd":"2026-11-26T04:38:52.000Z"}}`,
+			wantOK: true,
+			plan:   "individual-goat",
+		},
+		{
+			name:   "free tier",
+			body:   `{"success":true,"data":null}`,
+			wantOK: false,
+		},
+		{
+			name:   "unsuccessful envelope",
+			body:   `{"success":false,"data":{"planId":"individual-goat"}}`,
+			wantOK: false,
+		},
+		{
+			name:   "invalid json",
+			body:   `not-json`,
+			wantOK: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sub, ok := parseCommandCodeSubscription([]byte(tc.body))
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if ok && sub.PlanID != tc.plan {
+				t.Fatalf("plan = %q, want %q", sub.PlanID, tc.plan)
+			}
+		})
 	}
 }
