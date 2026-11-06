@@ -23,6 +23,7 @@ describe('translateFor', () => {
 
   it('translates keys and replaces placeholders for en-US', () => {
     expect(translateFor('en-US', '退出')).toBe('Log out');
+    expect(translateFor('en-US', '总览')).toBe('Overview');
     expect(translateFor('en-US', '删除 {name}?', { name: 'deepseek' })).toBe('Delete deepseek?');
   });
 

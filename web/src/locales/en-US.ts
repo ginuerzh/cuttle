@@ -4,7 +4,7 @@
  * added without inventing a separate key namespace.
  */
 export const enUS: Record<string, string> = {
-  '拓扑': 'Topology',
+  '总览': 'Overview',
   '提供商': 'Providers',
   '节点 · {name}': 'Node · {name}',
   '{count} 个模型': '{count} models',
@@ -19,8 +19,8 @@ export const enUS: Record<string, string> = {
   '跟随系统': 'Follow system',
   '浅色': 'Light',
   '深色': 'Dark',
-  '监控': 'Monitor',
   '编辑': 'Edit',
+  '退出编辑': 'Exit edit',
   '数据延迟': 'Data delayed',
   '更新 {time}': 'Updated {time}',
   '等待数据': 'Waiting for data',

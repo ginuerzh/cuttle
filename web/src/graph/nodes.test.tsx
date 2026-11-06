@@ -56,4 +56,23 @@ describe('NodeStats', () => {
     expect(html).toContain('text-align:center');
     expect(html).toContain('10 req');
   });
+
+  it('renders long p95 latencies in seconds, never as kms', () => {
+    const html = renderToStaticMarkup(
+      <NodeStats
+        metrics={{
+          requests: 10,
+          errors: 0,
+          p50Ms: 800,
+          p95Ms: 1500,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: 0,
+        }}
+      />,
+    );
+
+    expect(html).toContain('p95 1.5s');
+    expect(html).not.toContain('kms');
+  });
 });

@@ -255,7 +255,7 @@ when `admin.passwordHash` is set.
 | Entrypoints | Ordered model globs and the route they select |
 | Requests | Request history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
-| Topology | Entrypoint → route → node → provider graph with live metrics |
+| Overview | Entrypoint → route → node → provider graph with live metrics |
 | Settings | Listen addresses, retention and admin password |
 
 Admin edits validate the new configuration, apply it to the data plane, and

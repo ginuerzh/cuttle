@@ -16,9 +16,9 @@ describe('versionLabel', () => {
 });
 
 describe('versionTitle', () => {
-  it('joins the commit and build time', () => {
-    expect(versionTitle({ ok: true, version: 'v0.1.0', commit: '694deb53b2c9', builtAt: '2026-11-06T10:00:00Z' }))
-      .toBe('commit 694deb53b2c9 · built 2026-11-06T10:00:00Z');
+  it('joins the commit and build time in the shared format', () => {
+    expect(versionTitle({ ok: true, version: 'v0.1.0', commit: '694deb53b2c9', builtAt: '2026-11-06T10:00:00' }))
+      .toBe('commit 694deb53b2c9 · built 2026-11-06 10:00:00');
   });
 
   it('returns undefined without metadata', () => {

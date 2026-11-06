@@ -21,6 +21,7 @@ import type { AccountUsage, BalancePart, ProviderUsage, ProviderUsageResponse, Q
 import { useIsMobile } from '../components/useIsMobile';
 import { ListPage } from '../components/ListPage';
 import { translate as t } from '../i18n';
+import { formatDateTime } from '../time';
 
 const RANGES = [
   { label: '24 小时', value: 24 * 3_600_000 },
@@ -77,7 +78,7 @@ function WindowRow({ window }: { window: QuotaWindow }) {
         <span>{windowLabel(window.name)}</span>
         <Typography.Text type="secondary">
           {`${percent}%`}
-          {window.resetsAt ? ` · ${t('重置')} ${new Date(window.resetsAt).toLocaleString()}` : ''}
+          {window.resetsAt ? ` · ${t('重置')} ${formatDateTime(window.resetsAt)}` : ''}
         </Typography.Text>
       </Space>
       <Progress percent={percent} showInfo={false} strokeColor={color} />
@@ -98,7 +99,7 @@ function AccountRow({ account, first }: { account: AccountUsage; first: boolean 
         <Typography.Text code>{account.keyPreview || '—'}</Typography.Text>
         {account.stale ? <Tag color="orange">{t('旧数据')}</Tag> : null}
         {account.checkedAt ? (
-          <Typography.Text type="secondary">{new Date(account.checkedAt).toLocaleString()}</Typography.Text>
+          <Typography.Text type="secondary">{formatDateTime(account.checkedAt)}</Typography.Text>
         ) : null}
       </Space>
       {account.balance?.map((balance, i) => (
@@ -140,7 +141,7 @@ function ProviderCard({ provider, isMobile }: { provider: ProviderUsage; isMobil
       }
       extra={
         provider.checkedAt ? (
-          <Typography.Text type="secondary">{new Date(provider.checkedAt).toLocaleTimeString()}</Typography.Text>
+          <Typography.Text type="secondary">{formatDateTime(provider.checkedAt)}</Typography.Text>
         ) : null
       }
     >
@@ -225,7 +226,7 @@ export function UsagePage() {
         </Space>
         {data ? (
           <Typography.Text type="secondary">
-            {t('更新于 {time}', { time: new Date(data.checkedAt).toLocaleTimeString() })}
+            {t('更新于 {time}', { time: formatDateTime(data.checkedAt) })}
           </Typography.Text>
         ) : null}
       </Space>

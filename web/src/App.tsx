@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Badge,
   Button,
   Descriptions,
   Divider,
@@ -9,8 +8,6 @@ import {
   Grid,
   Layout,
   Menu,
-  Segmented,
-  Select,
   Space,
   Tag,
   Typography,
@@ -42,24 +39,29 @@ import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
 import { VersionFooter } from './components/VersionFooter';
+import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
 import { errorMatchesNodeId } from './pages/selection';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
+import { NAV_LABELS, NAV_ORDER, type Page } from './nav';
+import { formatDateTime, formatDurationMs } from './time';
 
 const { Header, Content } = Layout;
 
-const NAV_ITEMS = [
-  { key: 'topology', icon: <PartitionOutlined />, label: '拓扑' },
-  { key: 'usage', icon: <BarChartOutlined />, label: '用量' },
-  { key: 'providers', icon: <CloudServerOutlined />, label: '提供商' },
-  { key: 'nodes', icon: <ApiOutlined />, label: '节点' },
-  { key: 'routes', icon: <BranchesOutlined />, label: '路由' },
-  { key: 'entrypoints', icon: <TagOutlined />, label: '入口' },
-  { key: 'requests', icon: <DatabaseOutlined />, label: '请求' },
-  { key: 'settings', icon: <SettingOutlined />, label: '设置' },
-];
+const NAV_ICONS: Record<Page, ReactNode> = {
+  topology: <PartitionOutlined />,
+  usage: <BarChartOutlined />,
+  providers: <CloudServerOutlined />,
+  nodes: <ApiOutlined />,
+  routes: <BranchesOutlined />,
+  entrypoints: <TagOutlined />,
+  requests: <DatabaseOutlined />,
+  settings: <SettingOutlined />,
+};
+
+const NAV_ITEMS = NAV_ORDER.map((key) => ({ key, icon: NAV_ICONS[key], label: NAV_LABELS[key] }));
 
 const THEME_ITEMS = [
   { key: 'system' as const, icon: <DesktopOutlined />, label: '跟随系统' },
@@ -74,7 +76,6 @@ function themeIcon(mode: ThemeMode) {
 }
 
 type Mode = 'monitor' | 'edit';
-type Page = 'topology' | 'usage' | 'providers' | 'nodes' | 'routes' | 'entrypoints' | 'requests' | 'settings';
 type Session = 'unknown' | 'yes' | 'no';
 
 const RANGES = [
@@ -111,7 +112,7 @@ function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics;
         <Descriptions.Item label={translate('请求')}>{fmt(metrics?.requests)}</Descriptions.Item>
         <Descriptions.Item label={translate('错误率')}>{rate(metrics)}</Descriptions.Item>
         <Descriptions.Item label="P50 / P95">
-          {fmt(metrics?.p50Ms)}ms / {fmt(metrics?.p95Ms)}ms
+          {formatDurationMs(metrics?.p50Ms)} / {formatDurationMs(metrics?.p95Ms)}
         </Descriptions.Item>
         <Descriptions.Item label="tokens">
           {translate('入 {input} · 出 {output} · 缓存 {cached}', {
@@ -132,7 +133,7 @@ function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics;
           {mine.slice(0, 5).map((e) => (
             <div key={e.requestId} style={{ fontSize: 12 }}>
               <Tag color="red">{e.status || 'ERR'}</Tag>
-              <Typography.Text type="secondary">{new Date(e.ts).toLocaleTimeString()}</Typography.Text>{' '}
+              <Typography.Text type="secondary">{formatDateTime(e.ts)}</Typography.Text>{' '}
               {e.message}
             </div>
           ))}
@@ -160,7 +161,7 @@ function EdgePanel({ id, metrics }: { id: string; metrics?: EdgeMetrics }) {
   );
 }
 
-function Sidebar({
+export function Sidebar({
   page,
   onPage,
   themeMode,
@@ -198,7 +199,7 @@ function Sidebar({
             placement="topLeft"
             menu={{ items: themeItems, selectable: true, selectedKeys: [themeMode], onClick: ({ key }) => onThemeMode(key as ThemeMode) }}
           >
-            <Button block icon={themeIcon(themeMode)} style={{ justifyContent: 'flex-start' }}>
+            <Button block icon={themeIcon(themeMode)} style={{ justifyContent: 'center' }}>
               {themeLabel}
             </Button>
           </Dropdown>
@@ -212,11 +213,11 @@ function Sidebar({
               onClick: ({ key }) => setLang(key as Lang),
             }}
           >
-            <Button block icon={<GlobalOutlined />} style={{ justifyContent: 'flex-start' }}>
+            <Button block icon={<GlobalOutlined />} style={{ justifyContent: 'center' }}>
               {languageLabel}
             </Button>
           </Dropdown>
-          <Button block onClick={onLogout}>
+          <Button block onClick={onLogout} style={{ justifyContent: 'center' }}>
             {t('退出')}
           </Button>
           <VersionFooter health={health} />
@@ -299,7 +300,7 @@ export default function App() {
         if (cancelled) return;
         setMetrics(m);
         setStale(false);
-        setUpdatedAt(to.toLocaleTimeString());
+        setUpdatedAt(formatDateTime(to));
       } catch (err) {
         if (err instanceof UnauthorizedError) {
           setSession('no');
@@ -393,45 +394,16 @@ export default function App() {
           <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
             {page === 'topology' ? (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '8px 12px',
-                    background: 'var(--gw-surface)',
-                    borderBottom: '1px solid var(--gw-border)',
-                  }}
-                >
-                  <Segmented
-                    value={mode}
-                    onChange={(v) => setMode(v as Mode)}
-                    options={[
-                      { label: t('监控'), value: 'monitor' },
-                      { label: t('编辑'), value: 'edit' },
-                    ]}
-                  />
-                  {mode === 'monitor' ? (
-                    <Space wrap size={8}>
-                      <Select
-                        size="small"
-                        value={range}
-                        onChange={setRange}
-                        options={RANGES.map(({ label, value }) => ({ label: t(label), value }))}
-                        style={{ width: 140 }}
-                      />
-                      {!isMobile ? (
-                        <Badge
-                          status={stale ? 'warning' : 'success'}
-                          text={stale ? t('数据延迟') : updatedAt ? t('更新 {time}', { time: updatedAt }) : t('等待数据')}
-                        />
-                      ) : null}
-                    </Space>
-                  ) : (
-                    <Tag color="orange">{t('编辑模式 · 统计已暂停')}</Tag>
-                  )}
-                </div>
+                <OverviewToolbar
+                  mode={mode}
+                  onMode={setMode}
+                  range={range}
+                  onRange={setRange}
+                  ranges={RANGES}
+                  stale={stale}
+                  updatedAt={updatedAt}
+                  isMobile={isMobile}
+                />
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                   {mode === 'edit' ? (
                     config ? (

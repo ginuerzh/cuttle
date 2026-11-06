@@ -19,6 +19,7 @@ import type { CaptureRule, RequestRow } from '../api/types';
 import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
+import { formatDateTime } from '../time';
 
 const RANGES = [
   { label: '15 分钟', value: 15 * 60_000 },
@@ -210,7 +211,7 @@ export function RequestsPage() {
           <ListCard
             key={r.requestId}
             title={r.clientModel || r.model || r.requestId}
-            subtitle={`${new Date(r.ts).toLocaleString()} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok${r.error ? ` · ${r.error}` : ''}`}
+            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok${r.error ? ` · ${r.error}` : ''}`}
             tags={
               <Space size={4}>
                 {r.hasCapture ? <Tag color="blue">{t('已捕获')}</Tag> : null}
@@ -238,7 +239,7 @@ export function RequestsPage() {
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="sid">{selected.sid}</Descriptions.Item>
-              <Descriptions.Item label={t('时间')}>{new Date(selected.ts).toLocaleString()}</Descriptions.Item>
+              <Descriptions.Item label={t('时间')}>{formatDateTime(selected.ts)}</Descriptions.Item>
               <Descriptions.Item label="route">{selected.route || '—'}</Descriptions.Item>
               <Descriptions.Item label="provider">{selected.provider}</Descriptions.Item>
               <Descriptions.Item label="client model">{selected.clientModel || '—'}</Descriptions.Item>
@@ -272,7 +273,7 @@ export function RequestsPage() {
               <>
                 <Descriptions size="small" column={1} bordered style={{ marginBottom: 12 }}>
                   <Descriptions.Item label={t('原因')}>{cap.reason || '—'}</Descriptions.Item>
-                  <Descriptions.Item label={t('创建时间')}>{cap.createdAt ? new Date(cap.createdAt).toLocaleString() : '—'}</Descriptions.Item>
+                  <Descriptions.Item label={t('创建时间')}>{formatDateTime(cap.createdAt)}</Descriptions.Item>
                   <Descriptions.Item label={t('事件数')}>{cap.sseEvents ?? 0}</Descriptions.Item>
                   <Descriptions.Item label="sha256">
                     <Typography.Text code>{`${cap.requestSha256 || '—'} / ${cap.responseSha256 || '—'}`}</Typography.Text>
