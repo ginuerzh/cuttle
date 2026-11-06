@@ -503,7 +503,7 @@ git commit -m "feat(docker): enable zero-config first run"
 
 **Implementation record**
 - Date/status: 2026-11-06 / complete
-- Repository + commit: llm-gw / `<sha>` (`feat(docker): enable zero-config first run`); this record commit is the follow-up
+- Repository + commit: llm-gw / `00727917` (`feat(docker): enable zero-config first run`); this record commit is the follow-up
 - Files actually changed: `Dockerfile`, `DOCKER.md`, `README.md`, `AGENTS.md`, `example.yaml`, this plan
 - Tests/commands and results: `GOWORK=/tmp/llm-gw-work/go.work go build ./...` PASS; `go vet ./...` PASS; `go test ./... -count=1` all packages PASS; web `npm test` 86/86 PASS, `npx tsc --noEmit` PASS, `npm run build` PASS; Docker image built from a stable context with `--network host` and `GOPROXY=https://goproxy.cn,direct`; fresh-volume smoke printed one password, `/api/health` returned `{"ok":true}`, and `/data` contained `llm-gw.yaml` + `stats.sqlite`; legacy `/etc` mount kept `admin.listen=127.0.0.1:8788`, did not generate a password, and logged the ignored `LLM_GW_ADMIN_LISTEN` warning
 - Review findings and fixes: the Docker build needed `--network host`/`GOPROXY` in this environment; the build context used a stable `llm-api-converter` archive at `7f18a6d` because the sibling working tree has uncommitted P1 changes. Documentation now states the first-run-only env semantics, the one-time password, and the legacy mount path.
