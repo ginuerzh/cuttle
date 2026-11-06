@@ -9,7 +9,7 @@ import {
 import type { NodeMetrics } from '../api/types';
 import type { GraphNode } from './build';
 import { translate as t } from '../i18n';
-import { formatDurationMs } from '../time';
+import { formatDurationMs, formatTokenRate } from '../time';
 
 function errorRate(m?: NodeMetrics): number {
   if (!m || m.requests === 0) return 0;
@@ -35,10 +35,12 @@ function errorPercent(m: NodeMetrics): string {
   return `${err < 10 ? err.toFixed(1) : err.toFixed(0)}%`;
 }
 
-function metricsText(m: NodeMetrics): string {
+function metricsText(m: NodeMetrics, showRate: boolean): string {
   if (m.requests === 0) return t('暂无请求');
   const error = m.errors > 0 ? ` · ${errorPercent(m)}` : '';
-  return `${fmt(m.requests)}${error} · p95 ${formatDurationMs(m.p95Ms)}`;
+  const rate = showRate ? formatTokenRate(m.outputTokensPerSecond) : '';
+  const speed = rate ? ` · ${rate}` : '';
+  return `${fmt(m.requests)}${error} · p95 ${formatDurationMs(m.p95Ms)}${speed}`;
 }
 
 const box: React.CSSProperties = {
@@ -112,9 +114,9 @@ export function NodeBody({ label, sub }: { label: string; sub?: string }) {
  * appear in monitor mode; keeping them absolute means switching modes cannot
  * move the node box, its handles or its edges.
  */
-export function NodeStats({ metrics }: { metrics?: NodeMetrics }) {
+export function NodeStats({ metrics, showRate = false }: { metrics?: NodeMetrics; showRate?: boolean }) {
   if (!metrics) return null;
-  const text = metricsText(metrics);
+  const text = metricsText(metrics, showRate);
   return (
     <div
       title={text}
@@ -146,6 +148,9 @@ export function NodeStats({ metrics }: { metrics?: NodeMetrics }) {
             </>
           ) : null}
           {` · p95 ${formatDurationMs(metrics.p95Ms)}`}
+          {showRate && metrics.outputTokensPerSecond > 0 ? (
+            <>{` · ${formatTokenRate(metrics.outputTokensPerSecond)}`}</>
+          ) : null}
         </>
       )}
     </div>
@@ -204,7 +209,7 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
         <ApiOutlined />
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
-      <NodeStats metrics={data.metrics} />
+      <NodeStats metrics={data.metrics} showRate />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>

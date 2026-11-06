@@ -48,7 +48,7 @@ import { useLiveGraph } from './useLiveGraph';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
 import { NAV_LABELS, NAV_ORDER, type Page } from './nav';
-import { formatDateTime, formatDurationMs } from './time';
+import { formatDateTime, formatDurationMs, formatTokenRate } from './time';
 
 const { Header, Content } = Layout;
 
@@ -102,7 +102,7 @@ function rate(m?: { requests: number; errors: number }): string {
   return `${((m.errors / m.requests) * 100).toFixed(1)}%`;
 }
 
-function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics; errors: ErrorRow[] }) {
+export function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics; errors: ErrorRow[] }) {
   const mine = useMemo(() => errors.filter((e) => errorMatchesNodeId(id, e)), [errors, id]);
 
   return (
@@ -120,6 +120,11 @@ function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics;
         <Descriptions.Item label="P50 / P95">
           {formatDurationMs(metrics?.p50Ms)} / {formatDurationMs(metrics?.p95Ms)}
         </Descriptions.Item>
+        {id.startsWith('node:') && (metrics?.outputTokensPerSecond ?? 0) > 0 ? (
+          <Descriptions.Item label={translate('输出速度')}>
+            {formatTokenRate(metrics!.outputTokensPerSecond)}
+          </Descriptions.Item>
+        ) : null}
         <Descriptions.Item label="tokens">
           {translate('入 {input} · 出 {output} · 缓存 {cached}', {
             input: fmt(metrics?.inputTokens),

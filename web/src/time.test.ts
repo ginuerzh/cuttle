@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatDurationMs } from './time';
+import { formatDateTime, formatDurationMs, formatTokenRate } from './time';
 
 describe('formatDateTime', () => {
   it('formats a Date in local time as YYYY-MM-DD HH:mm:ss', () => {
@@ -33,5 +33,17 @@ describe('formatDurationMs', () => {
     expect(formatDurationMs(1000)).toBe('1s');
     expect(formatDurationMs(1500)).toBe('1.5s');
     expect(formatDurationMs(85_000)).toBe('85s');
+  });
+});
+
+describe('formatTokenRate', () => {
+  it('shows one decimal and strips a trailing .0', () => {
+    expect(formatTokenRate(42.34)).toBe('42.3 tok/s');
+    expect(formatTokenRate(42)).toBe('42 tok/s');
+  });
+
+  it('returns an empty string for non-positive rates', () => {
+    expect(formatTokenRate(0)).toBe('');
+    expect(formatTokenRate(-1)).toBe('');
   });
 });

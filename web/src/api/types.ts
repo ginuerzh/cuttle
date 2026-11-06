@@ -130,6 +130,7 @@ export interface NodeMetrics {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  outputTokensPerSecond: number;
 }
 
 export interface EdgeMetrics {

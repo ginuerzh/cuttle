@@ -46,6 +46,7 @@ class FakeWebSocket {
                 inputTokens: 0,
                 outputTokens: 0,
                 cachedTokens: 0,
+                outputTokensPerSecond: 0,
               },
             },
           };

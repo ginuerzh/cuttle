@@ -45,6 +45,7 @@ describe('NodeStats', () => {
           inputTokens: 0,
           outputTokens: 0,
           cachedTokens: 0,
+          outputTokensPerSecond: 0,
         }}
       />,
     );
@@ -69,6 +70,7 @@ describe('NodeStats', () => {
           inputTokens: 0,
           outputTokens: 0,
           cachedTokens: 0,
+          outputTokensPerSecond: 0,
         }}
       />,
     );
@@ -91,6 +93,7 @@ describe('NodeStats', () => {
           inputTokens: 0,
           outputTokens: 0,
           cachedTokens: 0,
+          outputTokensPerSecond: 0,
         }}
       />,
     );
@@ -110,11 +113,39 @@ describe('NodeStats', () => {
           inputTokens: 0,
           outputTokens: 0,
           cachedTokens: 0,
+          outputTokensPerSecond: 0,
         }}
       />,
     );
 
     expect(html).toContain('p95 1.5s');
     expect(html).not.toContain('kms');
+  });
+
+  it('shows the token rate only when asked and available', () => {
+    const metrics = {
+      requests: 10, errors: 0, p50Ms: 3, p95Ms: 5,
+      inputTokens: 0, outputTokens: 80, cachedTokens: 0,
+      outputTokensPerSecond: 42.34,
+    };
+    const withRate = renderToStaticMarkup(<NodeStats metrics={metrics} showRate />);
+    expect(withRate).toContain('42.3 tok/s');
+
+    const withoutRate = renderToStaticMarkup(<NodeStats metrics={metrics} />);
+    expect(withoutRate).not.toContain('tok/s');
+  });
+
+  it('omits a zero token rate', () => {
+    const html = renderToStaticMarkup(
+      <NodeStats
+        metrics={{
+          requests: 10, errors: 0, p50Ms: 3, p95Ms: 5,
+          inputTokens: 0, outputTokens: 0, cachedTokens: 0,
+          outputTokensPerSecond: 0,
+        }}
+        showRate
+      />,
+    );
+    expect(html).not.toContain('tok/s');
   });
 });

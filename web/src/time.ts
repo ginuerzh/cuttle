@@ -16,3 +16,9 @@ export function formatDurationMs(ms = 0): string {
   if (rounded < 1000) return `${rounded}ms`;
   return `${(rounded / 1000).toFixed(1).replace(/\.0$/, '')}s`;
 }
+
+/** Format a token rate as a compact one-decimal value; empty when unavailable. */
+export function formatTokenRate(rate: number): string {
+  if (!Number.isFinite(rate) || rate <= 0) return '';
+  return `${rate.toFixed(1).replace(/\.0$/, '')} tok/s`;
+}
