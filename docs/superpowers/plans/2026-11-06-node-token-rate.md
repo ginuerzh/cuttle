@@ -184,12 +184,16 @@ git commit -m "feat(stats): capture first streamed response time"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository + commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: `llm-gw` `da379166` (code); this docs commit follows
+- Files changed: `internal/stats/facts.go`, `internal/stats/facts_test.go`, `internal/rewriter/rewriter.go`, `internal/rewriter/rewriter_test.go`, plus the spec and plan files
 - Tests/commands:
-- Review findings/fixes:
-- Deferred items/limitations:
+  - RED: `GOWORK=off go test ./internal/stats -run TestMarkFirstResponseKeepsFirstTimestamp -count=1` → build failed, `Facts.MarkFirstResponse` and `Fact.FirstResponseAt` undefined.
+  - GREEN: the same command after implementation → `ok`.
+  - RED: `GOWORK=off go test ./internal/rewriter -run TestRewriteMarksFirstResponseOnce -count=1` → `marked=0`.
+  - GREEN: `GOWORK=off go test ./internal/rewriter ./internal/stats -run 'TestRewriteMarksFirstResponseOnce|TestMarkFirstResponseKeepsFirstTimestamp' -count=1` → both packages `ok`.
+- Review findings/fixes: none.
+- Deferred items/limitations: TTFT is the first SSE response event, not the first content token; non-SSE streams are not marked.
 
 ---
 
