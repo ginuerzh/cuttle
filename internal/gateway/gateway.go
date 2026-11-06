@@ -96,7 +96,8 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		capture: capMgr,
 	}
 
-	h := newCountTokensHandler(base, &g.countTokens, log)
+	ct := newCountTokensHandler(base, &g.countTokens, log)
+	h := newHelloHandler(ct, log)
 	readTimeout := time.Duration(cfg.Gateway.ReadTimeout)
 	if readTimeout <= 0 {
 		readTimeout = 60 * time.Second

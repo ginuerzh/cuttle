@@ -604,6 +604,13 @@ skills and conversation fragments.
   `count_tokens` requests.
 - Locally answered requests are not recorded in stats or captures.
 
+## Connection warming
+
+Claude Code sends `HEAD /api/hello` and `GET /api/hello` to
+`ANTHROPIC_BASE_URL` as a best-effort connection-warming probe. The gateway
+answers both locally with HTTP 200 (`GET` returns `{"message":"hello"}`); the
+probe is not forwarded upstream and is not recorded in stats or captures.
+
 ## Provider usage and balances
 
 The Usage page shows one card per provider. Local totals (requests, errors,
