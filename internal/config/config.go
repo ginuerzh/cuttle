@@ -19,6 +19,7 @@ type Config struct {
 	Gateway     Gateway      `yaml:"gateway" json:"gateway"`
 	Admin       Admin        `yaml:"admin" json:"admin"`
 	Stats       Stats        `yaml:"stats" json:"stats"`
+	Log         Log          `yaml:"log" json:"log"`
 	Entrypoints []Entrypoint `yaml:"entrypoints" json:"entrypoints"`
 	Providers   []Provider   `yaml:"providers" json:"providers"`
 	Nodes       []Node       `yaml:"nodes" json:"nodes"`
@@ -46,6 +47,13 @@ type Stats struct {
 	RetainRequests Duration `yaml:"retainRequests" json:"retainRequests"`
 	RetainRollups  Duration `yaml:"retainRollups" json:"retainRollups"`
 	StoreBody      bool     `yaml:"storeBody" json:"storeBody"`
+}
+
+// Log controls the gateway logger. Level can change at runtime; format is
+// fixed when the process starts.
+type Log struct {
+	Level  string `yaml:"level" json:"level"`
+	Format string `yaml:"format" json:"format"`
 }
 
 // Entrypoint is the client-facing ingress: it owns the model globs that select
@@ -299,6 +307,8 @@ func (c *Config) expandEnv() {
 	c.Gateway.Listen = ExpandEnv(c.Gateway.Listen)
 	c.Admin.Listen = ExpandEnv(c.Admin.Listen)
 	c.Stats.Path = ExpandEnv(c.Stats.Path)
+	c.Log.Level = ExpandEnv(c.Log.Level)
+	c.Log.Format = ExpandEnv(c.Log.Format)
 	for i := range c.Entrypoints {
 		e := &c.Entrypoints[i]
 		e.Name = ExpandEnv(e.Name)
@@ -373,6 +383,14 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Stats.Path == "" {
 		c.Stats.Path = "stats.sqlite"
+	}
+	c.Log.Level = strings.ToLower(strings.TrimSpace(c.Log.Level))
+	if c.Log.Level == "" {
+		c.Log.Level = "info"
+	}
+	c.Log.Format = strings.ToLower(strings.TrimSpace(c.Log.Format))
+	if c.Log.Format == "" {
+		c.Log.Format = "json"
 	}
 	for i := range c.Providers {
 		p := &c.Providers[i]
@@ -493,6 +511,16 @@ func Validate(c *Config) error {
 	}
 	if strings.TrimSpace(c.Gateway.Listen) == "" {
 		return fmt.Errorf("gateway.listen is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Log.Level)) {
+	case "", "trace", "debug", "info", "warn", "error", "fatal":
+	default:
+		return fmt.Errorf("log.level must be one of trace, debug, info, warn, error, fatal")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Log.Format)) {
+	case "", "json", "text":
+	default:
+		return fmt.Errorf("log.format must be json or text")
 	}
 
 	seen := make(map[string]bool, len(c.Providers))

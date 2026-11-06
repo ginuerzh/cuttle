@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/logging"
 	"github.com/go-gost/llm-gw/internal/provider"
 )
 
@@ -40,6 +41,7 @@ type configView struct {
 		SessionTTL config.Duration `json:"sessionTTL"`
 	} `json:"admin"`
 	Stats       config.Stats        `json:"stats"`
+	Log         config.Log          `json:"log"`
 	Entrypoints []config.Entrypoint `json:"entrypoints"`
 	Providers   []providerView      `json:"providers"`
 	Nodes       []config.Node       `json:"nodes"`
@@ -108,6 +110,7 @@ func (s *Server) replaceLocked(c *config.Config) error {
 	}
 	s.invalidateModelsLocked(c)
 	s.cfg = c
+	logging.Apply(s.log, c.Log.Level, c.Log.Format)
 	return nil
 }
 
@@ -171,6 +174,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	v.Admin.Listen = s.cfg.Admin.Listen
 	v.Admin.SessionTTL = s.cfg.Admin.SessionTTL
 	v.Stats = s.cfg.Stats
+	v.Log = s.cfg.Log
 	v.Entrypoints = nonNilSlice(s.cfg.Entrypoints)
 	v.Nodes = nonNilSlice(s.cfg.Nodes)
 	v.Routes = nonNilSlice(s.cfg.Routes)

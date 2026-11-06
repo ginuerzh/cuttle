@@ -94,8 +94,10 @@ Entrypoint -> Route -> Node -> Provider model
 - Keep the `Load` order: decode, `expandEnv`, `applyDefaults`, `Validate`.
 - Validation errors must name the offending provider, node, route or entrypoint.
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
-  `720h`, stats `stats.sqlite`, provider health `30s`/`5s`, node weight `1`,
-  route strategy `round`.
+  `720h`, stats `stats.sqlite`, log `info`/`json`, provider health `30s`/`5s`,
+  node weight `1`, route strategy `round`.
+- `log.level` is live through SIGHUP and admin saves; `log.format` is fixed at
+  startup and changing it at runtime only logs a restart warning.
 - `config.Write` must stay atomic (temp file, `fsync`, rename, `0600`).
 - `example.yaml` must always load with the current schema.
 - `stats.storeBody` is reserved and currently has no effect; do not document it

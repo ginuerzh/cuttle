@@ -98,6 +98,7 @@ export interface TopologyPosition {
 export interface ConfigResponse {
   gateway: { listen: string };
   admin: { listen: string; sessionTTL: string };
+  log?: { level?: string; format?: string };
   entrypoints: Entrypoint[];
   providers: Provider[];
   nodes: Node[];

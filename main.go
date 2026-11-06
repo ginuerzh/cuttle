@@ -13,11 +13,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/go-gost/x/logger"
-
 	"github.com/go-gost/llm-gw/internal/admin"
 	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/gateway"
+	"github.com/go-gost/llm-gw/internal/logging"
 )
 
 func main() {
@@ -37,11 +36,16 @@ func run(args []string) error {
 		return err
 	}
 
-	log := logger.NewLogger()
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
+
+	log, err := logging.New(cfg.Log.Level, cfg.Log.Format)
+	if err != nil {
+		return err
+	}
+	log.SetDefault()
 
 	gw, err := gateway.New(cfg, log)
 	if err != nil {
@@ -96,6 +100,7 @@ func run(args []string) error {
 			log.Errorf("reload: %v", err)
 			continue
 		}
+		logging.Apply(log, newCfg.Log.Level, newCfg.Log.Format)
 		log.Infof("config reloaded")
 	}
 	return nil

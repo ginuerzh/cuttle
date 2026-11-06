@@ -106,3 +106,29 @@ func TestApplyChangesLevelAndWarnsOnFormat(t *testing.T) {
 		t.Fatalf("missing format warning: %q", buf.String())
 	}
 }
+
+func TestCallerPointsToCallSite(t *testing.T) {
+	var buf bytes.Buffer
+	l, err := newLogger("debug", "json", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.Info("direct")
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if caller, _ := entry["caller"].(string); !strings.Contains(caller, "logging_test.go") {
+		t.Fatalf("direct caller = %q", caller)
+	}
+
+	buf.Reset()
+	l.Infof("formatted %s", "message")
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if caller, _ := entry["caller"].(string); !strings.Contains(caller, "logging_test.go") {
+		t.Fatalf("formatted caller = %q", caller)
+	}
+}

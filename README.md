@@ -214,6 +214,7 @@ See [example.yaml](example.yaml) for a complete configuration.
 gateway: { ... }
 admin: { ... }
 stats: { ... }
+log: { ... }
 entrypoints: [ ... ]
 providers: [ ... ]
 nodes: [ ... ]
@@ -243,6 +244,17 @@ routes: [ ... ]
 | `retainRequests` | `168h` | Raw request retention |
 | `retainRollups` | `2160h` | Aggregated rollup retention |
 | `storeBody` | `false` | Reserved; request/response bodies are not stored yet |
+
+### `log`
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `level` | `info` | `trace`, `debug`, `info`, `warn`, `error` or `fatal`; can change at runtime |
+| `format` | `json` | `json` or `text`; fixed at startup |
+
+`SIGHUP` and an admin config save apply a new `level` immediately, including the
+`llm-api-converter` debug output routed through the same handler. A changed
+`format` takes effect after a restart and logs a warning when changed at runtime.
 
 ### `entrypoints[]`
 

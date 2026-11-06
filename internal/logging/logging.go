@@ -121,38 +121,38 @@ func (l *Logger) WithFields(fields map[string]any) logger.Logger {
 }
 
 // Trace logs at trace level.
-func (l *Logger) Trace(args ...any) { l.log(levelTrace, args...) }
+func (l *Logger) Trace(args ...any) { l.log(levelTrace, 3, args...) }
 
 // Tracef logs a formatted message at trace level.
 func (l *Logger) Tracef(format string, args ...any) { l.logf(levelTrace, format, args...) }
 
 // Debug logs at debug level.
-func (l *Logger) Debug(args ...any) { l.log(slog.LevelDebug, args...) }
+func (l *Logger) Debug(args ...any) { l.log(slog.LevelDebug, 3, args...) }
 
 // Debugf logs a formatted message at debug level.
 func (l *Logger) Debugf(format string, args ...any) { l.logf(slog.LevelDebug, format, args...) }
 
 // Info logs at info level.
-func (l *Logger) Info(args ...any) { l.log(slog.LevelInfo, args...) }
+func (l *Logger) Info(args ...any) { l.log(slog.LevelInfo, 3, args...) }
 
 // Infof logs a formatted message at info level.
 func (l *Logger) Infof(format string, args ...any) { l.logf(slog.LevelInfo, format, args...) }
 
 // Warn logs at warn level.
-func (l *Logger) Warn(args ...any) { l.log(slog.LevelWarn, args...) }
+func (l *Logger) Warn(args ...any) { l.log(slog.LevelWarn, 3, args...) }
 
 // Warnf logs a formatted message at warn level.
 func (l *Logger) Warnf(format string, args ...any) { l.logf(slog.LevelWarn, format, args...) }
 
 // Error logs at error level.
-func (l *Logger) Error(args ...any) { l.log(slog.LevelError, args...) }
+func (l *Logger) Error(args ...any) { l.log(slog.LevelError, 3, args...) }
 
 // Errorf logs a formatted message at error level.
 func (l *Logger) Errorf(format string, args ...any) { l.logf(slog.LevelError, format, args...) }
 
 // Fatal logs at fatal level and exits.
 func (l *Logger) Fatal(args ...any) {
-	l.log(levelFatal, args...)
+	l.log(levelFatal, 3, args...)
 	os.Exit(1)
 }
 
@@ -162,21 +162,21 @@ func (l *Logger) Fatalf(format string, args ...any) {
 	os.Exit(1)
 }
 
-func (l *Logger) log(level slog.Level, args ...any) {
+func (l *Logger) log(level slog.Level, skip int, args ...any) {
 	if l == nil || l.level == nil || l.level.Level() > level {
 		return
 	}
 	msg := fmt.Sprint(args...)
 	if l.level.Level() <= slog.LevelDebug {
 		l.logger.LogAttrs(context.Background(), level, msg,
-			slog.String("caller", l.caller(3)))
+			slog.String("caller", l.caller(skip)))
 		return
 	}
 	l.logger.LogAttrs(context.Background(), level, msg)
 }
 
 func (l *Logger) logf(level slog.Level, format string, args ...any) {
-	l.log(level, fmt.Sprintf(format, args...))
+	l.log(level, 4, fmt.Sprintf(format, args...))
 }
 
 func (l *Logger) caller(skip int) string {

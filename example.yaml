@@ -12,6 +12,12 @@ stats:
   retainRollups: 2160h
   storeBody: false
 
+# Level can be changed at runtime with SIGHUP or an admin config save. Format
+# is fixed at startup; changing it requires a restart.
+log:
+  level: info    # trace | debug | info | warn | error | fatal
+  format: json   # json | text
+
 # An entrypoint is the client-facing ingress. Its match globs are checked in
 # declaration order; the first entrypoint with a matching client model wins.
 entrypoints:

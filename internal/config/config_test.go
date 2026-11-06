@@ -792,3 +792,43 @@ func TestExampleConfigLoads(t *testing.T) {
 		}
 	}
 }
+
+func TestLogDefaultsAndValidation(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: "127.0.0.1:0"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Log.Level != "info" || c.Log.Format != "json" {
+		t.Fatalf("log defaults = %+v", c.Log)
+	}
+
+	for _, body := range []string{
+		"log:\n  level: loud\n",
+		"log:\n  format: yaml\n",
+	} {
+		if _, err := Load(writeConfig(t, "gateway:\n  listen: \"127.0.0.1:0\"\n"+body)); err == nil {
+			t.Fatalf("expected error for %q", body)
+		}
+	}
+}
+
+func TestLogExpandsEnv(t *testing.T) {
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "text")
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: "127.0.0.1:0"
+log:
+  level: ${LOG_LEVEL}
+  format: ${LOG_FORMAT}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Log.Level != "debug" || c.Log.Format != "text" {
+		t.Fatalf("expanded log = %+v", c.Log)
+	}
+}
