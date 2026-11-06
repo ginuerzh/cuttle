@@ -162,6 +162,14 @@ func (p *baseProvider) usageURL(kind string) (string, bool) {
 	case "opencode-go":
 		path := strings.TrimRight(u.Path, "/")
 		switch {
+		case strings.HasSuffix(path, "/inference/go/openai/v1"):
+			path = strings.TrimSuffix(path, "/openai/v1") + "/v1/usage"
+		case strings.HasSuffix(path, "/inference/go/anthropic"):
+			path = strings.TrimSuffix(path, "/anthropic") + "/v1/usage"
+		case strings.HasSuffix(path, "/inference/go/v1"):
+			path += "/usage"
+		case strings.HasSuffix(path, "/inference/go"):
+			path += "/v1/usage"
 		case strings.HasSuffix(path, "/zen/go/v1"):
 			path += "/usage"
 		case strings.HasSuffix(path, "/zen/go"):

@@ -58,8 +58,8 @@ func TestFactoryBaseURLsStayDistinct(t *testing.T) {
 	goP := mustProvider(t, config.Provider{
 		Name:      "opencode-go",
 		Type:      "opencode-go",
-		Chat:      "https://opencode.ai/zen/go/v1",
-		Anthropic: "https://opencode.ai/zen/go",
+		Chat:      "https://opencode.ai/inference/go/openai/v1",
+		Anthropic: "https://opencode.ai/inference/go/anthropic",
 	})
 	zenP := mustProvider(t, config.Provider{
 		Name:      "opencode-zen",

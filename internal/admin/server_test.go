@@ -341,7 +341,7 @@ func TestPresetsMatchSpec(t *testing.T) {
 		gemini    string
 	}{
 		{"deepseek", "deepseek", "https://api.deepseek.com/v1", "https://api.deepseek.com/v1", "https://api.deepseek.com/anthropic", ""},
-		{"opencode-go", "opencode-go", "https://opencode.ai/zen/go/v1", "https://opencode.ai/zen/go/v1", "https://opencode.ai/zen/go", ""},
+		{"opencode-go", "opencode-go", "https://opencode.ai/inference/go/openai/v1", "https://opencode.ai/inference/go/openai/v1", "https://opencode.ai/inference/go/anthropic", ""},
 		{"opencode-zen", "opencode-zen", "https://opencode.ai/zen/v1", "https://opencode.ai/zen/v1", "https://opencode.ai/zen", ""},
 		{"commandcode", "commandcode", "https://api.commandcode.ai/provider/v1", "https://api.commandcode.ai/provider/v1", "https://api.commandcode.ai/provider", ""},
 	}

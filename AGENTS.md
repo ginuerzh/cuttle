@@ -293,5 +293,6 @@ GOWORK=off go test ./internal/stats -count=1
   keys. Never copy it into the repository.
 - OpenCode Zen has no per-key balance API: its Usage card must link to
   `https://opencode.ai/console` instead of querying. OpenCode Go's windows are
-  at `/zen/go/v1/usage`; CommandCode uses `resetAt` (Unix time) while OpenCode
-  Go uses `resetsAt` (RFC 3339).
+  at `/zen/go/v1/usage` (legacy bases) or `/inference/go/v1/usage` (inference
+  bases); CommandCode uses `resetAt` (Unix time) while OpenCode Go uses
+  `resetsAt` (RFC 3339).

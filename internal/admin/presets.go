@@ -23,9 +23,9 @@ var presets = []Preset{
 	{
 		Name:      "opencode-go",
 		Type:      "opencode-go",
-		Chat:      "https://opencode.ai/zen/go/v1",
-		Responses: "https://opencode.ai/zen/go/v1",
-		Anthropic: "https://opencode.ai/zen/go",
+		Chat:      "https://opencode.ai/inference/go/openai/v1",
+		Responses: "https://opencode.ai/inference/go/openai/v1",
+		Anthropic: "https://opencode.ai/inference/go/anthropic",
 	},
 	{
 		Name:      "opencode-zen",

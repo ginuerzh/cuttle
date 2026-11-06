@@ -29,9 +29,9 @@ setActiveLang('zh-CN');
 const opencodeGo: Preset = {
   name: 'opencode-go',
   type: 'opencode-go',
-  chat: 'https://opencode.ai/zen/go/v1',
-  responses: 'https://opencode.ai/zen/go/v1',
-  anthropic: 'https://opencode.ai/zen/go',
+  chat: 'https://opencode.ai/inference/go/openai/v1',
+  responses: 'https://opencode.ai/inference/go/openai/v1',
+  anthropic: 'https://opencode.ai/inference/go/anthropic',
 };
 
 const opencodeZen: Preset = {
@@ -47,9 +47,9 @@ describe('presetFormValues', () => {
     expect(presetFormValues(opencodeGo)).toEqual({
       name: 'opencode-go',
       type: 'opencode-go',
-      chat: 'https://opencode.ai/zen/go/v1',
-      responses: 'https://opencode.ai/zen/go/v1',
-      anthropic: 'https://opencode.ai/zen/go',
+      chat: 'https://opencode.ai/inference/go/openai/v1',
+      responses: 'https://opencode.ai/inference/go/openai/v1',
+      anthropic: 'https://opencode.ai/inference/go/anthropic',
       gemini: '',
     });
   });

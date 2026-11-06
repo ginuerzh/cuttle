@@ -159,6 +159,11 @@ func TestUsageOpenCodeGoBasePaths(t *testing.T) {
 		{srv.URL + "/zen/go", "/zen/go/v1/usage"},
 		{srv.URL + "/zen/go/v1", "/zen/go/v1/usage"},
 		{srv.URL + "/zen/go/v1/", "/zen/go/v1/usage"},
+		{srv.URL + "/inference/go", "/inference/go/v1/usage"},
+		{srv.URL + "/inference/go/v1", "/inference/go/v1/usage"},
+		{srv.URL + "/inference/go/openai/v1", "/inference/go/v1/usage"},
+		{srv.URL + "/inference/go/openai/v1/", "/inference/go/v1/usage"},
+		{srv.URL + "/inference/go/anthropic", "/inference/go/v1/usage"},
 		{srv.URL + "/proxy/v1", "/proxy/v1/usage"},
 	}
 	for _, tc := range cases {
