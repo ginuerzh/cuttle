@@ -539,7 +539,7 @@ git commit -m "docs: describe real-time monotonic monitoring"
 
 **Implementation record:**
 - Date/status: 2026-11-06 — complete.
-- Repo + commit: llm-gw `feat/monotonic-monitor` (fix commit; SHA recorded in the follow-up `docs(plan)` commit).
+- Repo + commit: llm-gw `feat/monotonic-monitor` `ed853171` (fix); record finalized in the follow-up `docs(plan)` commit.
 - Files changed: `internal/stats/store.go`, `internal/stats/graph.go`, `internal/stats/graph_live_test.go`, `internal/stats/store_test.go`, `internal/admin/handlers_events.go`, `internal/admin/events_test.go`, `web/src/useLiveGraph.ts`, `web/src/useLiveGraph.test.tsx` (new), `web/package.json`, `web/package-lock.json`, `README.md`, `AGENTS.md`, spec, plan.
 - Tests/commands and results: `GOWORK=off go build ./...` → PASS; `GOWORK=off go vet ./...` → PASS; `GOWORK=off go test ./... -count=1` → PASS; `cd web && npm test` → 19 files / 130 tests PASS; `npx tsc --noEmit` → PASS; `npm run build` → PASS.
 - Review findings and fixes: `TestGraphAggregateCursorSurvivesRetentionDeletes` failed before the sequence column and passes after; `TestOpenMigratesMonotonicSeq` covers the old-DB backfill; `TestAggregatorBoundsErrorSamples` covers the ring; `useLiveGraph.test.tsx` covers the reconnect state machine.
