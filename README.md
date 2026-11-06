@@ -19,6 +19,9 @@ provider model, converts between wire APIs, and records per-request statistics.
 - Stores request history and rollups in SQLite; the topology can be filtered by
   time range down to one minute.
 - Reloads configuration on `SIGHUP` or immediately after an admin edit.
+- Starts without a config file: a zero-config first run creates the config and
+  a one-time admin password under `$LLM_GW_DATA`, then the console creates the
+  upstream topology.
 
 ## Routing model
 
@@ -90,6 +93,49 @@ The web build writes to `internal/admin/dist`, which is embedded into the Go
 binary. The `GOWORK=off` flag keeps the build scoped to this module when a
 parent `go.work` exists.
 
+### Zero-config first run
+
+No config file is required. Start the binary (or the Docker image) and it
+creates `$LLM_GW_DATA/llm-gw.yaml` and `$LLM_GW_DATA/stats.sqlite`:
+
+```bash
+LLM_GW_DATA=./data ./llm-gw serve
+```
+
+If `LLM_GW_ADMIN_PASSWORD` is not set, llm-gw generates a 32-character admin
+password, prints it once to stderr, and stores only its bcrypt hash. Open the
+admin console, log in, and create a provider, node, route and entrypoint. No
+provider, key or model environment variables exist.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LLM_GW_DATA` | `/data` | Directory for the generated config and stats database |
+| `LLM_GW_LISTEN` | `:8787` | First-run `gateway.listen` |
+| `LLM_GW_ADMIN_LISTEN` | `127.0.0.1:8788` (binary); `:8788` (Docker image) | First-run `admin.listen` |
+| `LLM_GW_ADMIN_PASSWORD` | unset | First-run admin password; hashed into the config |
+
+All four are optional. The three config-value variables are **first-run
+defaults**: once a config exists, the file and the console are authoritative and
+the variables are ignored (a differing value logs a warning). `LLM_GW_DATA` is
+also used to locate an existing config.
+
+`-c` is optional. Without it, llm-gw uses the first existing path from:
+
+1. `$LLM_GW_DATA/llm-gw.yaml`
+2. `/etc/llm-gw/llm-gw.yaml` (legacy Docker mount)
+3. `./llm-gw.yaml` (legacy working-directory config)
+
+If none exists, it generates a new config in `$LLM_GW_DATA`. An explicitly
+supplied `-c` path must exist.
+
+To choose the password before the first run, set `LLM_GW_ADMIN_PASSWORD` (8–72
+bytes). If the generated password is lost, replace `admin.passwordHash` with the
+output of `llm-gw hash-password`, or delete the config (destructive: it also
+deletes the topology; persisted sessions are cleared on regeneration).
+
+The rest of this section describes the full manual YAML configuration, which is
+still supported and is the right choice for multi-provider topologies.
+
 ### Minimal configuration
 
 Create `llm-gw.yaml`:
@@ -141,6 +187,18 @@ Paste the output into `admin.passwordHash`.
 
 ### Run
 
+Zero-config first run (no YAML file):
+
+```bash
+LLM_GW_DATA=./data ./llm-gw serve
+```
+
+The log prints a one-time admin password. Open the admin console, log in, and
+create the provider, node, route and entrypoint there. This is the same path the
+Docker image uses.
+
+Manual configuration:
+
 ```bash
 DEEPSEEK_API_KEY=sk-... ./llm-gw serve -c llm-gw.yaml
 ```
@@ -148,7 +206,8 @@ DEEPSEEK_API_KEY=sk-... ./llm-gw serve -c llm-gw.yaml
 - Gateway: `http://127.0.0.1:8787`
 - Admin console: `http://127.0.0.1:8788/`
 
-Send a request:
+Send a request (after the manual DeepSeek topology or an equivalent zero-config
+topology exists in the console):
 
 ```bash
 curl http://127.0.0.1:8787/v1/chat/completions \
@@ -207,6 +266,10 @@ used if the server cannot be reached.
 why old routing keys are rejected instead of silently ignored. Names, URLs,
 keys, models and match globs support `${VAR}` and `$VAR` environment expansion.
 See [example.yaml](example.yaml) for a complete configuration.
+
+A config file is optional; see [Zero-config first run](#zero-config-first-run)
+for the generated path and the four first-run environment variables. Once a
+config exists, it is the source of truth and those variables are not reapplied.
 
 ### Top level
 
@@ -443,7 +506,40 @@ it. The layout lives in the `topology_positions` table of `stats.sqlite`.
 
 ## Docker
 
-The image bundles the gateway and the built admin console:
+The image bundles the gateway and the built admin console and starts with no
+config file:
+
+```bash
+docker run -d --name llm-gw \
+  -p 8787:8787 -p 8788:8788 \
+  -v llm-gw-data:/data \
+  ghcr.io/ginuerzh/llm-gw:latest
+
+docker logs llm-gw
+```
+
+The first start generates `/data/llm-gw.yaml` and `/data/stats.sqlite`. The log
+contains a one-time admin password; open `http://localhost:8788/`, log in, and
+create the upstream topology. The image sets `LLM_GW_DATA=/data` and
+`LLM_GW_ADMIN_LISTEN=:8788` for the first run. The binary default remains
+`127.0.0.1:8788`.
+
+To choose the password, set it before the first start:
+
+```bash
+docker run -d --name llm-gw \
+  -p 8787:8787 -p 8788:8788 \
+  -e LLM_GW_ADMIN_PASSWORD='choose-a-long-password' \
+  -v llm-gw-data:/data \
+  ghcr.io/ginuerzh/llm-gw:latest
+```
+
+The four environment variables are first-run defaults. An existing config is
+not overridden; edit `admin.listen` in the file or use the console. To keep the
+admin API inside the container network on a fresh container, set
+`LLM_GW_ADMIN_LISTEN=127.0.0.1:8788` before the first start.
+
+Existing configs still work through the legacy mount:
 
 ```bash
 docker run -d --name llm-gw \
@@ -453,13 +549,16 @@ docker run -d --name llm-gw \
   ghcr.io/ginuerzh/llm-gw:latest
 ```
 
-`/data` is the working directory, so a relative `stats.path` persists in the
-volume. The container runs as UID/GID `10001`. If the GHCR package is private,
-run `docker login ghcr.io` with a token that can read packages first.
+`/etc/llm-gw/llm-gw.yaml` is found when `/data/llm-gw.yaml` does not exist; pass
+`-c /etc/llm-gw/llm-gw.yaml` to be explicit. Admin edits write the config file,
+so mount it writable if you want to manage the gateway from the console; with a
+read-only mount, edit the host file and send `SIGHUP` instead.
 
-The example mounts the config read-only. Admin edits write the config file, so
-mount it writable if you want to manage the gateway from the console; with a
-read-only mount, edit the file on the host and send `SIGHUP` instead.
+`/data` is the working directory, so generated files persist in the volume. The
+container runs as UID/GID `10001`; a bind-mounted config must be readable by
+that user and a bind-mounted `/data` must be writable by it. If the GHCR package
+is private, run `docker login ghcr.io` with a token that can read packages
+first.
 
 Building locally requires the parent directory that contains the sibling
 repositories:
@@ -489,7 +588,8 @@ Rebuild the web bundle before a Go build if the console changed:
 ## Project layout
 
 ```text
-main.go                 CLI: serve, hash-password, SIGHUP reload
+main.go                 CLI: serve, hash-password, SIGHUP reload, first-run bootstrap
+internal/bootstrap      zero-config path resolution and first-run generation
 internal/config         strict YAML schema, defaults, validation
 internal/gateway        data plane: entrypoint matchers, routes, nodes
 internal/provider       provider adapters and model catalogs
@@ -505,7 +605,15 @@ DOCKER.md               image build and CI notes
 
 - Provider API keys are stored in the YAML config. Protect the file and mount
   secrets through environment variables where possible.
-- The admin API is HTTP only and binds to loopback by default. Put a TLS
-  reverse proxy in front of it before exposing it on a network.
+- The generated config contains a bcrypt admin hash, not the plaintext
+  password. The one-time password is printed to stderr/logs on the first run.
+  In production, set `LLM_GW_ADMIN_PASSWORD` through your orchestrator's secret
+  mechanism, or capture the first-run logs securely.
+- The data directory is created with mode `0700` and the config with `0600`.
+- The admin API is HTTP only. The binary binds to loopback by default; the
+  Docker image binds `:8788` for first-run onboarding. Put a TLS reverse proxy
+  in front of it before exposing it on a network.
+- `LLM_GW_ADMIN_PASSWORD` is visible in the container environment; use an env
+  file or an orchestrator secret to inject it.
 - `admin.passwordHash` empty disables the admin server entirely, including the
   management API.

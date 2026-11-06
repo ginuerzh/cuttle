@@ -16,21 +16,65 @@ Build from that parent directory:
 docker build -f llm-gw/Dockerfile -t llm-gw .
 ```
 
-Run with a mounted config:
+## Zero-config first run
+
+The image starts with no config file:
+
+```bash
+docker run -d --name llm-gw \
+  -p 8787:8787 -p 8788:8788 \
+  -v llm-gw-data:/data \
+  ghcr.io/ginuerzh/llm-gw:latest
+
+docker logs llm-gw
+```
+
+The first start creates `/data/llm-gw.yaml` and `/data/stats.sqlite`. The log
+contains a one-time admin password. Open `http://localhost:8788/`, log in, and
+create the provider, node, route and entrypoint in the console.
+
+The image sets `LLM_GW_DATA=/data` and `LLM_GW_ADMIN_LISTEN=:8788` for first run.
+The binary default is `127.0.0.1:8788`; the image changes it so the published
+admin port works without extra configuration.
+
+To choose the password before the first start:
+
+```bash
+docker run -d --name llm-gw \
+  -p 8787:8787 -p 8788:8788 \
+  -e LLM_GW_ADMIN_PASSWORD='choose-a-long-password' \
+  -v llm-gw-data:/data \
+  ghcr.io/ginuerzh/llm-gw:latest
+```
+
+The four environment variables are first-run defaults. Once a config exists,
+the file and console are authoritative and the variables are ignored (a
+differing value logs a warning). To keep the admin API inside the container
+network on a fresh start, set `LLM_GW_ADMIN_LISTEN=127.0.0.1:8788`.
+
+`LLM_GW_ADMIN_PASSWORD` is visible in the container environment. Use an env file
+or an orchestrator secret to inject it. The generated config stores only the
+bcrypt hash.
+
+## Existing config mount
 
 ```bash
 docker run -d --name llm-gw \
   -p 8787:8787 -p 8788:8788 \
   -v "$PWD/llm-gw.yaml:/etc/llm-gw/llm-gw.yaml:ro" \
   -v llm-gw-data:/data \
-  llm-gw
+  ghcr.io/ginuerzh/llm-gw:latest
 ```
 
-`/data` is the working directory, so a relative `stats.path` such as
-`stats.sqlite` persists in the volume.
+`/etc/llm-gw/llm-gw.yaml` is found when `/data/llm-gw.yaml` does not exist. Pass
+`-c /etc/llm-gw/llm-gw.yaml` to be explicit. Admin edits write the config file,
+so use a writable mount if you want to manage the gateway from the console; with
+a read-only mount, edit the host file and send `SIGHUP`.
 
-The image runs as UID/GID `10001` (`llm-gw`). Mounted configs must be readable
-by that user, and a bind-mounted `/data` must be writable by it.
+`/data` is the working directory. A relative `stats.path` in a hand-written
+config persists there; generated configs use an absolute path. The image runs as
+UID/GID `10001`; mounted configs must be readable by that user and a
+bind-mounted `/data` must be writable by it.
 
 ## GitHub Actions
 

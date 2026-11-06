@@ -42,7 +42,11 @@ RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S -g 10001 llm-gw \
     && adduser -S -u 10001 -G llm-gw llm-gw \
     && mkdir -p /data \
-    && chown -R llm-gw:llm-gw /data
+    && chown -R llm-gw:llm-gw /data \
+    && chmod 700 /data
+
+ENV LLM_GW_DATA=/data \
+    LLM_GW_ADMIN_LISTEN=:8788
 
 WORKDIR /data
 COPY --from=build /out/llm-gw /usr/local/bin/llm-gw
@@ -51,8 +55,11 @@ USER llm-gw
 EXPOSE 8787 8788
 VOLUME ["/data"]
 
-# Mount the config read-only:
-#   -v "$PWD/llm-gw.yaml:/etc/llm-gw/llm-gw.yaml:ro"
-# A relative stats path such as `stats.sqlite` is written under /data.
+# Zero-config first run:
+#   docker run -d -p 8787:8787 -p 8788:8788 -v llm-gw-data:/data <image>
+# /data holds the generated llm-gw.yaml and stats.sqlite. The admin password is
+# printed once to the container logs. Set LLM_GW_ADMIN_PASSWORD before the
+# first start to choose it. An existing config at /etc/llm-gw/llm-gw.yaml is
+# still found through the legacy fallback; pass -c to select it explicitly.
 ENTRYPOINT ["llm-gw"]
-CMD ["serve", "-c", "/etc/llm-gw/llm-gw.yaml"]
+CMD ["serve"]
