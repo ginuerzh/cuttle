@@ -260,3 +260,24 @@ func TestCleanupUsesCaptureRetain(t *testing.T) {
 		t.Fatal("request should survive its shorter capture retention")
 	}
 }
+
+func TestDeleteAllSessions(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	if err := s.PutSession(ctx, "a", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutSession(ctx, "b", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteAllSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := s.LoadSessions(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("sessions = %d, want 0", len(sessions))
+	}
+}

@@ -308,12 +308,12 @@ git commit -m "feat: start without a config file"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files actually changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: llm-gw / `<sha>` (`feat: start without a config file`); this record commit is the follow-up
+- Files actually changed: `main.go`, `main_test.go`, `internal/stats/store_test.go`, this plan
+- Tests/commands and results: `GOWORK=/tmp/llm-gw-work/go.work go test . ./internal/stats -count=1` -> ok; `GOWORK=/tmp/llm-gw-work/go.work go test ./... -count=1` -> all packages ok; smoke run with a temp `LLM_GW_DATA` printed one generated password and created `llm-gw.yaml` (0600) and `stats.sqlite`
+- Review findings and fixes: `defer gw.Close` is installed before session reset; `resetAdminSessions` only runs for a generated config and clears persisted sessions before `admin.New`; `parseServeArgs` defaults to empty so bootstrap resolves the file; warnings are logged after the logger exists
+- Deferred items/limitations: verification used a detached `llm-api-converter` worktree at `7f18a6d` because the sibling working tree has uncommitted P1 changes that intermittently fail to compile; the Task 5 Docker context needs the same stable sibling or the working tree must be fixed
 
 ---
 

@@ -14,9 +14,11 @@ import (
 	"syscall"
 
 	"github.com/go-gost/llm-gw/internal/admin"
+	"github.com/go-gost/llm-gw/internal/bootstrap"
 	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/gateway"
 	"github.com/go-gost/llm-gw/internal/logging"
+	"github.com/go-gost/llm-gw/internal/stats"
 )
 
 func main() {
@@ -36,10 +38,15 @@ func run(args []string) error {
 		return err
 	}
 
-	cfg, err := config.Load(configPath)
+	res, err := bootstrap.Prepare(bootstrap.Options{
+		ExplicitPath: configPath,
+		Getenv:       os.Getenv,
+		Stderr:       os.Stderr,
+	})
 	if err != nil {
 		return err
 	}
+	cfg := res.Config
 
 	log, err := logging.New(cfg.Log.Level, cfg.Log.Format)
 	if err != nil {
@@ -47,14 +54,36 @@ func run(args []string) error {
 	}
 	log.SetDefault()
 
+	for _, warning := range res.Warnings {
+		log.Warnf("%s", warning)
+	}
+	if res.Generated {
+		if res.GeneratedPassword != "" {
+			log.Infof("generated config %s; admin password printed to stderr", res.ConfigPath)
+		} else {
+			log.Infof("generated config %s with the password from LLM_GW_ADMIN_PASSWORD", res.ConfigPath)
+		}
+	}
+	if len(cfg.Entrypoints) == 0 {
+		if cfg.Admin.PasswordHash == "" {
+			log.Warnf("no entrypoints configured; admin console is disabled (admin.passwordHash is empty)")
+		} else {
+			log.Warnf("no entrypoints configured; use the admin console to add a provider, node, route and entrypoint")
+		}
+	}
+
 	gw, err := gateway.New(cfg, log)
 	if err != nil {
 		return err
 	}
+	defer gw.Close()
+
+	if err := resetAdminSessions(gw.Stats(), res.Generated); err != nil {
+		return fmt.Errorf("reset admin sessions: %w", err)
+	}
 	if err := gw.Start(); err != nil {
 		return err
 	}
-	defer gw.Close()
 
 	var adminSrv *http.Server
 	var adm *admin.Server
@@ -63,7 +92,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		adm = admin.New(configPath, cfg, gw, log)
+		adm = admin.New(res.ConfigPath, cfg, gw, log)
 		adminSrv = &http.Server{Handler: adm.Handler()}
 		probeCtx, probeCancel := context.WithCancel(context.Background())
 		defer probeCancel()
@@ -92,7 +121,7 @@ func run(args []string) error {
 			return nil
 		}
 
-		newCfg, err := config.Load(configPath)
+		newCfg, err := config.Load(res.ConfigPath)
 		if err != nil {
 			log.Errorf("reload: %v", err)
 			continue
@@ -129,15 +158,25 @@ func runHashPassword() error {
 
 func parseServeArgs(args []string) (string, error) {
 	if len(args) == 0 || args[0] != "serve" {
-		return "", errors.New("usage: llm-gw serve -c <config>")
+		return "", errors.New("usage: llm-gw serve [-c <config>]")
 	}
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	var path string
-	fs.StringVar(&path, "c", "llm-gw.yaml", "config file")
-	fs.StringVar(&path, "config", "llm-gw.yaml", "config file")
+	const usage = "config file (default: $LLM_GW_DATA/llm-gw.yaml)"
+	fs.StringVar(&path, "c", "", usage)
+	fs.StringVar(&path, "config", "", usage)
 	if err := fs.Parse(args[1:]); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// resetAdminSessions clears persisted remember-me sessions when a first-run
+// config generated a new admin credential.
+func resetAdminSessions(store *stats.Store, generated bool) error {
+	if !generated || store == nil {
+		return nil
+	}
+	return store.DeleteAllSessions(context.Background())
 }
