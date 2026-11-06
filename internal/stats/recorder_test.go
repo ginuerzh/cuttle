@@ -76,3 +76,19 @@ func TestRecorderCaptureErrorMode(t *testing.T) {
 		t.Fatalf("failed request capture = %+v", c)
 	}
 }
+
+func TestRecorderCaptureOffWritesNothing(t *testing.T) {
+	s := newStore(t)
+	mgr := capture.NewManager(capture.Policy{Mode: "off"})
+	rec := NewRecorder(s, NewFacts(), nil, mgr)
+	body, _ := json.Marshal(map[string]any{
+		"sid": "off", "node": "r/p/n", "time": time.Now().UTC(),
+		"http": map[string]any{"statusCode": 200},
+	})
+	if err := rec.Record(context.Background(), body); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.GetCapture(context.Background(), "off"); c != nil {
+		t.Fatalf("off mode wrote capture: %+v", c)
+	}
+}

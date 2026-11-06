@@ -248,7 +248,7 @@ export function RequestsPage() {
               <Descriptions.Item label={t('错误阶段')}>{selected.errorStage || '—'}</Descriptions.Item>
               <Descriptions.Item label={t('错误方向')}>{selected.errorDirection || '—'}</Descriptions.Item>
               <Descriptions.Item label="SSE phase / index">
-                {`${selected.ssePhase || '—'} / ${selected.eventIndex ?? '—'}`}
+                {selected.ssePhase ? `${selected.ssePhase} / ${selected.eventIndex ?? 0}` : '— / —'}
               </Descriptions.Item>
               <Descriptions.Item label="status / error">
                 <Typography.Text type={selected.error ? 'danger' : undefined}>

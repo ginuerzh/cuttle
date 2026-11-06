@@ -1,11 +1,14 @@
 package gateway
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	xlogger "github.com/go-gost/x/logger"
 
@@ -143,5 +146,48 @@ func TestGatewayRequestIDHeader(t *testing.T) {
 
 	if id := resp.Header.Get(gwrewriter.RequestIDHeaderName); id == "" {
 		t.Fatalf("%s header is empty", gwrewriter.RequestIDHeaderName)
+	}
+}
+
+func TestGatewayRequestIDMatchesStatsRow(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL)
+	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
+	gw := startGateway(t, cfg)
+
+	resp, err := http.Post("http://"+gw.Addr().String()+"/v1/chat/completions",
+		"application/json", strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	id := resp.Header.Get(gwrewriter.RequestIDHeaderName)
+	if id == "" {
+		t.Fatal("request ID header is empty")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		row, qerr := gw.store.Get(context.Background(), id)
+		if qerr != nil {
+			t.Fatal(qerr)
+		}
+		if row != nil {
+			if row.ID != id {
+				t.Fatalf("row ID = %q, header = %q", row.ID, id)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("stats row not recorded")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

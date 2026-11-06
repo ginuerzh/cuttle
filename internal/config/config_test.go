@@ -852,3 +852,20 @@ func TestCaptureDefaultsAndValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptureExplicitZeroSampleRate(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: "127.0.0.1:0"
+stats:
+  capture:
+    mode: sample
+    sampleRate: 0
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Stats.Capture.SampleRate == nil || *c.Stats.Capture.SampleRate != 0 {
+		t.Fatalf("sampleRate = %v, want explicit 0", c.Stats.Capture.SampleRate)
+	}
+}

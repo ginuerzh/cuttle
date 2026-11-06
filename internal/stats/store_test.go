@@ -85,7 +85,7 @@ func TestCleanupKeepsRollups(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := base.Add(48 * time.Hour)
-	if err := s.Cleanup(ctx, now.Add(-24*time.Hour), now.Add(-90*24*time.Hour)); err != nil {
+	if err := s.Cleanup(ctx, now.Add(-24*time.Hour), now.Add(-90*24*time.Hour), now.Add(-24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -230,10 +230,33 @@ func TestCaptureRoundTripAndCleanup(t *testing.T) {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM requests`); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Cleanup(ctx, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
+	if err := s.Cleanup(ctx, time.Now().Add(time.Hour), time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.GetCapture(ctx, "rid"); got != nil {
 		t.Fatalf("capture survived cleanup: %+v", got)
+	}
+}
+
+func TestCleanupUsesCaptureRetain(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	if err := s.Insert(ctx, Request{ID: "rid", SID: "rid", TS: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutCapture(ctx, "rid", &capture.Capture{
+		Reason: "old", CreatedAt: now.Add(-48 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Cleanup(ctx, now.Add(-7*24*time.Hour), now.Add(-7*24*time.Hour), now.Add(-24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetCapture(ctx, "rid"); got != nil {
+		t.Fatalf("old capture survived: %+v", got)
+	}
+	if row, _ := s.Get(ctx, "rid"); row == nil {
+		t.Fatal("request should survive its shorter capture retention")
 	}
 }

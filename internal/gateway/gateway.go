@@ -122,7 +122,11 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		if retainRollups <= 0 {
 			retainRollups = 2160 * time.Hour
 		}
-		store.StartCleanup(ctx, time.Hour, retainRequests, retainRollups)
+		retainCaptures := time.Duration(cfg.Stats.Capture.Retain)
+		if retainCaptures <= 0 {
+			retainCaptures = 24 * time.Hour
+		}
+		store.StartCleanup(ctx, time.Hour, retainRequests, retainRollups, retainCaptures)
 		g.cancel = cancel
 	}
 
@@ -160,9 +164,13 @@ func (g *Gateway) Capture() *capture.Manager {
 }
 
 func capturePolicy(c gwconfig.Capture) capture.Policy {
+	rate := 0.0
+	if c.SampleRate != nil {
+		rate = *c.SampleRate
+	}
 	return capture.Policy{
 		Mode:       c.Mode,
-		SampleRate: c.SampleRate,
+		SampleRate: rate,
 		MaxBytes:   c.MaxBytes,
 		Retain:     time.Duration(c.Retain),
 	}

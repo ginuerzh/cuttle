@@ -188,7 +188,11 @@ func (m *Manager) Start(sid, route, clientModel string) (string, bool) {
 		}
 		r.Used++
 		reason := "rule:" + r.ID
-		m.sessions[sid] = newSession(reason, false, m.now())
+		sessionReason := r.Reason
+		if sessionReason == "" {
+			sessionReason = reason
+		}
+		m.sessions[sid] = newSession(sessionReason, false, m.now())
 		return reason, true
 	}
 
@@ -242,12 +246,12 @@ func (m *Manager) Offer(sid, direction string, original, rewritten []byte, ssePh
 		if len(original) > 0 {
 			s.capture.SSIEvents++
 		}
-		if !s.sseSeen && (len(original) > 0 || len(rewritten) > 0) {
-			s.capture.SSEFirstOriginal = clip(original, maxBytes)
-			s.capture.SSEFirstRewritten = clip(rewritten, maxBytes)
-			s.sseSeen = true
-		}
-		if len(original) > 0 || len(rewritten) > 0 {
+		if len(original) > 0 {
+			if !s.sseSeen {
+				s.capture.SSEFirstOriginal = clip(original, maxBytes)
+				s.capture.SSEFirstRewritten = clip(rewritten, maxBytes)
+				s.sseSeen = true
+			}
 			s.capture.SSELastOriginal = clip(original, maxBytes)
 			s.capture.SSELastRewritten = clip(rewritten, maxBytes)
 		}

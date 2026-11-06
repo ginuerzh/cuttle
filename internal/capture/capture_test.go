@@ -148,3 +148,34 @@ func TestFinishRemovesSession(t *testing.T) {
 		t.Fatal("second finish returned a capture")
 	}
 }
+
+func TestSSELastIgnoresSyntheticEnd(t *testing.T) {
+	m := testManager(Policy{Mode: "errors", MaxBytes: 64})
+	if _, ok := m.Start("s1", "r", "m"); !ok {
+		t.Fatal("not captured")
+	}
+	m.Offer("s1", "response", []byte("o1"), []byte("r1"), "start", 0)
+	m.Offer("s1", "response", []byte("o2"), []byte("r2"), "event", 1)
+	m.Offer("s1", "response", nil, []byte("message_stop"), "end", 2)
+	cap, _ := m.Finish("s1")
+	if cap.SSELastOriginal != "o2" || cap.SSELastRewritten != "r2" {
+		t.Fatalf("last = %q/%q", cap.SSELastOriginal, cap.SSELastRewritten)
+	}
+	if cap.SSIEvents != 2 {
+		t.Fatalf("events = %d", cap.SSIEvents)
+	}
+}
+
+func TestRuleReasonInCapture(t *testing.T) {
+	m := testManager(Policy{Mode: "off", MaxBytes: 64})
+	if _, err := m.AddRule("fast", "claude-*", "investigate", 10, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Start("s1", "fast", "claude-sonnet"); !ok {
+		t.Fatal("not captured")
+	}
+	cap, _ := m.Finish("s1")
+	if cap.Reason != "investigate" {
+		t.Fatalf("reason = %q", cap.Reason)
+	}
+}

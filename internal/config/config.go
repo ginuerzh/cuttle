@@ -52,7 +52,7 @@ type Stats struct {
 // Capture configures bounded request/response body capture.
 type Capture struct {
 	Mode       string   `yaml:"mode" json:"mode"`
-	SampleRate float64  `yaml:"sampleRate" json:"sampleRate"`
+	SampleRate *float64 `yaml:"sampleRate" json:"sampleRate,omitempty"`
 	MaxBytes   int      `yaml:"maxBytes" json:"maxBytes"`
 	Retain     Duration `yaml:"retain" json:"retain"`
 }
@@ -404,8 +404,9 @@ func (c *Config) applyDefaults() {
 	if c.Stats.Capture.Mode == "" {
 		c.Stats.Capture.Mode = "off"
 	}
-	if c.Stats.Capture.SampleRate == 0 {
-		c.Stats.Capture.SampleRate = 0.01
+	if c.Stats.Capture.SampleRate == nil {
+		rate := 0.01
+		c.Stats.Capture.SampleRate = &rate
 	}
 	if c.Stats.Capture.MaxBytes == 0 {
 		c.Stats.Capture.MaxBytes = 32768
@@ -548,7 +549,8 @@ func Validate(c *Config) error {
 	default:
 		return fmt.Errorf("stats.capture.mode must be off, errors or sample")
 	}
-	if c.Stats.Capture.SampleRate < 0 || c.Stats.Capture.SampleRate > 1 {
+	if c.Stats.Capture.SampleRate != nil &&
+		(*c.Stats.Capture.SampleRate < 0 || *c.Stats.Capture.SampleRate > 1) {
 		return fmt.Errorf("stats.capture.sampleRate must be between 0 and 1")
 	}
 	if c.Stats.Capture.MaxBytes != 0 && (c.Stats.Capture.MaxBytes < 1024 || c.Stats.Capture.MaxBytes > 1048576) {

@@ -7,12 +7,16 @@ import (
 	"time"
 
 	"github.com/go-gost/llm-gw/internal/capture"
+	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
 func TestCaptureAPI(t *testing.T) {
-	_, _, _, ts := newTestAdmin(t)
+	srv, _, _, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)
+	srv.mu.Lock()
+	srv.cfg.Routes = []config.Route{{Name: "fast"}}
+	srv.mu.Unlock()
 
 	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/captures", "", "")
 	if resp.StatusCode != http.StatusOK {
@@ -57,6 +61,12 @@ func TestCaptureAPI(t *testing.T) {
 	}
 	if len(rules) != 0 {
 		t.Fatalf("rules after delete = %+v", rules)
+	}
+
+	resp = doJSON(t, client, http.MethodPost, ts.URL+"/api/captures",
+		`{"route":"missing","reason":"bad","limit":1,"ttlSeconds":60}`, csrf)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown route status = %d, want 400", resp.StatusCode)
 	}
 
 	resp = doJSON(t, client, http.MethodPost, ts.URL+"/api/captures",

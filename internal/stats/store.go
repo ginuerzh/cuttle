@@ -600,13 +600,13 @@ func (s *Store) percentile(ctx context.Context, from, to time.Time, n int64, p f
 
 // Cleanup deletes detail rows older than requestsBefore and rollups older than
 // rollupsBefore.
-func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore time.Time) error {
+func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore, capturesBefore time.Time) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM requests WHERE ts < ?`,
 		requestsBefore.UnixMilli()); err != nil {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM request_captures WHERE created_at < ?`,
-		requestsBefore.UnixMilli()); err != nil {
+		capturesBefore.UnixMilli()); err != nil {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM rollups WHERE bucket < ?`,
@@ -615,7 +615,7 @@ func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore time.
 }
 
 // StartCleanup runs Cleanup periodically until ctx is done.
-func (s *Store) StartCleanup(ctx context.Context, interval time.Duration, retainRequests, retainRollups time.Duration) {
+func (s *Store) StartCleanup(ctx context.Context, interval time.Duration, retainRequests, retainRollups, retainCaptures time.Duration) {
 	if interval <= 0 {
 		interval = time.Hour
 	}
@@ -627,7 +627,7 @@ func (s *Store) StartCleanup(ctx context.Context, interval time.Duration, retain
 			case <-ctx.Done():
 				return
 			case now := <-t.C:
-				_ = s.Cleanup(ctx, now.Add(-retainRequests), now.Add(-retainRollups))
+				_ = s.Cleanup(ctx, now.Add(-retainRequests), now.Add(-retainRollups), now.Add(-retainCaptures))
 			}
 		}
 	}()

@@ -103,13 +103,34 @@ func (r *Rewriter) captureRewrite(meta engine.Meta, original, rewritten []byte, 
 		return
 	}
 	if strings.EqualFold(strings.TrimSpace(meta.Direction), "request") {
-		if _, ok := r.opts.Capture.Start(meta.SID, r.opts.Route, res.ClientModel); !ok {
+		model := res.ClientModel
+		if model == "" {
+			model = requestModel(meta.URI, original)
+		}
+		if _, ok := r.opts.Capture.Start(meta.SID, r.opts.Route, model); !ok {
 			return
 		}
 		r.opts.Capture.Offer(meta.SID, "request", original, rewritten, "", 0)
 		return
 	}
 	r.opts.Capture.Offer(meta.SID, "response", original, rewritten, meta.SSEPhase, meta.EventIndex)
+}
+
+func requestModel(uri string, body []byte) string {
+	var v struct {
+		Model string `json:"model"`
+	}
+	if len(body) > 0 && json.Unmarshal(body, &v) == nil && v.Model != "" {
+		return v.Model
+	}
+	const prefix = "/v1beta/models/"
+	if i := strings.Index(uri, prefix); i >= 0 {
+		rest := uri[i+len(prefix):]
+		if j := strings.IndexByte(rest, ':'); j > 0 {
+			return rest[:j]
+		}
+	}
+	return ""
 }
 
 func inboundProtocol(uri string) string {

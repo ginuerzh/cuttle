@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,21 @@ func (s *Server) handleCreateCapture(w http.ResponseWriter, r *http.Request) {
 	if in.TTLSeconds <= 0 {
 		writeError(w, http.StatusBadRequest, "ttlSeconds must be positive")
 		return
+	}
+	if route := strings.TrimSpace(in.Route); route != "" {
+		s.mu.Lock()
+		found := false
+		for _, r := range s.cfg.Routes {
+			if r.Name == route {
+				found = true
+				break
+			}
+		}
+		s.mu.Unlock()
+		if !found {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("route %q does not exist", route))
+			return
+		}
 	}
 	rule, err := s.capture.AddRule(in.Route, in.ClientModel, in.Reason, in.Limit,
 		time.Duration(in.TTLSeconds)*time.Second)

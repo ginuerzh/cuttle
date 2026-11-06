@@ -31,3 +31,12 @@ func TestRewriteStage(t *testing.T) {
 		t.Fatalf("stream stage = %q", got)
 	}
 }
+
+func TestRequestModelFromGeminiURI(t *testing.T) {
+	if got := requestModel("/v1beta/models/gemini-2.0:generateContent", nil); got != "gemini-2.0" {
+		t.Fatalf("gemini model = %q", got)
+	}
+	if got := requestModel("/v1/messages", []byte(`{"model":"claude-sonnet"}`)); got != "claude-sonnet" {
+		t.Fatalf("body model = %q", got)
+	}
+}
