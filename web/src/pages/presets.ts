@@ -1,4 +1,4 @@
-import type { Preset, Provider, ProviderApi, ProviderModel } from '../api/types';
+import type { NodeAPI, Preset, Provider, ProviderApi, ProviderModel } from '../api/types';
 import { translate as t } from '../i18n';
 
 /** Form values a preset writes into the add-provider dialog. */
@@ -99,6 +99,13 @@ export function providerPayload(
 /** APIs a provider has configured a base URL for, in canonical order. */
 export function configuredAPIs(provider: Pick<Provider, 'chat' | 'responses' | 'anthropic' | 'gemini'>): ProviderApi[] {
   return apiOrder.filter((api) => (provider[api] ?? '').trim() !== '');
+}
+
+/** API choices for a node: auto first, then the provider's configured APIs. */
+export function nodeAPIOptions(
+  provider?: Pick<Provider, 'chat' | 'responses' | 'anthropic' | 'gemini'>,
+): NodeAPI[] {
+  return ['auto', ...(provider ? configuredAPIs(provider) : [])];
 }
 
 /** Display label for a model's APIs, e.g. "chat · anthropic". */
@@ -295,10 +302,10 @@ export function derivedTargetAPI(
 
 /**
  * Explanation shown for generic providers with more than one configured API:
- * their catalog records source APIs, but routing still follows the canonical
- * configured-base order in v1.
+ * their model catalog has no static classification, so auto matches the
+ * inbound protocol to a configured base URL and falls back to canonical order.
  */
 export function genericCanonicalNote(providerType: string, configured: ProviderApi[]): string | null {
   if (providerType.trim().toLowerCase() !== 'generic' || configured.length < 2) return null;
-  return t('generic 提供商按固定顺序 {order} 选择目标 API；模型目录中的 APIs 不参与路由。', { order: apiOrder.join(' → ') });
+  return t('generic 提供商没有静态模型 API 分类；auto 先按入站协议匹配已配置的 base URL，匹配不到时按 {order} 回退。', { order: apiOrder.join(' → ') });
 }

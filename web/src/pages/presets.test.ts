@@ -14,6 +14,7 @@ import {
   modelApiLabel,
   modelDirectionRows,
   modelOption,
+  nodeAPIOptions,
   normalizedModalities,
   presetFormValues,
   providerKeyRows,
@@ -192,10 +193,20 @@ describe('derivedTargetAPI', () => {
   });
 });
 
+describe('nodeAPIOptions', () => {
+  it('always offers auto first', () => {
+    expect(nodeAPIOptions(opencodeGo)).toEqual(['auto', 'chat', 'responses', 'anthropic']);
+  });
+
+  it('returns only auto without a provider', () => {
+    expect(nodeAPIOptions(undefined)).toEqual(['auto']);
+  });
+});
+
 describe('genericCanonicalNote', () => {
-  it('explains the canonical routing order for generic providers with multiple APIs', () => {
+  it('explains the auto protocol matching and canonical fallback for generic providers', () => {
     expect(genericCanonicalNote('generic', ['chat', 'anthropic'])).toBe(
-      'generic 提供商按固定顺序 chat → responses → anthropic → gemini 选择目标 API；模型目录中的 APIs 不参与路由。',
+      'generic 提供商没有静态模型 API 分类；auto 先按入站协议匹配已配置的 base URL，匹配不到时按 chat → responses → anthropic → gemini 回退。',
     );
   });
 

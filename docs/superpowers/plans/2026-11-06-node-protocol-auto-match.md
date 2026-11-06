@@ -495,7 +495,7 @@ git commit -m "feat(gateway): route anthropic count_tokens natively"
   // ['auto', ...configuredAPIs(provider)]
   ```
 
-- [ ] **Step 1: Write failing web tests**
+- [x] **Step 1: Write failing web tests**
 
 Add to `web/src/pages/presets.test.ts`:
 
@@ -512,13 +512,13 @@ describe('nodeAPIOptions', () => {
 
 Update the `genericCanonicalNote` expectation to the new wording.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npm test -- src/pages/presets.test.ts`
 
 Expected: FAIL because `nodeAPIOptions` does not exist and the note text is old.
 
-- [ ] **Step 3: Implement types, helpers and form controls**
+- [x] **Step 3: Implement types, helpers and form controls**
 
 - `types.ts`: add `NodeAPI` and `Node.api?: NodeAPI`.
 - `presets.ts`: add `nodeAPIOptions`; reword `genericCanonicalNote` to say generic providers have no static model classification but auto matches configured base URLs by inbound protocol and falls back to the canonical order.
@@ -529,19 +529,19 @@ Expected: FAIL because `nodeAPIOptions` does not exist and the note text is old.
 - `Nodes.tsx`: show an `auto`/pinned tag; include `api: n.api` in the enable/disable update payload so toggling does not erase it.
 - `en-US.ts`: add translations for every new Chinese source string.
 
-- [ ] **Step 4: Run the web gates**
+- [x] **Step 4: Run the web gates**
 
 Run: `cd web && npm test -- src/pages/presets.test.ts && npx tsc --noEmit && npm run build`
 
 Expected: PASS.
 
-- [ ] **Step 5: Rebuild the embedded bundle and run the Go build**
+- [x] **Step 5: Rebuild the embedded bundle and run the Go build**
 
 Run: `GOWORK=off go build ./...`
 
 Expected: PASS.
 
-- [ ] **Step 6: Fill the Implementation record and commit**
+- [x] **Step 6: Fill the Implementation record and commit**
 
 ```bash
 git add web/src/api/types.ts web/src/pages/presets.ts web/src/pages/presets.test.ts web/src/pages/Edit.tsx web/src/pages/Nodes.tsx web/src/locales/en-US.ts docs/superpowers/plans/2026-11-06-node-protocol-auto-match.md
@@ -551,12 +551,12 @@ git commit -m "feat(web): select node target api"
 Note: `internal/admin/dist` is git-ignored; do not add it. Rebuild it locally with `npm run build` before the Go build.
 
 **Implementation record** (fill after completion):
-- Date/status:
-- Repository + commit SHA:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
+- Files changed: `web/src/api/types.ts`, `web/src/pages/presets.ts`, `web/src/pages/presets.test.ts`, `web/src/pages/Edit.tsx`, `web/src/pages/Nodes.tsx`, `web/src/locales/en-US.ts`, plan
+- Tests/commands and results: `cd web && npm test` PASS (96/96); `npx tsc --noEmit` PASS; `npm run build` PASS; `GOWORK=off go build ./...` PASS.
+- Review findings and fixes: restored the NodeForm return/Form block after an editing slip; removed an unused `NodeAPI` import.
+- Deferred items/limitations: UI behavior was verified by TypeScript, Vitest and HTTP/build checks; no browser visual regression test exists.
 
 ---
 

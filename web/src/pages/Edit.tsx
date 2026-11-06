@@ -32,7 +32,7 @@ import {
   updateNode,
   updateRoute,
 } from '../api/client';
-import type { ConfigResponse, Entrypoint, Node as BindNode, Preset, Provider, ProviderModel, Route } from '../api/types';
+import type { ConfigResponse, Entrypoint, Node as BindNode, Preset, Provider, ProviderApi, ProviderModel, Route } from '../api/types';
 import { translate as tr } from '../i18n';
 import { entrypointFromNodeId, splitId } from './selection';
 import {
@@ -42,6 +42,7 @@ import {
   enabledModels,
   genericCanonicalNote,
   isBaseURLLocked,
+  nodeAPIOptions,
   presetFormValues,
   providerKeyRows,
   providerKeyUpdates,
@@ -300,30 +301,39 @@ function ModelCatalogHint({
   );
 }
 
-/** Read-only API the gateway will use for the node's model. */
+/** Read-only hint for the API the gateway will use for the node's model. */
 function DerivedTargetAPIHint({
   provider,
   models,
   model,
+  api: selected,
 }: {
   provider?: Provider;
   models: ProviderModel[];
   model?: string;
+  api?: string;
 }) {
   if (!provider) return null;
   const apis = configuredAPIs(provider);
   const byID = new Map(models.map((m) => [m.id, m]));
   const target = (model ?? '').trim();
-  const api = target ? derivedTargetAPI(provider.type, apis, byID.get(target)?.apis) : '';
+  const fallback = target ? derivedTargetAPI(provider.type, apis, byID.get(target)?.apis) : '';
   const disabled = target ? byID.get(target)?.disabled === true : false;
   const note = genericCanonicalNote(provider.type, apis);
+  const pinned = (selected ?? '').trim();
+  const fixed = pinned !== '' && pinned !== 'auto';
+  const missing = fixed && !apis.includes(pinned as ProviderApi);
   if (!target && !note) return null;
   return (
     <>
       {target ? (
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-          {tr('目标 API：')}
-          {`${target}: ${api === 'unknown' ? tr('未知（无可用 base URL）') : api}${disabled ? tr('（已禁用）') : ''}`}
+        <Typography.Paragraph type={missing ? 'warning' : 'secondary'} style={{ fontSize: 12, marginBottom: 8 }}>
+          {fixed
+            ? `${tr('目标 API：{api}（固定）', { api: pinned })}${missing ? tr('（未配置 base URL）') : ''}`
+            : tr('目标 API：auto（按客户端协议匹配；默认 {api}）', {
+                api: fallback === 'unknown' ? tr('未知（无可用 base URL）') : fallback,
+              })}
+          {disabled ? tr('（已禁用）') : ''}
         </Typography.Paragraph>
       ) : null}
       {note ? (
@@ -570,6 +580,7 @@ export function NodeForm({
         weight: v.weight,
         enabled: node.enabled,
         model: v.model,
+        api: v.api === 'auto' ? '' : v.api,
       });
       message.success(tr('已保存'));
       await onSaved();
@@ -598,6 +609,7 @@ export function NodeForm({
   const provider = config.providers.find((p) => p.name === providerName);
   const { models, error: modelsError } = useProviderModels(providerName);
   const model = Form.useWatch('model', form) as string | undefined;
+  const api = Form.useWatch('api', form) as string | undefined;
 
   return (
     <Form
@@ -607,6 +619,7 @@ export function NodeForm({
       initialValues={{
         provider: node.provider,
         model: node.model,
+        api: node.api ?? 'auto',
         backup: node.backup,
         weight: node.weight ?? 1,
       }}
@@ -620,7 +633,10 @@ export function NodeForm({
         <Select options={providerOptions} />
       </Form.Item>
       <ModelField models={models} modelsError={modelsError} />
-      <DerivedTargetAPIHint provider={provider} models={models} model={model} />
+      <Form.Item name="api" label={tr('目标 API（协议）')}>
+        <Select options={nodeAPIOptions(provider).map((value) => ({ value, label: value }))} />
+      </Form.Item>
+      <DerivedTargetAPIHint provider={provider} models={models} model={model} api={api} />
       <ModelCatalogHint models={models} error={modelsError} model={model} />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
         {tr('backup：主节点失败时作为备用；weight：轮询权重。')}
@@ -1138,6 +1154,7 @@ export function AddNodeModal({
         name: v.name,
         provider: v.provider,
         model: v.model,
+        api: v.api === 'auto' ? '' : v.api,
       });
       form.resetFields();
       await onDone();
@@ -1153,6 +1170,7 @@ export function AddNodeModal({
   const provider = config.providers.find((p) => p.name === providerName);
   const { models, error: modelsError } = useProviderModels(providerName);
   const model = Form.useWatch('model', form) as string | undefined;
+  const api = Form.useWatch('api', form) as string | undefined;
 
   return (
     <Modal open={open} title={tr('添加节点')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
@@ -1164,7 +1182,10 @@ export function AddNodeModal({
           <Select options={providerOptions} />
         </Form.Item>
         <ModelField models={models} modelsError={modelsError} />
-        <DerivedTargetAPIHint provider={provider} models={models} model={model} />
+        <Form.Item name="api" label={tr('目标 API（协议）')} initialValue="auto">
+          <Select options={nodeAPIOptions(provider).map((value) => ({ value, label: value }))} />
+        </Form.Item>
+        <DerivedTargetAPIHint provider={provider} models={models} model={model} api={api} />
         <ModelCatalogHint models={models} error={modelsError} model={model} />
       </Form>
     </Modal>

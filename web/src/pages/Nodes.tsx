@@ -26,6 +26,7 @@ export function NodesPage({
         name: n.name,
         provider: n.provider,
         model: n.model,
+        api: n.api,
         backup: n.backup,
         weight: n.weight,
         enabled,
@@ -69,6 +70,7 @@ export function NodesPage({
               subtitle={`${n.provider} · ${n.model}`}
               tags={
                 <Space direction="vertical" align="end" size={2}>
+                  <Tag>{n.api || 'auto'}</Tag>
                   {n.backup ? <Tag color="purple">backup</Tag> : null}
                   <Switch
                     size="small"

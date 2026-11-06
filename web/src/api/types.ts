@@ -51,6 +51,9 @@ export interface Provider {
 
 export type ProviderApi = 'chat' | 'responses' | 'anthropic' | 'gemini';
 
+/** A node's upstream API choice; auto matches the inbound protocol. */
+export type NodeAPI = ProviderApi | 'auto';
+
 /** One entry in a provider's model catalog. */
 export interface ProviderModel {
   id: string;
@@ -73,6 +76,8 @@ export interface Node {
   name: string;
   provider: string;
   model: string;
+  /** Upstream API; 'auto' or absent matches the client protocol. */
+  api?: NodeAPI;
   backup?: boolean;
   weight?: number;
   enabled?: boolean;
