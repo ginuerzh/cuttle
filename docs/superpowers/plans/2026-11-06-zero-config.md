@@ -589,3 +589,39 @@ git commit -m "docs(memory): record llm-gw zero-config decision"
 - Tests/commands and results: `GOWORK=/tmp/llm-gw-work/go.work go build ./...` PASS; `go vet ./...` PASS; `go test ./... -count=1` all packages PASS; web `npm test` 86/86 PASS, `npx tsc --noEmit` PASS, `npm run build` PASS; Docker fresh-volume smoke PASS (`/api/health` returned `{"ok":true}`, password line present, `/data/llm-gw.yaml` and `/data/stats.sqlite` present); legacy `/etc` mount PASS (loopback admin listen, no generated password, ignored `LLM_GW_ADMIN_LISTEN` warning)
 - Review findings and fixes: all gates green; no new code changes. The workspace had unrelated uncommitted memory/opencode changes, so only the new note and the single added `MEMORY.md` line were staged, leaving the other changes untouched.
 - Deferred items/limitations: the manual empty-state UI pass was not browser-verified; the Docker build from the live parent working tree is blocked by uncommitted `llm-api-converter` P1 changes, so the image was verified from a stable `7f18a6d` context.
+
+## Final review fixes (2026-11-06)
+
+The fresh-context review returned 1 Critical, 3 Important and 8 Minor findings.
+One fix pass was applied.
+
+- **Critical — durable session reset:** a generated config now writes
+  `$LLM_GW_DATA/.llm-gw-sessions-reset` before the config. `main` clears
+  persisted sessions and removes the marker only after success; a failed or
+  interrupted startup leaves the marker and the next start retries. Pinned by
+  `TestPrepareRetriesPendingSessionReset`, `TestApplySessionReset`, and the
+  stale-cookie path in `TestZeroConfigOnboarding`.
+- **Important — `LLM_GW_DATA` docs:** corrected README, DOCKER.md, AGENTS.md and
+  the workspace memory note to say that only `LLM_GW_LISTEN`,
+  `LLM_GW_ADMIN_LISTEN` and `LLM_GW_ADMIN_PASSWORD` are first-run defaults;
+  `LLM_GW_DATA` is the data directory used on every start.
+- **Important — no silent first-run overwrite:** added `config.WriteNew`
+  (`os.Link`, `ErrConfigExists`); a lost first-run race loads the winner's
+  config and does not print a second password. Pinned by
+  `TestWriteNewDoesNotOverwrite` and `TestPrepareExclusiveWriteLoadsExisting`.
+- **Related fixes:** write failures now name `LLM_GW_DATA`; a trailing `\r\n`
+  on `LLM_GW_ADMIN_PASSWORD` is trimmed (matching `hash-password`); the
+  empty-hash warning explains that the console is disabled; generated configs
+  write explicit `168h`/`2160h` retention; a group/world-accessible data
+  directory gets a `chmod 700` warning; the Docker docs use
+  `serve -c /etc/llm-gw/llm-gw.yaml`; the e2e asserts a `200` after onboarding
+  and after restart.
+- **Deferred minors:** generated-password stderr write errors are still
+  ignored; the e2e mirrors `main`'s reset sequence instead of executing `run`
+  itself; the manual zero-topology browser pass was not performed; the SDD
+  ledger has duplicate completion histories from the manual ledger plus the
+  task-done script.
+- **Verification:** `GOWORK=/tmp/llm-gw-work/go.work go test ./... -count=1`
+  PASS; `go vet ./...` PASS; web `npm test` 86/86 PASS, `npx tsc --noEmit` PASS,
+  `npm run build` PASS; Docker fresh-volume and legacy-mount smoke tests PASS.
+- **Commits:** llm-gw `<sha>`; workspace `<sha>`.

@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -239,8 +240,22 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
-// Write atomically writes the configuration with 0600 permissions.
+// ErrConfigExists is returned by WriteNew when the target already exists.
+var ErrConfigExists = errors.New("config file already exists")
+
+// Write atomically writes the configuration with 0600 permissions, replacing
+// an existing file.
 func Write(path string, c *Config) error {
+	return write(path, c, false)
+}
+
+// WriteNew atomically creates the configuration with 0600 permissions. It
+// returns ErrConfigExists instead of replacing an existing file.
+func WriteNew(path string, c *Config) error {
+	return write(path, c, true)
+}
+
+func write(path string, c *Config, exclusive bool) error {
 	b, err := yaml.Marshal(c)
 	if err != nil {
 		return err
@@ -269,7 +284,15 @@ func Write(path string, c *Config) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+
+	if exclusive {
+		if err := os.Link(tmp, path); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				return ErrConfigExists
+			}
+			return err
+		}
+	} else if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
 

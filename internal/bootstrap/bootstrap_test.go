@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
@@ -170,6 +171,15 @@ func TestPrepareGeneratesConfig(t *testing.T) {
 	if !res.Generated {
 		t.Fatal("Generated = false, want true")
 	}
+	if res.DataDir != dataDir {
+		t.Fatalf("DataDir = %q, want %q", res.DataDir, dataDir)
+	}
+	if !res.ResetSessions {
+		t.Fatal("ResetSessions = false, want true for a generated config")
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, SessionsResetFileName)); err != nil {
+		t.Fatalf("sessions reset marker: %v", err)
+	}
 	if len(res.GeneratedPassword) != 32 {
 		t.Fatalf("generated password length = %d, want 32", len(res.GeneratedPassword))
 	}
@@ -181,6 +191,12 @@ func TestPrepareGeneratesConfig(t *testing.T) {
 	}
 	if res.Config.Stats.Path != filepath.Join(dataDir, "stats.sqlite") {
 		t.Fatalf("Stats.Path = %q", res.Config.Stats.Path)
+	}
+	if res.Config.Stats.RetainRequests != config.Duration(168*time.Hour) {
+		t.Fatalf("RetainRequests = %v, want 168h", time.Duration(res.Config.Stats.RetainRequests))
+	}
+	if res.Config.Stats.RetainRollups != config.Duration(2160*time.Hour) {
+		t.Fatalf("RetainRollups = %v, want 2160h", time.Duration(res.Config.Stats.RetainRollups))
 	}
 	if res.Config.Gateway.Listen != ":8787" {
 		t.Fatalf("Gateway.Listen = %q", res.Config.Gateway.Listen)
@@ -283,6 +299,9 @@ func TestPrepareRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := ClearSessionsReset(first.DataDir); err != nil {
+		t.Fatal(err)
+	}
 	buf.Reset()
 	second, err := Prepare(opts)
 	if err != nil {
@@ -290,6 +309,9 @@ func TestPrepareRestart(t *testing.T) {
 	}
 	if second.Generated {
 		t.Fatal("second Prepare regenerated the config")
+	}
+	if second.ResetSessions {
+		t.Fatal("second Prepare wants a session reset after the marker was cleared")
 	}
 	if second.GeneratedPassword != "" {
 		t.Fatal("second Prepare generated a password")
@@ -331,6 +353,9 @@ func TestPrepareExistingConfigWarnings(t *testing.T) {
 	}
 	if res.Generated {
 		t.Fatal("Generated = true for an existing config")
+	}
+	if res.ResetSessions {
+		t.Fatal("ResetSessions = true without a pending marker")
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", buf.String())
@@ -396,8 +421,14 @@ func TestPrepareExistingEmptyHash(t *testing.T) {
 	if res.Config.Admin.PasswordHash != "" {
 		t.Fatal("env password enabled admin on an existing config")
 	}
+	if res.ResetSessions {
+		t.Fatal("ResetSessions = true without a pending marker")
+	}
 	if len(res.Warnings) == 0 {
 		t.Fatal("want a warning for an ignored env password")
+	}
+	if !strings.Contains(strings.Join(res.Warnings, " "), "disabled") {
+		t.Fatalf("warnings do not explain the disabled console: %#v", res.Warnings)
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", buf.String())
@@ -446,6 +477,9 @@ func TestPrepareExistingStatsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare opened stats: %v", err)
 	}
+	if res.ResetSessions {
+		t.Fatal("ResetSessions = true without a pending marker")
+	}
 	if res.Config.Stats.Path != statsPath {
 		t.Fatalf("Stats.Path = %q, want %q", res.Config.Stats.Path, statsPath)
 	}
@@ -491,5 +525,194 @@ func TestPreparePrintsPasswordBeforeLoadFailure(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(dataDir, ConfigFileName)); statErr != nil {
 		t.Fatalf("config file was not written: %v", statErr)
+	}
+}
+
+func TestPrepareRetriesPendingSessionReset(t *testing.T) {
+	dataDir := t.TempDir()
+	var buf bytes.Buffer
+	opts := Options{
+		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
+		LegacyPaths: []string{},
+		Stderr:      &buf,
+	}
+	first, err := Prepare(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.ResetSessions {
+		t.Fatal("first Prepare did not request a session reset")
+	}
+
+	// Simulate a startup that failed before clearing sessions: the marker
+	// remains and the next start must retry.
+	buf.Reset()
+	second, err := Prepare(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Generated {
+		t.Fatal("second Prepare regenerated the config")
+	}
+	if !second.ResetSessions {
+		t.Fatal("pending session reset was not retried")
+	}
+	if second.DataDir != dataDir {
+		t.Fatalf("DataDir = %q, want %q", second.DataDir, dataDir)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("second Prepare wrote to stderr: %q", buf.String())
+	}
+
+	if err := ClearSessionsReset(dataDir); err != nil {
+		t.Fatal(err)
+	}
+	third, err := Prepare(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.ResetSessions {
+		t.Fatal("ResetSessions = true after clearing the marker")
+	}
+}
+
+func TestClearSessionsReset(t *testing.T) {
+	dir := t.TempDir()
+	if err := ClearSessionsReset(dir); err != nil {
+		t.Fatalf("missing marker: %v", err)
+	}
+	marker := filepath.Join(dir, SessionsResetFileName)
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearSessionsReset(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("marker still exists: %v", err)
+	}
+}
+
+func TestPrepareExclusiveWriteLoadsExisting(t *testing.T) {
+	old := writeConfig
+	writeConfig = func(path string, _ *config.Config) error {
+		existing := &config.Config{Gateway: config.Gateway{Listen: "127.0.0.1:19999"}}
+		config.ApplyDefaults(existing)
+		if err := config.Write(path, existing); err != nil {
+			return err
+		}
+		return config.ErrConfigExists
+	}
+	defer func() { writeConfig = old }()
+
+	dataDir := t.TempDir()
+	var buf bytes.Buffer
+	res, err := Prepare(Options{
+		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
+		LegacyPaths: []string{},
+		Stderr:      &buf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Generated {
+		t.Fatal("Generated = true after losing the first-run race")
+	}
+	if res.ResetSessions {
+		t.Fatal("ResetSessions = true after losing the first-run race")
+	}
+	if res.Config.Gateway.Listen != "127.0.0.1:19999" {
+		t.Fatalf("Gateway.Listen = %q, want the existing config", res.Config.Gateway.Listen)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", buf.String())
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, SessionsResetFileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("marker was left behind: %v", err)
+	}
+}
+
+func TestPrepareWriteErrorNamesEnv(t *testing.T) {
+	old := writeConfig
+	writeConfig = func(string, *config.Config) error {
+		return errors.New("permission denied")
+	}
+	defer func() { writeConfig = old }()
+
+	dataDir := t.TempDir()
+	var buf bytes.Buffer
+	_, err := Prepare(Options{
+		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
+		LegacyPaths: []string{},
+		Stderr:      &buf,
+	})
+	if err == nil {
+		t.Fatal("want a write error")
+	}
+	if !strings.Contains(err.Error(), "LLM_GW_DATA") {
+		t.Fatalf("error %q does not name LLM_GW_DATA", err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", buf.String())
+	}
+}
+
+func TestPrepareTrimsEnvPasswordNewline(t *testing.T) {
+	dataDir := t.TempDir()
+	var buf bytes.Buffer
+	res, err := Prepare(Options{
+		Getenv: envMap(map[string]string{
+			"LLM_GW_DATA":           dataDir,
+			"LLM_GW_ADMIN_PASSWORD": "correct-horse\n",
+		}),
+		LegacyPaths: []string{},
+		Stderr:      &buf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.GeneratedPassword != "" {
+		t.Fatal("a password was generated despite LLM_GW_ADMIN_PASSWORD")
+	}
+	if !config.VerifyPassword(res.Config.Admin.PasswordHash, "correct-horse") {
+		t.Fatal("hash does not verify the trimmed password")
+	}
+	if config.VerifyPassword(res.Config.Admin.PasswordHash, "correct-horse\n") {
+		t.Fatal("hash still requires the trailing newline")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", buf.String())
+	}
+}
+
+func TestPrepareDataDirPermissionWarning(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	res, err := Prepare(Options{
+		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
+		LegacyPaths: []string{},
+		Stderr:      &buf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Generated {
+		t.Fatal("Generated = false, want true")
+	}
+	found := false
+	for _, warning := range res.Warnings {
+		if strings.Contains(warning, "chmod 700") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %#v, want a chmod 700 warning", res.Warnings)
 	}
 }

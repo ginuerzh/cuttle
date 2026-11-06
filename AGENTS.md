@@ -100,22 +100,27 @@ Entrypoint -> Route -> Node -> Provider model
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
   `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`32768`/`24h`,
   provider health `30s`/`5s`, node weight `1`, route strategy `round`.
-- First-run defaults are `LLM_GW_DATA` (default `/data`), `LLM_GW_LISTEN`
-  (`:8787`), `LLM_GW_ADMIN_LISTEN` (`127.0.0.1:8788`; the Docker image sets
-  `:8788`) and `LLM_GW_ADMIN_PASSWORD` (unset). They are used only when a new
-  config is generated; an existing config is authoritative.
+- `LLM_GW_LISTEN` (`:8787`), `LLM_GW_ADMIN_LISTEN` (`127.0.0.1:8788`; the
+  Docker image sets `:8788`) and `LLM_GW_ADMIN_PASSWORD` (unset) are first-run
+  defaults: they are used only when a new config is generated. `LLM_GW_DATA`
+  (default `/data`) is the data directory used on every start and determines
+  where an existing config is looked up or a missing one is generated.
 - Config resolution: explicit `-c` must exist; otherwise
   `$LLM_GW_DATA/llm-gw.yaml`, `/etc/llm-gw/llm-gw.yaml`, `./llm-gw.yaml`, then
   generate at `$LLM_GW_DATA/llm-gw.yaml`.
-- A generated config writes an absolute `stats.path` under `LLM_GW_DATA`, a
-  bcrypt hash of the env password or a 32-character generated password, and
-  empty topology lists. The generated password is printed once to stderr after
-  `config.Write` and before stats is opened.
+- A generated config writes an absolute `stats.path` under `LLM_GW_DATA`, the
+  documented `168h`/`2160h` retention defaults, a bcrypt hash of the env
+  password or a 32-character generated password, and empty topology lists. The
+  generated password is printed once to stderr after the config write and before
+  stats is opened. A trailing `\r\n` is trimmed from the env password.
+- First-run generation uses `config.WriteNew` (`os.Link`, no overwrite). Losing
+  a concurrent first-run race loads the winner's config instead of replacing it.
+- A generated config writes `$LLM_GW_DATA/.llm-gw-sessions-reset` before the
+  config. `main` clears persisted sessions and removes the marker only after
+  success; a failed or interrupted startup retries on the next start.
 - An existing config with an empty `admin.passwordHash` stays admin-disabled.
   Env values that differ from a loaded config are ignored with a warning;
   matching values are silent.
-- A newly generated config clears persisted remember-me sessions with
-  `stats.Store.DeleteAllSessions` before `admin.New` loads them.
 - `admin.passwordHash` must not be added to `expandEnv`; bcrypt hashes contain
   `$`.
 - `log.level` is live through SIGHUP and admin saves; `log.format` is fixed at

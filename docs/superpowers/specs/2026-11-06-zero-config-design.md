@@ -183,10 +183,12 @@ When no config file is found, build a default config:
 - `log.level: info`, `log.format: json`
 - empty `entrypoints`, `providers`, `nodes` and `routes`
 
-Call `Validate`, write the file with `config.Write` (`0600`), then load it (or
-use the validated in-memory value). If the write fails, fail startup: starting
-with an ephemeral password would change the password on every restart and the
-admin console could not persist edits.
+Call `Validate`, write the file with `config.WriteNew` (`0600`, `os.Link` so an
+existing file is never replaced), then load it (or use the validated in-memory
+value). If a concurrent first start wins the race, load its config and return
+`Generated: false` instead of overwriting it. If the write fails, fail startup:
+starting with an ephemeral password would change the password on every restart
+and the admin console could not persist edits.
 
 Password generation:
 
@@ -215,10 +217,14 @@ Password generation:
 Session safety on a fresh config:
 
 - Generating a new admin password must invalidate remembered sessions from a
-  previous data directory. After the stats store is opened, call the existing
-  `Store.DeleteAllSessions` before `admin.New` loads sessions. If the stats
-  store is enabled and the clear fails, fail startup with a clear error rather
-  than serving old sessions.
+  previous data directory. Before writing the new config, create
+  `$LLM_GW_DATA/.llm-gw-sessions-reset`. After the stats store is opened, clear
+  persisted sessions with `Store.DeleteAllSessions` before `admin.New` loads
+  them, then remove the marker only after the clear succeeds.
+- If startup fails before the clear, or the clear itself fails, leave the marker
+  in place. The next start sees the existing config and the marker, retries the
+  clear, and only then removes it. This closes the crash/failed-start window
+  that an in-memory `Generated` flag would leave open.
 - This matters when an operator deletes `llm-gw.yaml` but keeps `stats.sqlite`.
 
 Existing-config behavior:
@@ -362,6 +368,14 @@ Go unit tests:
   with the existing error.
 - Generating a new config clears persisted remember-me sessions; a stale
   session cookie is rejected after restart.
+- A failed/interrupted startup leaves the session-reset marker pending; the next
+  start loads the existing config and retries the clear.
+- `config.WriteNew` refuses to replace an existing file; a simulated first-run
+  race loads the winner's config.
+- `LLM_GW_DATA` write failures name the variable; a pre-existing group/world
+  accessible data directory produces a `chmod 700` warning.
+- A trailing `\r\n` on `LLM_GW_ADMIN_PASSWORD` is trimmed; the generated config
+  writes the documented `168h`/`2160h` retention defaults.
 - `SIGHUP` reloads the file and does not regenerate the config or re-apply
   first-run environment values.
 
@@ -410,8 +424,13 @@ Web gate:
   should set `LLM_GW_DATA=./data`.
 - **Generated password goes to stderr, once.** It is not sent through the
   structured logger and is not printed on later starts.
-- **A new config clears persisted admin sessions.** This closes the
+- **A new config clears persisted admin sessions durably.** A marker is
+  written before the config and removed only after the clear succeeds, so a
+  failed startup retries on the next start. This closes the
   delete-config-but-keep-stats.sqlite bypass.
+- **First-run generation never overwrites an existing config.** `WriteNew`
+  uses an atomic no-replace link; a concurrent first start loads the winner's
+  config and does not print a second password.
 - **No provider/model env variables.** The web console is the only onboarding
   path for upstreams.
 

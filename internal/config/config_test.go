@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -867,5 +868,51 @@ stats:
 	}
 	if c.Stats.Capture.SampleRate == nil || *c.Stats.Capture.SampleRate != 0 {
 		t.Fatalf("sampleRate = %v, want explicit 0", c.Stats.Capture.SampleRate)
+	}
+}
+
+func TestWriteNewDoesNotOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "llm-gw.yaml")
+
+	first := &Config{Gateway: Gateway{Listen: ":1111"}}
+	ApplyDefaults(first)
+	if err := Write(path, first); err != nil {
+		t.Fatal(err)
+	}
+
+	second := &Config{Gateway: Gateway{Listen: ":2222"}}
+	ApplyDefaults(second)
+	if err := WriteNew(path, second); !errors.Is(err, ErrConfigExists) {
+		t.Fatalf("WriteNew err = %v, want ErrConfigExists", err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Gateway.Listen != ":1111" {
+		t.Fatalf("listen = %q, want :1111", got.Gateway.Listen)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteNew(path, second); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Gateway.Listen != ":2222" {
+		t.Fatalf("listen = %q, want :2222", got.Gateway.Listen)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %o, want 600", info.Mode().Perm())
 	}
 }

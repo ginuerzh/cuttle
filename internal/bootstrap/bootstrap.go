@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-gost/llm-gw/internal/config"
 )
@@ -22,6 +23,9 @@ const (
 	ConfigFileName = "llm-gw.yaml"
 	// StatsFileName is the stats database name inside the data directory.
 	StatsFileName = "stats.sqlite"
+	// SessionsResetFileName marks a first-run config whose persisted sessions
+	// still need to be cleared. It is removed after a successful clear.
+	SessionsResetFileName = ".llm-gw-sessions-reset"
 )
 
 // DefaultLegacyPaths are checked after the data-directory config and before a
@@ -120,6 +124,9 @@ func fileExists(path string) (bool, error) {
 // loadConfig is a test seam for the final config round-trip.
 var loadConfig = config.Load
 
+// writeConfig is a test seam for the exclusive first-run write.
+var writeConfig = config.WriteNew
+
 // Options configures Prepare.
 type Options struct {
 	// ExplicitPath is the -c/--config value. When non-empty it must exist.
@@ -138,7 +145,11 @@ type Options struct {
 type Result struct {
 	Config     *config.Config
 	ConfigPath string
+	DataDir    string
 	Generated  bool
+	// ResetSessions is true for a generated config or when a previous first
+	// run left the session-reset marker behind.
+	ResetSessions bool
 	// GeneratedPassword is set only for tests. Never log it.
 	GeneratedPassword string
 	Warnings          []string
@@ -166,10 +177,16 @@ func Prepare(opts Options) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
+		reset, err := sessionsResetPending(paths.DataDir)
+		if err != nil {
+			return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
+		}
 		return &Result{
-			Config:     cfg,
-			ConfigPath: paths.ConfigPath,
-			Warnings:   ignoredEnvWarnings(cfg, getenv),
+			Config:        cfg,
+			ConfigPath:    paths.ConfigPath,
+			DataDir:       paths.DataDir,
+			ResetSessions: reset,
+			Warnings:      ignoredEnvWarnings(cfg, getenv),
 		}, nil
 	}
 
@@ -180,14 +197,22 @@ func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Resul
 	if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
 	}
+	warnings := dataDirWarnings(paths.DataDir)
+
+	pending, err := sessionsResetPending(paths.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
+	}
+	if err := createSessionsResetMarker(paths.DataDir); err != nil {
+		return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
+	}
 
 	listen := envOrDefault(getenv, "LLM_GW_LISTEN", ":8787")
 	adminListen := envOrDefault(getenv, "LLM_GW_ADMIN_LISTEN", "127.0.0.1:8788")
 
 	var password string
 	var hash string
-	var err error
-	if envPassword := getenv("LLM_GW_ADMIN_PASSWORD"); envPassword != "" {
+	if envPassword := adminPasswordFromEnv(getenv); envPassword != "" {
 		if err := validatePassword(envPassword); err != nil {
 			return nil, err
 		}
@@ -209,14 +234,37 @@ func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Resul
 	cfg := &config.Config{
 		Gateway: config.Gateway{Listen: listen},
 		Admin:   config.Admin{Listen: adminListen, PasswordHash: hash},
-		Stats:   config.Stats{Path: filepath.Join(paths.DataDir, StatsFileName)},
+		Stats: config.Stats{
+			Path:           filepath.Join(paths.DataDir, StatsFileName),
+			RetainRequests: config.Duration(168 * time.Hour),
+			RetainRollups:  config.Duration(2160 * time.Hour),
+		},
 	}
 	config.ApplyDefaults(cfg)
 	if err := config.Validate(cfg); err != nil {
 		return nil, err
 	}
-	if err := config.Write(paths.ConfigPath, cfg); err != nil {
-		return nil, fmt.Errorf("write config %s: %w", paths.ConfigPath, err)
+	if err := writeConfig(paths.ConfigPath, cfg); err != nil {
+		if errors.Is(err, config.ErrConfigExists) {
+			reset := pending
+			if !pending {
+				if err := ClearSessionsReset(paths.DataDir); err != nil {
+					reset = true
+				}
+			}
+			loaded, err := loadConfig(paths.ConfigPath)
+			if err != nil {
+				return nil, err
+			}
+			return &Result{
+				Config:        loaded,
+				ConfigPath:    paths.ConfigPath,
+				DataDir:       paths.DataDir,
+				ResetSessions: reset,
+				Warnings:      append(warnings, ignoredEnvWarnings(loaded, getenv)...),
+			}, nil
+		}
+		return nil, fmt.Errorf("LLM_GW_DATA %s: write config %s: %w", paths.DataDir, paths.ConfigPath, err)
 	}
 
 	if password != "" {
@@ -230,8 +278,11 @@ func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Resul
 	return &Result{
 		Config:            loaded,
 		ConfigPath:        paths.ConfigPath,
+		DataDir:           paths.DataDir,
 		Generated:         true,
+		ResetSessions:     true,
 		GeneratedPassword: password,
+		Warnings:          warnings,
 	}, nil
 }
 
@@ -275,10 +326,56 @@ func ignoredEnvWarnings(cfg *config.Config, getenv func(string) string) []string
 	if v := strings.TrimSpace(getenv("LLM_GW_ADMIN_LISTEN")); v != "" && v != cfg.Admin.Listen {
 		warnings = append(warnings, fmt.Sprintf("LLM_GW_ADMIN_LISTEN=%q ignored; config already sets admin.listen=%q", v, cfg.Admin.Listen))
 	}
-	if password := getenv("LLM_GW_ADMIN_PASSWORD"); password != "" {
-		if cfg.Admin.PasswordHash == "" || !config.VerifyPassword(cfg.Admin.PasswordHash, password) {
+	if password := adminPasswordFromEnv(getenv); password != "" {
+		switch {
+		case cfg.Admin.PasswordHash == "":
+			warnings = append(warnings, "LLM_GW_ADMIN_PASSWORD is ignored; config has no admin password and the admin console is disabled")
+		case !config.VerifyPassword(cfg.Admin.PasswordHash, password):
 			warnings = append(warnings, "LLM_GW_ADMIN_PASSWORD is ignored; config already has a different admin password")
 		}
 	}
 	return warnings
+}
+
+func adminPasswordFromEnv(getenv func(string) string) string {
+	return strings.TrimRight(getenv("LLM_GW_ADMIN_PASSWORD"), "\r\n")
+}
+
+func dataDirWarnings(dataDir string) []string {
+	info, err := os.Stat(dataDir)
+	if err != nil {
+		return nil
+	}
+	if info.Mode().Perm()&0o077 == 0 {
+		return nil
+	}
+	return []string{fmt.Sprintf("LLM_GW_DATA %s is accessible by group or other; use chmod 700", dataDir)}
+}
+
+func sessionsResetPending(dataDir string) (bool, error) {
+	_, err := os.Stat(filepath.Join(dataDir, SessionsResetFileName))
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
+func createSessionsResetMarker(dataDir string) error {
+	f, err := os.OpenFile(filepath.Join(dataDir, SessionsResetFileName), os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// ClearSessionsReset removes the pending marker after sessions were cleared.
+func ClearSessionsReset(dataDir string) error {
+	err := os.Remove(filepath.Join(dataDir, SessionsResetFileName))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }

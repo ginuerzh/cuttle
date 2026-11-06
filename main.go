@@ -78,7 +78,7 @@ func run(args []string) error {
 	}
 	defer gw.Close()
 
-	if err := resetAdminSessions(gw.Stats(), res.Generated); err != nil {
+	if err := applySessionReset(gw.Stats(), res.DataDir, res.ResetSessions); err != nil {
 		return fmt.Errorf("reset admin sessions: %w", err)
 	}
 	if err := gw.Start(); err != nil {
@@ -179,4 +179,16 @@ func resetAdminSessions(store *stats.Store, generated bool) error {
 		return nil
 	}
 	return store.DeleteAllSessions(context.Background())
+}
+
+// applySessionReset clears persisted sessions and removes the durable marker.
+// A failed clear leaves the marker in place, so the next start retries.
+func applySessionReset(store *stats.Store, dataDir string, reset bool) error {
+	if !reset {
+		return nil
+	}
+	if err := resetAdminSessions(store, true); err != nil {
+		return err
+	}
+	return bootstrap.ClearSessionsReset(dataDir)
 }

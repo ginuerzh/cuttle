@@ -60,6 +60,7 @@ VOLUME ["/data"]
 # /data holds the generated llm-gw.yaml and stats.sqlite. The admin password is
 # printed once to the container logs. Set LLM_GW_ADMIN_PASSWORD before the
 # first start to choose it. An existing config at /etc/llm-gw/llm-gw.yaml is
-# still found through the legacy fallback; pass -c to select it explicitly.
+# still found through the legacy fallback; use `serve -c /etc/llm-gw/llm-gw.yaml`
+# as the container command to select it explicitly.
 ENTRYPOINT ["llm-gw"]
 CMD ["serve"]

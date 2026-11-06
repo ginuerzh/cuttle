@@ -78,13 +78,19 @@ func TestZeroConfigOnboarding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Generated {
-		if store := gw.Stats(); store != nil {
-			if err := store.DeleteAllSessions(context.Background()); err != nil {
-				gw.Close()
-				t.Fatal(err)
-			}
+	if !res.ResetSessions {
+		gw.Close()
+		t.Fatal("first Prepare did not request a session reset")
+	}
+	if store := gw.Stats(); store != nil {
+		if err := store.DeleteAllSessions(context.Background()); err != nil {
+			gw.Close()
+			t.Fatal(err)
 		}
+	}
+	if err := bootstrap.ClearSessionsReset(res.DataDir); err != nil {
+		gw.Close()
+		t.Fatal(err)
 	}
 	if err := gw.Start(); err != nil {
 		gw.Close()
@@ -201,6 +207,11 @@ func TestZeroConfigOnboarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		ts.Close()
+		gw.Close()
+		t.Fatalf("gateway status = %d, want 200", resp.StatusCode)
+	}
 	if hitPath != "/chat/completions" {
 		ts.Close()
 		gw.Close()
@@ -228,6 +239,9 @@ func TestZeroConfigOnboarding(t *testing.T) {
 	if res2.GeneratedPassword != "" {
 		t.Fatal("second Prepare generated a password")
 	}
+	if res2.ResetSessions {
+		t.Fatal("second Prepare still requests a session reset")
+	}
 	if buf.Len() != 0 {
 		t.Fatalf("second Prepare wrote to stderr: %q", buf.String())
 	}
@@ -251,6 +265,9 @@ func TestZeroConfigOnboarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("restart gateway status = %d, want 200", resp.StatusCode)
+	}
 	if hitPath != "/chat/completions" {
 		t.Fatalf("restart upstream path = %q, want /chat/completions", hitPath)
 	}

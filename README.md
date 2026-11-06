@@ -129,9 +129,10 @@ If none exists, it generates a new config in `$LLM_GW_DATA`. An explicitly
 supplied `-c` path must exist.
 
 To choose the password before the first run, set `LLM_GW_ADMIN_PASSWORD` (8–72
-bytes). If the generated password is lost, replace `admin.passwordHash` with the
-output of `llm-gw hash-password`, or delete the config (destructive: it also
-deletes the topology; persisted sessions are cleared on regeneration).
+bytes; a trailing newline is trimmed, matching `llm-gw hash-password`). If the
+generated password is lost, replace `admin.passwordHash` with the output of
+`llm-gw hash-password`, or delete the config (destructive: it also deletes the
+topology; persisted sessions are cleared on regeneration).
 
 The rest of this section describes the full manual YAML configuration, which is
 still supported and is the right choice for multi-provider topologies.
@@ -534,10 +535,11 @@ docker run -d --name llm-gw \
   ghcr.io/ginuerzh/llm-gw:latest
 ```
 
-The four environment variables are first-run defaults. An existing config is
-not overridden; edit `admin.listen` in the file or use the console. To keep the
-admin API inside the container network on a fresh container, set
-`LLM_GW_ADMIN_LISTEN=127.0.0.1:8788` before the first start.
+The three config-value variables are first-run defaults; `LLM_GW_DATA` is the
+data directory used on every start. An existing config is not overridden; edit
+`admin.listen` in the file or use the console. To keep the admin API inside the
+container network on a fresh container, set `LLM_GW_ADMIN_LISTEN=127.0.0.1:8788`
+before the first start.
 
 Existing configs still work through the legacy mount:
 
@@ -549,10 +551,11 @@ docker run -d --name llm-gw \
   ghcr.io/ginuerzh/llm-gw:latest
 ```
 
-`/etc/llm-gw/llm-gw.yaml` is found when `/data/llm-gw.yaml` does not exist; pass
-`-c /etc/llm-gw/llm-gw.yaml` to be explicit. Admin edits write the config file,
-so mount it writable if you want to manage the gateway from the console; with a
-read-only mount, edit the host file and send `SIGHUP` instead.
+`/etc/llm-gw/llm-gw.yaml` is found when `/data/llm-gw.yaml` does not exist; use
+`serve -c /etc/llm-gw/llm-gw.yaml` as the container command to be explicit.
+Admin edits write the config file, so mount it writable if you want to manage
+the gateway from the console; with a read-only mount, edit the host file and
+send `SIGHUP` instead.
 
 `/data` is the working directory, so generated files persist in the volume. The
 container runs as UID/GID `10001`; a bind-mounted config must be readable by
@@ -609,7 +612,9 @@ DOCKER.md               image build and CI notes
   password. The one-time password is printed to stderr/logs on the first run.
   In production, set `LLM_GW_ADMIN_PASSWORD` through your orchestrator's secret
   mechanism, or capture the first-run logs securely.
-- The data directory is created with mode `0700` and the config with `0600`.
+- A newly created data directory is `0700`; a pre-existing or bind-mounted
+  directory is not changed, and startup warns if it is accessible by group or
+  other. The config file is `0600`.
 - The admin API is HTTP only. The binary binds to loopback by default; the
   Docker image binds `:8788` for first-run onboarding. Put a TLS reverse proxy
   in front of it before exposing it on a network.
