@@ -72,9 +72,9 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `<pending>`, workspace memory `<pending>`.
+- Files changed: `llm-gw/README.md`, `llm-gw/docs/superpowers/plans/2026-11-06-error-aggregation-p1.md`, `.memory/MEMORY.md`, `.memory/notes/llm-gw-error-observability.md`.
+- Tests/commands and results: `GOWORK=off go test ./... -count=1` passed; `npm test` 118 tests passed; `npx tsc --noEmit` passed; `npm run build` passed.
+- Review findings and fixes: README documents the new endpoints, filter and header allowlist; memory records the P1 branch, endpoints and the pending deployment config.
+- Deferred items: merge/deploy P1, switch `capture.mode: errors`, and add error rollups for windows beyond request retention.

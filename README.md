@@ -517,7 +517,9 @@ PUT|DELETE    /api/routes/{name}
 GET|PUT       /api/entrypoints
 
 GET  /api/stats/summary
+GET  /api/stats/errors
 GET  /api/stats/graph
+GET  /api/alerts
 GET|PUT /api/topology/positions
 GET  /api/requests
 GET  /api/requests/{id}
@@ -527,8 +529,13 @@ DELETE        /api/captures/{id}
 PUT  /api/admin/password
 ```
 
-`GET /api/requests` accepts `errors=1` and `captured=1`. Request detail includes
-an optional `capture` object; the list only reports a cheap `hasCapture` flag.
+`GET /api/requests` accepts `errors=1`, `captured=1` and `errorClass=<class>`.
+Request detail includes an optional `capture` object; the list only reports a
+cheap `hasCapture` flag. `GET /api/stats/errors` aggregates the window by
+`error_class`, provider, route and client model, and returns top message
+fingerprints plus hourly buckets. `GET /api/alerts` evaluates the last 15
+minutes for auth failures, an error-rate spike, gateway timeouts and excessive
+stream truncation; alerts are UI-only in P1.
 
 ## Request correlation and capture
 
