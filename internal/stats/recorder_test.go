@@ -199,7 +199,18 @@ func TestRecorderCaptureErrorMode(t *testing.T) {
 		mgr.Offer(tc.sid, "request", []byte("in"), []byte("out"), "", 0)
 		body, _ := json.Marshal(map[string]any{
 			"sid": tc.sid, "node": "r/p/n", "time": time.Now().UTC(),
-			"http": map[string]any{"statusCode": tc.status}, "err": tc.err,
+			"http": map[string]any{
+				"statusCode": tc.status,
+				"request": map[string]any{"header": map[string][]string{
+					"User-Agent":    {"cli"},
+					"Authorization": {"Bearer secret"},
+				}},
+				"response": map[string]any{"header": map[string][]string{
+					"Retry-After": {"30"},
+					"Set-Cookie":  {"session=secret"},
+				}},
+			},
+			"err": tc.err,
 		})
 		if err := rec.Record(ctx, body); err != nil {
 			t.Fatal(err)
@@ -210,6 +221,16 @@ func TestRecorderCaptureErrorMode(t *testing.T) {
 	}
 	if c, _ := s.GetCapture(ctx, "bad"); c == nil || c.RequestRewritten != "out" {
 		t.Fatalf("failed request capture = %+v", c)
+	} else {
+		if c.RequestHeaders["user-agent"] != "cli" || c.ResponseHeaders["retry-after"] != "30" {
+			t.Fatalf("capture headers = %+v / %+v", c.RequestHeaders, c.ResponseHeaders)
+		}
+		if _, ok := c.RequestHeaders["authorization"]; ok {
+			t.Fatalf("captured authorization header: %+v", c.RequestHeaders)
+		}
+		if _, ok := c.ResponseHeaders["set-cookie"]; ok {
+			t.Fatalf("captured set-cookie header: %+v", c.ResponseHeaders)
+		}
 	}
 }
 

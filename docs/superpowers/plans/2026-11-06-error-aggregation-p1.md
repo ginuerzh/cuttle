@@ -19,12 +19,12 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `a3eca549`.
+- Files changed: `internal/stats/errorsummary.go` (new), `internal/stats/errorsummary_test.go` (new), `internal/stats/alerts.go` (new), `internal/stats/store.go`, `internal/admin/handlers_stats.go`, `internal/admin/server.go`, `internal/admin/errors_test.go` (new).
+- Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/stats ./internal/admin -count=1` passed.
+- Review findings and fixes: aggregation reads raw retained rows and caps every list (50 groups, 20 client models, 20 fingerprints); fingerprints replace UUIDs/IPs/request IDs/hex before grouping. Alerts are computed on demand over 15 minutes; no background evaluator.
+- Deferred items: windows beyond `retainRequests` need error rollups (P2); alert thresholds are constants.
 
 ## Task 2: Capture headers and error-mode deployment
 
@@ -41,12 +41,12 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete (deployment config pending).
+- Repository + commit: `llm-gw` `5f0384c3`.
+- Files changed: `internal/capture/capture.go`, `internal/stats/headers.go` (new), `internal/stats/headers_test.go` (new), `internal/stats/store.go`, `internal/stats/store_test.go`, `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `README.md`.
+- Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/stats ./internal/capture ./internal/admin -count=1` passed.
+- Review findings and fixes: headers are lower-cased and joined; the allowlist excludes authorization, cookie, set-cookie, x-api-key, x-goog-api-key and api-key. Existing capture rows get `{}` via migration.
+- Deferred items: the live config is still `capture.mode: off`; it will be switched after the P1 image is deployed.
 
 ## Task 3: Frontend error panel
 
@@ -57,12 +57,12 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `5c1512e8`.
+- Files changed: `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/locales/en-US.ts`, `web/src/pages/Requests.tsx`.
+- Tests/commands and results: `npm test` 118 tests passed; `npx tsc --noEmit` passed; `npm run build` passed; full `GOWORK=off go test ./... -count=1` passed.
+- Review findings and fixes: the Requests page loads requests, the error summary and alerts in one parallel refresh; error-class tags toggle the filter; headers render as key/value descriptions.
+- Deferred items: no chart for the hourly buckets yet; alert thresholds are constants.
 
 ## Task 4: Documentation and memory
 
@@ -72,9 +72,9 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `90b2b7d3`, workspace memory `517e623`.
+- Files changed: `llm-gw/README.md`, `llm-gw/docs/superpowers/plans/2026-11-06-error-aggregation-p1.md`, `.memory/MEMORY.md`, `.memory/notes/llm-gw-error-observability.md`.
+- Tests/commands and results: `GOWORK=off go test ./... -count=1` passed; `npm test` 118 tests passed; `npx tsc --noEmit` passed; `npm run build` passed.
+- Review findings and fixes: README documents the new endpoints, filter and header allowlist; memory records the P1 branch, endpoints and the pending deployment config.
+- Deferred items: merge/deploy P1, switch `capture.mode: errors`, and add error rollups for windows beyond request retention.

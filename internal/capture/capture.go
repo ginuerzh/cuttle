@@ -44,20 +44,22 @@ type Rule struct {
 
 // Capture is the bounded preview set persisted for one request.
 type Capture struct {
-	RequestOriginal   string    `json:"requestOriginal,omitempty"`
-	RequestRewritten  string    `json:"requestRewritten,omitempty"`
-	ResponseOriginal  string    `json:"responseOriginal,omitempty"`
-	ResponseRewritten string    `json:"responseRewritten,omitempty"`
-	SSEFirstOriginal  string    `json:"sseFirstOriginal,omitempty"`
-	SSEFirstRewritten string    `json:"sseFirstRewritten,omitempty"`
-	SSELastOriginal   string    `json:"sseLastOriginal,omitempty"`
-	SSELastRewritten  string    `json:"sseLastRewritten,omitempty"`
-	RequestSHA256     string    `json:"requestSha256,omitempty"`
-	ResponseSHA256    string    `json:"responseSha256,omitempty"`
-	SSIEvents         int       `json:"sseEvents,omitempty"`
-	Reason            string    `json:"reason,omitempty"`
-	OnError           bool      `json:"-"`
-	CreatedAt         time.Time `json:"createdAt,omitempty"`
+	RequestOriginal   string            `json:"requestOriginal,omitempty"`
+	RequestRewritten  string            `json:"requestRewritten,omitempty"`
+	ResponseOriginal  string            `json:"responseOriginal,omitempty"`
+	ResponseRewritten string            `json:"responseRewritten,omitempty"`
+	SSEFirstOriginal  string            `json:"sseFirstOriginal,omitempty"`
+	SSEFirstRewritten string            `json:"sseFirstRewritten,omitempty"`
+	SSELastOriginal   string            `json:"sseLastOriginal,omitempty"`
+	SSELastRewritten  string            `json:"sseLastRewritten,omitempty"`
+	RequestSHA256     string            `json:"requestSha256,omitempty"`
+	ResponseSHA256    string            `json:"responseSha256,omitempty"`
+	RequestHeaders    map[string]string `json:"requestHeaders,omitempty"`
+	ResponseHeaders   map[string]string `json:"responseHeaders,omitempty"`
+	SSIEvents         int               `json:"sseEvents,omitempty"`
+	Reason            string            `json:"reason,omitempty"`
+	OnError           bool              `json:"-"`
+	CreatedAt         time.Time         `json:"createdAt,omitempty"`
 }
 
 type session struct {

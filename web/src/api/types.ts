@@ -171,9 +171,51 @@ export interface RequestCapture {
   sseLastRewritten?: string;
   requestSha256?: string;
   responseSha256?: string;
+  requestHeaders?: Record<string, string>;
+  responseHeaders?: Record<string, string>;
   sseEvents?: number;
   reason?: string;
   createdAt?: string;
+}
+
+export interface ErrorGroup {
+  key: string;
+  requests: number;
+  errors: number;
+}
+
+export interface ErrorFingerprint {
+  class: string;
+  message: string;
+  count: number;
+  lastSeen: string;
+}
+
+export interface ErrorBucket {
+  bucket: string;
+  requests: number;
+  errors: number;
+}
+
+export interface ErrorSummary {
+  total: number;
+  errors: number;
+  errorRate: number;
+  byClass: ErrorGroup[];
+  byProvider: ErrorGroup[];
+  byRoute: ErrorGroup[];
+  byClientModel: ErrorGroup[];
+  topMessages: ErrorFingerprint[];
+  hourly: ErrorBucket[];
+}
+
+export interface Alert {
+  id: string;
+  severity: string;
+  title: string;
+  detail: string;
+  count: number;
+  since?: string;
 }
 
 export interface CaptureRule {

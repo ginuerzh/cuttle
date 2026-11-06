@@ -229,7 +229,9 @@ func TestCaptureRoundTripAndCleanup(t *testing.T) {
 	c := &capture.Capture{
 		RequestOriginal: "in", RequestRewritten: "out",
 		ResponseOriginal: "up", ResponseRewritten: "down",
-		Reason: "rule:1", SSIEvents: 2, CreatedAt: time.Now().UTC(),
+		RequestHeaders:  map[string]string{"user-agent": "cli"},
+		ResponseHeaders: map[string]string{"retry-after": "30"},
+		Reason:          "rule:1", SSIEvents: 2, CreatedAt: time.Now().UTC(),
 	}
 	if err := s.PutCapture(ctx, "rid", c); err != nil {
 		t.Fatal(err)
@@ -237,6 +239,9 @@ func TestCaptureRoundTripAndCleanup(t *testing.T) {
 	got, err := s.GetCapture(ctx, "rid")
 	if err != nil || got == nil || got.RequestRewritten != "out" || got.SSIEvents != 2 {
 		t.Fatalf("capture = %+v err=%v", got, err)
+	}
+	if got.RequestHeaders["user-agent"] != "cli" || got.ResponseHeaders["retry-after"] != "30" {
+		t.Fatalf("capture headers = %+v", got)
 	}
 	row, err := s.Get(ctx, "rid")
 	if err != nil || row == nil || !row.HasCapture || row.Capture == nil {

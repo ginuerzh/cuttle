@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Alert as AntAlert,
   Button,
   Checkbox,
   Descriptions,
@@ -13,9 +14,9 @@ import {
   Typography,
   message,
 } from 'antd';
-import { createCaptureRule, deleteCaptureRule, getRequest, getRequests, listCaptureRules } from '../api/client';
+import { createCaptureRule, deleteCaptureRule, getAlerts, getErrorSummary, getRequest, getRequests, listCaptureRules } from '../api/client';
 import { translate as t } from '../i18n';
-import type { CaptureRule, RequestRow } from '../api/types';
+import type { Alert, CaptureRule, ErrorSummary, RequestRow } from '../api/types';
 import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
@@ -87,6 +88,9 @@ export function RequestsPage() {
   const [clientModel, setClientModel] = useState('');
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [capturedOnly, setCapturedOnly] = useState(false);
+  const [errorClass, setErrorClass] = useState('');
+  const [errorSummary, setErrorSummary] = useState<ErrorSummary | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<RequestRow | null>(null);
@@ -105,8 +109,8 @@ export function RequestsPage() {
     try {
       const to = new Date();
       const from = new Date(to.getTime() - rangeMs);
-      setRows(
-        await getRequests({
+      const [list, summary, activeAlerts] = await Promise.all([
+        getRequests({
           from,
           to,
           provider: provider.trim() || undefined,
@@ -114,15 +118,21 @@ export function RequestsPage() {
           clientModel: clientModel.trim() || undefined,
           errorsOnly,
           capturedOnly,
+          errorClass: errorClass || undefined,
           limit: 200,
         }),
-      );
+        getErrorSummary({ from, to }),
+        getAlerts(),
+      ]);
+      setRows(list);
+      setErrorSummary(summary);
+      setAlerts(activeAlerts);
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [rangeMs, provider, route, clientModel, errorsOnly, capturedOnly]);
+  }, [rangeMs, provider, route, clientModel, errorsOnly, capturedOnly, errorClass]);
 
   const loadCaptures = useCallback(async () => {
     try {
@@ -200,6 +210,55 @@ export function RequestsPage() {
       <Typography.Title level={4} style={{ marginTop: 0 }}>
         {t('请求')}
       </Typography.Title>
+      {alerts.map((a) => (
+        <AntAlert
+          key={a.id}
+          type={a.severity === 'critical' ? 'error' : 'warning'}
+          showIcon
+          message={a.title}
+          description={a.detail}
+          style={{ marginBottom: 8 }}
+        />
+      ))}
+      {errorSummary && errorSummary.errors > 0 ? (
+        <div style={{ marginBottom: 12 }}>
+          <Space wrap>
+            <Typography.Text strong>{t('错误概览')}</Typography.Text>
+            <Tag color="red">
+              {t('{errors} 错误 / {total} 请求', { errors: errorSummary.errors, total: errorSummary.total })}
+            </Tag>
+            <Tag color="orange">{`${(errorSummary.errorRate * 100).toFixed(1)}%`}</Tag>
+            {errorSummary.byClass.slice(0, 6).map((g) => (
+              <Tag
+                key={g.key}
+                color={errorClass === g.key ? 'blue' : undefined}
+                style={{ cursor: 'pointer' }}
+                onClick={() => setErrorClass(errorClass === g.key ? '' : g.key)}
+              >
+                {`${t(ERROR_CLASS_LABELS[g.key] || g.key)} ${g.errors}`}
+              </Tag>
+            ))}
+            {errorClass ? (
+              <Button size="small" type="link" onClick={() => setErrorClass('')}>
+                {t('清除筛选')}
+              </Button>
+            ) : null}
+          </Space>
+          {errorSummary.topMessages.length > 0 ? (
+            <div style={{ marginTop: 6 }}>
+              {errorSummary.topMessages.slice(0, 3).map((m, i) => (
+                <Typography.Text
+                  key={`${m.class}-${i}`}
+                  type="secondary"
+                  style={{ display: 'block', fontSize: 12 }}
+                >
+                  {`${m.count}× ${t(ERROR_CLASS_LABELS[m.class] || m.class)}: ${m.message}`}
+                </Typography.Text>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <Space wrap style={{ marginBottom: 12 }}>
         <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES.map((r) => ({ ...r, label: t(r.label) }))} style={{ width: isMobile ? '100%' : 110 }} />
         <Input size="small" placeholder="provider" value={provider} onChange={(e) => setProvider(e.target.value)} style={{ width: isMobile ? '100%' : 140 }} />
@@ -320,6 +379,30 @@ export function RequestsPage() {
                     <Typography.Text code>{`${cap.requestSha256 || '—'} / ${cap.responseSha256 || '—'}`}</Typography.Text>
                   </Descriptions.Item>
                 </Descriptions>
+                {cap.requestHeaders && Object.keys(cap.requestHeaders).length > 0 ? (
+                  <>
+                    <Typography.Text strong>{t('请求头')}</Typography.Text>
+                    <Descriptions size="small" column={1} bordered style={{ marginBottom: 12 }}>
+                      {Object.entries(cap.requestHeaders).map(([key, value]) => (
+                        <Descriptions.Item key={key} label={key}>
+                          <Typography.Text code>{value}</Typography.Text>
+                        </Descriptions.Item>
+                      ))}
+                    </Descriptions>
+                  </>
+                ) : null}
+                {cap.responseHeaders && Object.keys(cap.responseHeaders).length > 0 ? (
+                  <>
+                    <Typography.Text strong>{t('响应头')}</Typography.Text>
+                    <Descriptions size="small" column={1} bordered style={{ marginBottom: 12 }}>
+                      {Object.entries(cap.responseHeaders).map(([key, value]) => (
+                        <Descriptions.Item key={key} label={key}>
+                          <Typography.Text code>{value}</Typography.Text>
+                        </Descriptions.Item>
+                      ))}
+                    </Descriptions>
+                  </>
+                ) : null}
                 {hasPreview ? (
                   <>
                     <Preview label={t('原始请求')} text={cap.requestOriginal} />
