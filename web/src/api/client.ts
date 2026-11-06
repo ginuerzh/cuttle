@@ -1,4 +1,4 @@
-import type { CaptureRule, ConfigResponse, Entrypoint, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, TopologyPosition } from './types';
+import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -171,6 +171,7 @@ export interface RequestQuery {
   clientModel?: string;
   errorsOnly?: boolean;
   capturedOnly?: boolean;
+  errorClass?: string;
   limit?: number;
 }
 
@@ -185,7 +186,20 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
   if (q.clientModel) params.set('clientModel', q.clientModel);
   if (q.errorsOnly) params.set('errors', '1');
   if (q.capturedOnly) params.set('captured', '1');
+  if (q.errorClass) params.set('errorClass', q.errorClass);
   return request<RequestRow[] | null>('GET', `/api/requests?${params.toString()}`).then((rows) => rows ?? []);
+}
+
+export function getErrorSummary(q: { from: Date; to: Date }): Promise<ErrorSummary> {
+  const params = new URLSearchParams({
+    from: q.from.toISOString(),
+    to: q.to.toISOString(),
+  });
+  return request<ErrorSummary>('GET', `/api/stats/errors?${params.toString()}`);
+}
+
+export function getAlerts(): Promise<Alert[]> {
+  return request<Alert[] | null>('GET', '/api/alerts').then((alerts) => alerts ?? []);
 }
 
 export function getRequest(id: string): Promise<RequestRow> {
