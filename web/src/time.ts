@@ -20,5 +20,7 @@ export function formatDurationMs(ms = 0): string {
 /** Format a token rate as a compact one-decimal value; empty when unavailable. */
 export function formatTokenRate(rate: number): string {
   if (!Number.isFinite(rate) || rate <= 0) return '';
-  return `${rate.toFixed(1).replace(/\.0$/, '')} tok/s`;
+  const value = rate.toFixed(1);
+  if (Number(value) === 0) return '';
+  return `${value.replace(/\.0$/, '')} tok/s`;
 }

@@ -46,4 +46,9 @@ describe('formatTokenRate', () => {
     expect(formatTokenRate(0)).toBe('');
     expect(formatTokenRate(-1)).toBe('');
   });
+
+  it('does not round a tiny positive rate down to zero', () => {
+    expect(formatTokenRate(0.04)).toBe('');
+    expect(formatTokenRate(0.05)).toBe('0.1 tok/s');
+  });
 });
