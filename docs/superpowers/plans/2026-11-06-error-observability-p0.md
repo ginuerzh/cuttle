@@ -99,12 +99,12 @@ Tests are run from the `llm-gw` directory unless stated otherwise.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `7c7421b9`.
+- Files changed: `web/src/api/types.ts`, `web/src/locales/en-US.ts`, `web/src/pages/Requests.tsx`, `web/src/pages/Requests.test.ts` (new).
+- Tests/commands and results: `npm test` 118 tests passed; `npx tsc --noEmit` passed; `npm run build` passed.
+- Review findings and fixes: `errorClassLabel` initially returned raw Chinese labels and bypassed the language switch; it now calls `t()` and the labels have English translations. The test pins `setActiveLang('zh-CN')`.
+- Deferred items: the request list still has no filter by error class; that belongs to the P1 aggregation work.
 
 ## Task 6: Documentation and memory
 
