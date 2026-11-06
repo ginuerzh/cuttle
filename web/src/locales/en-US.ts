@@ -23,6 +23,8 @@ export const enUS: Record<string, string> = {
   '退出编辑': 'Exit edit',
   '数据延迟': 'Data delayed',
   '更新 {time}': 'Updated {time}',
+  '更新 {time} · 统计自 {since}': 'Updated {time} · since {since}',
+  '重置统计': 'Reset stats',
   '等待数据': 'Waiting for data',
   '编辑模式 · 统计已暂停': 'Edit mode · stats paused',
   '退出': 'Log out',

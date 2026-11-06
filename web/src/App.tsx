@@ -28,8 +28,9 @@ import {
   SunOutlined,
   TagOutlined,
 } from '@ant-design/icons';
-import { getConfig, getGraph, getHealth, logout, UnauthorizedError } from './api/client';
+import { getConfig, getHealth, logout, UnauthorizedError } from './api/client';
 import type { ConfigResponse, EdgeMetrics, ErrorRow, GraphMetrics, Health, NodeMetrics } from './api/types';
+import type { SnapshotMessage } from './api/events';
 import { Login } from './pages/Login';
 import { EntrypointsPage } from './pages/Entrypoints';
 import { ProvidersPage } from './pages/Providers';
@@ -43,6 +44,7 @@ import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
 import { errorMatchesNodeId } from './pages/selection';
+import { useLiveGraph } from './useLiveGraph';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
 import { NAV_LABELS, NAV_ORDER, type Page } from './nav';
@@ -243,6 +245,9 @@ export default function App() {
   const [selection, setSelection] = useState<Selection>(null);
   const [stale, setStale] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<string>('');
+  const [since, setSince] = useState<string>('');
+  const [resetKey, setResetKey] = useState(0);
+  const [sessionKey, setSessionKey] = useState(0);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -278,50 +283,53 @@ export default function App() {
     await logout().catch(() => undefined);
     setSession('no');
     setConfig(null);
+    setMetrics(null);
+    setSince('');
+    setUpdatedAt('');
+    setStale(false);
+    setSessionKey((key) => key + 1);
   }, []);
 
   useEffect(() => {
     if (session !== 'yes') setNavOpen(false);
   }, [session]);
 
-  useEffect(() => {
-    if (session !== 'yes' || mode !== 'monitor' || page !== 'topology') {
-      return;
-    }
-    let cancelled = false;
-    const ms = RANGES.find((r) => r.value === range)?.ms ?? 3_600_000;
+  const handleSnapshot = useCallback((msg: SnapshotMessage) => {
+    setMetrics(msg.metrics);
+    setSince(msg.since);
+    setUpdatedAt(formatDateTime(msg.to));
+    setStale(false);
+  }, []);
 
-    const load = async () => {
-      if (document.hidden) return;
-      const to = new Date();
-      const from = new Date(to.getTime() - ms);
-      try {
-        const m = await getGraph(from, to);
-        if (cancelled) return;
-        setMetrics(m);
-        setStale(false);
-        setUpdatedAt(formatDateTime(to));
-      } catch (err) {
-        if (err instanceof UnauthorizedError) {
-          setSession('no');
-          return;
-        }
-        if (!cancelled) setStale(true);
-      }
-    };
+  const handleStatus = useCallback((connected: boolean) => {
+    setStale(!connected);
+  }, []);
 
-    void load();
-    const timer = window.setInterval(load, 2000);
-    const onVisible = () => {
-      if (!document.hidden) void load();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [session, mode, range, page]);
+  const handleAuthError = useCallback(() => {
+    setSession('no');
+    setMetrics(null);
+    setSince('');
+    setUpdatedAt('');
+    setStale(false);
+    setSessionKey((key) => key + 1);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setMetrics({ nodes: {}, edges: {}, errors: [] });
+    setSince('');
+    setUpdatedAt('');
+    setResetKey((key) => key + 1);
+  }, []);
+
+  useLiveGraph({
+    enabled: session === 'yes' && mode === 'monitor' && page === 'topology',
+    range,
+    resetKey,
+    sessionKey,
+    onSnapshot: handleSnapshot,
+    onStatus: handleStatus,
+    onAuthError: handleAuthError,
+  });
 
   useEffect(() => {
     if (mode === 'edit') {
@@ -402,6 +410,8 @@ export default function App() {
                   ranges={RANGES}
                   stale={stale}
                   updatedAt={updatedAt}
+                  sinceAt={since ? formatDateTime(since) : ''}
+                  onReset={handleReset}
                   isMobile={isMobile}
                 />
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>

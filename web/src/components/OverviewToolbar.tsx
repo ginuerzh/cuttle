@@ -1,5 +1,5 @@
 import { Badge, Button, Select, Space, Tag } from 'antd';
-import { EditOutlined } from '@ant-design/icons';
+import { EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import { translate as t } from '../i18n';
 
 export interface OverviewRange {
@@ -15,6 +15,8 @@ export interface OverviewToolbarProps {
   ranges: readonly OverviewRange[];
   stale: boolean;
   updatedAt: string;
+  sinceAt: string;
+  onReset: () => void;
   isMobile: boolean;
 }
 
@@ -27,6 +29,8 @@ export function OverviewToolbar({
   ranges,
   stale,
   updatedAt,
+  sinceAt,
+  onReset,
   isMobile,
 }: OverviewToolbarProps) {
   const editing = mode === 'edit';
@@ -59,7 +63,16 @@ export function OverviewToolbar({
             {!isMobile ? (
               <Badge
                 status={stale ? 'warning' : 'success'}
-                text={stale ? t('数据延迟') : updatedAt ? t('更新 {time}', { time: updatedAt }) : t('等待数据')}
+                text={
+                  stale
+                    ? t('数据延迟')
+                    : updatedAt
+                      ? t('更新 {time} · 统计自 {since}', {
+                          time: updatedAt,
+                          since: sinceAt || '—',
+                        })
+                      : t('等待数据')
+                }
               />
             ) : null}
             <Select
@@ -69,6 +82,14 @@ export function OverviewToolbar({
               options={ranges.map(({ label, value }) => ({ label: t(label), value }))}
               style={{ width: 96 }}
             />
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={onReset}
+              title={t('重置统计')}
+            >
+              {t('重置统计')}
+            </Button>
           </>
         )}
       </Space>
