@@ -76,6 +76,7 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		BytesIn:    ro.InputBytes,
 		BytesOut:   ro.OutputBytes,
 	}
+	req.URI, req.Method, req.ClientIP, req.UserAgent, req.Upstream = requestContext(&ro)
 	if req.ID == "" {
 		req.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}

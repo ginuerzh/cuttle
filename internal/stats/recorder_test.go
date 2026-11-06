@@ -71,6 +71,45 @@ func TestRecorderUsesUpstreamErrorSummary(t *testing.T) {
 	}
 }
 
+func TestRecorderCopiesRequestContext(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	sid := "ctx"
+	body, err := json.Marshal(map[string]any{
+		"sid":    sid,
+		"node":   "route/provider/node",
+		"time":   time.Now().UTC(),
+		"client": "10.0.0.5:12345",
+		"http": map[string]any{
+			"statusCode":  200,
+			"method":      "POST",
+			"uri":         "/chat/completions",
+			"originalUri": "/v1/messages",
+			"request": map[string]any{
+				"header": map[string][]string{
+					"User-Agent":      {"claude-code/1.0"},
+					"X-Forwarded-For": {"203.0.113.9, 10.0.0.1"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Get(ctx, sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.URI != "/v1/messages" || got.Method != "POST" ||
+		got.ClientIP != "203.0.113.9" || got.UserAgent != "claude-code/1.0" {
+		t.Fatalf("row = %+v", got)
+	}
+}
+
 func TestRecorderCaptureErrorMode(t *testing.T) {
 	s := newStore(t)
 	facts := NewFacts()

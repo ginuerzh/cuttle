@@ -191,6 +191,11 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 		ErrorClass:      ErrorClassUpstreamTruncated,
 		SSEPhase:        "end",
 		EventIndex:      7,
+		URI:             "/v1/messages",
+		Method:          "POST",
+		ClientIP:        "203.0.113.9",
+		UserAgent:       "claude-code/1.0",
+		Upstream:        "172.67.69.147:443/chat/completions",
 	}
 	if err := s.Insert(ctx, want); err != nil {
 		t.Fatal(err)
@@ -201,7 +206,9 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 	}
 	if got.InboundProtocol != want.InboundProtocol || got.ErrorStage != want.ErrorStage ||
 		got.ErrorDirection != want.ErrorDirection || got.ErrorClass != want.ErrorClass ||
-		got.SSEPhase != want.SSEPhase || got.EventIndex != want.EventIndex {
+		got.SSEPhase != want.SSEPhase || got.EventIndex != want.EventIndex ||
+		got.URI != want.URI || got.Method != want.Method || got.ClientIP != want.ClientIP ||
+		got.UserAgent != want.UserAgent || got.Upstream != want.Upstream {
 		t.Fatalf("fields = %+v", got)
 	}
 }

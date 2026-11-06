@@ -26,6 +26,11 @@ type Request struct {
 	Node            string           `json:"node,omitempty"`
 	Protocol        string           `json:"protocol"`
 	InboundProtocol string           `json:"inboundProtocol,omitempty"`
+	URI             string           `json:"uri,omitempty"`
+	Method          string           `json:"method,omitempty"`
+	ClientIP        string           `json:"clientIp,omitempty"`
+	UserAgent       string           `json:"userAgent,omitempty"`
+	Upstream        string           `json:"upstream,omitempty"`
 	ErrorStage      string           `json:"errorStage,omitempty"`
 	ErrorDirection  string           `json:"errorDirection,omitempty"`
 	SSEPhase        string           `json:"ssePhase,omitempty"`
@@ -199,6 +204,11 @@ func (s *Store) migrate() error {
 		"client_model":     "TEXT NOT NULL DEFAULT ''",
 		"node":             "TEXT NOT NULL DEFAULT ''",
 		"inbound_protocol": "TEXT NOT NULL DEFAULT ''",
+		"uri":              "TEXT NOT NULL DEFAULT ''",
+		"method":           "TEXT NOT NULL DEFAULT ''",
+		"client_ip":        "TEXT NOT NULL DEFAULT ''",
+		"user_agent":       "TEXT NOT NULL DEFAULT ''",
+		"upstream":         "TEXT NOT NULL DEFAULT ''",
 		"error_stage":      "TEXT NOT NULL DEFAULT ''",
 		"error_direction":  "TEXT NOT NULL DEFAULT ''",
 		"error_class":      "TEXT NOT NULL DEFAULT ''",
@@ -370,12 +380,14 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 		(request_id, sid, ts, model, client_model, provider, route, node,
 		 protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		 effort, status, error, error_class, duration_ms,
-		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
+		 uri, method, client_ip, user_agent, upstream)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node,
 		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
 		r.Effort, r.Status, r.Error, r.ErrorClass, r.DurationMS,
-		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut))
+		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut),
+		r.URI, r.Method, r.ClientIP, r.UserAgent, r.Upstream)
 	if err != nil {
 		return err
 	}
@@ -438,6 +450,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		effort, status, error, error_class,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
+		uri, method, client_ip, user_agent, upstream,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, max(f.Offset, 0))
@@ -456,6 +469,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		effort, status, error, error_class,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
+		uri, method, client_ip, user_agent, upstream,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests WHERE request_id = ?`
 	rows, err := s.db.QueryContext(ctx, q, id)
@@ -549,7 +563,8 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 			&r.Provider, &r.Route, &r.Node, &r.Protocol,
 			&r.InboundProtocol, &r.ErrorStage, &r.ErrorDirection, &r.SSEPhase, &r.EventIndex,
 			&r.Effort, &r.Status, &r.Error, &r.ErrorClass, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
-			&stream, &bytesIn, &bytesOut, &hasCapture); err != nil {
+			&stream, &bytesIn, &bytesOut,
+			&r.URI, &r.Method, &r.ClientIP, &r.UserAgent, &r.Upstream, &hasCapture); err != nil {
 			return nil, err
 		}
 		r.TS = time.UnixMilli(ts).UTC()
