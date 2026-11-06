@@ -82,12 +82,12 @@ Tests are run from the `llm-gw` directory unless stated otherwise.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `de5012e2`.
+- Files changed: `internal/rewriter/stream.go` (new), `internal/rewriter/stream_test.go` (new), `internal/rewriter/rewriter.go`, `internal/rewriter/rewriter_test.go`, `internal/stats/facts.go`, `internal/stats/store.go`, `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `internal/stats/store_test.go`.
+- Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/rewriter ./internal/stats -count=1` passed.
+- Review findings and fixes: the parser is only invoked for SSE phases so large non-streaming bodies are not parsed twice. A provider that never sends `stop_reason`/`finish_reason`/`[DONE]` will be marked truncated; documented as a heuristic.
+- Deferred items: Gemini and Responses-specific terminal events beyond `stop_reason` are not covered yet.
 
 ## Task 5: Frontend
 
