@@ -231,12 +231,12 @@ git commit -m "feat(rewriter): add request IDs and structured errors"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / 6248fae9 (code, spec and plan); this record commit is the follow-up
+- Files changed: `internal/rewriter/header.go`, `internal/rewriter/header_test.go`, `internal/rewriter/helpers_test.go`, `internal/rewriter/rewriter.go`, `internal/stats/facts.go`, `internal/stats/store.go`, `internal/stats/store_test.go`, `internal/stats/recorder_test.go`, `internal/stats/recorder.go`, `internal/gateway/build.go`, `internal/gateway/gateway_test.go`, spec and plan.
+- Tests/commands and results: `GOWORK=off go test ./internal/rewriter ./internal/stats ./internal/gateway -count=1` PASS; `GOWORK=off go build ./...` PASS; `go vet ./...` PASS; `go test ./... -count=1` PASS. The new gateway test asserts a non-empty `X-LLM-GW-Request-ID` on a forwarded response; the recorder test pins inbound protocol/error stage/direction/SSE phase/index into a stats row.
+- Review findings and fixes: The planned gateway test that forces a rewriter failure was not deterministic because `llm-api-converter` logs and passes through malformed payloads instead of returning errors. It was replaced with a focused `stats.Recorder` test that injects Facts and verifies the persisted fields; header behavior remains covered end to end. The header plugin fails open, and header rewrite registration happens before hop parsing. The request ID is deliberately limited to node-forwarded responses.
+- Deferred items/limitations: Gateway-generated 502/503 responses and request-side failures still lack the request ID. Header values are not captured. Capture and UI come in later tasks.
 
 ---
 
