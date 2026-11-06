@@ -11,21 +11,24 @@ import (
 	"github.com/go-gost/core/recorder"
 	xlogger "github.com/go-gost/x/logger"
 	xrecorder "github.com/go-gost/x/recorder"
+
+	"github.com/go-gost/llm-gw/internal/capture"
 )
 
 // Recorder implements core/recorder.Recorder for the forward handler.
 type Recorder struct {
-	store *Store
-	facts *Facts
-	log   logger.Logger
+	store   *Store
+	facts   *Facts
+	log     logger.Logger
+	capture *capture.Manager
 }
 
 // NewRecorder creates a recorder that writes one request row per call.
-func NewRecorder(store *Store, facts *Facts, log logger.Logger) *Recorder {
+func NewRecorder(store *Store, facts *Facts, log logger.Logger, captureMgr *capture.Manager) *Recorder {
 	if log == nil {
 		log = xlogger.Nop()
 	}
-	return &Recorder{store: store, facts: facts, log: log}
+	return &Recorder{store: store, facts: facts, log: log, capture: captureMgr}
 }
 
 // Record implements recorder.Recorder.
@@ -96,9 +99,25 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		req.Stream = fact.Stream
 	}
 
+	var cap *capture.Capture
+	if r.capture != nil {
+		if c, ok := r.capture.Finish(req.SID); ok {
+			cap = c
+		}
+	}
+	failed := req.Status >= 400 || req.Error != ""
+	if cap != nil && cap.OnError && !failed {
+		cap = nil
+	}
+
 	if err := r.store.Insert(ctx, req); err != nil {
 		r.log.Errorf("stats: insert %s: %v", req.ID, err)
 		return err
+	}
+	if cap != nil {
+		if err := r.store.PutCapture(ctx, req.ID, cap); err != nil {
+			r.log.Errorf("stats: capture %s: %v", req.ID, err)
+		}
 	}
 	return nil
 }

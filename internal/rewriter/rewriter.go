@@ -12,6 +12,8 @@ import (
 	corerewriter "github.com/go-gost/core/rewriter"
 	xlogger "github.com/go-gost/x/logger"
 
+	"github.com/go-gost/llm-gw/internal/capture"
+
 	"llm-api-converter/engine"
 )
 
@@ -29,6 +31,7 @@ type Options struct {
 	Route    string
 	Node     string
 	Sink     Sink
+	Capture  *capture.Manager
 	Logger   logger.Logger
 }
 
@@ -68,6 +71,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 
 	res, err := r.eng.Rewrite(ctx, b, meta)
 	if err != nil {
+		r.captureRewrite(meta, b, nil, res)
 		stage := rewriteStage(meta.Direction, meta.SSEPhase)
 		if r.opts.Sink != nil {
 			r.opts.Sink.AddRewriteError(meta.SID, stage, meta.Direction, meta.SSEPhase, meta.EventIndex)
@@ -87,10 +91,25 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		}).Errorf("rewrite %s: %v", meta.Direction, err)
 		return b, err
 	}
+	r.captureRewrite(meta, b, res.Data, res)
 	if r.opts.Sink != nil {
 		r.opts.Sink.Add(meta.SID, r.opts.Provider, r.opts.Protocol, res)
 	}
 	return res.Data, nil
+}
+
+func (r *Rewriter) captureRewrite(meta engine.Meta, original, rewritten []byte, res engine.Result) {
+	if r.opts.Capture == nil || meta.SID == "" {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(meta.Direction), "request") {
+		if _, ok := r.opts.Capture.Start(meta.SID, r.opts.Route, res.ClientModel); !ok {
+			return
+		}
+		r.opts.Capture.Offer(meta.SID, "request", original, rewritten, "", 0)
+		return
+	}
+	r.opts.Capture.Offer(meta.SID, "response", original, rewritten, meta.SSEPhase, meta.EventIndex)
 }
 
 func inboundProtocol(uri string) string {

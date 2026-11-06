@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-gost/llm-gw/internal/capture"
 )
 
 func newStore(t *testing.T) *Store {
@@ -199,5 +201,39 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 		got.ErrorDirection != want.ErrorDirection || got.SSEPhase != want.SSEPhase ||
 		got.EventIndex != want.EventIndex {
 		t.Fatalf("fields = %+v", got)
+	}
+}
+
+func TestCaptureRoundTripAndCleanup(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	req := Request{ID: "rid", SID: "rid", TS: time.Now().UTC()}
+	if err := s.Insert(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	c := &capture.Capture{
+		RequestOriginal: "in", RequestRewritten: "out",
+		ResponseOriginal: "up", ResponseRewritten: "down",
+		Reason: "rule:1", SSIEvents: 2, CreatedAt: time.Now().UTC(),
+	}
+	if err := s.PutCapture(ctx, "rid", c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetCapture(ctx, "rid")
+	if err != nil || got == nil || got.RequestRewritten != "out" || got.SSIEvents != 2 {
+		t.Fatalf("capture = %+v err=%v", got, err)
+	}
+	row, err := s.Get(ctx, "rid")
+	if err != nil || row == nil || !row.HasCapture || row.Capture == nil {
+		t.Fatalf("request = %+v err=%v", row, err)
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM requests`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Cleanup(ctx, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetCapture(ctx, "rid"); got != nil {
+		t.Fatalf("capture survived cleanup: %+v", got)
 	}
 }

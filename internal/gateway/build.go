@@ -20,6 +20,7 @@ import (
 
 	"llm-api-converter/engine"
 
+	"github.com/go-gost/llm-gw/internal/capture"
 	gwrewriter "github.com/go-gost/llm-gw/internal/rewriter"
 	"github.com/go-gost/llm-gw/internal/stats"
 
@@ -32,11 +33,11 @@ import (
 // buildHopGroup compiles the configured routes into a hop group and emits one
 // hop entry per entrypoint, in declaration order. The FIFO group selector then
 // makes entrypoint order the single precedence rule.
-func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) (hop.Hop, error) {
+func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, error) {
 	if err := registerHeaderRewriter(); err != nil {
 		return nil, err
 	}
-	if err := registerRewriters(cfg, log, facts); err != nil {
+	if err := registerRewriters(cfg, log, facts, captureMgr); err != nil {
 		return nil, err
 	}
 
@@ -296,7 +297,7 @@ func registerHeaderRewriter() error {
 // enabled node). Called before ParseHop because node parsing resolves
 // rewriters from the registry. Routing by node alone is not enough: a node
 // shared by two routes compiles to different APIs and paths per route.
-func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) error {
+func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) error {
 	providers := make(map[string]gwconfig.Provider, len(cfg.Providers))
 	for _, p := range cfg.Providers {
 		providers[p.Name] = p
@@ -338,6 +339,7 @@ func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Fac
 				Route:    r.Name,
 				Node:     n.Name,
 				Sink:     facts,
+				Capture:  captureMgr,
 				Logger:   log,
 			})); err != nil {
 				return fmt.Errorf("register rewriter %s: %w", name, err)

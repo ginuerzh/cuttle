@@ -18,6 +18,7 @@ import (
 
 	xlogger "github.com/go-gost/x/logger"
 
+	"github.com/go-gost/llm-gw/internal/capture"
 	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
@@ -28,9 +29,12 @@ type recordingReloader struct {
 	calls    int
 	attempts int
 	store    *stats.Store
+	capture  *capture.Manager
 }
 
 func (r *recordingReloader) Stats() *stats.Store { return r.store }
+
+func (r *recordingReloader) Capture() *capture.Manager { return r.capture }
 
 func (r *recordingReloader) Reload(c *config.Config) error {
 	r.attempts++
@@ -62,7 +66,10 @@ func newTestAdmin(t *testing.T) (*Server, *recordingReloader, string, *httptest.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	rel := &recordingReloader{store: store}
+	rel := &recordingReloader{
+		store:   store,
+		capture: capture.NewManager(capture.Policy{Mode: "off", MaxBytes: 32768}),
+	}
 	s := New(path, cfg, rel, xlogger.Nop())
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)

@@ -68,6 +68,8 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		}
 	}
 
+	capMgr := capture.NewManager(capturePolicy(cfg.Stats.Capture))
+
 	opts := []handler.Option{
 		handler.RouterOption(router),
 		handler.ServiceOption("llm-gw"),
@@ -75,7 +77,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 	}
 	if store != nil {
 		opts = append(opts, handler.RecordersOption(recorder.RecorderObject{
-			Recorder: stats.NewRecorder(store, facts, log),
+			Recorder: stats.NewRecorder(store, facts, log, capMgr),
 			Record:   xrecorder.RecorderServiceHandler,
 		}))
 	}
@@ -101,7 +103,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		forwarder: fwd,
 		facts:     facts,
 		store:     store,
-		capture:   capture.NewManager(capturePolicy(cfg.Stats.Capture)),
+		capture:   capMgr,
 	}
 	if err := g.apply(cfg); err != nil {
 		if store != nil {
@@ -173,7 +175,7 @@ func (g *Gateway) Reload(cfg *gwconfig.Config) error {
 }
 
 func (g *Gateway) apply(cfg *gwconfig.Config) error {
-	group, err := buildHopGroup(cfg, g.log, g.facts)
+	group, err := buildHopGroup(cfg, g.log, g.facts, g.capture)
 	if err != nil {
 		return err
 	}

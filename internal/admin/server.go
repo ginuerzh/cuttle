@@ -11,6 +11,7 @@ import (
 	"github.com/go-gost/core/logger"
 	xlogger "github.com/go-gost/x/logger"
 
+	"github.com/go-gost/llm-gw/internal/capture"
 	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
@@ -42,6 +43,7 @@ type Server struct {
 	sessions map[string]time.Time
 	probes   map[string]probeResult
 	stats    *stats.Store
+	capture  *capture.Manager
 
 	modelsCache    map[string]modelsCacheEntry
 	modelsInflight map[string]*modelsFlight
@@ -76,6 +78,9 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 	}
 	if sp, ok := r.(interface{ Stats() *stats.Store }); ok {
 		s.stats = sp.Stats()
+	}
+	if cp, ok := r.(interface{ Capture() *capture.Manager }); ok {
+		s.capture = cp.Capture()
 	}
 	if s.stats != nil {
 		if saved, err := s.stats.LoadSessions(context.Background(), time.Now()); err != nil {
@@ -134,6 +139,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/stats/summary", s.handleSummary)
 	api.HandleFunc("GET /api/requests", s.handleRequests)
 	api.HandleFunc("GET /api/requests/{id}", s.handleRequest)
+	api.HandleFunc("GET /api/captures", s.handleListCaptures)
+	api.HandleFunc("POST /api/captures", s.handleCreateCapture)
+	api.HandleFunc("DELETE /api/captures/{id}", s.handleDeleteCapture)
 	api.HandleFunc("GET /api/stats/graph", s.handleGraph)
 	api.HandleFunc("GET /api/topology/positions", s.handleGetTopologyPositions)
 	api.HandleFunc("PUT /api/topology/positions", s.handlePutTopologyPositions)

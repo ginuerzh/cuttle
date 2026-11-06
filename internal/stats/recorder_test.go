@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/go-gost/llm-gw/internal/capture"
 )
 
 func TestRecorderCopiesRewriteFields(t *testing.T) {
@@ -26,7 +28,7 @@ func TestRecorderCopiesRewriteFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := NewRecorder(s, facts, nil).Record(ctx, body); err != nil {
+	if err := NewRecorder(s, facts, nil, nil).Record(ctx, body); err != nil {
 		t.Fatal(err)
 	}
 
@@ -37,5 +39,40 @@ func TestRecorderCopiesRewriteFields(t *testing.T) {
 	if got.InboundProtocol != "anthropic" || got.ErrorStage != "stream_rewrite" ||
 		got.ErrorDirection != "response" || got.SSEPhase != "end" || got.EventIndex != 7 {
 		t.Fatalf("row = %+v", got)
+	}
+}
+
+func TestRecorderCaptureErrorMode(t *testing.T) {
+	s := newStore(t)
+	facts := NewFacts()
+	mgr := capture.NewManager(capture.Policy{Mode: "errors", MaxBytes: 64})
+	rec := NewRecorder(s, facts, nil, mgr)
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		sid    string
+		status int
+		err    string
+	}{
+		{"ok", 200, ""},
+		{"bad", 500, "boom"},
+	} {
+		if _, ok := mgr.Start(tc.sid, "r", "m"); !ok {
+			t.Fatalf("%s not captured", tc.sid)
+		}
+		mgr.Offer(tc.sid, "request", []byte("in"), []byte("out"), "", 0)
+		body, _ := json.Marshal(map[string]any{
+			"sid": tc.sid, "node": "r/p/n", "time": time.Now().UTC(),
+			"http": map[string]any{"statusCode": tc.status}, "err": tc.err,
+		})
+		if err := rec.Record(ctx, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c, _ := s.GetCapture(ctx, "ok"); c != nil {
+		t.Fatalf("successful request kept capture: %+v", c)
+	}
+	if c, _ := s.GetCapture(ctx, "bad"); c == nil || c.RequestRewritten != "out" {
+		t.Fatalf("failed request capture = %+v", c)
 	}
 }

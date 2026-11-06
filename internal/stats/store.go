@@ -4,39 +4,44 @@ package stats
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/go-gost/llm-gw/internal/capture"
 )
 
 // Request is one recorded request. It deliberately has no header/body fields.
 type Request struct {
-	ID              string    `json:"requestId"`
-	SID             string    `json:"sid"`
-	TS              time.Time `json:"ts"`
-	Model           string    `json:"model"`
-	ClientModel     string    `json:"clientModel,omitempty"`
-	Provider        string    `json:"provider"`
-	Route           string    `json:"route,omitempty"`
-	Node            string    `json:"node,omitempty"`
-	Protocol        string    `json:"protocol"`
-	InboundProtocol string    `json:"inboundProtocol,omitempty"`
-	ErrorStage      string    `json:"errorStage,omitempty"`
-	ErrorDirection  string    `json:"errorDirection,omitempty"`
-	SSEPhase        string    `json:"ssePhase,omitempty"`
-	EventIndex      int       `json:"eventIndex,omitempty"`
-	Effort          string    `json:"effort"`
-	Status          int       `json:"status"`
-	Error           string    `json:"error,omitempty"`
-	DurationMS      int64     `json:"durationMs"`
-	InputTokens     int64     `json:"inputTokens"`
-	OutputTokens    int64     `json:"outputTokens"`
-	CachedTokens    int64     `json:"cachedTokens"`
-	Stream          bool      `json:"stream"`
-	BytesIn         uint64    `json:"bytesIn"`
-	BytesOut        uint64    `json:"bytesOut"`
+	ID              string           `json:"requestId"`
+	SID             string           `json:"sid"`
+	TS              time.Time        `json:"ts"`
+	Model           string           `json:"model"`
+	ClientModel     string           `json:"clientModel,omitempty"`
+	Provider        string           `json:"provider"`
+	Route           string           `json:"route,omitempty"`
+	Node            string           `json:"node,omitempty"`
+	Protocol        string           `json:"protocol"`
+	InboundProtocol string           `json:"inboundProtocol,omitempty"`
+	ErrorStage      string           `json:"errorStage,omitempty"`
+	ErrorDirection  string           `json:"errorDirection,omitempty"`
+	SSEPhase        string           `json:"ssePhase,omitempty"`
+	EventIndex      int              `json:"eventIndex,omitempty"`
+	Effort          string           `json:"effort"`
+	Status          int              `json:"status"`
+	Error           string           `json:"error,omitempty"`
+	DurationMS      int64            `json:"durationMs"`
+	InputTokens     int64            `json:"inputTokens"`
+	OutputTokens    int64            `json:"outputTokens"`
+	CachedTokens    int64            `json:"cachedTokens"`
+	Stream          bool             `json:"stream"`
+	BytesIn         uint64           `json:"bytesIn"`
+	BytesOut        uint64           `json:"bytesOut"`
+	HasCapture      bool             `json:"hasCapture,omitempty"`
+	Capture         *capture.Capture `json:"capture,omitempty"`
 }
 
 // Filter selects requests.
@@ -49,6 +54,7 @@ type Filter struct {
 	Route       string
 	Status      int
 	OnlyErrors  bool
+	Captured    bool
 	Limit       int
 	Offset      int
 }
@@ -143,6 +149,22 @@ func (s *Store) migrate() error {
 			node_id TEXT PRIMARY KEY,
 			x REAL NOT NULL,
 			y REAL NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS request_captures (
+			request_id TEXT PRIMARY KEY,
+			request_original TEXT NOT NULL DEFAULT '',
+			request_rewritten TEXT NOT NULL DEFAULT '',
+			response_original TEXT NOT NULL DEFAULT '',
+			response_rewritten TEXT NOT NULL DEFAULT '',
+			sse_first_original TEXT NOT NULL DEFAULT '',
+			sse_first_rewritten TEXT NOT NULL DEFAULT '',
+			sse_last_original TEXT NOT NULL DEFAULT '',
+			sse_last_rewritten TEXT NOT NULL DEFAULT '',
+			request_sha256 TEXT NOT NULL DEFAULT '',
+			response_sha256 TEXT NOT NULL DEFAULT '',
+			sse_events INTEGER NOT NULL DEFAULT 0,
+			reason TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS rollups (
 			bucket TEXT NOT NULL,
@@ -370,7 +392,8 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		effort, status, error,
-		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
+		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
+		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, max(f.Offset, 0))
 
@@ -387,7 +410,8 @@ func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		effort, status, error,
-		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
+		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
+		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests WHERE request_id = ?`
 	rows, err := s.db.QueryContext(ctx, q, id)
 	if err != nil {
@@ -402,7 +426,70 @@ func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 	if len(list) == 0 {
 		return nil, nil
 	}
-	return &list[0], nil
+	row := &list[0]
+	c, err := s.GetCapture(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	row.Capture = c
+	row.HasCapture = c != nil
+	return row, nil
+}
+
+// PutCapture stores or replaces the bounded capture for one request.
+func (s *Store) PutCapture(ctx context.Context, requestID string, c *capture.Capture) error {
+	if requestID == "" || c == nil {
+		return nil
+	}
+	created := c.CreatedAt
+	if created.IsZero() {
+		created = time.Now()
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO request_captures
+		(request_id, request_original, request_rewritten, response_original, response_rewritten,
+		 sse_first_original, sse_first_rewritten, sse_last_original, sse_last_rewritten,
+		 request_sha256, response_sha256, sse_events, reason, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(request_id) DO UPDATE SET
+			request_original=excluded.request_original,
+			request_rewritten=excluded.request_rewritten,
+			response_original=excluded.response_original,
+			response_rewritten=excluded.response_rewritten,
+			sse_first_original=excluded.sse_first_original,
+			sse_first_rewritten=excluded.sse_first_rewritten,
+			sse_last_original=excluded.sse_last_original,
+			sse_last_rewritten=excluded.sse_last_rewritten,
+			request_sha256=excluded.request_sha256,
+			response_sha256=excluded.response_sha256,
+			sse_events=excluded.sse_events,
+			reason=excluded.reason,
+			created_at=excluded.created_at`,
+		requestID, c.RequestOriginal, c.RequestRewritten, c.ResponseOriginal, c.ResponseRewritten,
+		c.SSEFirstOriginal, c.SSEFirstRewritten, c.SSELastOriginal, c.SSELastRewritten,
+		c.RequestSHA256, c.ResponseSHA256, c.SSIEvents, c.Reason, created.UnixMilli())
+	return err
+}
+
+// GetCapture returns the capture for one request, or nil when absent.
+func (s *Store) GetCapture(ctx context.Context, requestID string) (*capture.Capture, error) {
+	var c capture.Capture
+	var created int64
+	err := s.db.QueryRowContext(ctx, `SELECT request_original, request_rewritten,
+		response_original, response_rewritten, sse_first_original, sse_first_rewritten,
+		sse_last_original, sse_last_rewritten, request_sha256, response_sha256,
+		sse_events, reason, created_at
+		FROM request_captures WHERE request_id = ?`, requestID).Scan(
+		&c.RequestOriginal, &c.RequestRewritten, &c.ResponseOriginal, &c.ResponseRewritten,
+		&c.SSEFirstOriginal, &c.SSEFirstRewritten, &c.SSELastOriginal, &c.SSELastRewritten,
+		&c.RequestSHA256, &c.ResponseSHA256, &c.SSIEvents, &c.Reason, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.CreatedAt = time.UnixMilli(created).UTC()
+	return &c, nil
 }
 
 func scanRequests(rows *sql.Rows) ([]Request, error) {
@@ -412,17 +499,19 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var ts int64
 		var stream int
 		var bytesIn, bytesOut int64
+		var hasCapture int
 		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel,
 			&r.Provider, &r.Route, &r.Node, &r.Protocol,
 			&r.InboundProtocol, &r.ErrorStage, &r.ErrorDirection, &r.SSEPhase, &r.EventIndex,
 			&r.Effort, &r.Status, &r.Error, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
-			&stream, &bytesIn, &bytesOut); err != nil {
+			&stream, &bytesIn, &bytesOut, &hasCapture); err != nil {
 			return nil, err
 		}
 		r.TS = time.UnixMilli(ts).UTC()
 		r.Stream = stream != 0
 		r.BytesIn = uint64(bytesIn)
 		r.BytesOut = uint64(bytesOut)
+		r.HasCapture = hasCapture != 0
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -516,6 +605,10 @@ func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore time.
 		requestsBefore.UnixMilli()); err != nil {
 		return err
 	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM request_captures WHERE created_at < ?`,
+		requestsBefore.UnixMilli()); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM rollups WHERE bucket < ?`,
 		rollupsBefore.UTC().Format(time.RFC3339))
 	return err
@@ -569,6 +662,9 @@ func (f Filter) where() (string, []any) {
 	}
 	if f.OnlyErrors {
 		conds = append(conds, "(status >= 400 OR error != '')")
+	}
+	if f.Captured {
+		conds = append(conds, "EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)")
 	}
 	if f.Status > 0 {
 		conds = append(conds, "status = ?")
