@@ -104,6 +104,50 @@ func TestRecorderSkipsTTFTForNonStreaming(t *testing.T) {
 	}
 }
 
+func TestRecorderClampsStreamTTFT(t *testing.T) {
+	start := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name     string
+		first    time.Time
+		duration time.Duration
+		want     int64
+	}{
+		{"before-start", start.Add(-time.Second), 2 * time.Second, 0},
+		{"after-end", start.Add(3 * time.Second), 2 * time.Second, 2000},
+		{"sub-millisecond", start.Add(500 * time.Microsecond), time.Second, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newStore(t)
+			facts := NewFacts()
+			ctx := context.Background()
+			sid := "ttft-" + tc.name
+
+			facts.Add(sid, "", "", engine.Result{Stream: true})
+			facts.MarkFirstResponse(sid, tc.first)
+			body, err := json.Marshal(map[string]any{
+				"sid": sid, "node": "route/provider/node",
+				"time": start, "duration": tc.duration,
+				"http": map[string]any{"statusCode": 200},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := NewRecorder(s, facts, nil, nil).Record(ctx, body); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := s.Get(ctx, sid)
+			if err != nil || got == nil {
+				t.Fatalf("get = %+v err=%v", got, err)
+			}
+			if got.TTFTMS != tc.want {
+				t.Fatalf("ttft = %d, want %d", got.TTFTMS, tc.want)
+			}
+		})
+	}
+}
+
 func TestRecorderUsesUpstreamErrorSummary(t *testing.T) {
 	s := newStore(t)
 	facts := NewFacts()

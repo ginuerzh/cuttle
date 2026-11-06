@@ -156,7 +156,7 @@ func TestStatsRecordsStreamTTFT(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
 		f.Flush()
-		time.Sleep(30 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}\n\n")
 		f.Flush()
 	}))
@@ -187,5 +187,8 @@ func TestStatsRecordsStreamTTFT(t *testing.T) {
 	}
 	if row.TTFTMS <= 0 || row.TTFTMS > row.DurationMS {
 		t.Fatalf("ttft = %d, duration = %d", row.TTFTMS, row.DurationMS)
+	}
+	if row.TTFTMS >= 250 {
+		t.Fatalf("ttft = %d, want the first event, not the last", row.TTFTMS)
 	}
 }

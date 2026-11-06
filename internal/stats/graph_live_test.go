@@ -17,6 +17,7 @@ func TestAggregatorMatchesGraphWithFilter(t *testing.T) {
 		{ID: "1", TS: base, Route: "strong", Node: "n1", Provider: "p", ClientModel: "gpt-4.5", Status: 200, DurationMS: 10, InputTokens: 1, OutputTokens: 2},
 		{ID: "2", TS: base.Add(time.Minute), Route: "strong", Node: "n2", Provider: "p", ClientModel: "gpt-4.5", Status: 500, Error: "boom", DurationMS: 30},
 		{ID: "3", TS: base.Add(2 * time.Minute), Provider: "q", ClientModel: "other", Status: 200, DurationMS: 20},
+		{ID: "4", TS: base.Add(3 * time.Minute), Route: "strong", Node: "n1", Provider: "p", ClientModel: "gpt-4.5", Status: 200, DurationMS: 1000, TTFTMS: 200, OutputTokens: 80, Stream: true},
 	}
 	for _, r := range rows {
 		if err := s.Insert(context.Background(), r); err != nil {
@@ -43,6 +44,9 @@ func TestAggregatorMatchesGraphWithFilter(t *testing.T) {
 	got := agg.Metrics(resolve, include, GraphMetrics{}, true)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("aggregator = %#v, want %#v", got, want)
+	}
+	if got.Nodes["node:n1"].OutputTokensPerSecond <= 0 {
+		t.Fatalf("node:n1 rate = %v, want positive", got.Nodes["node:n1"].OutputTokensPerSecond)
 	}
 }
 
