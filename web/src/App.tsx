@@ -31,8 +31,8 @@ import {
   SunOutlined,
   TagOutlined,
 } from '@ant-design/icons';
-import { getConfig, getGraph, logout, UnauthorizedError } from './api/client';
-import type { ConfigResponse, EdgeMetrics, ErrorRow, GraphMetrics, NodeMetrics } from './api/types';
+import { getConfig, getGraph, getHealth, logout, UnauthorizedError } from './api/client';
+import type { ConfigResponse, EdgeMetrics, ErrorRow, GraphMetrics, Health, NodeMetrics } from './api/types';
 import { Login } from './pages/Login';
 import { EntrypointsPage } from './pages/Entrypoints';
 import { ProvidersPage } from './pages/Providers';
@@ -41,6 +41,7 @@ import { RequestsPage } from './pages/Requests';
 import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
+import { VersionFooter } from './components/VersionFooter';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
 import { errorMatchesNodeId } from './pages/selection';
@@ -165,12 +166,14 @@ function Sidebar({
   themeMode,
   onThemeMode,
   onLogout,
+  health,
 }: {
   page: Page;
   onPage: (page: Page) => void;
   themeMode: ThemeMode;
   onThemeMode: (mode: ThemeMode) => void;
   onLogout: () => void;
+  health: Health | null;
 }) {
   const { t, lang, setLang } = useI18n();
   const themeLabel = t(THEME_ITEMS.find((item) => item.key === themeMode)?.label ?? '跟随系统');
@@ -216,6 +219,7 @@ function Sidebar({
           <Button block onClick={onLogout}>
             {t('退出')}
           </Button>
+          <VersionFooter health={health} />
         </Space>
       </div>
     </div>
@@ -225,6 +229,7 @@ function Sidebar({
 export default function App() {
   const [session, setSession] = useState<Session>('unknown');
   const [config, setConfig] = useState<ConfigResponse | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
   const [mode, setMode] = useState<Mode>('monitor');
   const [range, setRange] = useState('1h');
@@ -255,6 +260,18 @@ export default function App() {
   useEffect(() => {
     void loadConfig();
   }, [loadConfig]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getHealth()
+      .then((next) => {
+        if (!cancelled) setHealth(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleLogout = useCallback(async () => {
     await logout().catch(() => undefined);
@@ -368,6 +385,7 @@ export default function App() {
             themeMode={themeMode}
             onThemeMode={setThemeMode}
             onLogout={() => void handleLogout()}
+            health={health}
           />
         </Drawer>
 

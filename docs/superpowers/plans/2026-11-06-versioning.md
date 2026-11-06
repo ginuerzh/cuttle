@@ -255,7 +255,7 @@ git commit -m "feat(version): report the build identity"
 - Consumes: `version.Current()` from Task 1.
 - Produces: `GET /api/health` fields `version`, `commit`, `builtAt`; web `Health{ok, version, commit?, builtAt?}`; `getHealth()`, `versionLabel(health)`, `versionTitle(health)`, `VersionFooter({health})`.
 
-- [ ] **Step 1: Write the failing health test**
+- [x] **Step 1: Write the failing health test**
 
 Create `internal/admin/health_test.go`:
 
@@ -299,13 +299,13 @@ func TestHealthReportsBuildIdentity(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the health test to verify it fails**
+- [x] **Step 2: Run the health test to verify it fails**
 
 Run: `GOWORK=off go test ./internal/admin -run TestHealthReportsBuildIdentity -count=1`
 
 Expected: FAIL because `version`, `commit`, and `builtAt` are absent from the payload.
 
-- [ ] **Step 3: Implement the health payload**
+- [x] **Step 3: Implement the health payload**
 
 In `internal/admin/server.go`, import `internal/version` and replace
 `handleHealth` with a response struct:
@@ -329,13 +329,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-- [ ] **Step 4: Run the health test to verify it passes**
+- [x] **Step 4: Run the health test to verify it passes**
 
 Run: `GOWORK=off go test ./internal/admin -run TestHealthReportsBuildIdentity -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing web label test**
+- [x] **Step 5: Write the failing web label test**
 
 Create `web/src/version.test.ts`:
 
@@ -369,13 +369,13 @@ describe('versionTitle', () => {
 });
 ```
 
-- [ ] **Step 6: Run the web test to verify it fails**
+- [x] **Step 6: Run the web test to verify it fails**
 
 Run: `cd web && npm test -- src/version.test.ts`
 
 Expected: FAIL because `./version` does not exist.
 
-- [ ] **Step 7: Add the web types, client, and label helpers**
+- [x] **Step 7: Add the web types, client, and label helpers**
 
 In `web/src/api/types.ts`, add:
 
@@ -421,13 +421,13 @@ export function versionTitle(health: Health): string | undefined {
 }
 ```
 
-- [ ] **Step 8: Run the web label test to verify it passes**
+- [x] **Step 8: Run the web label test to verify it passes**
 
 Run: `cd web && npm test -- src/version.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 9: Add the failing footer test**
+- [x] **Step 9: Add the failing footer test**
 
 Create `web/src/components/VersionFooter.test.tsx`:
 
@@ -451,13 +451,13 @@ describe('VersionFooter', () => {
 });
 ```
 
-- [ ] **Step 10: Run the footer test to verify it fails**
+- [x] **Step 10: Run the footer test to verify it fails**
 
 Run: `cd web && npm test -- src/components/VersionFooter.test.tsx`
 
 Expected: FAIL because the component does not exist.
 
-- [ ] **Step 11: Implement the footer and wire it into the sidebar**
+- [x] **Step 11: Implement the footer and wire it into the sidebar**
 
 Create `web/src/components/VersionFooter.tsx`:
 
@@ -490,20 +490,20 @@ In `web/src/App.tsx`:
 - Inside the sidebar footer `Space`, after the logout button, render
   `<VersionFooter health={health} />`.
 
-- [ ] **Step 12: Run the web gate**
+- [x] **Step 12: Run the web gate**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 
 Expected: all Vitest files pass, TypeScript passes, Vite builds into
 `internal/admin/dist` (git-ignored, not committed).
 
-- [ ] **Step 13: Run the Go gate for the touched packages**
+- [x] **Step 13: Run the Go gate for the touched packages**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 14: Fill the Implementation record and commit**
+- [x] **Step 14: Fill the Implementation record and commit**
 
 ```bash
 git add internal/admin/server.go internal/admin/health_test.go \
@@ -513,13 +513,13 @@ git add internal/admin/server.go internal/admin/health_test.go \
 git commit -m "feat(admin): expose and display the build version"
 ```
 
-**Implementation record** (fill after completion):
-- Date/status:
-- Repository + commit SHA:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+**Implementation record**:
+- Date/status: 2026-11-06 / complete
+- Repository + commit SHA: `llm-gw` @ (recorded in the follow-up docs commit)
+- Files changed: `internal/admin/server.go`, `internal/admin/health_test.go`, `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/version.ts`, `web/src/version.test.ts`, `web/src/components/VersionFooter.tsx`, `web/src/components/VersionFooter.test.tsx`, `web/src/App.tsx`, plan
+- Tests/commands and results: health test RED (`Version:""`) then PASS; `version.test.ts` RED (missing module) then 5 PASS; footer test RED (missing component) then 2 PASS; `cd web && npm test` 103 PASS; `npx tsc --noEmit` PASS; `npm run build` PASS; `GOWORK=off go test ./internal/admin -count=1` PASS.
+- Review findings and fixes: none.
+- Deferred items/limitations: UI placement and wrapping were verified by Vitest, TypeScript and the production build only; the repository has no browser visual regression tests.
 
 ---
 

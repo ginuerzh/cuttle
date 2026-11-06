@@ -14,6 +14,7 @@ import (
 	"github.com/go-gost/llm-gw/internal/capture"
 	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/go-gost/llm-gw/internal/version"
 )
 
 // Reloader applies a new configuration to the data plane.
@@ -159,8 +160,21 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+type healthResponse struct {
+	OK      bool   `json:"ok"`
+	Version string `json:"version"`
+	Commit  string `json:"commit,omitempty"`
+	BuiltAt string `json:"builtAt,omitempty"`
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	info := version.Current()
+	writeJSON(w, http.StatusOK, healthResponse{
+		OK:      true,
+		Version: info.Version,
+		Commit:  info.Commit,
+		BuiltAt: info.BuiltAt,
+	})
 }
 
 func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {

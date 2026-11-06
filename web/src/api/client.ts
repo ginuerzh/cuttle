@@ -1,4 +1,4 @@
-import type { CaptureRule, ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, TopologyPosition } from './types';
+import type { CaptureRule, ConfigResponse, Entrypoint, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -58,6 +58,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     return undefined as T;
   }
   return JSON.parse(text) as T;
+}
+
+export function getHealth(): Promise<Health> {
+  return request<Health>('GET', '/api/health');
 }
 
 export async function getConfig(): Promise<ConfigResponse> {

@@ -13,6 +13,13 @@ export interface HealthConfig {
   timeout?: string;
 }
 
+export interface Health {
+  ok: boolean;
+  version: string;
+  commit?: string;
+  builtAt?: string;
+}
+
 export interface ProbeResult {
   ok: boolean;
   status?: number;
