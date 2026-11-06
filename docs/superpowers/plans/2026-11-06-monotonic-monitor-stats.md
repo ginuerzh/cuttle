@@ -147,7 +147,7 @@ git commit -m "feat(stats): add incremental graph aggregator and rowid cursor"
 
 **Implementation record (fill after completion):**
 - Date/status: 2026-11-06 — complete.
-- Repo + commit: llm-gw `feat/monotonic-monitor` `8fb86ca1`.
+- Repo + commit: llm-gw `feat/monotonic-monitor` `b034b262` (code); record finalized in the follow-up `docs(plan)` commit.
 - Files changed: `internal/stats/graph.go`, `internal/stats/graph_live_test.go`, `docs/superpowers/specs/2026-11-06-monotonic-monitor-stats-design.md`, `docs/superpowers/plans/2026-11-06-monotonic-monitor-stats.md`.
 - Tests/commands and results: `GOWORK=off go test ./internal/stats -run 'TestAggregator|TestGraphAggregate|TestForEachRequestAfter|TestGraphWindowBoundaries' -count=1` → PASS; `GOWORK=off go test ./internal/stats -count=1` → PASS.
 - Review findings and fixes: Refactored `GraphWithFilter` onto the same aggregator as the live path; kept exact percentile semantics and the 20-row error cap; cursor scans all rows above the high-water mark so out-of-window rows cannot stall it; bounded request-ID dedup ring.
