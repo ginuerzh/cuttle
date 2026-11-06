@@ -13,25 +13,30 @@ import (
 
 // Request is one recorded request. It deliberately has no header/body fields.
 type Request struct {
-	ID           string    `json:"requestId"`
-	SID          string    `json:"sid"`
-	TS           time.Time `json:"ts"`
-	Model        string    `json:"model"`
-	ClientModel  string    `json:"clientModel,omitempty"`
-	Provider     string    `json:"provider"`
-	Route        string    `json:"route,omitempty"`
-	Node         string    `json:"node,omitempty"`
-	Protocol     string    `json:"protocol"`
-	Effort       string    `json:"effort"`
-	Status       int       `json:"status"`
-	Error        string    `json:"error,omitempty"`
-	DurationMS   int64     `json:"durationMs"`
-	InputTokens  int64     `json:"inputTokens"`
-	OutputTokens int64     `json:"outputTokens"`
-	CachedTokens int64     `json:"cachedTokens"`
-	Stream       bool      `json:"stream"`
-	BytesIn      uint64    `json:"bytesIn"`
-	BytesOut     uint64    `json:"bytesOut"`
+	ID              string    `json:"requestId"`
+	SID             string    `json:"sid"`
+	TS              time.Time `json:"ts"`
+	Model           string    `json:"model"`
+	ClientModel     string    `json:"clientModel,omitempty"`
+	Provider        string    `json:"provider"`
+	Route           string    `json:"route,omitempty"`
+	Node            string    `json:"node,omitempty"`
+	Protocol        string    `json:"protocol"`
+	InboundProtocol string    `json:"inboundProtocol,omitempty"`
+	ErrorStage      string    `json:"errorStage,omitempty"`
+	ErrorDirection  string    `json:"errorDirection,omitempty"`
+	SSEPhase        string    `json:"ssePhase,omitempty"`
+	EventIndex      int       `json:"eventIndex,omitempty"`
+	Effort          string    `json:"effort"`
+	Status          int       `json:"status"`
+	Error           string    `json:"error,omitempty"`
+	DurationMS      int64     `json:"durationMs"`
+	InputTokens     int64     `json:"inputTokens"`
+	OutputTokens    int64     `json:"outputTokens"`
+	CachedTokens    int64     `json:"cachedTokens"`
+	Stream          bool      `json:"stream"`
+	BytesIn         uint64    `json:"bytesIn"`
+	BytesOut        uint64    `json:"bytesOut"`
 }
 
 // Filter selects requests.
@@ -156,9 +161,14 @@ func (s *Store) migrate() error {
 		}
 	}
 	return s.ensureColumns("requests", map[string]string{
-		"route":        "TEXT NOT NULL DEFAULT ''",
-		"client_model": "TEXT NOT NULL DEFAULT ''",
-		"node":         "TEXT NOT NULL DEFAULT ''",
+		"route":            "TEXT NOT NULL DEFAULT ''",
+		"client_model":     "TEXT NOT NULL DEFAULT ''",
+		"node":             "TEXT NOT NULL DEFAULT ''",
+		"inbound_protocol": "TEXT NOT NULL DEFAULT ''",
+		"error_stage":      "TEXT NOT NULL DEFAULT ''",
+		"error_direction":  "TEXT NOT NULL DEFAULT ''",
+		"sse_phase":        "TEXT NOT NULL DEFAULT ''",
+		"event_index":      "INTEGER NOT NULL DEFAULT 0",
 	})
 }
 
@@ -318,11 +328,13 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 
 	_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO requests
 		(request_id, sid, ts, model, client_model, provider, route, node,
-		 protocol, effort, status, error, duration_ms,
+		 protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
+		 effort, status, error, duration_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node,
-		r.Protocol, r.Effort, r.Status, r.Error, r.DurationMS,
+		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
+		r.Effort, r.Status, r.Error, r.DurationMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut))
 	if err != nil {
 		return err
@@ -356,7 +368,8 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 		limit = 100
 	}
 	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
-		protocol, effort, status, error,
+		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
+		effort, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, max(f.Offset, 0))
@@ -372,7 +385,8 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 // Get returns one request by id.
 func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
-		protocol, effort, status, error,
+		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
+		effort, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out
 		FROM requests WHERE request_id = ?`
 	rows, err := s.db.QueryContext(ctx, q, id)
@@ -399,8 +413,9 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var stream int
 		var bytesIn, bytesOut int64
 		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel,
-			&r.Provider, &r.Route, &r.Node, &r.Protocol, &r.Effort,
-			&r.Status, &r.Error, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
+			&r.Provider, &r.Route, &r.Node, &r.Protocol,
+			&r.InboundProtocol, &r.ErrorStage, &r.ErrorDirection, &r.SSEPhase, &r.EventIndex,
+			&r.Effort, &r.Status, &r.Error, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut); err != nil {
 			return nil, err
 		}

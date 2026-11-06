@@ -10,6 +10,7 @@ import (
 	xlogger "github.com/go-gost/x/logger"
 
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	gwrewriter "github.com/go-gost/llm-gw/internal/rewriter"
 )
 
 func testConfig(upstreamURL string) *gwconfig.Config {
@@ -120,5 +121,27 @@ func TestGatewayPassesThroughUnmappedPathWithoutKey(t *testing.T) {
 	}
 	if gotAuth != "" {
 		t.Fatalf("authorization = %q, want empty for a keyless provider", gotAuth)
+	}
+}
+
+func TestGatewayRequestIDHeader(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	gw := startGateway(t, testConfig(upstream.URL))
+	resp, err := http.Post("http://"+gw.Addr().String()+"/v1/chat/completions",
+		"application/json", strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	if id := resp.Header.Get(gwrewriter.RequestIDHeaderName); id == "" {
+		t.Fatalf("%s header is empty", gwrewriter.RequestIDHeaderName)
 	}
 }

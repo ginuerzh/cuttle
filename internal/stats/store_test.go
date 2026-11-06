@@ -176,3 +176,28 @@ func TestTopologyPositions(t *testing.T) {
 		t.Fatalf("cleared positions = %+v, want empty", got)
 	}
 }
+
+func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	want := Request{
+		ID: "rid", SID: "rid", TS: time.Now().UTC(),
+		InboundProtocol: "anthropic",
+		ErrorStage:      "stream_rewrite",
+		ErrorDirection:  "response",
+		SSEPhase:        "end",
+		EventIndex:      7,
+	}
+	if err := s.Insert(ctx, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(ctx, "rid")
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.InboundProtocol != want.InboundProtocol || got.ErrorStage != want.ErrorStage ||
+		got.ErrorDirection != want.ErrorDirection || got.SSEPhase != want.SSEPhase ||
+		got.EventIndex != want.EventIndex {
+		t.Fatalf("fields = %+v", got)
+	}
+}

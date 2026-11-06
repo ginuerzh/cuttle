@@ -11,16 +11,21 @@ const factTTL = 10 * time.Minute
 
 // Fact holds the per-request facts observed by the protocol engine.
 type Fact struct {
-	Provider     string
-	Protocol     string
-	ClientModel  string
-	Model        string
-	Effort       string
-	InputTokens  int
-	OutputTokens int
-	CachedTokens int
-	Stream       bool
-	Updated      time.Time
+	Provider        string
+	Protocol        string
+	InboundProtocol string
+	ErrorStage      string
+	ErrorDirection  string
+	SSEPhase        string
+	EventIndex      int
+	ClientModel     string
+	Model           string
+	Effort          string
+	InputTokens     int
+	OutputTokens    int
+	CachedTokens    int
+	Stream          bool
+	Updated         time.Time
 }
 
 // Facts correlates engine observations with the recorder by session id.
@@ -72,6 +77,37 @@ func (f *Facts) Add(sid, provider, protocol string, res engine.Result) {
 			delete(f.m, k)
 		}
 	}
+}
+
+// AddInboundProtocol records the client-facing protocol for sid.
+func (f *Facts) AddInboundProtocol(sid, protocol string) {
+	if f == nil || sid == "" || protocol == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	fact := f.m[sid]
+	fact.InboundProtocol = protocol
+	fact.Updated = time.Now()
+	f.m[sid] = fact
+}
+
+// AddRewriteError records where a body rewrite failed.
+func (f *Facts) AddRewriteError(sid, stage, direction, ssePhase string, eventIndex int) {
+	if f == nil || sid == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	fact := f.m[sid]
+	fact.ErrorStage = stage
+	fact.ErrorDirection = direction
+	fact.SSEPhase = ssePhase
+	fact.EventIndex = eventIndex
+	fact.Updated = time.Now()
+	f.m[sid] = fact
 }
 
 // Take removes and returns the fact for sid.

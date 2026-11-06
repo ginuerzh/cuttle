@@ -33,6 +33,9 @@ import (
 // hop entry per entrypoint, in declaration order. The FIFO group selector then
 // makes entrypoint order the single precedence rule.
 func buildHopGroup(cfg *gwconfig.Config, log logger.Logger, facts *stats.Facts) (hop.Hop, error) {
+	if err := registerHeaderRewriter(); err != nil {
+		return nil, err
+	}
 	if err := registerRewriters(cfg, log, facts); err != nil {
 		return nil, err
 	}
@@ -217,7 +220,10 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 				RewriteURL:          rewrites,
 				RewriteRequestBody:  bodyRewrites,
 				RewriteResponseBody: bodyRewrites,
-				FailCodes:           "429,5xx",
+				RewriteResponseHeader: []xconfig.HTTPHeaderRewriteConfig{{
+					Rewriter: gwrewriter.RequestIDRewriterName,
+				}},
+				FailCodes: "429,5xx",
 			},
 		}
 		nodes = append(nodes, nodeCfg)
@@ -277,6 +283,15 @@ func rewriterName(route, node string) string {
 	return "r/" + route + "/" + node
 }
 
+func registerHeaderRewriter() error {
+	name := gwrewriter.RequestIDRewriterName
+	registry.RewriterRegistry().Unregister(name)
+	if err := registry.RewriterRegistry().Register(name, &gwrewriter.HeaderRewriter{}); err != nil {
+		return fmt.Errorf("register header rewriter %s: %w", name, err)
+	}
+	return nil
+}
+
 // registerRewriters installs one in-process rewriter per (route, referenced
 // enabled node). Called before ParseHop because node parsing resolves
 // rewriters from the registry. Routing by node alone is not enough: a node
@@ -317,7 +332,14 @@ func registerRewriters(cfg *gwconfig.Config, log logger.Logger, facts *stats.Fac
 			protocol := string(target.api)
 
 			registry.RewriterRegistry().Unregister(name)
-			if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(target), p.Name, protocol, facts)); err != nil {
+			if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(target), gwrewriter.Options{
+				Provider: p.Name,
+				Protocol: protocol,
+				Route:    r.Name,
+				Node:     n.Name,
+				Sink:     facts,
+				Logger:   log,
+			})); err != nil {
 				return fmt.Errorf("register rewriter %s: %w", name, err)
 			}
 		}

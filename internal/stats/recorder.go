@@ -82,6 +82,11 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 			req.Provider = fact.Provider
 		}
 		req.Protocol = fact.Protocol
+		req.InboundProtocol = fact.InboundProtocol
+		req.ErrorStage = fact.ErrorStage
+		req.ErrorDirection = fact.ErrorDirection
+		req.SSEPhase = fact.SSEPhase
+		req.EventIndex = fact.EventIndex
 		req.ClientModel = fact.ClientModel
 		req.Model = fact.Model
 		req.Effort = fact.Effort
