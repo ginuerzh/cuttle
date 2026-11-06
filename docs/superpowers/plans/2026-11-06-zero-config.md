@@ -618,10 +618,8 @@ One fix pass was applied.
   and after restart.
 - **Deferred minors:** generated-password stderr write errors are still
   ignored; the e2e mirrors `main`'s reset sequence instead of executing `run`
-  itself; the manual zero-topology browser pass was not performed; the SDD
-  ledger has duplicate completion histories from the manual ledger plus the
-  task-done script.
+  itself; the manual zero-topology browser pass was not performed.
 - **Verification:** `GOWORK=/tmp/llm-gw-work/go.work go test ./... -count=1`
   PASS; `go vet ./...` PASS; web `npm test` 86/86 PASS, `npx tsc --noEmit` PASS,
   `npm run build` PASS; Docker fresh-volume and legacy-mount smoke tests PASS.
-- **Commits:** llm-gw `<sha>`; workspace `<sha>`.
+- **Commits:** llm-gw `f18b9bac`; workspace `f6a4279`.
