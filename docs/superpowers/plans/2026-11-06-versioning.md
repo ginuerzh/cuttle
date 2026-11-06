@@ -535,7 +535,7 @@ git commit -m "feat(admin): expose and display the build version"
 - Consumes: the `internal/version` link-time variables from Task 1.
 - Produces: Docker build args `VERSION`, `COMMIT`, `BUILT_AT`; CI-computed versions.
 
-- [ ] **Step 1: Add the build args to the Dockerfile**
+- [x] **Step 1: Add the build args to the Dockerfile**
 
 In the `golang:1.27-alpine` build stage, after `ARG TARGETARCH`:
 
@@ -552,7 +552,7 @@ shell quoting unambiguous):
     go build -trimpath -ldflags="-s -w -X github.com/go-gost/llm-gw/internal/version.Version=${VERSION} -X github.com/go-gost/llm-gw/internal/version.Commit=${COMMIT} -X github.com/go-gost/llm-gw/internal/version.BuildDate=${BUILT_AT}" -o /out/llm-gw .
 ```
 
-- [ ] **Step 2: Verify a local build with injected metadata**
+- [x] **Step 2: Verify a local build with injected metadata**
 
 Run:
 
@@ -565,7 +565,7 @@ GOWORK=off go build \
 
 Expected: `llm-gw v9.9.9-test (deadbee, 2026-11-06T10:00:00Z)`.
 
-- [ ] **Step 3: Add the version step to the workflow**
+- [x] **Step 3: Add the version step to the workflow**
 
 In `.github/workflows/docker.yml`, before `Build and push`, add:
 
@@ -592,7 +592,7 @@ Add to the `Build and push` step:
             BUILT_AT=${{ steps.version.outputs.built_at }}
 ```
 
-- [ ] **Step 4: Document the version surfaces and build args**
+- [x] **Step 4: Document the version surfaces and build args**
 
 In `README.md`, add a `### Versioning` subsection after `### Build` covering
 `llm-gw version`, the three version forms, the sidebar/health surfaces, and a
@@ -601,7 +601,7 @@ local build with explicit ldflags.
 In `DOCKER.md`, show a build with the three build args and note that `v*` tags
 publish the semver image tags while `main` builds report `main-<sha7>`.
 
-- [ ] **Step 5: Run the full local gates**
+- [x] **Step 5: Run the full local gates**
 
 Run:
 
@@ -614,20 +614,20 @@ cd web && npm test && npx tsc --noEmit && npm run build
 
 Expected: all pass.
 
-- [ ] **Step 6: Fill the Implementation record and commit**
+- [x] **Step 6: Fill the Implementation record and commit**
 
 ```bash
 git add Dockerfile .github/workflows/docker.yml README.md DOCKER.md docs/superpowers/plans/2026-11-06-versioning.md
 git commit -m "build: inject the version into images"
 ```
 
-**Implementation record** (fill after completion):
-- Date/status:
-- Repository + commit SHA:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+**Implementation record**:
+- Date/status: 2026-11-06 / complete
+- Repository + commit SHA: `llm-gw` @ (recorded in the follow-up docs commit)
+- Files changed: `Dockerfile`, `.github/workflows/docker.yml`, `README.md`, `DOCKER.md`, plan
+- Tests/commands and results: injected test build printed `llm-gw v9.9.9-test (deadbee, 2026-11-06T10:00:00Z)` for both `version` and `--version`; `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS; `cd web && npm test` 103 PASS, `npx tsc --noEmit` PASS, `npm run build` PASS; workflow YAML parses; `git diff --check` clean.
+- Review findings and fixes: none.
+- Deferred items/limitations: the Docker image was not built locally (multi-stage network build); the next CI run validates the Dockerfile and build args. UI placement is covered by Vitest/TypeScript/build only.
 
 ---
 

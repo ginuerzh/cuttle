@@ -15,6 +15,9 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+ARG VERSION=dev
+ARG COMMIT=
+ARG BUILT_AT=
 # Keep the default for CI; local builds in restricted networks can override:
 #   --build-arg GOPROXY=https://goproxy.cn,direct --build-arg GOSUMDB=off
 ARG GOPROXY=https://proxy.golang.org,direct
@@ -29,7 +32,7 @@ COPY --from=web /src/llm-gw/internal/admin/dist ./internal/admin/dist
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /out/llm-gw .
+    go build -trimpath -ldflags="-s -w -X github.com/go-gost/llm-gw/internal/version.Version=${VERSION} -X github.com/go-gost/llm-gw/internal/version.Commit=${COMMIT} -X github.com/go-gost/llm-gw/internal/version.BuildDate=${BUILT_AT}" -o /out/llm-gw .
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata \

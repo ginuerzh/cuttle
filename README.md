@@ -84,6 +84,27 @@ The web build writes to `internal/admin/dist`, which is embedded into the Go
 binary. The `GOWORK=off` flag keeps the build scoped to this module when a
 parent `go.work` exists.
 
+### Versioning
+
+`llm-gw version` (also `--version` and `-v`) prints the build identity. Release
+tags report `vX.Y.Z`, builds from `main` report `main-<short-sha>`, and a plain
+local build reports `dev`. The same value appears at the bottom of the admin
+navigation panel and in `GET /api/health` as `version`, `commit` and `builtAt`.
+
+CI passes the tag or branch identity to the Docker build. A local build can set
+it explicitly:
+
+```bash
+GOWORK=off go build \
+  -ldflags "-X github.com/go-gost/llm-gw/internal/version.Version=dev \
+    -X github.com/go-gost/llm-gw/internal/version.Commit=$(git rev-parse HEAD) \
+    -X github.com/go-gost/llm-gw/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o llm-gw .
+```
+
+Releases are created by pushing an annotated `vX.Y.Z` tag; CI publishes the
+semver image tags alongside `latest`.
+
 ### Zero-config first run
 
 No config file is required. Start the binary (or the Docker image) and it

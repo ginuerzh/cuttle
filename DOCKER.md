@@ -11,6 +11,19 @@ The build stage downloads the `core`, `x` and `llm-api-converter` versions
 recorded in `go.mod`. Use the `GOPROXY` and `GOSUMDB` build args for restricted
 networks.
 
+Pass the build identity explicitly when building outside CI:
+
+```bash
+docker build \
+  --build-arg VERSION=v0.1.0 \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t llm-gw .
+```
+
+`VERSION` defaults to `dev`. `llm-gw version`, `/api/health`, and the admin
+sidebar show the injected values.
+
 ## Zero-config first run
 
 The image starts with no config file:
@@ -83,3 +96,8 @@ pushes them to GHCR on pushes to `main` and `v*` tags.
 
 The workflow builds the image from the `llm-gw` context. Dependency versions are
 the tags in `go.mod`; update them with `go get` and `go mod tidy`.
+
+The workflow derives `VERSION` from the git ref: a `vX.Y.Z` tag uses the tag
+name, and a branch build uses `<branch>-<short-sha>`. `COMMIT` and `BUILT_AT`
+are passed alongside it, so `llm-gw version` and `/api/health` identify the
+exact build.
