@@ -260,7 +260,16 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 
 	nodes := make([]*xconfig.NodeConfig, 0, len(keys))
 	for i, key := range keys {
-		headers := make(map[string]string, len(auth.Extra)+1)
+		headers := make(map[string]string, len(auth.Extra)+5)
+		// The gateway owns upstream authentication. Inbound credentials, such
+		// as the Authorization header Claude Code sends or an SDK's x-api-key,
+		// must never be forwarded: some upstreams (DeepSeek's Anthropic
+		// endpoint, for example) prefer Authorization over x-api-key, so a
+		// leaked client token would turn the valid provider key into a 401.
+		// Empty values delete the header in x's HTTP forwarder.
+		for _, h := range []string{"Authorization", "x-api-key", "x-goog-api-key", "api-key"} {
+			headers[h] = ""
+		}
 		if key != "" {
 			if auth.Header != "" {
 				headers[auth.Header] = auth.Prefix + key

@@ -391,6 +391,13 @@ target API is chosen as follows:
   Generic providers have no static model classification, so auto matching is
   how their configured base URLs are selected.
 
+The gateway authenticates every upstream request with the provider's configured
+key and never forwards inbound client credentials. `Authorization`, `x-api-key`,
+`x-goog-api-key` and `api-key` are removed before the provider headers are
+applied; `auth.extra` is applied last and still wins. This matters when a client
+such as Claude Code sends its own `Authorization` header, because upstreams may
+prefer it over the injected `x-api-key` and reject the provider key.
+
 With the quick-start example above, Claude Code talking Anthropic Messages to
 `/v1/messages` is forwarded to DeepSeek's native
 `https://api.deepseek.com/anthropic` endpoint instead of being converted to the

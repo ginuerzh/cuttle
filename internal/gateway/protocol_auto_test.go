@@ -158,6 +158,60 @@ func TestPinnedNodeAPIOverridesInbound(t *testing.T) {
 	}
 }
 
+func TestInboundAuthHeadersDoNotReachUpstream(t *testing.T) {
+	up := newCapabilityUpstream(t)
+	gw := startGateway(t, autoProtocolConfig(t, up.srv.URL))
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	post := func(path, body string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// These mimic Claude Code or an SDK sending its own credentials. The
+		// gateway must replace them with the provider credentials, never
+		// forward them.
+		req.Header.Set("Authorization", "Bearer sk-ant-client")
+		req.Header.Set("x-api-key", "sk-ant-client")
+		req.Header.Set("x-goog-api-key", "client-google")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s status = %d: %s", path, resp.StatusCode, b)
+		}
+	}
+
+	post("/v1/messages", `{"model":"deepseek-v4-flash","max_tokens":8,"messages":[]}`)
+	hit := up.last(t)
+	if got := hit.header.Get("Authorization"); got != "" {
+		t.Fatalf("anthropic upstream Authorization = %q, want the client credential removed", got)
+	}
+	if got := hit.header.Get("x-api-key"); got != "sk-test" {
+		t.Fatalf("anthropic upstream x-api-key = %q, want the provider key", got)
+	}
+	if got := hit.header.Get("x-goog-api-key"); got != "" {
+		t.Fatalf("anthropic upstream x-goog-api-key = %q, want the client credential removed", got)
+	}
+
+	post("/v1/chat/completions", `{"model":"deepseek-v4-flash","messages":[]}`)
+	hit = up.last(t)
+	if got := hit.header.Get("Authorization"); got != "Bearer sk-test" {
+		t.Fatalf("chat upstream Authorization = %q, want the provider key", got)
+	}
+	if got := hit.header.Get("x-api-key"); got != "" {
+		t.Fatalf("chat upstream x-api-key = %q, want the client credential removed", got)
+	}
+	if got := hit.header.Get("x-goog-api-key"); got != "" {
+		t.Fatalf("chat upstream x-goog-api-key = %q, want the client credential removed", got)
+	}
+}
+
 func TestEntrypointOrderWithProtocolVariants(t *testing.T) {
 	up := newCapabilityUpstream(t)
 	cfg := &gwconfig.Config{
