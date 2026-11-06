@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createCaptureRule, createProvider, getRequests, getTopologyPositions, listCaptureRules } from './client';
+import { createCaptureRule, createProvider, getProviderUsage, getRequests, getTopologyPositions, listCaptureRules } from './client';
 
 describe('request', () => {
   afterEach(() => {
@@ -65,4 +65,34 @@ it('filters captured requests', async () => {
   await getRequests({ from: new Date(0), to: new Date(), capturedOnly: true, limit: 10 });
   const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
   expect(url).toContain('captured=1');
+});
+
+it('loads provider usage and normalizes null arrays', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      new Response(JSON.stringify({ providers: null, totals: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
+  );
+  await expect(getProviderUsage({ from: new Date(0), to: new Date() })).resolves.toMatchObject({
+    providers: [],
+  });
+});
+
+it('passes refresh to provider usage', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () =>
+    new Response(JSON.stringify({ providers: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  await getProviderUsage({ from: new Date(0), to: new Date(), refresh: true });
+  const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
+  expect(url).toContain('refresh=1');
 });

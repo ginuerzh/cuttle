@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import {
   ApiOutlined,
+  BarChartOutlined,
   BranchesOutlined,
   CloudServerOutlined,
   DatabaseOutlined,
@@ -41,6 +42,7 @@ import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
 import { Topology, type Selection } from './pages/Topology';
+import { UsagePage } from './pages/Usage';
 import { errorMatchesNodeId } from './pages/selection';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
@@ -49,6 +51,7 @@ const { Header, Content } = Layout;
 
 const NAV_ITEMS = [
   { key: 'topology', icon: <PartitionOutlined />, label: '拓扑' },
+  { key: 'usage', icon: <BarChartOutlined />, label: '用量' },
   { key: 'providers', icon: <CloudServerOutlined />, label: '提供商' },
   { key: 'nodes', icon: <ApiOutlined />, label: '节点' },
   { key: 'routes', icon: <BranchesOutlined />, label: '路由' },
@@ -70,7 +73,7 @@ function themeIcon(mode: ThemeMode) {
 }
 
 type Mode = 'monitor' | 'edit';
-type Page = 'topology' | 'providers' | 'nodes' | 'routes' | 'entrypoints' | 'requests' | 'settings';
+type Page = 'topology' | 'usage' | 'providers' | 'nodes' | 'routes' | 'entrypoints' | 'requests' | 'settings';
 type Session = 'unknown' | 'yes' | 'no';
 
 const RANGES = [
@@ -421,6 +424,8 @@ export default function App() {
                   ) : null}
                 </div>
               </div>
+            ) : page === 'usage' ? (
+              <UsagePage />
             ) : page === 'providers' ? (
               config ? <ProvidersPage config={config} onReload={loadConfig} /> : null
             ) : page === 'nodes' ? (

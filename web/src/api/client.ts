@@ -1,4 +1,4 @@
-import type { CaptureRule, ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route, TopologyPosition } from './types';
+import type { CaptureRule, ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -186,6 +186,18 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
 
 export function getRequest(id: string): Promise<RequestRow> {
   return request<RequestRow>('GET', `/api/requests/${encodeURIComponent(id)}`);
+}
+
+export function getProviderUsage(q: { from: Date; to: Date; refresh?: boolean }): Promise<ProviderUsageResponse> {
+  const params = new URLSearchParams({
+    from: q.from.toISOString(),
+    to: q.to.toISOString(),
+  });
+  if (q.refresh) params.set('refresh', '1');
+  return request<ProviderUsageResponse>('GET', `/api/provider-usage?${params.toString()}`).then((r) => ({
+    ...r,
+    providers: (r.providers ?? []).map((p) => ({ ...p, accounts: p.accounts ?? [] })),
+  }));
 }
 
 export function listCaptureRules(): Promise<CaptureRule[]> {

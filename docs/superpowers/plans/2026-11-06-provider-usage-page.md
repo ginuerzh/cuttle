@@ -943,12 +943,12 @@ git commit -m "feat(web): add provider usage page"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / this commit
+- Files changed: `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/api/client.test.ts`, `web/src/pages/Usage.tsx`, `web/src/App.tsx`, `web/src/locales/en-US.ts`, plan record.
+- Tests/commands and results: `cd web && npm test -- --run` PASS (88 tests, including the two new client tests); `npx tsc --noEmit` PASS; `npm run build` PASS with the existing chunk-size warning only.
+- Review findings and fixes: Self-review confirmed the client normalizes null `providers`/`accounts`, the page handles disabled/unsupported/no-key notes, stale errors keep amounts visible, all new UI strings have English entries, and the nav branch uses the existing Drawer. No fixes were needed after the web gates.
+- Deferred items/limitations: No browser visual regression test and no per-card refresh. The page uses a single global refresh and a 60-second server cache.
 
 ---
 

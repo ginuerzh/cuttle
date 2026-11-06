@@ -204,3 +204,56 @@ export interface RequestRow {
   hasCapture?: boolean;
   capture?: RequestCapture;
 }
+
+
+export interface BalancePart {
+  currency?: string;
+  total: number;
+  granted?: number;
+  toppedUp?: number;
+}
+
+export interface QuotaWindow {
+  name: string;
+  usedPercent: number;
+  resetsAt?: string;
+}
+
+export interface AccountUsage {
+  keyPreview?: string;
+  balance?: BalancePart[];
+  windows?: QuotaWindow[];
+  error?: string;
+  stale?: boolean;
+  checkedAt?: string;
+}
+
+export interface ProviderUsageLocal {
+  provider?: string;
+  requests: number;
+  errors: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+}
+
+export interface ProviderUsage {
+  name: string;
+  type: string;
+  enabled: boolean;
+  supported: boolean;
+  note?: string;
+  local?: ProviderUsageLocal;
+  accounts: AccountUsage[];
+  checkedAt?: string;
+  cached?: boolean;
+}
+
+export interface ProviderUsageResponse {
+  from: string;
+  to: string;
+  checkedAt: string;
+  totals?: ProviderUsageLocal;
+  localError?: string;
+  providers: ProviderUsage[];
+}
