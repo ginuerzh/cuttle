@@ -57,12 +57,12 @@ Each task is committed with its implementation record.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `5c1512e8`.
+- Files changed: `web/src/api/client.ts`, `web/src/api/types.ts`, `web/src/locales/en-US.ts`, `web/src/pages/Requests.tsx`.
+- Tests/commands and results: `npm test` 118 tests passed; `npx tsc --noEmit` passed; `npm run build` passed; full `GOWORK=off go test ./... -count=1` passed.
+- Review findings and fixes: the Requests page loads requests, the error summary and alerts in one parallel refresh; error-class tags toggle the filter; headers render as key/value descriptions.
+- Deferred items: no chart for the hourly buckets yet; alert thresholds are constants.
 
 ## Task 4: Documentation and memory
 
