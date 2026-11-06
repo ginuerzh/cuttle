@@ -8,6 +8,8 @@ func TestInboundProtocol(t *testing.T) {
 		"/v1/chat/completions?stream=true":          "openai-chat",
 		"/v1/responses":                             "openai-responses",
 		"/v1/messages":                              "anthropic",
+		"/v1/messages/count_tokens":                 "anthropic",
+		"/v1/messages/count_tokens?beta=true":       "anthropic",
 		"/v1beta/models/gemini-2.0:generateContent": "gemini",
 		"/v1beta/models/x:streamGenerateContent":    "gemini",
 		"/unknown":                                  "",

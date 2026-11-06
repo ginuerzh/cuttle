@@ -26,13 +26,14 @@ type Sink interface {
 
 // Options configures one route-scoped body rewriter.
 type Options struct {
-	Provider string
-	Protocol string
-	Route    string
-	Node     string
-	Sink     Sink
-	Capture  *capture.Manager
-	Logger   logger.Logger
+	Provider    string
+	Protocol    string
+	Route       string
+	Node        string
+	TargetModel string
+	Sink        Sink
+	Capture     *capture.Manager
+	Logger      logger.Logger
 }
 
 // Rewriter is an in-process core/rewriter.Rewriter backed by an engine.
@@ -67,6 +68,9 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 	inbound := inboundProtocol(meta.URI)
 	if inbound != "" && r.opts.Sink != nil {
 		r.opts.Sink.AddInboundProtocol(meta.SID, inbound)
+	}
+	if meta.Direction == "request" && r.opts.Protocol == "anthropic" && r.opts.TargetModel != "" && isCountTokensURI(meta.URI) {
+		b = replaceModelField(b, r.opts.TargetModel)
 	}
 
 	res, err := r.eng.Rewrite(ctx, b, meta)
@@ -144,11 +148,48 @@ func inboundProtocol(uri string) string {
 		return "openai-responses"
 	case uri == "/v1/messages":
 		return "anthropic"
+	case uri == "/v1/messages/count_tokens":
+		return "anthropic"
 	case strings.HasPrefix(uri, "/v1beta/models/"):
 		return "gemini"
 	default:
 		return ""
 	}
+}
+
+// isCountTokensURI reports the Anthropic token-counting path, ignoring a query
+// string.
+func isCountTokensURI(uri string) bool {
+	if i := strings.IndexByte(uri, '?'); i >= 0 {
+		uri = uri[:i]
+	}
+	return uri == "/v1/messages/count_tokens"
+}
+
+// replaceModelField replaces only the top-level model field. The body is
+// returned unchanged when it is not JSON, has no model field, or the target
+// model is empty.
+func replaceModelField(body []byte, model string) []byte {
+	if len(body) == 0 || model == "" {
+		return body
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return body
+	}
+	if _, ok := raw["model"]; !ok {
+		return body
+	}
+	v, err := json.Marshal(model)
+	if err != nil {
+		return body
+	}
+	raw["model"] = v
+	out, err := json.Marshal(raw)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 func rewriteStage(direction, ssePhase string) string {

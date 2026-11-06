@@ -381,13 +381,14 @@ func unregisterNodeRewriters(route, node string) {
 func registerRewriter(name string, p gwconfig.Provider, n gwconfig.Node, target upstreamTarget, route string, facts *stats.Facts, captureMgr *capture.Manager, log logger.Logger) error {
 	registry.RewriterRegistry().Unregister(name)
 	if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(target), gwrewriter.Options{
-		Provider: p.Name,
-		Protocol: string(target.api),
-		Route:    route,
-		Node:     n.Name,
-		Sink:     facts,
-		Capture:  captureMgr,
-		Logger:   log,
+		Provider:    p.Name,
+		Protocol:    string(target.api),
+		Route:       route,
+		Node:        n.Name,
+		TargetModel: target.targetModel,
+		Sink:        facts,
+		Capture:     captureMgr,
+		Logger:      log,
 	})); err != nil {
 		return fmt.Errorf("register rewriter %s: %w", name, err)
 	}

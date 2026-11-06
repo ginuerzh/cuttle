@@ -391,7 +391,7 @@ git commit -m "feat(gateway): match upstream api to inbound protocol"
   ```
   `inboundProtocol("/v1/messages/count_tokens")` returns `"anthropic"`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add to `internal/rewriter/helpers_test.go`:
 
@@ -429,13 +429,13 @@ func TestCountTokensInvalidBodyPassesThrough(t *testing.T)
 
 Keep the existing `TestProtocolMatrix/count_tokens is not converted` as the non-Anthropic target guard: it must still pass byte-for-byte.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/rewriter ./internal/gateway -run 'TestReplaceModelField|TestIsCountTokensURI|TestCountTokens|TestInboundProtocol' -count=1`
 
 Expected: FAIL for the new Anthropic path/body assertions and missing helpers.
 
-- [ ] **Step 3: Implement path rewriting and model substitution**
+- [x] **Step 3: Implement path rewriting and model substitution**
 
 In `internal/gateway/upstream.go`:
 
@@ -451,26 +451,26 @@ In `internal/rewriter/rewriter.go`:
 - Add the count_tokens case to `inboundProtocol`.
 - In `build.go`, pass `TargetModel: target.targetModel` when registering rewriters.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/rewriter ./internal/gateway -run 'TestReplaceModelField|TestIsCountTokensURI|TestCountTokens|TestInboundProtocol|TestProtocolMatrix' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Fill the Implementation record and commit**
+- [x] **Step 5: Fill the Implementation record and commit**
 
 ```bash
-git add internal/gateway/upstream.go internal/gateway/protocol_test.go internal/gateway/protocol_auto_test.go internal/rewriter/rewriter.go internal/rewriter/helpers_test.go internal/rewriter/rewriter_test.go internal/gateway/build.go docs/superpowers/plans/2026-11-06-node-protocol-auto-match.md
+git add internal/gateway/upstream.go internal/gateway/protocol_auto_test.go internal/gateway/build.go internal/rewriter/rewriter.go internal/rewriter/helpers_test.go internal/rewriter/rewriter_test.go docs/superpowers/plans/2026-11-06-node-protocol-auto-match.md
 git commit -m "feat(gateway): route anthropic count_tokens natively"
 ```
 
 **Implementation record** (fill after completion):
-- Date/status:
-- Repository + commit SHA:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit SHA: `llm-gw` — this task's commit (see ledger)
+- Files changed: `internal/gateway/upstream.go`, `internal/gateway/protocol_auto_test.go`, `internal/gateway/build.go`, `internal/rewriter/rewriter.go`, `internal/rewriter/helpers_test.go`, `internal/rewriter/rewriter_test.go`, plan
+- Tests/commands and results: focused count_tokens tests PASS; `GOWORK=off go test ./internal/gateway ./internal/rewriter -count=1` PASS; `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./internal/gateway ./internal/rewriter` PASS.
+- Review findings and fixes: count_tokens was initially routed to the Anthropic host without the base path; added `anthropicPath` and a dedicated rewrite source.
+- Deferred items/limitations: count_tokens bodies remain non-JSON pass-through when the target is not Anthropic; no protocol conversion is attempted.
 
 ---
 

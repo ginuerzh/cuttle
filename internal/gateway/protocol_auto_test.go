@@ -261,6 +261,44 @@ func TestGeminiAutoProtocol(t *testing.T) {
 	}
 }
 
+func TestCountTokensAnthropicTarget(t *testing.T) {
+	up := newCapabilityUpstream(t)
+	gw := startGateway(t, autoProtocolConfig(t, up.srv.URL))
+
+	body := `{"model":"claude-x","messages":[{"role":"user","content":"hi"}]}`
+	if code := postModel(t, gw, "/v1/messages/count_tokens", body); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	hit := up.last(t)
+	if hit.path != "/anthropic/v1/messages/count_tokens" {
+		t.Fatalf("upstream path = %q, want the anthropic count_tokens path", hit.path)
+	}
+	v := decodeBody(t, hit.body)
+	if v["model"] != "deepseek-v4-flash" {
+		t.Fatalf("upstream model = %v, want deepseek-v4-flash", v["model"])
+	}
+	if _, ok := v["messages"]; !ok {
+		t.Fatalf("messages missing from the count_tokens body: %s", hit.body)
+	}
+
+	rows := waitCapabilityStats(t, gw, 1)
+	if rows[0].Protocol != "anthropic" || rows[0].InboundProtocol != "anthropic" {
+		t.Fatalf("stats = protocol %q inbound %q, want anthropic/anthropic", rows[0].Protocol, rows[0].InboundProtocol)
+	}
+}
+
+func TestCountTokensInvalidBodyPassesThrough(t *testing.T) {
+	up := newCapabilityUpstream(t)
+	gw := startGateway(t, autoProtocolConfig(t, up.srv.URL))
+
+	if code := postModel(t, gw, "/v1/messages/count_tokens", "not-json"); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if got := up.last(t).body; got != "not-json" {
+		t.Fatalf("upstream body = %q, want the invalid body unchanged", got)
+	}
+}
+
 func TestReloadKeepsOldDataPlaneWhenPinnedAPIHasNoBase(t *testing.T) {
 	up := newCapabilityUpstream(t)
 	cfg := testConfig(up.srv.URL)

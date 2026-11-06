@@ -169,15 +169,25 @@ func upstreamRewrites(baseURL string, api provider.API, targetModel string) []xc
 		`^/v1/chat/completions$`,
 		`^/v1/responses$`,
 		`^/v1/messages$`,
+		`^/v1/messages/count_tokens$`,
 		`^/v1beta/models/[^/]+:generateContent$`,
 		`^/v1beta/models/[^/]+:streamGenerateContent$`,
 	}
 
 	out := make([]xconfig.HTTPURLRewriteConfig, 0, len(sources))
 	for _, source := range sources {
-		replacement := canonicalPath(basePath, api, targetModel)
-		if strings.HasSuffix(source, `:streamGenerateContent$`) && api == provider.Gemini {
+		var replacement string
+		switch {
+		case strings.HasSuffix(source, `count_tokens$`):
+			// Token counting is an Anthropic-only path; other targets keep the
+			// historical pass-through behavior.
+			if api == provider.Anthropic {
+				replacement = anthropicPath(basePath, "/v1/messages/count_tokens")
+			}
+		case strings.HasSuffix(source, `:streamGenerateContent$`) && api == provider.Gemini:
 			replacement = geminiPath(basePath, targetModel, true)
+		default:
+			replacement = canonicalPath(basePath, api, targetModel)
 		}
 		if replacement == "" {
 			continue
@@ -197,17 +207,21 @@ func canonicalPath(basePath string, api provider.API, targetModel string) string
 	case provider.Responses:
 		return joinURLPath(basePath, "/responses")
 	case provider.Anthropic:
-		// Anthropic bases are conventionally rooted at /v1 already; avoid a
-		// duplicate segment when a user configures the full /v1 base.
-		if strings.HasSuffix(basePath, "/v1") {
-			return joinURLPath(basePath, "/messages")
-		}
-		return joinURLPath(basePath, "/v1/messages")
+		return anthropicPath(basePath, "/v1/messages")
 	case provider.Gemini:
 		return geminiPath(basePath, targetModel, false)
 	default:
 		return ""
 	}
+}
+
+// anthropicPath avoids a duplicated /v1 segment when the base URL is already
+// rooted at /v1.
+func anthropicPath(basePath, suffix string) string {
+	if strings.HasSuffix(basePath, "/v1") {
+		return joinURLPath(basePath, strings.TrimPrefix(suffix, "/v1"))
+	}
+	return joinURLPath(basePath, suffix)
 }
 
 func geminiPath(basePath, targetModel string, stream bool) string {
