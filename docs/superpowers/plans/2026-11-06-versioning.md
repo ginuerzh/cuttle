@@ -623,7 +623,7 @@ git commit -m "build: inject the version into images"
 
 **Implementation record**:
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` @ (recorded in the follow-up docs commit)
+- Repository + commit SHA: `llm-gw` @ `125144c0`
 - Files changed: `Dockerfile`, `.github/workflows/docker.yml`, `README.md`, `DOCKER.md`, plan
 - Tests/commands and results: injected test build printed `llm-gw v9.9.9-test (deadbee, 2026-11-06T10:00:00Z)` for both `version` and `--version`; `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS; `cd web && npm test` 103 PASS, `npx tsc --noEmit` PASS, `npm run build` PASS; workflow YAML parses; `git diff --check` clean.
 - Review findings and fixes: none.
