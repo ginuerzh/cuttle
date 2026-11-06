@@ -1,0 +1,123 @@
+# Error observability P0 implementation plan
+
+Spec: `docs/superpowers/specs/2026-11-06-error-observability-design.md`
+Date: 2026-11-06
+Status: in progress
+
+Each task is committed on its own with the implementation record below it.
+Tests are run from the `llm-gw` directory unless stated otherwise.
+
+## Task 1: Error summary and class
+
+- Add `UpstreamError` and `UpstreamErrorType` to `stats.Fact`.
+- Extend `rewriter.Sink` with `AddUpstreamError`.
+- Add `internal/rewriter/errorbody.go`: parse common JSON error envelopes and
+  SSE `data:` events, redact credentials, cap at 512 characters.
+- Call it from `Rewriter.Rewrite` on response direction, only when the payload
+  looks like it may contain an error.
+- In `stats.Recorder`, use the fact summary when `ro.Err` is empty, compute
+  `error_class`, and persist it.
+- Add the `error_class` column and JSON/API fields.
+- Tests: extraction table (Anthropic, OpenAI, CommandCode `success:false`,
+  plain `message`, SSE error, redaction), recorder class table, store round-trip.
+
+### Implementation record
+
+- Date/status:
+- Repository + commit:
+- Files changed:
+- Tests/commands and results:
+- Review findings and fixes:
+- Deferred items:
+
+## Task 2: Request context
+
+- Persist `uri`, `method`, `client_ip`, `user_agent`, `upstream` from the x
+  recorder object.
+- Prefer `OriginalURI` for the inbound URI and `ro.DstAddr + ro.HTTP.URI` for
+  the upstream.
+- Prefer `X-Forwarded-For`/`X-Real-IP` for the client IP; fall back to
+  `ro.ClientIP`/`ro.ClientAddr`.
+- Add columns, select/scan paths, JSON fields and admin query fields.
+- Tests: recorder extraction table, store round-trip, header preference.
+
+### Implementation record
+
+- Date/status:
+- Repository + commit:
+- Files changed:
+- Tests/commands and results:
+- Review findings and fixes:
+- Deferred items:
+
+## Task 3: Configurable upstream header timeout and client status
+
+- Add `gateway.readTimeout`, default 60s, validated to 1s–300s.
+- Replace the hard-coded 15s in `internal/gateway/gateway.go`.
+- Add `client_status`: 502 when the upstream produced no status and the
+  request failed; otherwise the upstream status.
+- Classify `gateway_timeout` vs `network`.
+- Update README configuration table and example config if present.
+- Tests: default/validation, recorder status mapping.
+
+### Implementation record
+
+- Date/status:
+- Repository + commit:
+- Files changed:
+- Tests/commands and results:
+- Review findings and fixes:
+- Deferred items:
+
+## Task 4: Stream termination
+
+- Extend `stats.Fact` with `FinishReason`, `SawDone`, `Truncated`.
+- In the rewriter, observe response events:
+  - Anthropic `message_delta.delta.stop_reason`.
+  - OpenAI `choices[].finish_reason`.
+  - `[DONE]` sentinel.
+- Mark `truncated` when a stream ends without either.
+- Add columns, JSON fields and frontend display.
+- Tests: event parsing table, recorder truncation rule, store round-trip.
+
+### Implementation record
+
+- Date/status:
+- Repository + commit:
+- Files changed:
+- Tests/commands and results:
+- Review findings and fixes:
+- Deferred items:
+
+## Task 5: Frontend
+
+- Extend `web/src/api/types.ts`.
+- Show the new fields in the request detail drawer.
+- Render `status 0` as `502 网关超时`; show the error class in the list.
+- Add a truncated badge.
+- Tests: helper/rendering tests where practical, `npm test`, `tsc`, build.
+
+### Implementation record
+
+- Date/status:
+- Repository + commit:
+- Files changed:
+- Tests/commands and results:
+- Review findings and fixes:
+- Deferred items:
+
+## Task 6: Documentation and memory
+
+- Update README for new request fields and `gateway.readTimeout`.
+- Update `.memory/MEMORY.md` and the relevant llm-gw notes with the analysis
+  outcome and P0 fields.
+- Final full test run.
+
+### Implementation record
+
+- Date/status:
+- Repository + commit:
+- Files changed:
+- Tests/commands and results:
+- Review findings and fixes:
+- Deferred items:
