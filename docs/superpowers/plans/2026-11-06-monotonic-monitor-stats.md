@@ -441,7 +441,7 @@ git commit -m "feat(web): stream topology metrics and add reset"
 
 **Implementation record (fill after completion):**
 - Date/status: 2026-11-06 — complete.
-- Repo + commit: llm-gw `feat/monotonic-monitor` (code commit; SHA recorded in the follow-up `docs(plan)` commit).
+- Repo + commit: llm-gw `feat/monotonic-monitor` `6e89f6c3` (code); record finalized in the follow-up `docs(plan)` commit.
 - Files changed: `web/src/api/events.ts` (new), `web/src/api/events.test.ts` (new), `web/src/useLiveGraph.ts` (new), `web/src/App.tsx`, `web/src/components/OverviewToolbar.tsx`, `web/src/components/OverviewToolbar.test.tsx`, `web/src/locales/en-US.ts`, `web/vite.config.ts`, plan.
 - Tests/commands and results: `cd web && npm test` → 18 files / 122 tests PASS; `npx tsc --noEmit` → PASS; `npm run build` → PASS; `GOWORK=off go build ./...` and `GOWORK=off go build -o /tmp/llm-gw .` → PASS.
 - Review findings and fixes: added a `sessionKey` option so logout/session expiry resets the hook's internal `since` instead of resuming the pre-logout session; guarded reconnect/auth callbacks with `disposed` so a stale socket cannot force a login or reconnect; kept range changes and resets as fresh socket URLs rather than control frames.
