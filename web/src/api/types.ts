@@ -103,7 +103,7 @@ export interface ConfigResponse {
   providers: Provider[];
   nodes: Node[];
   routes: Route[];
-  stats?: { path?: string; retainRequests?: string; retainRollups?: string; storeBody?: boolean };
+  stats?: { path?: string; retainRequests?: string; retainRollups?: string; capture?: { mode?: string; sampleRate?: number; maxBytes?: number; retain?: string } };
 }
 
 export interface NodeMetrics {
@@ -148,6 +148,34 @@ export interface Preset {
   gemini?: string;
 }
 
+export interface RequestCapture {
+  requestOriginal?: string;
+  requestRewritten?: string;
+  responseOriginal?: string;
+  responseRewritten?: string;
+  sseFirstOriginal?: string;
+  sseFirstRewritten?: string;
+  sseLastOriginal?: string;
+  sseLastRewritten?: string;
+  requestSha256?: string;
+  responseSha256?: string;
+  sseEvents?: number;
+  reason?: string;
+  createdAt?: string;
+}
+
+export interface CaptureRule {
+  id: string;
+  route?: string;
+  clientModel?: string;
+  reason: string;
+  limit: number;
+  ttl: number;
+  created: string;
+  expires: string;
+  used: number;
+}
+
 export interface RequestRow {
   requestId: string;
   sid: string;
@@ -158,6 +186,11 @@ export interface RequestRow {
   route?: string;
   node?: string;
   protocol: string;
+  inboundProtocol?: string;
+  errorStage?: string;
+  errorDirection?: string;
+  ssePhase?: string;
+  eventIndex?: number;
   effort: string;
   status: number;
   error?: string;
@@ -168,4 +201,6 @@ export interface RequestRow {
   stream: boolean;
   bytesIn: number;
   bytesOut: number;
+  hasCapture?: boolean;
+  capture?: RequestCapture;
 }

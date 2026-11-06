@@ -243,7 +243,22 @@ routes: [ ... ]
 | `path` | `stats.sqlite` | SQLite database path |
 | `retainRequests` | `168h` | Raw request retention |
 | `retainRollups` | `2160h` | Aggregated rollup retention |
-| `storeBody` | `false` | Reserved; request/response bodies are not stored yet |
+| `capture.mode` | `off` | `off`, `errors` or `sample` |
+| `capture.sampleRate` | `0.01` | Sample rate when mode is `sample` |
+| `capture.maxBytes` | `32768` | Maximum bytes per preview field |
+| `capture.retain` | `24h` | Capture row retention |
+
+`errors` buffers every request but persists only failures (`status >= 400` or a
+non-empty error). `sample` persists a random subset. On-demand capture rules can
+be created from the Requests page or `POST /api/captures`; they are
+time/limit-bounded, in-memory, and lost on restart. `stats.storeBody` is removed.
+
+Captured bodies may contain prompts and tool arguments; keep capture off outside
+an investigation, use a short retention, and protect the admin session and
+database. Capture stores the bodies visible to the rewriter, not necessarily
+byte-identical wire bytes: x skips compressed SSE and chunked non-streaming
+bodies over its `MaxChunkSize` (1 MiB default), and adds SSE framing after the
+rewriter.
 
 ### `log`
 
@@ -397,8 +412,28 @@ GET  /api/stats/graph
 GET|PUT /api/topology/positions
 GET  /api/requests
 GET  /api/requests/{id}
+GET|POST      /api/captures
+DELETE        /api/captures/{id}
 PUT  /api/admin/password
 ```
+
+`GET /api/requests` accepts `errors=1` and `captured=1`. Request detail includes
+an optional `capture` object; the list only reports a cheap `hasCapture` flag.
+
+## Request correlation and capture
+
+Every response that passes through a node hop carries
+`X-LLM-GW-Request-ID`. The value is the same `sid` stored as the request's
+`requestId` in stats and logs, so a client report can be matched to one row.
+Gateway-generated 502/503 responses (no entrypoint match, upstream unreachable
+before headers) do not pass through the node header rewrite and are a known v1
+gap, as are request-side failures that produce no response.
+
+The Requests page shows the structured rewriter fields (`inboundProtocol`,
+`errorStage`, `errorDirection`, `ssePhase`, `eventIndex`) and any captured
+original/rewritten previews. The Capture control creates a rule for a route
+and/or client-model glob; use the "captured only" filter to find rows if the
+client cannot report an ID.
 
 `PUT /api/entrypoints` replaces the whole ordered list. Entrypoint order is
 precedence, so the list is edited and saved as one unit.

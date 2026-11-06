@@ -31,33 +31,33 @@ type Policy struct {
 
 // Rule is one in-memory on-demand capture rule.
 type Rule struct {
-	ID          string
-	Route       string
-	ClientModel string
-	Reason      string
-	Limit       int
-	TTL         time.Duration
-	Created     time.Time
-	Expires     time.Time
-	Used        int
+	ID          string        `json:"id"`
+	Route       string        `json:"route,omitempty"`
+	ClientModel string        `json:"clientModel,omitempty"`
+	Reason      string        `json:"reason"`
+	Limit       int           `json:"limit"`
+	TTL         time.Duration `json:"ttl"`
+	Created     time.Time     `json:"created"`
+	Expires     time.Time     `json:"expires"`
+	Used        int           `json:"used"`
 }
 
 // Capture is the bounded preview set persisted for one request.
 type Capture struct {
-	RequestOriginal   string
-	RequestRewritten  string
-	ResponseOriginal  string
-	ResponseRewritten string
-	SSEFirstOriginal  string
-	SSEFirstRewritten string
-	SSELastOriginal   string
-	SSELastRewritten  string
-	RequestSHA256     string
-	ResponseSHA256    string
-	SSIEvents         int
-	Reason            string
-	OnError           bool
-	CreatedAt         time.Time
+	RequestOriginal   string    `json:"requestOriginal,omitempty"`
+	RequestRewritten  string    `json:"requestRewritten,omitempty"`
+	ResponseOriginal  string    `json:"responseOriginal,omitempty"`
+	ResponseRewritten string    `json:"responseRewritten,omitempty"`
+	SSEFirstOriginal  string    `json:"sseFirstOriginal,omitempty"`
+	SSEFirstRewritten string    `json:"sseFirstRewritten,omitempty"`
+	SSELastOriginal   string    `json:"sseLastOriginal,omitempty"`
+	SSELastRewritten  string    `json:"sseLastRewritten,omitempty"`
+	RequestSHA256     string    `json:"requestSha256,omitempty"`
+	ResponseSHA256    string    `json:"responseSha256,omitempty"`
+	SSIEvents         int       `json:"sseEvents,omitempty"`
+	Reason            string    `json:"reason,omitempty"`
+	OnError           bool      `json:"-"`
+	CreatedAt         time.Time `json:"createdAt,omitempty"`
 }
 
 type session struct {

@@ -94,16 +94,14 @@ Entrypoint -> Route -> Node -> Provider model
 - Keep the `Load` order: decode, `expandEnv`, `applyDefaults`, `Validate`.
 - Validation errors must name the offending provider, node, route or entrypoint.
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
-  `720h`, stats `stats.sqlite`, log `info`/`json`, provider health `30s`/`5s`,
-  node weight `1`, route strategy `round`.
+  `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`32768`/`24h`,
+  provider health `30s`/`5s`, node weight `1`, route strategy `round`.
 - `log.level` is live through SIGHUP and admin saves; `log.format` is fixed at
   startup and changing it at runtime only logs a restart warning.
 - `log.level: trace` enables x header dumps that can contain client
   `Authorization`/`x-api-key` values; do not leave trace enabled in production.
 - `config.Write` must stay atomic (temp file, `fsync`, rename, `0600`).
 - `example.yaml` must always load with the current schema.
-- `stats.storeBody` is reserved and currently has no effect; do not document it
-  as working.
 
 ## Admin API invariants
 
@@ -120,6 +118,9 @@ Entrypoint -> Route -> Node -> Provider model
 - `GET /api/topology/positions` returns the shared layout map; `PUT` replaces it
   in one transaction. Reject empty IDs and maps above 10,000 entries; return
   `503` when the stats store is unavailable.
+- `GET/POST /api/captures` and `DELETE /api/captures/{id}` manage bounded
+  on-demand rules. Rules are in-memory, lost on restart, and capped at 1000
+  uses / 1 hour.
 - Deleting a route still referenced by an entrypoint must fail and list the
   referencing entrypoints. Deleting a node still referenced by a route must
   fail.
@@ -152,6 +153,13 @@ Entrypoint -> Route -> Node -> Provider model
 - The graph emits `entrypoint:<name>`, `route:<name>`, `node:<name>` and
   `provider:<name>` keys; rows without a route use the literal `unrouted` key.
   Keep the web graph and stats tests aligned.
+- Node-forwarded responses carry `X-LLM-GW-Request-ID` equal to the stats
+  `requestId` (the x `sid`). Gateway-generated 502/503 responses and request-side
+  failures without a response are a documented v1 gap.
+- Captures live in `request_captures` beside `requests`. `off` creates nothing;
+  `errors` buffers all and persists failures; `sample` persists a subset; rules
+  override the policy. `maxBytes` bounds each preview field and `capture.retain`
+  bounds rows. Never capture headers.
 
 ## Web invariants
 

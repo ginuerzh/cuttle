@@ -1,4 +1,4 @@
-import type { ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route, TopologyPosition } from './types';
+import type { CaptureRule, ConfigResponse, Entrypoint, GraphMetrics, Node, Preset, ProbeResult, Provider, ProviderModel, RequestRow, Route, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -166,6 +166,7 @@ export interface RequestQuery {
   route?: string;
   clientModel?: string;
   errorsOnly?: boolean;
+  capturedOnly?: boolean;
   limit?: number;
 }
 
@@ -179,7 +180,30 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
   if (q.route) params.set('route', q.route);
   if (q.clientModel) params.set('clientModel', q.clientModel);
   if (q.errorsOnly) params.set('errors', '1');
+  if (q.capturedOnly) params.set('captured', '1');
   return request<RequestRow[] | null>('GET', `/api/requests?${params.toString()}`).then((rows) => rows ?? []);
+}
+
+export function getRequest(id: string): Promise<RequestRow> {
+  return request<RequestRow>('GET', `/api/requests/${encodeURIComponent(id)}`);
+}
+
+export function listCaptureRules(): Promise<CaptureRule[]> {
+  return request<CaptureRule[] | null>('GET', '/api/captures').then((rules) => rules ?? []);
+}
+
+export function createCaptureRule(input: {
+  route?: string;
+  clientModel?: string;
+  reason: string;
+  limit: number;
+  ttlSeconds: number;
+}): Promise<CaptureRule> {
+  return request<CaptureRule>('POST', '/api/captures', input);
+}
+
+export function deleteCaptureRule(id: string): Promise<void> {
+  return request<void>('DELETE', `/api/captures/${encodeURIComponent(id)}`);
 }
 
 export function changePassword(oldPassword: string, newPassword: string): Promise<void> {
