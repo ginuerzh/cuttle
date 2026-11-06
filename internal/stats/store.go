@@ -81,6 +81,16 @@ type Summary struct {
 	ByEffort     map[string]int64 `json:"byEffort"`
 }
 
+// ProviderUsage aggregates one provider's hourly rollups for a time window.
+type ProviderUsage struct {
+	Provider     string `json:"provider,omitempty"`
+	Requests     int64  `json:"requests"`
+	Errors       int64  `json:"errors"`
+	InputTokens  int64  `json:"inputTokens"`
+	OutputTokens int64  `json:"outputTokens"`
+	CachedTokens int64  `json:"cachedTokens"`
+}
+
 // Store is the SQLite-backed statistics store.
 type Store struct {
 	db *sql.DB
@@ -174,6 +184,7 @@ func (s *Store) migrate() error {
 			errors INTEGER NOT NULL DEFAULT 0,
 			input_tokens INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
+			cached_tokens INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (bucket, provider, model)
 		)`,
 	}
@@ -182,7 +193,7 @@ func (s *Store) migrate() error {
 			return err
 		}
 	}
-	return s.ensureColumns("requests", map[string]string{
+	if err := s.ensureColumns("requests", map[string]string{
 		"route":            "TEXT NOT NULL DEFAULT ''",
 		"client_model":     "TEXT NOT NULL DEFAULT ''",
 		"node":             "TEXT NOT NULL DEFAULT ''",
@@ -191,6 +202,11 @@ func (s *Store) migrate() error {
 		"error_direction":  "TEXT NOT NULL DEFAULT ''",
 		"sse_phase":        "TEXT NOT NULL DEFAULT ''",
 		"event_index":      "INTEGER NOT NULL DEFAULT 0",
+	}); err != nil {
+		return err
+	}
+	return s.ensureColumns("rollups", map[string]string{
+		"cached_tokens": "INTEGER NOT NULL DEFAULT 0",
 	})
 }
 
@@ -368,18 +384,45 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 		failed = 1
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO rollups
-		(bucket, provider, model, requests, errors, input_tokens, output_tokens)
-		VALUES (?,?,?,1,?,?,?)
+		(bucket, provider, model, requests, errors, input_tokens, output_tokens, cached_tokens)
+		VALUES (?,?,?,1,?,?,?,?)
 		ON CONFLICT(bucket, provider, model) DO UPDATE SET
 			requests = requests + 1,
 			errors = errors + excluded.errors,
 			input_tokens = input_tokens + excluded.input_tokens,
-			output_tokens = output_tokens + excluded.output_tokens`,
-		bucket, r.Provider, r.Model, failed, r.InputTokens, r.OutputTokens)
+			output_tokens = output_tokens + excluded.output_tokens,
+			cached_tokens = cached_tokens + excluded.cached_tokens`,
+		bucket, r.Provider, r.Model, failed, r.InputTokens, r.OutputTokens, r.CachedTokens)
 	if err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// ProviderUsage aggregates rollups by provider for a time window.
+func (s *Store) ProviderUsage(ctx context.Context, from, to time.Time) ([]ProviderUsage, error) {
+	fromBucket := from.UTC().Truncate(time.Hour).Format(time.RFC3339)
+	toBucket := to.UTC().Format(time.RFC3339)
+	rows, err := s.db.QueryContext(ctx, `SELECT provider,
+		COALESCE(SUM(requests),0), COALESCE(SUM(errors),0),
+		COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+		COALESCE(SUM(cached_tokens),0)
+		FROM rollups WHERE bucket >= ? AND bucket < ? GROUP BY provider ORDER BY provider`,
+		fromBucket, toBucket)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]ProviderUsage, 0)
+	for rows.Next() {
+		var r ProviderUsage
+		if err := rows.Scan(&r.Provider, &r.Requests, &r.Errors,
+			&r.InputTokens, &r.OutputTokens, &r.CachedTokens); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // Query returns requests in reverse time order.

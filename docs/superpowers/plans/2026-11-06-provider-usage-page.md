@@ -413,12 +413,12 @@ git commit -m "feat(stats): aggregate provider usage from rollups"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / this commit
+- Files changed: `internal/stats/store.go` (rollup `cached_tokens`, `ProviderUsage`), `internal/stats/store_test.go`, plan record.
+- Tests/commands and results: `GOWORK=off go test ./internal/stats -run 'TestProviderUsage' -count=1` PASS; `GOWORK=off go test ./internal/stats -count=1` PASS.
+- Review findings and fixes: Self-review confirmed the additive `ensureColumns("rollups", ...)` migration works on an old table, the rollup insert adds cached tokens on conflict, and the aggregation uses the same hour-truncated bounds as `Summary`. No fixes were needed after the focused tests.
+- Deferred items/limitations: Rollups written before this change have `cached_tokens = 0`; no backfill is attempted. The 30-day view remains bounded by the configured rollup retention (90 days by default).
 
 ---
 

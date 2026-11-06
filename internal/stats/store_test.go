@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -279,5 +280,76 @@ func TestDeleteAllSessions(t *testing.T) {
 	}
 	if len(sessions) != 0 {
 		t.Fatalf("sessions = %d, want 0", len(sessions))
+	}
+}
+
+func TestProviderUsageFromRollups(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Truncate(time.Hour)
+	rows := []Request{
+		{ID: "a1", SID: "a1", TS: base.Add(time.Minute), Provider: "a", Status: 200, InputTokens: 10, OutputTokens: 2, CachedTokens: 3},
+		{ID: "a2", SID: "a2", TS: base.Add(2 * time.Minute), Provider: "a", Status: 500, Error: "boom", InputTokens: 20, OutputTokens: 4, CachedTokens: 5},
+		{ID: "b1", SID: "b1", TS: base.Add(3 * time.Minute), Provider: "b", Status: 200, InputTokens: 7, OutputTokens: 1, CachedTokens: 2},
+	}
+	for _, r := range rows {
+		if err := s.Insert(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ProviderUsage(ctx, base, base.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("rows = %+v", got)
+	}
+	a := got[0]
+	if a.Provider != "a" || a.Requests != 2 || a.Errors != 1 ||
+		a.InputTokens != 30 || a.OutputTokens != 6 || a.CachedTokens != 8 {
+		t.Fatalf("a = %+v", a)
+	}
+	if got[1].Provider != "b" || got[1].Requests != 1 || got[1].CachedTokens != 2 {
+		t.Fatalf("b = %+v", got[1])
+	}
+}
+
+func TestProviderUsageMigratesOldRollups(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE rollups (
+		bucket TEXT NOT NULL,
+		provider TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		requests INTEGER NOT NULL DEFAULT 0,
+		errors INTEGER NOT NULL DEFAULT 0,
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (bucket, provider, model))`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	bucket := now.Truncate(time.Hour).Format(time.RFC3339)
+	if _, err := db.Exec(`INSERT INTO rollups
+		(bucket, provider, model, requests, errors, input_tokens, output_tokens)
+		VALUES (?, 'old', 'm', 1, 0, 10, 2)`, bucket); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err := s.ProviderUsage(context.Background(), now.Truncate(time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Provider != "old" || got[0].CachedTokens != 0 {
+		t.Fatalf("old rollup = %+v", got)
 	}
 }
