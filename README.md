@@ -14,8 +14,8 @@ provider model, converts between wire APIs, and records per-request statistics.
   precedence order.
 - Balances or fails over across provider keys, nodes and backup nodes.
 - Locks provider keys to a write-only admin flow and masks previews in the API.
-- Serves an admin console for providers, nodes, routes, entrypoints, requests
-  and a live topology view.
+- Serves an admin console for providers, nodes, routes, entrypoints, requests,
+  a provider usage/balance view and a live topology view.
 - Stores request history and rollups in SQLite; the topology can be filtered by
   time range down to one minute.
 - Reloads configuration on `SIGHUP` or immediately after an admin edit.
@@ -241,6 +241,7 @@ when `admin.passwordHash` is set.
 | Routes | Ordered node list and strategy |
 | Entrypoints | Ordered model globs and the route they select |
 | Requests | Request history, timing, tokens, status and errors |
+| Usage | Per-provider local usage and upstream balance or quota windows |
 | Topology | Entrypoint → route → node → provider graph with live metrics |
 | Settings | Listen addresses, retention and admin password |
 
@@ -429,6 +430,8 @@ for, in `chat`, `responses`, `anthropic`, `gemini` order.
 Requests are recorded with route, node, provider, client model, target model,
 status, duration and token counts. Raw rows are retained for
 `stats.retainRequests`; rollups are retained for `stats.retainRollups`.
+Rollups also store `cached_tokens`; rows written before that column existed
+read as 0 cached tokens.
 
 The graph API attributes each row to an entrypoint at query time by resolving
 the row's `client_model` through the current entrypoint list:
@@ -476,6 +479,7 @@ GET  /api/stats/graph
 GET|PUT /api/topology/positions
 GET  /api/requests
 GET  /api/requests/{id}
+GET  /api/provider-usage
 GET|POST      /api/captures
 DELETE        /api/captures/{id}
 PUT  /api/admin/password
@@ -504,6 +508,33 @@ precedence, so the list is edited and saved as one unit.
 
 `GET /api/topology/positions` returns the shared layout map and `PUT` replaces
 it. The layout lives in the `topology_positions` table of `stats.sqlite`.
+
+## Provider usage and balances
+
+The Usage page shows one card per provider. Local totals (requests, errors,
+input/output/cached tokens) come from hourly rollups for the selected 24-hour,
+7-day or 30-day window. Upstream values are queried per API key:
+
+- **DeepSeek**: account balance from `/user/balance`.
+- **CommandCode**: credits and the 5-hour/weekly windows from
+  `/alpha/billing/credits`.
+- **OpenCode Go**: rolling, weekly and monthly windows from
+  `/zen/go/v1/usage`.
+
+OpenCode Zen does not expose a key's credits through an API; its card says to
+use the OpenCode console. `generic` providers have no known balance contract and
+show a note. Disabled providers are not queried. A supported provider with no
+keys shows "no API key configured".
+
+Upstream results are cached for 60 seconds. The page's refresh button forces a
+query; a failed refresh keeps the last successful amounts, marks the account
+stale and caches the failure for the same 60 seconds. Balances are not persisted
+and survive only in memory. The API returns masked key previews only; raw keys
+are never returned, logged or stored in stats.
+
+`GET /api/provider-usage` accepts `from`/`to` RFC 3339 bounds and `refresh=1`.
+Local totals are omitted with a `localError` when stats are disabled, but
+upstream balances are still returned.
 
 ## Docker
 

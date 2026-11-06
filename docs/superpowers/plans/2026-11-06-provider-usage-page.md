@@ -1058,9 +1058,10 @@ git commit -m "docs: document provider usage and balances"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / this commit
+- Files changed: `README.md`, `AGENTS.md`, plan record.
+- Tests/commands and results: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test ./... -count=1` PASS; web `npm test -- --run` PASS (88 tests), `npx tsc --noEmit` PASS, `npm run build` PASS; `GOWORK=off go build -o /tmp/llm-gw .` PASS.
+- Manual verification: started a temporary config on ports 19787/19788 with a known test password and a temp stats database. `GET /api/provider-usage?refresh=1` returned 200, one card per provider, a real DeepSeek CNY balance (`103.04`), clear 401 errors for the demo's placeholder CommandCode/OpenCode Go keys (not silent zeros), and no raw key in the JSON. A second request returned `cached: true` for all providers with the balance preserved. The temporary process and files were removed; the original demo process was left running.
+- Review findings and fixes: Self-review confirmed the docs match the implemented endpoint, cache, support matrix and additive `cached_tokens` migration. No fixes were needed after the gates.
+- Deferred items/limitations: CommandCode and OpenCode Go live values were not verified because the demo uses placeholder keys; their error paths were. No balance history, generic custom balance URL, per-card refresh or browser visual regression test.

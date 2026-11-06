@@ -148,6 +148,11 @@ Entrypoint -> Route -> Node -> Provider model
 - `GET/POST /api/captures` and `DELETE /api/captures/{id}` manage bounded
   on-demand rules. Rules are in-memory, lost on restart, and capped at 1000
   uses / 1 hour.
+- `GET /api/provider-usage` joins local rollups with per-key upstream
+  balances/windows. It caches upstream results for 60 seconds (failures too);
+  `refresh=1` bypasses the cache. Keys stay ordered, only masked previews are
+  returned, disabled/no-key providers make no upstream call, and `generic` /
+  `opencode-zen` return a note instead of querying.
 - Deleting a route still referenced by an entrypoint must fail and list the
   referencing entrypoints. Deleting a node still referenced by a route must
   fail.
@@ -187,6 +192,9 @@ Entrypoint -> Route -> Node -> Provider model
   `errors` buffers all and persists failures; `sample` persists a subset; rules
   override the policy. `maxBytes` bounds each preview field and `capture.retain`
   bounds rows. Never capture headers.
+- Rollups store `cached_tokens`; `Store.ProviderUsage` aggregates them by
+  provider for the Usage page. The column is additive; old rollup rows read 0
+  cached tokens and are not backfilled.
 
 ## Web invariants
 
@@ -271,3 +279,7 @@ GOWORK=off go test ./internal/stats -count=1
   change.
 - The demo under `/tmp/llm-gw-demo.yaml` is local-only and may contain real
   keys. Never copy it into the repository.
+- OpenCode Zen has no per-key balance API: its Usage card must link to
+  `https://opencode.ai/console` instead of querying. OpenCode Go's windows are
+  at `/zen/go/v1/usage`; CommandCode uses `resetAt` (Unix time) while OpenCode
+  Go uses `resetsAt` (RFC 3339).
