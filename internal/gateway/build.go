@@ -188,6 +188,12 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 		for k, v := range auth.Extra {
 			headers[k] = v
 		}
+		// The x forwarder cannot rewrite compressed SSE. Drop the client's
+		// Accept-Encoding so net/http negotiates gzip itself and transparently
+		// decompresses the upstream body before the body rewriter sees it.
+		// This is a transport concern, not an auth override, so it must win
+		// over auth.Extra as well.
+		headers["Accept-Encoding"] = ""
 
 		name := fmt.Sprintf("%s/%s/%s", route, p.Name, n.Name)
 		if len(keys) > 1 {
