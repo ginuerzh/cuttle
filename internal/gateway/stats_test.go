@@ -147,3 +147,45 @@ func TestStatsRecordsStreamingUsage(t *testing.T) {
 		t.Fatalf("stream = false, want true: %+v", row)
 	}
 }
+
+func TestStatsRecordsStreamTTFT(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		f := w.(http.Flusher)
+		time.Sleep(30 * time.Millisecond)
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		f.Flush()
+		time.Sleep(30 * time.Millisecond)
+		io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}\n\n")
+		f.Flush()
+	}))
+	defer upstream.Close()
+
+	gw, err := gateway.New(statsConfig(t, upstream.URL), xlogger.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+
+	resp, err := http.Post("http://"+gw.Addr().String()+"/v1/chat/completions", "application/json",
+		strings.NewReader(`{"model":"gpt-4.5","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := bufio.NewScanner(resp.Body)
+	for sc.Scan() {
+	}
+	resp.Body.Close()
+
+	row := waitRow(t, gw)
+	if !row.Stream {
+		t.Fatalf("stream = false, want true: %+v", row)
+	}
+	if row.TTFTMS <= 0 || row.TTFTMS > row.DurationMS {
+		t.Fatalf("ttft = %d, duration = %d", row.TTFTMS, row.DurationMS)
+	}
+}
