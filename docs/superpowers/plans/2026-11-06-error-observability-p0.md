@@ -27,7 +27,7 @@ Tests are run from the `llm-gw` directory unless stated otherwise.
 - Repository + commit: `llm-gw` `be783983`.
 - Files changed: `internal/rewriter/errorbody.go` (new), `internal/rewriter/errorbody_test.go` (new), `internal/rewriter/rewriter.go`, `internal/rewriter/rewriter_test.go`, `internal/stats/facts.go`, `internal/stats/errorclass.go` (new), `internal/stats/errorclass_test.go` (new), `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `internal/stats/store.go`, `internal/stats/store_test.go`.
 - Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/rewriter ./internal/stats -count=1` passed.
-- Review findings and fixes: redaction replacement initially dropped the `:` separator; changed the pattern to capture it. `error_class` is derived from status/stage/message; no message means the class still explains 4xx/5xx.
+- Review findings and fixes: redaction replacement initially dropped the `:` separator; changed the pattern to capture it. `error_class` is derived from status/stage/message; no message means the class still explains 4xx/5xx. Follow-up: error-summary parsing is bounded to 64KB so a multi-megabyte successful body that merely contains `"error"` is not re-unmarshalled on the hot path.
 - Deferred items: the rewriter does not see the HTTP status, so a plain `{"message":"..."}` error envelope without `error`, `success:false`, `cause` or `type:error` is not recognized. Response headers are not captured (P1).
 
 ## Task 2: Request context

@@ -8,7 +8,13 @@ import (
 	"unicode/utf8"
 )
 
-const maxErrorMessage = 512
+const (
+	maxErrorMessage = 512
+	// Error envelopes are small. Parsing a multi-megabyte successful body just
+	// because it happens to contain the word "error" would waste CPU on the
+	// hot path, so ignore anything larger than this.
+	maxErrorPayload = 64 << 10
+)
 
 var (
 	// Credentials can be echoed back by upstreams in error messages. Redact
@@ -29,6 +35,9 @@ var (
 func extractErrorSummary(b []byte) (message, typ string) {
 	payload := bytes.TrimSpace(b)
 	if len(payload) == 0 {
+		return "", ""
+	}
+	if len(payload) > maxErrorPayload {
 		return "", ""
 	}
 	if bytes.HasPrefix(payload, []byte("data:")) {

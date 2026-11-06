@@ -62,6 +62,13 @@ func TestExtractErrorSummary(t *testing.T) {
 	}
 }
 
+func TestExtractErrorSummaryIgnoresLargePayload(t *testing.T) {
+	message, _ := extractErrorSummary([]byte(`{"error":{"message":"` + strings.Repeat("x", maxErrorPayload) + `"}}`))
+	if message != "" {
+		t.Fatalf("large payload produced %q", message)
+	}
+}
+
 func TestExtractErrorSummaryBoundsAndRedacts(t *testing.T) {
 	message, _ := extractErrorSummary([]byte(`{"error":{"message":"` + strings.Repeat("x", 2000) + `"}}`))
 	if len(message) > maxErrorMessage+3 {
