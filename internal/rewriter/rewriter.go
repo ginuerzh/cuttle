@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-gost/core/logger"
 	corerewriter "github.com/go-gost/core/rewriter"
@@ -24,6 +25,7 @@ type Sink interface {
 	AddRewriteError(sid, stage, direction, ssePhase string, eventIndex int)
 	AddUpstreamError(sid, message, typ string)
 	AddStreamState(sid, finishReason string, sawDone bool)
+	MarkFirstResponse(sid string, at time.Time)
 }
 
 // Options configures one route-scoped body rewriter.
@@ -73,6 +75,13 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 	}
 	if meta.Direction == "request" && r.opts.Protocol == "anthropic" && r.opts.TargetModel != "" && isCountTokensURI(meta.URI) {
 		b = replaceModelField(b, r.opts.TargetModel)
+	}
+
+	if strings.EqualFold(meta.Direction, "response") &&
+		meta.SSEPhase != "" &&
+		!strings.EqualFold(meta.SSEPhase, "end") &&
+		r.opts.Sink != nil {
+		r.opts.Sink.MarkFirstResponse(meta.SID, time.Now())
 	}
 
 	res, err := r.eng.Rewrite(ctx, b, meta)

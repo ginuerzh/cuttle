@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 	corerewriter "github.com/go-gost/core/rewriter"
@@ -13,6 +14,8 @@ type sinkStub struct {
 	sid, message, typ string
 	finish            string
 	done              bool
+	marked            int
+	markedAt          time.Time
 }
 
 func (s *sinkStub) Add(string, string, string, engine.Result)           {}
@@ -24,6 +27,13 @@ func (s *sinkStub) AddUpstreamError(sid, message, typ string) {
 
 func (s *sinkStub) AddStreamState(sid, finishReason string, sawDone bool) {
 	s.finish, s.done = finishReason, sawDone
+}
+
+func (s *sinkStub) MarkFirstResponse(sid string, at time.Time) {
+	if s.marked == 0 {
+		s.markedAt = at
+	}
+	s.marked++
 }
 
 func TestRewriteReportsStreamState(t *testing.T) {
@@ -48,6 +58,42 @@ func TestRewriteReportsStreamState(t *testing.T) {
 	}
 	if !sink.done {
 		t.Fatalf("sink = %+v", sink)
+	}
+}
+
+func TestRewriteMarksFirstResponseOnce(t *testing.T) {
+	sink := &sinkStub{}
+	rw := New(engine.New(engine.Options{}), Options{Sink: sink, Protocol: "chat"})
+	meta := func(direction, phase string) corerewriter.RewriteOption {
+		return corerewriter.MetadataRewriteOption(map[string]any{
+			"sid": "sid-1", "direction": direction,
+			"uri": "/v1/chat/completions", "sse_phase": phase,
+		})
+	}
+
+	if _, err := rw.Rewrite(context.Background(), []byte(`data: {"choices":[]}`), meta("response", "start")); err != nil {
+		t.Fatal(err)
+	}
+	first := sink.markedAt
+	if sink.marked != 1 || first.IsZero() {
+		t.Fatalf("after start: marked=%d at=%v", sink.marked, first)
+	}
+
+	if _, err := rw.Rewrite(context.Background(), []byte(`data: {"choices":[]}`), meta("response", "event")); err != nil {
+		t.Fatal(err)
+	}
+	if sink.marked != 2 || !sink.markedAt.Equal(first) {
+		t.Fatalf("after event: marked=%d at=%v, want first %v", sink.marked, sink.markedAt, first)
+	}
+
+	if _, err := rw.Rewrite(context.Background(), nil, meta("response", "end")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rw.Rewrite(context.Background(), []byte(`{}`), meta("request", "")); err != nil {
+		t.Fatal(err)
+	}
+	if sink.marked != 2 {
+		t.Fatalf("end/request marked first response: %d", sink.marked)
 	}
 }
 

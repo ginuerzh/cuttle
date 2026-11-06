@@ -29,6 +29,7 @@ type Fact struct {
 	OutputTokens    int
 	CachedTokens    int
 	Stream          bool
+	FirstResponseAt time.Time
 	Updated         time.Time
 }
 
@@ -145,6 +146,22 @@ func (f *Facts) AddStreamState(sid, finishReason string, sawDone bool) {
 	fact.SawDone = fact.SawDone || sawDone
 	fact.Updated = time.Now()
 	f.m[sid] = fact
+}
+
+// MarkFirstResponse records the first response event for sid exactly once.
+func (f *Facts) MarkFirstResponse(sid string, at time.Time) {
+	if f == nil || sid == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	fact := f.m[sid]
+	if fact.FirstResponseAt.IsZero() {
+		fact.FirstResponseAt = at
+		fact.Updated = at
+		f.m[sid] = fact
+	}
 }
 
 // Take removes and returns the fact for sid.
