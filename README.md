@@ -255,6 +255,9 @@ routes: [ ... ]
 `SIGHUP` and an admin config save apply a new `level` immediately, including the
 `llm-api-converter` debug output routed through the same handler. A changed
 `format` takes effect after a restart and logs a warning when changed at runtime.
+`trace` also enables the underlying x request/response header dumps, which can
+contain client credentials such as `Authorization` or `x-api-key`; use it only
+for short debugging sessions and protect the log stream.
 
 ### `entrypoints[]`
 

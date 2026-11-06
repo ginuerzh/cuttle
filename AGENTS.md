@@ -98,6 +98,8 @@ Entrypoint -> Route -> Node -> Provider model
   node weight `1`, route strategy `round`.
 - `log.level` is live through SIGHUP and admin saves; `log.format` is fixed at
   startup and changing it at runtime only logs a restart warning.
+- `log.level: trace` enables x header dumps that can contain client
+  `Authorization`/`x-api-key` values; do not leave trace enabled in production.
 - `config.Write` must stay atomic (temp file, `fsync`, rename, `0600`).
 - `example.yaml` must always load with the current schema.
 - `stats.storeBody` is reserved and currently has no effect; do not document it
