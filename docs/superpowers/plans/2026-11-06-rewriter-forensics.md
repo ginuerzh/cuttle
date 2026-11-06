@@ -656,3 +656,10 @@ git commit -m "feat(web): show rewrite forensics and capture controls"
 - Deferred: request ID for gateway-generated 502/503, header capture, full SSE
   streams, redaction, and request-ID propagation to clients through upstream
   headers.
+
+## Final review fix pass (2026-11-06)
+
+- Important: `capture.retain` was dead; the cleanup used `retainRequests` (168h) for `request_captures`. `Store.Cleanup`/`StartCleanup` now take a separate `capturesBefore`, and the gateway passes `stats.capture.retain` (default 24h). `TestCleanupUsesCaptureRetain` pins it.
+- Important: the synthetic SSE `end` phase overwrote the last upstream event preview with an empty original. `Offer` now updates first/last only for non-empty original events; `TestSSELastIgnoresSyntheticEnd` pins it.
+- Minor: capture reason now stores the operator's reason (`TestRuleReasonInCapture`); `POST /api/captures` rejects unknown routes; explicit `sampleRate: 0` is preserved using a pointer (`TestCaptureExplicitZeroSampleRate`); Gemini model names are extracted from `/v1beta/models/...` so client-model rules match; the UI shows SSE `eventIndex: 0`; and tests pin header/stats-ID equality and capture-off behavior.
+- Fix commit: `d8d03495`. Final gates: `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS; web 86/86, `tsc --noEmit`, `npm run build` PASS.
