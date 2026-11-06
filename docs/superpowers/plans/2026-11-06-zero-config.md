@@ -371,12 +371,12 @@ git commit -m "test(gateway): cover zero-config onboarding"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files actually changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repository + commit: llm-gw / `<sha>` (`test(gateway): cover zero-config onboarding`); this record commit is the follow-up
+- Files actually changed: `internal/gateway/zero_config_e2e_test.go`, this plan
+- Tests/commands and results: `GOWORK=/tmp/llm-gw-work/go.work go test ./internal/gateway -run TestZeroConfigOnboarding -count=1 -v` -> PASS (0.31s); `GOWORK=/tmp/llm-gw-work/go.work go test ./internal/gateway -count=1` -> ok
+- Review findings and fixes: added deferred `Close` guards so a failure before the restart does not leak the gateway or admin test server; the stale remembered session is rejected only because the generated-config path clears it; pre-config requests fail without a panic
+- Deferred items/limitations: verification uses the detached `llm-api-converter` worktree from the Task 3 ruling
 
 ---
 
