@@ -414,12 +414,12 @@ git commit -m "feat(capture): add policy and on-demand rules"
 ```
 
 **Implementation record**
-- Date/status:
-- Repo/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-06 / complete
+- Repo/commit: llm-gw / 7337e034 (code, config, example and plan); this record commit is the follow-up
+- Files changed: `internal/capture/capture.go`, `internal/capture/capture_test.go`, `internal/config/config.go`, `internal/config/config_test.go`, `internal/gateway/gateway.go`, `example.yaml`, plan.
+- Tests/commands and results: `GOWORK=off go test ./internal/capture ./internal/config ./internal/gateway -count=1` PASS; `go build ./...`, `go vet ./...`, `go test ./... -count=1` PASS.
+- Review findings and fixes: The config validation is used directly by older tests without `ApplyDefaults`, so zero capture values are treated as “unset” while explicit out-of-range values fail. The capture rule reason stored on the session is `rule:<id>`; the user-provided reason stays on the active rule for the UI. `MaxRuleLimit=1000`, `MaxRuleTTL=1h`, 1000 sessions and a 64 MiB preview budget bound memory. `Stats.Capture` replaces the dead `storeBody` field; the gateway owns one manager and updates its policy on reload.
+- Deferred items/limitations: The manager is not wired to the rewriter/recorder yet (Task 3). Rules are in-memory and lost on restart by design. Configs using `storeBody` now fail strict YAML and must migrate to `stats.capture`.
 
 ---
 
