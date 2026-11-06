@@ -869,15 +869,37 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
 
 // ---------------------------------------------------------------- page
 
+export type AddKind = 'provider' | 'node' | 'route' | 'entrypoint';
+
+const ADD_LABELS: Record<AddKind, string> = {
+  provider: '添加提供商',
+  node: '添加节点',
+  route: '添加路由',
+  entrypoint: '添加入口',
+};
+
+/** The four add actions shown over the editable canvas. */
+export function AddButtons({ onAdd }: { onAdd: (kind: AddKind) => void }) {
+  return (
+    <>
+      {(Object.keys(ADD_LABELS) as AddKind[]).map((kind) => (
+        <Button key={kind} icon={<PlusOutlined />} onClick={() => onAdd(kind)}>
+          {tr(ADD_LABELS[kind])}
+        </Button>
+      ))}
+    </>
+  );
+}
+
 export function Edit({ config, onReload }: Props) {
   const isMobile = !Grid.useBreakpoint().md;
   const [selection, setSelection] = useState<Selection>(null);
-  const [addOpen, setAddOpen] = useState<null | 'provider' | 'node' | 'route' | 'entrypoint'>(null);
+  const [addOpen, setAddOpen] = useState<AddKind | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const openAdd = async (kind: 'provider' | 'node' | 'route' | 'entrypoint') => {
+  const openAdd = async (kind: AddKind) => {
     setError('');
     if (kind === 'provider' && presets.length === 0) {
       try {
@@ -959,18 +981,7 @@ export function Edit({ config, onReload }: Props) {
       <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
         <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 5 }}>
           <Space wrap>
-            <Button icon={<PlusOutlined />} onClick={() => void openAdd('provider')}>
-              Provider
-            </Button>
-            <Button icon={<PlusOutlined />} onClick={() => void openAdd('node')}>
-              Node
-            </Button>
-            <Button icon={<PlusOutlined />} onClick={() => void openAdd('route')}>
-              Route
-            </Button>
-            <Button icon={<PlusOutlined />} onClick={() => void openAdd('entrypoint')}>
-              Entrypoint
-            </Button>
+            <AddButtons onAdd={(kind) => void openAdd(kind)} />
             {busy ? <Tag color="processing">{tr('应用中…')}</Tag> : null}
           </Space>
           {error ? (
