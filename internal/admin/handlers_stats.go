@@ -99,18 +99,23 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to := parseRange(r)
-	// Snapshot the entrypoint list so the stats query does not hold the config lock.
-	s.mu.Lock()
-	cfg := &config.Config{
-		Entrypoints: append([]config.Entrypoint(nil), s.cfg.Entrypoints...),
-		Routes:      append([]config.Route(nil), s.cfg.Routes...),
-		Nodes:       append([]config.Node(nil), s.cfg.Nodes...),
-	}
-	s.mu.Unlock()
+	cfg := s.monitorConfig()
 	g, err := s.stats.GraphWithFilter(r.Context(), from, to, cfg.ResolveEntrypointName, cfg.TopologyIncludes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, g)
+}
+
+// monitorConfig copies the topology fields used to attribute and filter
+// statistics, so a stats query never holds the admin config lock.
+func (s *Server) monitorConfig() *config.Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return &config.Config{
+		Entrypoints: append([]config.Entrypoint(nil), s.cfg.Entrypoints...),
+		Routes:      append([]config.Route(nil), s.cfg.Routes...),
+		Nodes:       append([]config.Node(nil), s.cfg.Nodes...),
+	}
 }

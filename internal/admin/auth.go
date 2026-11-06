@@ -86,11 +86,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
+		hash := hashToken(c.Value)
 		s.mu.Lock()
-		delete(s.sessions, hashToken(c.Value))
+		delete(s.sessions, hash)
 		s.mu.Unlock()
+		s.closeWS(hash)
 		if s.stats != nil {
-			if err := s.stats.DeleteSession(context.Background(), hashToken(c.Value)); err != nil {
+			if err := s.stats.DeleteSession(context.Background(), hash); err != nil {
 				s.log.Warnf("delete session: %v", err)
 			}
 		}
@@ -126,10 +128,16 @@ func (s *Server) validSession(token string) bool {
 	if token == "" {
 		return false
 	}
+	return s.validSessionHash(hashToken(token))
+}
+
+func (s *Server) validSessionHash(key string) bool {
+	if key == "" {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := hashToken(token)
 	exp, ok := s.sessions[key]
 	if !ok {
 		return false

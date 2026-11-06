@@ -46,6 +46,12 @@ type Server struct {
 	stats    *stats.Store
 	capture  *capture.Manager
 
+	wsMu          sync.Mutex
+	wsConns       map[*wsClient]struct{}
+	wsInterval    time.Duration
+	wsPctInterval time.Duration
+	wsMaxAge      time.Duration
+
 	usageMu         sync.Mutex
 	usageCache      map[string]usageCacheEntry
 	usageGeneration uint64
@@ -81,6 +87,10 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 		usageCache:     make(map[string]usageCacheEntry),
 		modelsCache:    make(map[string]modelsCacheEntry),
 		modelsInflight: make(map[string]*modelsFlight),
+		wsConns:        make(map[*wsClient]struct{}),
+		wsInterval:     time.Second,
+		wsPctInterval:  10 * time.Second,
+		wsMaxAge:       7 * 24 * time.Hour,
 	}
 	if sp, ok := r.(interface{ Stats() *stats.Store }); ok {
 		s.stats = sp.Stats()
@@ -151,6 +161,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/captures", s.handleCreateCapture)
 	api.HandleFunc("DELETE /api/captures/{id}", s.handleDeleteCapture)
 	api.HandleFunc("GET /api/stats/graph", s.handleGraph)
+	api.HandleFunc("GET /api/events", s.handleEvents)
 	api.HandleFunc("GET /api/topology/positions", s.handleGetTopologyPositions)
 	api.HandleFunc("PUT /api/topology/positions", s.handlePutTopologyPositions)
 	api.HandleFunc("PUT /api/admin/password", s.handlePassword)

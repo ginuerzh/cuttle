@@ -639,6 +639,7 @@ func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request) {
 	s.cfg = c
 	s.passwordHash = hash
 	s.sessions = make(map[string]time.Time)
+	s.closeAllWS()
 	if s.stats != nil {
 		if err := s.stats.DeleteAllSessions(r.Context()); err != nil {
 			s.log.Warnf("clear sessions: %v", err)

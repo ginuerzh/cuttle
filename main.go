@@ -115,6 +115,9 @@ func run(args []string) error {
 		log.Warnf("admin.passwordHash is empty; management API disabled")
 	}
 	defer func() {
+		if adm != nil {
+			adm.Close()
+		}
 		if adminSrv != nil {
 			adminSrv.Close()
 		}
