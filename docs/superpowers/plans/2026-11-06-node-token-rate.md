@@ -884,3 +884,22 @@ git commit -m "test(gateway): verify streaming TTFT capture"
 ---
 
 
+
+---
+
+## Final review fixes
+
+Date: 2026-11-06
+Status: complete
+
+- `cb593cfe` `fix(web): hide token rates that round to zero` — re-graded the reviewer's Minor: a positive rate below 0.05 rendered as `0 tok/s`, contradicting the omit-zero contract. Added `formatTokenRate(0.04) === ''` and `formatTokenRate(0.05) === '0.1 tok/s'`; RED→GREEN.
+- `01dc88fe` `test(stats): cover TTFT clamp and parity edge cases` — added recorder clamp cases (before start, after end, sub-millisecond), a TTFT row to the HTTP/WS parity fixture with an explicit positive-rate assertion, and made the gateway test prove first-event capture by delaying the second event to 500 ms and asserting TTFT < 250 ms.
+
+Full gates after the fixes: `GOWORK=off go build/vet/test ./...` all passed; `npm test` 20 files / 143 tests passed; `npx tsc --noEmit` and `npm run build` passed.
+
+Deferred minors from the final review (not fixed):
+- Add a graph test for a failed stream that still produced output tokens.
+- Add a `BindingNode` render test that proves the `showRate` wiring, and a non-binding-node negative test.
+- Make the zero-rate fixture use `outputTokens: 100` so it cannot pass by relying on the token total.
+- Rename or tighten `TestRewriteMarksFirstResponseOnce`: the rewriter marks every response event and `Facts` deduplicates; optionally mark only the `start` phase.
+- Assert `TTFTMS == 0` in `TestStatsRecordsNonStreaming`.
