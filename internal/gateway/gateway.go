@@ -85,7 +85,18 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 			Record:   xrecorder.RecorderServiceHandler,
 		}))
 	}
-	h := forwardlocal.NewHandler(opts...)
+	base := forwardlocal.NewHandler(opts...)
+
+	g := &Gateway{
+		cfg:     cfg,
+		log:     log,
+		router:  router,
+		facts:   facts,
+		store:   store,
+		capture: capMgr,
+	}
+
+	h := newCountTokensHandler(base, &g.countTokens, log)
 	if err := h.Init(xmetadata.NewMetadata(map[string]any{
 		"sniffing":       true,
 		"readTimeout":    "15s",
@@ -94,21 +105,12 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		return nil, err
 	}
 
-	fwd, ok := h.(handler.Forwarder)
+	fwd, ok := base.(handler.Forwarder)
 	if !ok {
 		return nil, errors.New("gateway: handler does not support Forward")
 	}
-
-	g := &Gateway{
-		cfg:       cfg,
-		log:       log,
-		router:    router,
-		handler:   h,
-		forwarder: fwd,
-		facts:     facts,
-		store:     store,
-		capture:   capMgr,
-	}
+	g.handler = h
+	g.forwarder = fwd
 	if err := g.apply(cfg); err != nil {
 		if store != nil {
 			store.Close()

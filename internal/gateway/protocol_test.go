@@ -169,18 +169,20 @@ func TestProtocolMatrix(t *testing.T) {
 		}
 	})
 
-	t.Run("count_tokens is not converted", func(t *testing.T) {
+	t.Run("count_tokens is estimated for a chat target", func(t *testing.T) {
 		up, got := captureUpstream(t)
 		gw := startGateway(t, matrixConfig(up.URL, provider.Chat))
 
 		body := `{"model":"claude-opus-4-5","messages":[{"role":"user","content":"hi"}]}`
-		postThroughGateway(t, gw, "/v1/messages/count_tokens", body)
-
-		if got.path != "/v1/messages/count_tokens" {
-			t.Fatalf("path = %q, want pass-through", got.path)
+		status, resp := postGateway(t, gw, "/v1/messages/count_tokens", body)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d body = %s", status, resp)
 		}
-		if got.body != body {
-			t.Fatalf("body changed for count_tokens: %s", got.body)
+		if n := inputTokens(t, resp); n < 1 {
+			t.Fatalf("input_tokens = %d, want >= 1", n)
+		}
+		if got.path != "" {
+			t.Fatalf("upstream was called: %s", got.path)
 		}
 	})
 
