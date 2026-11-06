@@ -144,6 +144,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/entrypoints", s.handleGetEntrypoints)
 	api.HandleFunc("PUT /api/entrypoints", s.handlePutEntrypoints)
 	api.HandleFunc("GET /api/stats/summary", s.handleSummary)
+	api.HandleFunc("GET /api/stats/errors", s.handleErrorSummary)
+	api.HandleFunc("GET /api/alerts", s.handleAlerts)
 	api.HandleFunc("GET /api/provider-usage", s.handleProviderUsage)
 	api.HandleFunc("GET /api/requests", s.handleRequests)
 	api.HandleFunc("GET /api/requests/{id}", s.handleRequest)

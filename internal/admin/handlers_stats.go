@@ -39,6 +39,7 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		Route:       q.Get("route"),
 		OnlyErrors:  q.Get("errors") == "1",
 		Captured:    q.Get("captured") == "1",
+		ErrorClass:  q.Get("errorClass"),
 		Limit:       atoi(q.Get("limit")),
 		Offset:      atoi(q.Get("offset")),
 	}
@@ -68,6 +69,33 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
+}
+
+func (s *Server) handleErrorSummary(w http.ResponseWriter, r *http.Request) {
+	if s.stats == nil {
+		writeError(w, http.StatusServiceUnavailable, "stats disabled")
+		return
+	}
+	from, to := parseRange(r)
+	sum, err := s.stats.ErrorSummary(r.Context(), from, to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sum)
+}
+
+func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	if s.stats == nil {
+		writeError(w, http.StatusServiceUnavailable, "stats disabled")
+		return
+	}
+	alerts, err := s.stats.Alerts(r.Context(), time.Now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNilSlice(alerts))
 }
 
 func parseRange(r *http.Request) (time.Time, time.Time) {

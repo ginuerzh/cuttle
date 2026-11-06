@@ -65,6 +65,7 @@ type Filter struct {
 	Status      int
 	OnlyErrors  bool
 	Captured    bool
+	ErrorClass  string
 	Limit       int
 	Offset      int
 }
@@ -741,6 +742,10 @@ func (f Filter) where() (string, []any) {
 	}
 	if f.Captured {
 		conds = append(conds, "EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)")
+	}
+	if f.ErrorClass != "" {
+		conds = append(conds, "error_class = ?")
+		args = append(args, f.ErrorClass)
 	}
 	if f.Status > 0 {
 		conds = append(conds, "status = ?")
