@@ -211,3 +211,48 @@ func TestGraphTopologyFilter(t *testing.T) {
 		t.Fatalf("stale edge = %+v", got)
 	}
 }
+
+func TestGraphComputesStreamingTokenRate(t *testing.T) {
+	base := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	rows := []GraphRow{
+		// 80 tokens in 800ms => 100 tok/s.
+		{ID: "a", TS: base.UnixMilli(), Route: "r", Node: "n", Provider: "p", Status: 200,
+			DurationMS: 1000, TTFTMS: 200, OutputTokens: 80},
+		// 120 tokens in 1500ms => 80 tok/s.
+		{ID: "b", TS: base.Add(time.Minute).UnixMilli(), Route: "r", Node: "n", Provider: "p", Status: 200,
+			DurationMS: 2000, TTFTMS: 500, OutputTokens: 120},
+		// Non-streaming: no TTFT, must not contribute.
+		{ID: "c", TS: base.Add(2 * time.Minute).UnixMilli(), Route: "r", Node: "n", Provider: "p", Status: 200,
+			DurationMS: 500, OutputTokens: 999},
+		// No output tokens: must not contribute.
+		{ID: "d", TS: base.Add(3 * time.Minute).UnixMilli(), Route: "r", Node: "n", Provider: "p", Status: 200,
+			DurationMS: 500, TTFTMS: 100},
+		// Zero generation time: must not contribute.
+		{ID: "e", TS: base.Add(4 * time.Minute).UnixMilli(), Route: "r", Node: "n", Provider: "p", Status: 200,
+			DurationMS: 300, TTFTMS: 300, OutputTokens: 10},
+	}
+
+	agg := NewAggregator()
+	for _, row := range rows {
+		agg.Add(row)
+	}
+	g := agg.Metrics(nil, nil, GraphMetrics{}, true)
+
+	// (80 + 120) * 1000 / (800 + 1500) = 86.9565...
+	got := g.Nodes["node:n"].OutputTokensPerSecond
+	if got < 86.9 || got > 87.0 {
+		t.Fatalf("token rate = %v, want about 86.96", got)
+	}
+}
+
+func TestGraphOmitsTokenRateWithoutStreamingRows(t *testing.T) {
+	agg := NewAggregator()
+	agg.Add(GraphRow{
+		ID: "plain", TS: time.Now().UnixMilli(), Route: "r", Node: "n", Provider: "p",
+		Status: 200, DurationMS: 500, OutputTokens: 100,
+	})
+	g := agg.Metrics(nil, nil, GraphMetrics{}, true)
+	if got := g.Nodes["node:n"].OutputTokensPerSecond; got != 0 {
+		t.Fatalf("token rate = %v, want 0 for no streaming rows", got)
+	}
+}

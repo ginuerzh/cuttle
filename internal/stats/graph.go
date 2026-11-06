@@ -16,6 +16,11 @@ type NodeMetrics struct {
 	InputTokens  int64 `json:"inputTokens"`
 	OutputTokens int64 `json:"outputTokens"`
 	CachedTokens int64 `json:"cachedTokens"`
+
+	OutputTokensPerSecond float64 `json:"outputTokensPerSecond"`
+
+	streamOutputTokens int64
+	streamGenerationMS int64
 }
 
 // EdgeMetrics aggregates one route→node or node→provider edge.
@@ -80,6 +85,9 @@ type comboStats struct {
 	outputTokens int64
 	cachedTokens int64
 	durations    []int64
+
+	streamOutputTokens int64
+	streamGenerationMS int64
 }
 
 type errorSample struct {
@@ -164,6 +172,10 @@ func (a *Aggregator) Add(row GraphRow) {
 	c.outputTokens += row.OutputTokens
 	c.cachedTokens += row.CachedTokens
 	c.durations = append(c.durations, row.DurationMS)
+	if row.TTFTMS > 0 && row.OutputTokens > 0 && row.DurationMS > row.TTFTMS {
+		c.streamOutputTokens += row.OutputTokens
+		c.streamGenerationMS += row.DurationMS - row.TTFTMS
+	}
 
 	if failed {
 		a.errors = append(a.errors, errorSample{
@@ -213,6 +225,8 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		n.InputTokens += c.inputTokens
 		n.OutputTokens += c.outputTokens
 		n.CachedTokens += c.cachedTokens
+		n.streamOutputTokens += c.streamOutputTokens
+		n.streamGenerationMS += c.streamGenerationMS
 		g.Nodes[key] = n
 		if needsPercentiles(key) {
 			durations[key] = append(durations[key], c.durations...)
@@ -273,6 +287,13 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		sort.Slice(ds, func(i, j int) bool { return ds[i] < ds[j] })
 		n.P50MS = percentileSorted(ds, 0.50)
 		n.P95MS = percentileSorted(ds, 0.95)
+		g.Nodes[key] = n
+	}
+
+	for key, n := range g.Nodes {
+		if n.streamGenerationMS > 0 {
+			n.OutputTokensPerSecond = float64(n.streamOutputTokens) * 1000 / float64(n.streamGenerationMS)
+		}
 		g.Nodes[key] = n
 	}
 
