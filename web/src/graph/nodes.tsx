@@ -30,11 +30,15 @@ function fmt(n: number): string {
   return `${n}`;
 }
 
-function metricsLine(m?: NodeMetrics): string {
-  if (!m) return '';
-  if (m.requests === 0) return t('暂无请求');
+function errorPercent(m: NodeMetrics): string {
   const err = errorRate(m) * 100;
-  return `${fmt(m.requests)} req · ${err < 10 ? err.toFixed(1) : err.toFixed(0)}% err · p95 ${formatDurationMs(m.p95Ms)}`;
+  return `${err < 10 ? err.toFixed(1) : err.toFixed(0)}%`;
+}
+
+function metricsText(m: NodeMetrics): string {
+  if (m.requests === 0) return t('暂无请求');
+  const error = m.errors > 0 ? ` · ${errorPercent(m)}` : '';
+  return `${fmt(m.requests)}${error} · p95 ${formatDurationMs(m.p95Ms)}`;
 }
 
 const box: React.CSSProperties = {
@@ -110,9 +114,10 @@ export function NodeBody({ label, sub }: { label: string; sub?: string }) {
  */
 export function NodeStats({ metrics }: { metrics?: NodeMetrics }) {
   if (!metrics) return null;
+  const text = metricsText(metrics);
   return (
     <div
-      title={metricsLine(metrics)}
+      title={text}
       style={{
         position: 'absolute',
         top: '100%',
@@ -129,7 +134,20 @@ export function NodeStats({ metrics }: { metrics?: NodeMetrics }) {
         pointerEvents: 'none',
       }}
     >
-      {metricsLine(metrics)}
+      {metrics.requests === 0 ? (
+        text
+      ) : (
+        <>
+          {`${fmt(metrics.requests)}`}
+          {metrics.errors > 0 ? (
+            <>
+              {' · '}
+              <span style={{ color: '#dc2626' }}>{errorPercent(metrics)}</span>
+            </>
+          ) : null}
+          {` · p95 ${formatDurationMs(metrics.p95Ms)}`}
+        </>
+      )}
     </div>
   );
 }

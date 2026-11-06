@@ -54,7 +54,49 @@ describe('NodeStats', () => {
     expect(html).toContain('position:absolute');
     expect(html).toContain('top:100%');
     expect(html).toContain('text-align:center');
-    expect(html).toContain('10 req');
+    expect(html).toContain('10 ·');
+    expect(html).not.toContain('req');
+  });
+
+  it('colors the error rate red and drops the err suffix', () => {
+    const html = renderToStaticMarkup(
+      <NodeStats
+        metrics={{
+          requests: 10,
+          errors: 2,
+          p50Ms: 3,
+          p95Ms: 5,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: 0,
+        }}
+      />,
+    );
+
+    expect(html).toContain('10 ·');
+    expect(html).toContain('20%');
+    expect(html).toContain('color:#dc2626');
+    expect(html).not.toContain('err');
+    expect(html).not.toContain('req');
+  });
+
+  it('hides the error share when there are no errors', () => {
+    const html = renderToStaticMarkup(
+      <NodeStats
+        metrics={{
+          requests: 10,
+          errors: 0,
+          p50Ms: 3,
+          p95Ms: 5,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: 0,
+        }}
+      />,
+    );
+
+    expect(html).toContain('10 · p95 5ms');
+    expect(html).not.toContain('0.0%');
   });
 
   it('renders long p95 latencies in seconds, never as kms', () => {

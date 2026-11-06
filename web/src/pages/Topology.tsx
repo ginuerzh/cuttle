@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Background,
   applyEdgeChanges,
@@ -59,10 +59,20 @@ function edgeColor(m?: { requests: number; errors: number }): string {
   return '#16a34a';
 }
 
+export function edgeLabel(m: { requests: number; errors: number }): ReactNode {
+  if (!m.errors) return `${m.requests}`;
+  return (
+    <>
+      {`${m.requests} · `}
+      <span style={{ color: '#dc2626' }}>{m.errors}</span>
+    </>
+  );
+}
+
 function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
   const m = metrics?.edges[e.id];
   const data = e.data as { color?: string } | undefined;
-  const label = m ? `${m.requests}${m.errors ? ` · ${m.errors} err` : ''}` : undefined;
+  const label = m ? edgeLabel(m) : undefined;
   const width = m ? Math.min(4, 1.5 + Math.log10(m.requests + 1)) : 1.5;
   const color = m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
   return {
