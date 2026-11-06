@@ -146,7 +146,8 @@ Entrypoint -> Route -> Node -> Provider model
 - `GET /api/events` is a WebSocket subscription under `requireAuth`. Validate
   `Origin` against `Host` (empty Origin is allowed for non-browser clients),
   accept `range`, `since` or `reset=1`, and push absolute snapshots. Close
-  sockets with 4401 on logout or session expiry, and close them on shutdown.
+  sockets with 4401 on logout or session expiry, 4408 when an open session
+  exceeds `wsMaxAge`, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
 - Create endpoints return `201 Created` with an empty body. The web client must
   tolerate empty success responses.
@@ -208,13 +209,15 @@ Entrypoint -> Route -> Node -> Provider model
 - Rollups store `cached_tokens`; `Store.ProviderUsage` aggregates them by
   provider for the Usage page. The column is additive; old rollup rows read 0
   cached tokens and are not backfilled.
-- The live monitor tails `requests` by `rowid` in insertion order, never by
-  `ts`; a long request can complete after its start time. `GraphAggregate`
-  seeds the window and `ForEachRequestAfter` reads new rows. Deduplicate by
-  request ID so a replaced row cannot double count.
+- The live monitor tails `requests` by `seq`, a monotonic counter stored in
+  `request_seq`, never by `ts` or `rowid`; a long request can complete after
+  its start time, and retention can reuse rowids. `GraphAggregate` seeds the
+  window and `ForEachRequestAfter` reads new rows. Deduplicate by request ID
+  so a replaced row cannot double count.
 - A live snapshot is cumulative from a fixed `since`. Counts and tokens are
   monotonic between resets; P50/P95 are percentiles over the same window and
-  may move either way.
+  may move either way. Error samples are bounded to 200, and cached
+  percentile keys are not re-materialized on every tick.
 
 ## Web invariants
 

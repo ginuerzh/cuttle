@@ -253,6 +253,65 @@ func TestCaptureRoundTripAndCleanup(t *testing.T) {
 	}
 }
 
+func TestOpenMigratesMonotonicSeq(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE requests (
+		request_id TEXT PRIMARY KEY,
+		sid TEXT NOT NULL DEFAULT '',
+		ts INTEGER NOT NULL,
+		model TEXT NOT NULL DEFAULT '',
+		provider TEXT NOT NULL DEFAULT '',
+		node TEXT NOT NULL DEFAULT '',
+		protocol TEXT NOT NULL DEFAULT '',
+		effort TEXT NOT NULL DEFAULT '',
+		status INTEGER NOT NULL DEFAULT 0,
+		error TEXT NOT NULL DEFAULT '',
+		duration_ms INTEGER NOT NULL DEFAULT 0,
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		cached_tokens INTEGER NOT NULL DEFAULT 0,
+		stream INTEGER NOT NULL DEFAULT 0,
+		bytes_in INTEGER NOT NULL DEFAULT 0,
+		bytes_out INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO requests(request_id, sid, ts, provider) VALUES('old', 'old', ?, 'p')`, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	var oldSeq int64
+	if err := s.db.QueryRow(`SELECT seq FROM requests WHERE request_id = 'old'`).Scan(&oldSeq); err != nil {
+		t.Fatal(err)
+	}
+	if oldSeq == 0 {
+		t.Fatal("old row seq was not backfilled")
+	}
+	if err := s.Insert(context.Background(), Request{ID: "new", TS: time.Now(), Provider: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	var newSeq int64
+	if err := s.db.QueryRow(`SELECT seq FROM requests WHERE request_id = 'new'`).Scan(&newSeq); err != nil {
+		t.Fatal(err)
+	}
+	if newSeq <= oldSeq {
+		t.Fatalf("new seq = %d, want greater than %d", newSeq, oldSeq)
+	}
+}
+
 func TestCleanupUsesCaptureRetain(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

@@ -127,6 +127,12 @@ export function useLiveGraph(opts: LiveGraphOptions): void {
           handleAuthError();
           return;
         }
+        if (event.code === 4408) {
+          mode.current = { kind: 'range', range: opts.range };
+          attempt = 0;
+          schedule();
+          return;
+        }
         void getConfig()
           .then(() => {
             if (!disposed) {

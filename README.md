@@ -280,9 +280,10 @@ selector picks the initial lookback; the end is always the current time, so
 request, error and token totals only increase until you start a new session.
 The selector keeps its labels but now means "look back this far when the
 session starts". **Reset stats** clears the display and reconnects with
-`reset=1`, starting at zero without querying history. P50/P95 are percentiles
-over the accumulated window, not cumulative sums. See [Admin API](#admin-api)
-for the reverse-proxy requirements.
+`reset=1`, starting at zero without querying history. A session older than
+seven days is closed and restarted from the selected lookback. P50/P95 are
+percentiles over the accumulated window, not cumulative sums. See
+[Admin API](#admin-api) for the reverse-proxy requirements.
 
 ## Configuration reference
 

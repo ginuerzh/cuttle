@@ -27,7 +27,7 @@ func newEventsAdmin(t *testing.T) (*Server, *recordingReloader, *httptest.Server
 	t.Cleanup(s.Close)
 	s.wsInterval = 20 * time.Millisecond
 	s.wsPctInterval = 20 * time.Millisecond
-	s.wsMaxAge = time.Hour
+	s.wsMaxAge = 2 * time.Hour
 	return s, rel, ts
 }
 
@@ -227,6 +227,19 @@ func TestEventsClosesOnServerClose(t *testing.T) {
 	readSnapshot(t, conn)
 
 	s.Close()
+	expectClosed(t, conn)
+}
+
+func TestEventsClosesWhenSessionExceedsMaxAge(t *testing.T) {
+	s, _, ts := newEventsAdmin(t)
+	client, _ := login(t, ts.URL)
+	conn, _, err := dialEvents(t, ts.URL, client.Jar, "?range=1h", ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	readSnapshot(t, conn)
+	s.wsMaxAge = 50 * time.Millisecond
 	expectClosed(t, conn)
 }
 

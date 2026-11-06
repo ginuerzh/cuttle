@@ -140,6 +140,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 
 			now := time.Now()
+			if s.wsMaxAge > 0 && now.Sub(since) > s.wsMaxAge {
+				client.close(4408, "session too old")
+				return
+			}
 			sinceMs := since.UnixMilli()
 			last, err := s.stats.ForEachRequestAfter(ctx, lastRowID, func(row stats.GraphRow) {
 				// Requests are attributed by start time. Rows inserted above the

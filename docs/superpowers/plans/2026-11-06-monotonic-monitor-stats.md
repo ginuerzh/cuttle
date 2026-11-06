@@ -518,3 +518,29 @@ git commit -m "docs: describe real-time monotonic monitoring"
 - Tests/commands and results: `GOWORK=off go build ./...` → PASS; `GOWORK=off go vet ./...` → PASS; `GOWORK=off go test ./... -count=1` → PASS (all packages); `cd web && npm test` → 18 files / 122 tests PASS; `npx tsc --noEmit` → PASS; `npm run build` → PASS; `GOWORK=off go build -o /tmp/llm-gw .` → PASS.
 - Review findings and fixes: README and AGENTS now document the WebSocket endpoint, fixed-start monotonic semantics, reset-by-reconnect, rowid cursor, Origin/Host checks and reverse-proxy Upgrade requirements.
 - Deferred items/limitations: no browser visual E2E exists; UI behavior is verified by Vitest, TypeScript, the Vite build and Go WebSocket integration tests. Exact duration samples and the initial snapshot grow with session length; the 7-day clamp bounds them. An unrelated untracked `2026-11-06-error-aggregation-p1-design.md` was left untouched.
+
+---
+
+### Post-review fix pass
+
+**Files:**
+- Modify: `internal/stats/store.go`, `internal/stats/graph.go`, `internal/stats/graph_live_test.go`, `internal/stats/store_test.go`
+- Modify: `internal/admin/handlers_events.go`, `internal/admin/events_test.go`
+- Modify: `web/src/useLiveGraph.ts`, `web/package.json`, `web/package-lock.json`
+- Create: `web/src/useLiveGraph.test.tsx`
+- Modify: `README.md`, `AGENTS.md`, spec, plan
+
+**Findings addressed:**
+1. Important: SQLite can reuse rowids after retention deletes the high-water row; replaced the live cursor with `requests.seq` backed by a `request_seq` counter, a `PRAGMA user_version=1` migration that backfills `seq = rowid`, and a retention-delete regression test.
+2. Important: unbounded per-tick work and memory; bounded error samples to 200, skip duration materialization for cached percentile keys, and close open sessions older than `wsMaxAge` with code 4408.
+3. Important: no client hook tests; added `jsdom` as a dev dependency and 8 `useLiveGraph` tests covering range/resume, reset, session reset, 4401, 4408, auth probe, visibility, and stale sockets.
+
+**Deferred minors:** the live tail includes the tick's inclusive end boundary (documented); `since` is returned with second precision; the visibility/`getConfig` replay race; `closeAllWS` under the admin lock; missing Go assertions for since-resume and the 4401 close code.
+
+**Implementation record:**
+- Date/status: 2026-11-06 — complete.
+- Repo + commit: llm-gw `feat/monotonic-monitor` (fix commit; SHA recorded in the follow-up `docs(plan)` commit).
+- Files changed: `internal/stats/store.go`, `internal/stats/graph.go`, `internal/stats/graph_live_test.go`, `internal/stats/store_test.go`, `internal/admin/handlers_events.go`, `internal/admin/events_test.go`, `web/src/useLiveGraph.ts`, `web/src/useLiveGraph.test.tsx` (new), `web/package.json`, `web/package-lock.json`, `README.md`, `AGENTS.md`, spec, plan.
+- Tests/commands and results: `GOWORK=off go build ./...` → PASS; `GOWORK=off go vet ./...` → PASS; `GOWORK=off go test ./... -count=1` → PASS; `cd web && npm test` → 19 files / 130 tests PASS; `npx tsc --noEmit` → PASS; `npm run build` → PASS.
+- Review findings and fixes: `TestGraphAggregateCursorSurvivesRetentionDeletes` failed before the sequence column and passes after; `TestOpenMigratesMonotonicSeq` covers the old-DB backfill; `TestAggregatorBoundsErrorSamples` covers the ring; `useLiveGraph.test.tsx` covers the reconnect state machine.
+- Deferred items/limitations: see the deferred minors above; no browser visual E2E exists.

@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -107,11 +108,11 @@ func TestGraphAggregateCursorAdvancesPastOutOfWindowRows(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var rowidIn, rowidOld int64
-	if err := s.db.QueryRow(`SELECT rowid FROM requests WHERE request_id = 'in'`).Scan(&rowidIn); err != nil {
+	var seqIn, seqOld int64
+	if err := s.db.QueryRow(`SELECT seq FROM requests WHERE request_id = 'in'`).Scan(&seqIn); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.QueryRow(`SELECT rowid FROM requests WHERE request_id = 'old'`).Scan(&rowidOld); err != nil {
+	if err := s.db.QueryRow(`SELECT seq FROM requests WHERE request_id = 'old'`).Scan(&seqOld); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,11 +130,11 @@ func TestGraphAggregateCursorAdvancesPastOutOfWindowRows(t *testing.T) {
 	if seen != 2 {
 		t.Fatalf("scanned rows = %d, want 2", seen)
 	}
-	if last != rowidOld {
-		t.Fatalf("cursor = %d, want %d (out-of-window row)", last, rowidOld)
+	if last != seqOld {
+		t.Fatalf("cursor = %d, want %d (out-of-window row)", last, seqOld)
 	}
-	if last <= rowidIn {
-		t.Fatalf("cursor = %d, want past in-window rowid %d", last, rowidIn)
+	if last <= seqIn {
+		t.Fatalf("cursor = %d, want past in-window sequence %d", last, seqIn)
 	}
 	got := agg.Metrics(nil, nil, GraphMetrics{}, true)
 	if got.Nodes["provider:p"].Requests != 1 {
@@ -224,6 +225,70 @@ func TestAggregatorPercentileCache(t *testing.T) {
 	}
 	if got := recomputed.Nodes["provider:p"].P95MS; got != 30 {
 		t.Fatalf("recomputed p95 = %d, want 30", got)
+	}
+}
+
+func TestAggregatorBoundsErrorSamples(t *testing.T) {
+	agg := NewAggregator()
+	base := time.Now().UnixMilli()
+	for i := 0; i < maxErrorSamples+50; i++ {
+		agg.Add(GraphRow{
+			ID: fmt.Sprintf("err-%d", i), TS: base + int64(i), Provider: "p",
+			Status: 500, Error: "boom", DurationMS: 1,
+		})
+	}
+	if len(agg.errors) > maxErrorSamples {
+		t.Fatalf("stored error samples = %d, want <= %d", len(agg.errors), maxErrorSamples)
+	}
+	got := agg.Metrics(nil, nil, GraphMetrics{}, true)
+	if len(got.Errors) != 20 {
+		t.Fatalf("reported errors = %d, want 20", len(got.Errors))
+	}
+}
+
+func TestGraphAggregateCursorSurvivesRetentionDeletes(t *testing.T) {
+	s := newStore(t)
+	base := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	from, to := base, base.Add(time.Hour)
+
+	if err := s.Insert(context.Background(), Request{
+		ID: "first", TS: base.Add(time.Minute), Provider: "p", Status: 200,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	agg, high, err := s.GraphAggregate(context.Background(), from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Retention can delete the row at the cursor high-water mark. A rowid
+	// cursor may reuse that value; the monotonic sequence must not.
+	if _, err := s.db.ExecContext(context.Background(), `DELETE FROM requests`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Insert(context.Background(), Request{
+		ID: "after-delete", TS: base.Add(2 * time.Minute), Provider: "p", Status: 200,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := 0
+	last, err := s.ForEachRequestAfter(context.Background(), high, func(row GraphRow) {
+		seen++
+		agg.Add(row)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen != 1 {
+		t.Fatalf("tail rows = %d, want 1", seen)
+	}
+	if last <= high {
+		t.Fatalf("cursor = %d, want greater than %d", last, high)
+	}
+	got := agg.Metrics(nil, nil, GraphMetrics{}, true)
+	if got.Nodes["provider:p"].Requests != 2 {
+		t.Fatalf("provider:p = %+v, want 2 requests", got.Nodes["provider:p"])
 	}
 }
 

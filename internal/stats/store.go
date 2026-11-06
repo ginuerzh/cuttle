@@ -134,6 +134,7 @@ func (s *Store) migrate() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS requests (
 			request_id TEXT PRIMARY KEY,
+			seq INTEGER NOT NULL DEFAULT 0,
 			sid TEXT NOT NULL DEFAULT '',
 			ts INTEGER NOT NULL,
 			model TEXT NOT NULL DEFAULT '',
@@ -197,6 +198,10 @@ func (s *Store) migrate() error {
 			cached_tokens INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (bucket, provider, model)
 		)`,
+		`CREATE TABLE IF NOT EXISTS request_seq (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			value INTEGER NOT NULL DEFAULT 0
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -222,12 +227,33 @@ func (s *Store) migrate() error {
 		"error_class":      "TEXT NOT NULL DEFAULT ''",
 		"sse_phase":        "TEXT NOT NULL DEFAULT ''",
 		"event_index":      "INTEGER NOT NULL DEFAULT 0",
+		"seq":              "INTEGER NOT NULL DEFAULT 0",
 	}); err != nil {
 		return err
 	}
-	return s.ensureColumns("rollups", map[string]string{
+	if err := s.ensureColumns("rollups", map[string]string{
 		"cached_tokens": "INTEGER NOT NULL DEFAULT 0",
-	})
+	}); err != nil {
+		return err
+	}
+
+	// v1: backfill the monotonic live cursor and initialize its counter once.
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return err
+	}
+	if version < 1 {
+		if _, err := s.db.Exec(`UPDATE requests SET seq = rowid WHERE seq = 0`); err != nil {
+			return err
+		}
+		if _, err := s.db.Exec(`INSERT OR IGNORE INTO request_seq(id, value) SELECT 1, COALESCE(MAX(seq), 0) FROM requests`); err != nil {
+			return err
+		}
+		if _, err := s.db.Exec(`PRAGMA user_version = 1`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureColumns adds missing columns to an existing table (SQLite has no
@@ -384,15 +410,23 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 	}
 	defer tx.Rollback()
 
+	var seq int64
+	if _, err := tx.ExecContext(ctx, `UPDATE request_seq SET value = value + 1 WHERE id = 1`); err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT value FROM request_seq WHERE id = 1`).Scan(&seq); err != nil {
+		return err
+	}
+
 	_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO requests
-		(request_id, sid, ts, model, client_model, provider, route, node,
+		(request_id, seq, sid, ts, model, client_model, provider, route, node,
 		 protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		 effort, status, error, error_class, duration_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		 uri, method, client_ip, user_agent, upstream, client_status,
 		 finish_reason, saw_done, truncated)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, seq, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node,
 		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
 		r.Effort, r.Status, r.Error, r.ErrorClass, r.DurationMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut),

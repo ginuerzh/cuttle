@@ -92,7 +92,10 @@ type errorSample struct {
 	message     string
 }
 
-const maxSeenRequestIDs = 200_000
+const (
+	maxSeenRequestIDs = 200_000
+	maxErrorSamples   = 200
+)
 
 // Aggregator accumulates request rows by their raw dimensions. Entrypoint
 // attribution and topology filtering are applied in Metrics, so a config
@@ -172,6 +175,15 @@ func (a *Aggregator) Add(row GraphRow) {
 			status:      row.Status,
 			message:     row.Error,
 		})
+		if len(a.errors) > maxErrorSamples {
+			oldest := 0
+			for i := 1; i < len(a.errors); i++ {
+				if a.errors[i].ts < a.errors[oldest].ts {
+					oldest = i
+				}
+			}
+			a.errors = append(a.errors[:oldest], a.errors[oldest+1:]...)
+		}
 	}
 }
 
@@ -185,6 +197,13 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		Errors: []ErrorRow{},
 	}
 	durations := make(map[string][]int64)
+	needsPercentiles := func(key string) bool {
+		if recomputePercentiles {
+			return true
+		}
+		_, ok := prev.Nodes[key]
+		return !ok
+	}
 
 	addNode := func(key string, c *comboStats) {
 		n := g.Nodes[key]
@@ -194,7 +213,9 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		n.OutputTokens += c.outputTokens
 		n.CachedTokens += c.cachedTokens
 		g.Nodes[key] = n
-		durations[key] = append(durations[key], c.durations...)
+		if needsPercentiles(key) {
+			durations[key] = append(durations[key], c.durations...)
+		}
 	}
 	addEdge := func(key string, c *comboStats) {
 		e := g.Edges[key]
@@ -238,8 +259,7 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		}
 	}
 
-	for key, ds := range durations {
-		n := g.Nodes[key]
+	for key, n := range g.Nodes {
 		if !recomputePercentiles {
 			if p, ok := prev.Nodes[key]; ok {
 				n.P50MS = p.P50MS
@@ -248,6 +268,7 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 				continue
 			}
 		}
+		ds := durations[key]
 		sort.Slice(ds, func(i, j int) bool { return ds[i] < ds[j] })
 		n.P50MS = percentileSorted(ds, 0.50)
 		n.P95MS = percentileSorted(ds, 0.95)
@@ -310,18 +331,18 @@ func (s *Store) GraphWithFilter(ctx context.Context, from, to time.Time, resolve
 	return agg.Metrics(resolve, include, GraphMetrics{}, true), nil
 }
 
-// GraphAggregate loads the window snapshot and returns the highest rowid
-// covered by it. The caller tails from that rowid.
+// GraphAggregate loads the window snapshot and returns the highest sequence
+// covered by it. The caller tails from that sequence.
 func (s *Store) GraphAggregate(ctx context.Context, from, to time.Time) (*Aggregator, int64, error) {
 	var high int64
-	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(rowid), 0) FROM requests`).Scan(&high); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM requests`).Scan(&high); err != nil {
 		return nil, 0, err
 	}
 
 	agg := NewAggregator()
 	rows, err := s.db.QueryContext(ctx, `SELECT request_id, ts, route, node, provider, client_model, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens
-		FROM requests WHERE rowid <= ? AND ts >= ? AND ts < ? ORDER BY ts DESC`,
+		FROM requests WHERE seq <= ? AND ts >= ? AND ts < ? ORDER BY ts DESC`,
 		high, from.UnixMilli(), to.UnixMilli())
 	if err != nil {
 		return nil, 0, err
@@ -344,31 +365,31 @@ func (s *Store) GraphAggregate(ctx context.Context, from, to time.Time) (*Aggreg
 	return agg, high, nil
 }
 
-// ForEachRequestAfter visits every row above afterRowID in insertion order
-// and returns the highest rowid scanned. It deliberately does not filter by
+// ForEachRequestAfter visits every row above afterSeq in insertion order
+// and returns the highest sequence scanned. It deliberately does not filter by
 // ts: rows outside the window must still advance the cursor, or they would be
 // rescanned forever.
-func (s *Store) ForEachRequestAfter(ctx context.Context, afterRowID int64, fn func(GraphRow)) (int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT rowid, request_id, ts, route, node, provider, client_model, status, error,
+func (s *Store) ForEachRequestAfter(ctx context.Context, afterSeq int64, fn func(GraphRow)) (int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, request_id, ts, route, node, provider, client_model, status, error,
 		duration_ms, input_tokens, output_tokens, cached_tokens
-		FROM requests WHERE rowid > ? ORDER BY rowid`, afterRowID)
+		FROM requests WHERE seq > ? ORDER BY seq`, afterSeq)
 	if err != nil {
-		return afterRowID, err
+		return afterSeq, err
 	}
 	defer rows.Close()
 
-	last := afterRowID
+	last := afterSeq
 	for rows.Next() {
-		var rowid int64
+		var seq int64
 		var row GraphRow
 		var errStr string
-		if err := rows.Scan(&rowid, &row.ID, &row.TS, &row.Route, &row.Node, &row.Provider, &row.ClientModel,
+		if err := rows.Scan(&seq, &row.ID, &row.TS, &row.Route, &row.Node, &row.Provider, &row.ClientModel,
 			&row.Status, &errStr, &row.DurationMS, &row.InputTokens, &row.OutputTokens, &row.CachedTokens); err != nil {
 			return last, err
 		}
 		row.Error = errStr
-		if rowid > last {
-			last = rowid
+		if seq > last {
+			last = seq
 		}
 		fn(row)
 	}

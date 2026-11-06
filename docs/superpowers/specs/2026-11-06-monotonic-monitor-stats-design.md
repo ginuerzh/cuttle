@@ -46,7 +46,7 @@ duration selector chooses the initial lookback; the end is always `now`.
 - `gorilla/websocket` is already in the build graph through `x`; no new
   module download is required.
 
-## Incremental cursor: rowid, not ts
+## Incremental cursor: monotonic seq, not ts
 
 `stats.Request.TS` is the request **start** time (`x/handler/forward/local/
 handler.go` creates the recorder object with `start := time.Now()` and writes
@@ -54,14 +54,19 @@ the row when the request completes). A long LLM stream can start before
 `lastPoll` and finish after it, so `WHERE ts > lastPoll` would silently miss
 it.
 
-Use SQLite's implicit `rowid` (the `requests` table is not `WITHOUT ROWID`):
+Use the `requests.seq` column, allocated from the single-row `request_seq`
+counter in the same transaction as the insert. It is monotonic across
+retention deletes; SQLite can reuse a deleted `rowid`, so `rowid` is not safe
+as a long-lived cursor.
 
-1. Snapshot: read `MAX(rowid)` as `high`, then aggregate
-   `WHERE rowid <= high AND ts >= since AND ts < to`.
-2. Tail: aggregate `WHERE rowid > lastRowID AND ts >= since AND ts < now`
-   ordered by `rowid`, then advance `lastRowID`.
+1. Snapshot: read `MAX(seq)` as `high`, then aggregate
+   `WHERE seq <= high AND ts >= since AND ts < to`.
+2. Tail: aggregate `WHERE seq > lastSeq AND ts >= since AND ts < now`
+   ordered by `seq`, then advance `lastSeq`.
 3. Rows inserted after the snapshot and rows that completed late are both
    picked up because insertion order is the cursor.
+4. Migration v1 backfills `seq = rowid` for existing rows and initializes the
+   counter once; the counter is never decremented.
 
 The snapshot and tail share the same aggregation code as the existing
 `GraphWithFilter`, so HTTP and WebSocket results cannot diverge.
@@ -78,6 +83,8 @@ The snapshot and tail share the same aggregation code as the existing
 - On session expiry or logout, close with code 4401. The browser WebSocket
   API hides the HTTP status, so the client calls `GET /api/config` on close
   to distinguish 401 from a network failure.
+- A session older than `wsMaxAge` (default 7 days) is closed with code 4408;
+  the client starts a new lookback session with the selected range.
 - Shutdown closes hijacked connections explicitly; `http.Server.Close` does
   not track them.
 - Vite dev proxy needs `ws: true` for `/api`.
@@ -131,7 +138,9 @@ must affect historical metrics immediately.
 
 P50/P95 are computed from the duration samples every 10s and cached between
 recomputes; counts and tokens are pushed every second. This keeps the exact
-percentile semantics of the current HTTP endpoint.
+percentile semantics of the current HTTP endpoint. Cached keys are not
+re-materialized on every tick, and error samples are kept in a bounded ring
+(200) so the per-second snapshot does not copy an unbounded history.
 
 Duplicate `request_id`s are skipped with a bounded recently-seen set.
 `INSERT OR REPLACE` is defensive today; the recorder fires once per
@@ -177,15 +186,20 @@ admin save without reconnecting.
 
 - The initial snapshot still scans `[since, now]`; only reconnects pay this.
 - Exact duration samples grow with the number of requests in the session.
-  The maximum session age (7 days) bounds it. At very high request rates a
-  histogram can replace the samples later.
-- A session older than the maximum age is clamped to that age; the client
-  keeps using the effective `since` returned by the server.
+  The maximum session age (7 days) bounds it; an older open session is closed
+  with 4408 and restarted from the selected lookback. At very high request
+  rates a histogram can replace the samples later.
+- A reconnecting client's `since` older than the maximum age is clamped to
+  that age; the client keeps using the effective `since` returned by the
+  server.
+- The live tail considers rows with `ts >= since`; the initial snapshot still
+  uses `ts < to`, so a row exactly at the snapshot's end is picked up by the
+  next tail tick rather than lost.
 
 ## Testing
 
 - Go: aggregation parity between HTTP `GraphWithFilter` and the WS snapshot;
-  rowid tail catches a row inserted with an older `ts`; monotonic snapshots;
+  seq tail catches a row inserted with an older `ts`; monotonic snapshots;
   auth/origin rejection; session-expiry close; shutdown.
 - Web: pure snapshot reducer tests; reconnect/backoff and reset behavior;
   a reset reconnect uses `reset=1` and shows zero; toolbar reset/status
