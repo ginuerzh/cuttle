@@ -832,3 +832,23 @@ log:
 		t.Fatalf("expanded log = %+v", c.Log)
 	}
 }
+
+func TestCaptureDefaultsAndValidation(t *testing.T) {
+	c, err := Load(writeConfig(t, "gateway:\n  listen: \"127.0.0.1:0\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Stats.Capture.Mode != "off" || c.Stats.Capture.MaxBytes != 32768 ||
+		c.Stats.Capture.Retain != Duration(24*time.Hour) {
+		t.Fatalf("capture defaults = %+v", c.Stats.Capture)
+	}
+	for _, body := range []string{
+		"stats:\n  capture:\n    mode: always\n",
+		"stats:\n  capture:\n    mode: sample\n    sampleRate: 2\n",
+		"stats:\n  capture:\n    mode: errors\n    maxBytes: 1\n",
+	} {
+		if _, err := Load(writeConfig(t, "gateway:\n  listen: \"127.0.0.1:0\"\n"+body)); err == nil {
+			t.Fatalf("expected error for %q", body)
+		}
+	}
+}

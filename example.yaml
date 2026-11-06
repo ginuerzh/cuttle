@@ -10,7 +10,13 @@ stats:
   path: "stats.sqlite"
   retainRequests: 168h
   retainRollups: 2160h
-  storeBody: false
+  # Bounded body capture. Off by default; `errors` keeps failed requests,
+  # `sample` keeps a random subset. See README for on-demand capture.
+  capture:
+    mode: off          # off | errors | sample
+    sampleRate: 0.01
+    maxBytes: 32768
+    retain: 24h
 
 # Level can be changed at runtime with SIGHUP or an admin config save. Format
 # is fixed at startup; changing it requires a restart.

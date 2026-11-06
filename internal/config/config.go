@@ -46,7 +46,15 @@ type Stats struct {
 	Path           string   `yaml:"path" json:"path"`
 	RetainRequests Duration `yaml:"retainRequests" json:"retainRequests"`
 	RetainRollups  Duration `yaml:"retainRollups" json:"retainRollups"`
-	StoreBody      bool     `yaml:"storeBody" json:"storeBody"`
+	Capture        Capture  `yaml:"capture" json:"capture"`
+}
+
+// Capture configures bounded request/response body capture.
+type Capture struct {
+	Mode       string   `yaml:"mode" json:"mode"`
+	SampleRate float64  `yaml:"sampleRate" json:"sampleRate"`
+	MaxBytes   int      `yaml:"maxBytes" json:"maxBytes"`
+	Retain     Duration `yaml:"retain" json:"retain"`
 }
 
 // Log controls the gateway logger. Level can change at runtime; format is
@@ -392,6 +400,19 @@ func (c *Config) applyDefaults() {
 	if c.Log.Format == "" {
 		c.Log.Format = "json"
 	}
+	c.Stats.Capture.Mode = strings.ToLower(strings.TrimSpace(c.Stats.Capture.Mode))
+	if c.Stats.Capture.Mode == "" {
+		c.Stats.Capture.Mode = "off"
+	}
+	if c.Stats.Capture.SampleRate == 0 {
+		c.Stats.Capture.SampleRate = 0.01
+	}
+	if c.Stats.Capture.MaxBytes == 0 {
+		c.Stats.Capture.MaxBytes = 32768
+	}
+	if c.Stats.Capture.Retain == 0 {
+		c.Stats.Capture.Retain = Duration(24 * time.Hour)
+	}
 	for i := range c.Providers {
 		p := &c.Providers[i]
 		p.Health.API = strings.ToLower(strings.TrimSpace(p.Health.API))
@@ -521,6 +542,20 @@ func Validate(c *Config) error {
 	case "", "json", "text":
 	default:
 		return fmt.Errorf("log.format must be json or text")
+	}
+	switch c.Stats.Capture.Mode {
+	case "", "off", "errors", "sample":
+	default:
+		return fmt.Errorf("stats.capture.mode must be off, errors or sample")
+	}
+	if c.Stats.Capture.SampleRate < 0 || c.Stats.Capture.SampleRate > 1 {
+		return fmt.Errorf("stats.capture.sampleRate must be between 0 and 1")
+	}
+	if c.Stats.Capture.MaxBytes != 0 && (c.Stats.Capture.MaxBytes < 1024 || c.Stats.Capture.MaxBytes > 1048576) {
+		return fmt.Errorf("stats.capture.maxBytes must be between 1024 and 1048576")
+	}
+	if c.Stats.Capture.Retain < 0 {
+		return fmt.Errorf("stats.capture.retain must be positive")
 	}
 
 	seen := make(map[string]bool, len(c.Providers))

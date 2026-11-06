@@ -23,6 +23,7 @@ import (
 	xrecorder "github.com/go-gost/x/recorder"
 	xservice "github.com/go-gost/x/service"
 
+	"github.com/go-gost/llm-gw/internal/capture"
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
@@ -41,6 +42,7 @@ type Gateway struct {
 	svc       service.Service
 	facts     *stats.Facts
 	store     *stats.Store
+	capture   *capture.Manager
 	cancel    context.CancelFunc
 }
 
@@ -99,6 +101,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		forwarder: fwd,
 		facts:     facts,
 		store:     store,
+		capture:   capture.NewManager(capturePolicy(cfg.Stats.Capture)),
 	}
 	if err := g.apply(cfg); err != nil {
 		if store != nil {
@@ -149,6 +152,20 @@ func (g *Gateway) Addr() net.Addr {
 	return g.ln.Addr()
 }
 
+// Capture returns the body-capture manager.
+func (g *Gateway) Capture() *capture.Manager {
+	return g.capture
+}
+
+func capturePolicy(c gwconfig.Capture) capture.Policy {
+	return capture.Policy{
+		Mode:       c.Mode,
+		SampleRate: c.SampleRate,
+		MaxBytes:   c.MaxBytes,
+		Retain:     time.Duration(c.Retain),
+	}
+}
+
 // Reload builds a new hop group and swaps it in. On build errors the old
 // group keeps serving.
 func (g *Gateway) Reload(cfg *gwconfig.Config) error {
@@ -168,6 +185,9 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	g.mu.Unlock()
 
 	g.forwarder.Forward(group)
+	if g.capture != nil {
+		g.capture.SetPolicy(capturePolicy(cfg.Stats.Capture))
+	}
 
 	// In-flight requests hold the old nodes; give them time to finish before
 	// closing probe goroutines and node resources.
