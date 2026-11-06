@@ -1021,3 +1021,56 @@ git diff "$mb"..HEAD > /tmp/llm-gw-count-tokens-review.diff
 4. Record the review findings, fixes, and final commit SHA in this plan, then commit the record.
 
 5. Do not push.
+
+### Final review fix pass (2026-11-06)
+
+Whole-branch review of `65061a91..259fcc51` found 0 Critical, 4 Important and
+several Minor findings. All Critical/Important were addressed in one pass:
+
+1. **`redacted_thinking` was counted as zero.** Anthropic puts the payload in
+   `data`, not `thinking`. `contentBlock` now carries `Data`, and `countBlock`
+   counts it. `TestEstimateAnthropicRedactedThinking` RED→GREEN.
+2. **No read deadline after the request line.** `http.ReadRequest` and the body
+   read could block indefinitely. A deadline now covers the header and body
+   phase and is cleared before delegation or the local response.
+   `TestCountTokensHeaderReadTimeout` pins it; the test initially failed to
+   compile (the timeout was a const), then blocked, and now returns in ~100ms.
+3. **Connection-path coverage gaps.** Added integration tests for the 32 MiB
+   413, `Expect: 100-continue`, gzip pass-through, chunked bodies, a 200 KB
+   non-count replay, the local `Connection: close` response and connection
+   close, and the node-forwarded `Connection: close` advertisement. These
+   passed on the first run because the reviewer had already verified the
+   behavior manually; they are regression guards, not bug reproductions.
+4. **The first-request-per-connection invariant was overstated.** The x
+   forwarder advertises `Connection: close` but does not proactively close, so
+   a client that ignores the header and reuses the socket can bypass the
+   wrapper on the next request. Enforcing one request per connection would
+   require buffering every request body or changing x, both out of scope. The
+   spec, plan and README now state the real contract; Claude Code honors the
+   header. `TestGatewayAdvertisesConnectionClose` pins the advertisement.
+
+Full gate after the pass: `GOWORK=off go build ./...`,
+`GOWORK=off go vet ./...`, `GOWORK=off go test ./... -count=1`,
+`git diff --check` — all clean.
+
+Fix-pass commit: `c5df76f8`.
+
+Ruling: keep the first-request design and rely on `Connection: close`. Cost if
+wrong: a non-compliant client that reuses a socket after a regular request can
+send a `count_tokens` that bypasses the estimator and may receive the upstream
+404.
+
+Deferred minors from the review:
+
+- Duplicate `100 Continue` when a count_tokens request is delegated.
+- `delegate` discards any buffered bytes after the replayed request.
+- `req.Write` injects `User-Agent: Go-http-client/1.1` and drops trailers.
+- The 413 response does not drain the unread body before closing.
+- The policy/hop reload window can pair the new policy with the old hop.
+- The debug log omits the explicit route decision.
+- The document estimate is a fixed 2000 floor.
+- Thinking signatures and tool IDs are not counted.
+- A non-string `model` can disagree with routing.
+- h2c and absolute-form targets bypass the wrapper.
+- The 413 uses `invalid_request_error` rather than `request_too_large`.
+- `nodeTargets.targetFor` duplication and double body parsing.
