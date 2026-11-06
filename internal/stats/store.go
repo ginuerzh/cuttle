@@ -4,6 +4,7 @@ package stats
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -183,6 +184,8 @@ func (s *Store) migrate() error {
 			sse_last_rewritten TEXT NOT NULL DEFAULT '',
 			request_sha256 TEXT NOT NULL DEFAULT '',
 			response_sha256 TEXT NOT NULL DEFAULT '',
+			request_headers TEXT NOT NULL DEFAULT '{}',
+			response_headers TEXT NOT NULL DEFAULT '{}',
 			sse_events INTEGER NOT NULL DEFAULT 0,
 			reason TEXT NOT NULL DEFAULT '',
 			created_at INTEGER NOT NULL DEFAULT 0
@@ -223,6 +226,12 @@ func (s *Store) migrate() error {
 		"error_class":      "TEXT NOT NULL DEFAULT ''",
 		"sse_phase":        "TEXT NOT NULL DEFAULT ''",
 		"event_index":      "INTEGER NOT NULL DEFAULT 0",
+	}); err != nil {
+		return err
+	}
+	if err := s.ensureColumns("request_captures", map[string]string{
+		"request_headers":  "TEXT NOT NULL DEFAULT '{}'",
+		"response_headers": "TEXT NOT NULL DEFAULT '{}'",
 	}); err != nil {
 		return err
 	}
@@ -520,8 +529,9 @@ func (s *Store) PutCapture(ctx context.Context, requestID string, c *capture.Cap
 	_, err := s.db.ExecContext(ctx, `INSERT INTO request_captures
 		(request_id, request_original, request_rewritten, response_original, response_rewritten,
 		 sse_first_original, sse_first_rewritten, sse_last_original, sse_last_rewritten,
-		 request_sha256, response_sha256, sse_events, reason, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		 request_sha256, response_sha256, request_headers, response_headers,
+		 sse_events, reason, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(request_id) DO UPDATE SET
 			request_original=excluded.request_original,
 			request_rewritten=excluded.request_rewritten,
@@ -533,32 +543,58 @@ func (s *Store) PutCapture(ctx context.Context, requestID string, c *capture.Cap
 			sse_last_rewritten=excluded.sse_last_rewritten,
 			request_sha256=excluded.request_sha256,
 			response_sha256=excluded.response_sha256,
+			request_headers=excluded.request_headers,
+			response_headers=excluded.response_headers,
 			sse_events=excluded.sse_events,
 			reason=excluded.reason,
 			created_at=excluded.created_at`,
 		requestID, c.RequestOriginal, c.RequestRewritten, c.ResponseOriginal, c.ResponseRewritten,
 		c.SSEFirstOriginal, c.SSEFirstRewritten, c.SSELastOriginal, c.SSELastRewritten,
-		c.RequestSHA256, c.ResponseSHA256, c.SSIEvents, c.Reason, created.UnixMilli())
+		c.RequestSHA256, c.ResponseSHA256, marshalHeaders(c.RequestHeaders), marshalHeaders(c.ResponseHeaders),
+		c.SSIEvents, c.Reason, created.UnixMilli())
 	return err
+}
+
+func marshalHeaders(h map[string]string) string {
+	if len(h) == 0 {
+		return "{}"
+	}
+	b, err := json.Marshal(h)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 // GetCapture returns the capture for one request, or nil when absent.
 func (s *Store) GetCapture(ctx context.Context, requestID string) (*capture.Capture, error) {
 	var c capture.Capture
 	var created int64
+	var reqHeaders, respHeaders string
 	err := s.db.QueryRowContext(ctx, `SELECT request_original, request_rewritten,
 		response_original, response_rewritten, sse_first_original, sse_first_rewritten,
 		sse_last_original, sse_last_rewritten, request_sha256, response_sha256,
-		sse_events, reason, created_at
+		request_headers, response_headers, sse_events, reason, created_at
 		FROM request_captures WHERE request_id = ?`, requestID).Scan(
 		&c.RequestOriginal, &c.RequestRewritten, &c.ResponseOriginal, &c.ResponseRewritten,
 		&c.SSEFirstOriginal, &c.SSEFirstRewritten, &c.SSELastOriginal, &c.SSELastRewritten,
-		&c.RequestSHA256, &c.ResponseSHA256, &c.SSIEvents, &c.Reason, &created)
+		&c.RequestSHA256, &c.ResponseSHA256, &reqHeaders, &respHeaders,
+		&c.SSIEvents, &c.Reason, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if reqHeaders != "" {
+		if err := json.Unmarshal([]byte(reqHeaders), &c.RequestHeaders); err != nil {
+			return nil, fmt.Errorf("decode request headers: %w", err)
+		}
+	}
+	if respHeaders != "" {
+		if err := json.Unmarshal([]byte(respHeaders), &c.ResponseHeaders); err != nil {
+			return nil, fmt.Errorf("decode response headers: %w", err)
+		}
 	}
 	c.CreatedAt = time.UnixMilli(created).UTC()
 	return &c, nil

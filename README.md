@@ -332,6 +332,12 @@ non-empty error). `sample` persists a random subset. On-demand capture rules can
 be created from the Requests page or `POST /api/captures`; they are
 time/limit-bounded, in-memory, and lost on restart. `stats.storeBody` is removed.
 
+Captured failures also include an allowlisted header subset: `content-type`,
+`user-agent`, `retry-after`, `x-request-id`, `x-llm-gw-request-id`,
+`x-opencode-session`, `cf-ray`, `anthropic-version`, and
+`anthropic-ratelimit-*` / `x-ratelimit-*`. Authorization, cookie, set-cookie
+and API-key headers are never stored.
+
 Captured bodies may contain prompts and tool arguments; keep capture off outside
 an investigation, use a short retention, and protect the admin session and
 database. Capture stores the bodies visible to the rewriter, not necessarily
