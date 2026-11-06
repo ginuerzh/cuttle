@@ -82,31 +82,72 @@ function IconBadge({ color, children }: { color: string; children: React.ReactNo
   );
 }
 
-function Body({ label, sub, metrics }: { label: string; sub?: string; metrics?: NodeMetrics }) {
+const HANDLE_SIZE = 14;
+
+/** The endpoint dot size; also the connection start target in edit mode. */
+export function handleStyle(color: string): React.CSSProperties {
+  return {
+    width: HANDLE_SIZE,
+    height: HANDLE_SIZE,
+    background: color,
+  };
+}
+
+export function NodeBody({
+  label,
+  sub,
+  metrics,
+  stats = true,
+}: {
+  label: string;
+  sub?: string;
+  metrics?: NodeMetrics;
+  stats?: boolean;
+}) {
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>{label}</div>
       {sub ? <div style={{ color: 'var(--gw-node-text-muted)', fontSize: 11, marginTop: 2 }}>{sub}</div> : null}
-      {metrics ? (
-        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--gw-text-metrics)' }}>{metricsLine(metrics)}</div>
+      {stats ? (
+        // Always reserve the metrics row. Monitor mode adds the line when data
+        // arrives, so rendering it conditionally would resize every node (and
+        // move its edges) when switching between edit and monitor.
+        <div
+          title={metrics ? metricsLine(metrics) : undefined}
+          style={{
+            marginTop: 6,
+            height: 15,
+            // A fixed box (not min/max) keeps the node width independent of the
+            // metric text, which only exists in monitor mode.
+            width: 170,
+            fontSize: 11,
+            lineHeight: '15px',
+            color: 'var(--gw-text-metrics)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {metrics ? metricsLine(metrics) : null}
+        </div>
       ) : null}
     </div>
   );
 }
 
-export function EntrypointNode({ data, selected }: NodeProps<GraphNode>) {
+export function EntrypointNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   return (
     <div style={{ ...box, ...selectionStyle(selected, '#6366f1'), background: 'var(--gw-node-entrypoint-bg)', minWidth: 220 }}>
       <IconBadge color="#6366f1">
         <TagOutlined />
       </IconBadge>
-      <Body label={data.label} sub={data.sub} metrics={data.metrics} />
-      <Handle type="source" position={Position.Right} style={{ background: '#6366f1' }} />
+      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#6366f1')} />
     </div>
   );
 }
 
-export function RouteNode({ data, selected }: NodeProps<GraphNode>) {
+export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   const color = healthColor(data.metrics);
   return (
     <div
@@ -120,14 +161,14 @@ export function RouteNode({ data, selected }: NodeProps<GraphNode>) {
       <IconBadge color="#0ea5e9">
         <BranchesOutlined />
       </IconBadge>
-      <Body label={data.label} sub={data.sub} metrics={data.metrics} />
-      <Handle type="source" position={Position.Right} style={{ background: '#0ea5e9' }} />
-      <Handle type="target" position={Position.Left} style={{ background: '#0ea5e9' }} />
+      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
     </div>
   );
 }
 
-export function BindingNode({ data, selected }: NodeProps<GraphNode>) {
+export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   const color = healthColor(data.metrics);
   return (
     <div
@@ -143,14 +184,14 @@ export function BindingNode({ data, selected }: NodeProps<GraphNode>) {
       <IconBadge color="#0891b2">
         <ApiOutlined />
       </IconBadge>
-      <Body label={data.label} sub={data.sub} metrics={data.metrics} />
-      <Handle type="target" position={Position.Left} style={{ background: '#0891b2' }} />
-      <Handle type="source" position={Position.Right} style={{ background: '#0891b2' }} />
+      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>
   );
 }
 
-export function ProviderNode({ data, selected }: NodeProps<GraphNode>) {
+export function ProviderNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   const color = healthColor(data.metrics);
   return (
     <div
@@ -165,20 +206,20 @@ export function ProviderNode({ data, selected }: NodeProps<GraphNode>) {
       <IconBadge color="#10b981">
         <CloudServerOutlined />
       </IconBadge>
-      <Body label={data.label} sub={data.sub} metrics={data.metrics} />
-      <Handle type="target" position={Position.Left} style={{ background: '#10b981' }} />
+      <NodeBody label={data.label} sub={data.sub} metrics={data.metrics} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#10b981')} />
     </div>
   );
 }
 
-export function UnroutedNode({ data, selected }: NodeProps<GraphNode>) {
+export function UnroutedNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   return (
     <div style={{ ...box, ...selectionStyle(selected, '#dc2626'), background: 'var(--gw-node-unrouted-bg)', minWidth: 190 }}>
       <IconBadge color="#dc2626">
         <WarningOutlined />
       </IconBadge>
-      <Body label={data.label} sub={data.sub} />
-      <Handle type="target" position={Position.Left} style={{ background: '#dc2626' }} />
+      <NodeBody label={data.label} sub={data.sub} stats={false} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#dc2626')} />
     </div>
   );
 }

@@ -42,6 +42,15 @@ interface Props {
   onConnect?: (c: Connection) => void;
 }
 
+/**
+ * Monitor mode is read-only. Only an explicit `editable` may start or change
+ * connections; leaving this undefined would fall back to React Flow's default
+ * of `true` and keep the handles interactive.
+ */
+export function canEditTopology(editable?: boolean): boolean {
+  return editable === true;
+}
+
 function edgeColor(m?: { requests: number; errors: number }): string {
   if (!m || m.requests === 0) return '#cbd5e1';
   const r = m.errors / m.requests;
@@ -99,6 +108,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
 }
 
 export function Topology({ config, metrics, onSelect, editable, onConnect }: Props) {
+  const canEdit = canEditTopology(editable);
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
   const [serverReady, setServerReady] = useState(false);
   const [serverReadOK, setServerReadOK] = useState(false);
@@ -242,10 +252,12 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={() => onSelect(null)}
-        onConnect={onConnect}
-        onNodeDragStop={editable ? onNodeDragStop : undefined}
-        nodesConnectable={editable}
-        nodesDraggable={!!editable}
+        onConnect={canEdit ? onConnect : undefined}
+        onNodeDragStop={canEdit ? onNodeDragStop : undefined}
+        nodesConnectable={canEdit}
+        nodesDraggable={canEdit}
+        connectOnClick={canEdit}
+        edgesReconnectable={canEdit}
         deleteKeyCode={null}
         connectionLineStyle={{ stroke: '#0ea5e9', strokeWidth: 2 }}
         fitView
