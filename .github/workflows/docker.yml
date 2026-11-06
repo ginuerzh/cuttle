@@ -1,8 +1,7 @@
 name: docker
 
-# Builds the image from four repositories because llm-gw/go.mod uses local
-# replace directives for core, x and llm-api-converter. The sibling refs are
-# pinned so a dependency change is an explicit workflow update.
+# Builds the image from this repository. Dependencies are the published module
+# tags in go.mod and are downloaded by the Docker build.
 on:
   push:
     branches:
@@ -30,28 +29,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: src/llm-gw
-
-      - name: Checkout core
-        uses: actions/checkout@v7
-        with:
-          repository: go-gost/core
-          ref: v0.6.1
-          path: src/core
-
-      - name: Checkout x
-        uses: actions/checkout@v7
-        with:
-          repository: go-gost/x
-          ref: 5265f03275446d91d61a393243bc878ee7336928
-          path: src/x
-
-      - name: Checkout llm-api-converter
-        uses: actions/checkout@v7
-        with:
-          repository: ginuerzh/llm-api-converter
-          ref: e4c7c1a339426a62b157968641e5ca9735d270b7
-          path: src/llm-api-converter
-
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -88,7 +65,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          context: src
+          context: src/llm-gw
           file: src/llm-gw/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}

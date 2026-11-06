@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-gost/llm-gw/internal/capture"
 
-	"llm-api-converter/engine"
+	"github.com/ginuerzh/llm-api-converter/engine"
 )
 
 // Sink receives per-request facts observed by the engine.

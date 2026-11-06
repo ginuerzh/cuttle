@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"llm-api-converter/engine"
+	"github.com/ginuerzh/llm-api-converter/engine"
 )
 
 const factTTL = 10 * time.Minute

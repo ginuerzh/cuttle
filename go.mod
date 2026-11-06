@@ -3,11 +3,11 @@ module github.com/go-gost/llm-gw
 go 1.26.4
 
 require (
+	github.com/ginuerzh/llm-api-converter v0.5.0
 	github.com/go-gost/core v0.6.1
-	github.com/go-gost/x v0.0.0-00010101000000-000000000000
+	github.com/go-gost/x v0.29.0
 	golang.org/x/crypto v0.55.0
 	gopkg.in/yaml.v3 v3.0.1
-	llm-api-converter v0.0.0-00010101000000-000000000000
 	modernc.org/sqlite v1.61.1
 )
 
@@ -81,9 +81,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
-
-replace github.com/go-gost/core => ../core
-
-replace github.com/go-gost/x => ../x
-
-replace llm-api-converter => ../llm-api-converter

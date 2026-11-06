@@ -1,20 +1,18 @@
 # syntax=docker/dockerfile:1.7
 
-# llm-gw depends on sibling modules through local `replace` directives:
-#   ../core, ../x, ../llm-api-converter
-# Build from the parent directory that contains all four repositories:
-#   docker build -f llm-gw/Dockerfile .
+# llm-gw depends on published module tags. Build from this directory:
+#   docker build -t llm-gw .
 #
-# The GitHub Actions workflow checks the siblings out into the same layout.
+# The GitHub Actions workflow uses this directory as the build context too.
 
 FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src/llm-gw/web
-COPY llm-gw/web/package.json llm-gw/web/package-lock.json ./
+COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
-COPY llm-gw/web ./
+COPY web ./
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 # Keep the default for CI; local builds in restricted networks can override:
@@ -23,14 +21,10 @@ ARG GOPROXY=https://proxy.golang.org,direct
 ARG GOSUMDB=sum.golang.org
 ENV GOPROXY=$GOPROXY \
     GOSUMDB=$GOSUMDB
-WORKDIR /src
-COPY llm-gw/go.mod llm-gw/go.sum ./llm-gw/
-COPY core ./core
-COPY x ./x
-COPY llm-api-converter ./llm-api-converter
 WORKDIR /src/llm-gw
+COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
-COPY llm-gw ./
+COPY . .
 COPY --from=web /src/llm-gw/internal/admin/dist ./internal/admin/dist
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \

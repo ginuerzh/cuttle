@@ -6,12 +6,13 @@ Guidance for coding agents working in the `llm-gw` repository.
 
 - `llm-gw` is a self-hosted LLM gateway written in Go with an embedded React
   admin console (Vite, Ant Design, React Flow).
-- `go.mod` uses local `replace` directives for `../core`, `../x` and
-  `../llm-api-converter`. All three must be checked out next to this repository,
-  or build the Docker image from the parent directory.
+- `go.mod` uses published module tags (`core`, `x`,
+  `github.com/ginuerzh/llm-api-converter`) and has no local `replace`
+  directives. Do not reintroduce a replace to make a local sibling change
+  compile; publish a tag instead.
 - Inside `/root/code/go-gost`, the parent workspace contains a `go.work`. Run Go
-  commands in this repository with `GOWORK=off` so the module's own replace graph
-  is used.
+  commands in this repository with `GOWORK=off` so the tagged module versions
+  are used instead of the local workspace directories.
 - `README.md` is the user guide; `DOCKER.md` covers image builds. Keep both in
   sync with behavior changes.
 - Do not add a `.memory/` directory here: this repository has an upstream
@@ -38,8 +39,8 @@ npm test
 npx tsc --noEmit
 npm run build
 
-# Docker (from the parent directory containing all four repositories)
-docker build -f llm-gw/Dockerfile -t llm-gw .
+# Docker (from this directory; modules are fetched by tag)
+docker build -t llm-gw .
 ```
 
 `web/` builds into `internal/admin/dist`, which is git-ignored and embedded with
@@ -86,9 +87,9 @@ Entrypoint -> Route -> Node -> Provider model
   compile time. If every node is skipped, the request fails; never fall through
   to another route or send the client model upstream.
 - Do not edit the sibling repositories (`../core`, `../x`,
-  `../llm-api-converter`) to make this repository compile. If a sibling change
-  is unavoidable, treat it as a separate repository task and record that
-  repository's commit.
+  `../llm-api-converter`) as part of llm-gw work. Publish a tag in the sibling
+  repository, then bump the tagged dependency here; record that repository's
+  commit separately.
 
 ## Configuration invariants
 
@@ -274,9 +275,9 @@ GOWORK=off go test ./internal/stats -count=1
   singleflight). Model-only changes must not invalidate the cache.
 - OpenCode catalogs are keyless. Sending an invalid `Authorization` header makes
   them return 401; `x-api-key` is ignored.
-- Docker builds need the parent context because of the local replaces. The
-  GitHub Actions workflow pins sibling refs; update them when dependencies
-  change.
+- Docker builds use the `llm-gw` directory as context. Dependencies are
+  downloaded from the module proxy at the tags in `go.mod`; the workflow no
+  longer checks out sibling repositories.
 - The demo under `/tmp/llm-gw-demo.yaml` is local-only and may contain real
   keys. Never copy it into the repository.
 - OpenCode Zen has no per-key balance API: its Usage card must link to

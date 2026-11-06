@@ -18,7 +18,7 @@ import (
 	xrouting "github.com/go-gost/x/routing"
 	xs "github.com/go-gost/x/selector"
 
-	"llm-api-converter/engine"
+	"github.com/ginuerzh/llm-api-converter/engine"
 
 	"github.com/go-gost/llm-gw/internal/capture"
 	gwrewriter "github.com/go-gost/llm-gw/internal/rewriter"

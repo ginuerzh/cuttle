@@ -63,23 +63,10 @@ Entrypoint ──► Route ──► Node ──► Provider model
 - Node.js 22 and npm to rebuild the admin console.
 - SQLite is embedded; no external database is required.
 
-The module uses local `replace` directives for three sibling repositories:
-
-```text
-../core
-../x
-../llm-api-converter
-```
-
-Check them out next to `llm-gw`, or use the Docker image:
-
-```text
-workspace/
-├── core/
-├── x/
-├── llm-api-converter/
-└── llm-gw/
-```
+The module depends on the published versions of `core`, `x` and
+`llm-api-converter`; no sibling checkouts are required. If a parent `go.work`
+exists, `GOWORK=off` keeps the build on the tagged module versions instead of
+the local workspace directories.
 
 ### Build
 
@@ -594,11 +581,11 @@ that user and a bind-mounted `/data` must be writable by it. If the GHCR package
 is private, run `docker login ghcr.io` with a token that can read packages
 first.
 
-Building locally requires the parent directory that contains the sibling
-repositories:
+Build the image from this directory; Go modules are downloaded from the module
+proxy:
 
 ```bash
-docker build -f llm-gw/Dockerfile -t llm-gw .
+docker build -t llm-gw .
 ```
 
 See [DOCKER.md](DOCKER.md) for build details and the GitHub Actions workflow.

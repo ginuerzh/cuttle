@@ -1,20 +1,15 @@
 # Docker
 
-`llm-gw` uses local `replace` directives for three sibling modules, so the
-Docker build context is the parent directory that contains:
-
-```text
-core/
-x/
-llm-api-converter/
-llm-gw/
-```
-
-Build from that parent directory:
+`llm-gw` depends on published module tags, so the Docker build context is this
+directory. Build with:
 
 ```bash
-docker build -f llm-gw/Dockerfile -t llm-gw .
+docker build -t llm-gw .
 ```
+
+The build stage downloads the `core`, `x` and `llm-api-converter` versions
+recorded in `go.mod`. Use the `GOPROXY` and `GOSUMDB` build args for restricted
+networks.
 
 ## Zero-config first run
 
@@ -86,5 +81,5 @@ is accessible by group or other.
 `.github/workflows/docker.yml` builds `linux/amd64` and `linux/arm64` images and
 pushes them to GHCR on pushes to `main` and `v*` tags.
 
-The workflow checks out the public sibling repositories at pinned refs. Update
-the pinned refs when the sibling modules change.
+The workflow builds the image from the `llm-gw` context. Dependency versions are
+the tags in `go.mod`; update them with `go get` and `go mod tidy`.
