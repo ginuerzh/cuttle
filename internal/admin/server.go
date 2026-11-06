@@ -89,6 +89,19 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 	return s
 }
 
+// SetConfig replaces the management snapshot after an external config reload
+// (SIGHUP), so later admin mutations do not write stale values back to disk.
+func (s *Server) SetConfig(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.invalidateModelsLocked(cfg)
+	s.cfg = cfg
+	s.passwordHash = cfg.Admin.PasswordHash
+}
+
 // Handler returns the API router.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()

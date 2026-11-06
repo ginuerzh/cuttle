@@ -3,7 +3,9 @@ package logging
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-gost/core/logger"
@@ -35,6 +37,15 @@ func TestLevelFilteringAndSetLevel(t *testing.T) {
 	}
 	if got := l.GetLevel(); got != logger.DebugLevel {
 		t.Fatalf("GetLevel = %q, want debug", got)
+	}
+
+	if err := l.SetLevel("info"); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	l.Debug("hidden-again")
+	if buf.Len() != 0 {
+		t.Fatalf("debug leaked after lowering: %q", buf.String())
 	}
 }
 
@@ -131,4 +142,43 @@ func TestCallerPointsToCallSite(t *testing.T) {
 	if caller, _ := entry["caller"].(string); !strings.Contains(caller, "logging_test.go") {
 		t.Fatalf("formatted caller = %q", caller)
 	}
+}
+
+func TestApplyWarnsOnFormatChangeAtErrorLevel(t *testing.T) {
+	var buf bytes.Buffer
+	l, err := newLogger("error", "json", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Apply(l, "error", "text")
+	if !strings.Contains(buf.String(), "restart") {
+		t.Fatalf("missing restart warning at error level: %q", buf.String())
+	}
+}
+
+func TestSetLevelRejectsInvalid(t *testing.T) {
+	l, err := newLogger("info", "json", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetLevel("loud"); err == nil {
+		t.Fatal("expected invalid level error")
+	}
+	if got := l.GetLevel(); got != logger.InfoLevel {
+		t.Fatalf("level changed on error: %q", got)
+	}
+}
+
+func TestConcurrentLogAndSetLevel(t *testing.T) {
+	l, err := newLogger("info", "json", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); l.Info("line") }()
+		go func() { defer wg.Done(); _ = l.SetLevel("debug") }()
+	}
+	wg.Wait()
 }

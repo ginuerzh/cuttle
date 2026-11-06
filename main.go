@@ -57,12 +57,13 @@ func run(args []string) error {
 	defer gw.Close()
 
 	var adminSrv *http.Server
+	var adm *admin.Server
 	if cfg.Admin.PasswordHash != "" {
 		ln, err := net.Listen("tcp", cfg.Admin.Listen)
 		if err != nil {
 			return err
 		}
-		adm := admin.New(configPath, cfg, gw, log)
+		adm = admin.New(configPath, cfg, gw, log)
 		adminSrv = &http.Server{Handler: adm.Handler()}
 		probeCtx, probeCancel := context.WithCancel(context.Background())
 		defer probeCancel()
@@ -99,6 +100,9 @@ func run(args []string) error {
 		if err := gw.Reload(newCfg); err != nil {
 			log.Errorf("reload: %v", err)
 			continue
+		}
+		if adm != nil {
+			adm.SetConfig(newCfg)
 		}
 		logging.Apply(log, newCfg.Log.Level, newCfg.Log.Format)
 		log.Infof("config reloaded")

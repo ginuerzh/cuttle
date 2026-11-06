@@ -27,6 +27,7 @@ const (
 type Logger struct {
 	base   *slog.Logger
 	logger *slog.Logger
+	always *slog.Logger
 	level  *slog.LevelVar
 	format string
 	args   []any
@@ -50,19 +51,26 @@ func newLogger(level, format string, out io.Writer) (*Logger, error) {
 	levelVar := new(slog.LevelVar)
 	levelVar.Set(convertLevel(lvl))
 
+	base := slog.New(makeHandler(out, f, levelVar))
+	always := slog.New(makeHandler(out, f, levelTrace))
+	return &Logger{
+		base:   base,
+		logger: base,
+		always: always,
+		level:  levelVar,
+		format: string(f),
+	}, nil
+}
+
+func makeHandler(out io.Writer, f logger.LogFormat, level slog.Leveler) slog.Handler {
 	opts := &slog.HandlerOptions{
-		Level:       levelVar,
+		Level:       level,
 		ReplaceAttr: replaceAttr,
 	}
-	var handler slog.Handler
 	if f == logger.TextFormat {
-		handler = slog.NewTextHandler(out, opts)
-	} else {
-		handler = slog.NewJSONHandler(out, opts)
+		return slog.NewTextHandler(out, opts)
 	}
-
-	base := slog.New(handler)
-	return &Logger{base: base, logger: base, level: levelVar, format: string(f)}, nil
+	return slog.NewJSONHandler(out, opts)
 }
 
 // SetDefault routes the global slog default through this logger so packages
@@ -114,6 +122,7 @@ func (l *Logger) WithFields(fields map[string]any) logger.Logger {
 	return &Logger{
 		base:   l.base,
 		logger: l.base.With(args...),
+		always: l.always,
 		level:  l.level,
 		format: l.format,
 		args:   args,
@@ -179,6 +188,14 @@ func (l *Logger) logf(level slog.Level, format string, args ...any) {
 	l.log(level, 4, fmt.Sprintf(format, args...))
 }
 
+// alwaysf emits a warning even when the configured threshold is error/fatal.
+func (l *Logger) alwaysf(format string, args ...any) {
+	if l == nil || l.always == nil {
+		return
+	}
+	l.always.With(l.args...).Warn(fmt.Sprintf(format, args...))
+}
+
 func (l *Logger) caller(skip int) string {
 	_, file, line, ok := runtime.Caller(skip)
 	if !ok {
@@ -202,12 +219,18 @@ func Apply(l logger.Logger, level, format string) {
 	if !ok {
 		return
 	}
+	formatChanged := !strings.EqualFold(setter.Format(), strings.TrimSpace(format))
 	if err := setter.SetLevel(level); err != nil {
 		l.Errorf("log level: %v", err)
 		return
 	}
-	if !strings.EqualFold(setter.Format(), strings.TrimSpace(format)) {
-		l.Warnf("log.format changed to %q; restart required", format)
+	if formatChanged {
+		msg := fmt.Sprintf("log.format changed to %q; restart required", format)
+		if a, ok := l.(interface{ alwaysf(string, ...any) }); ok {
+			a.alwaysf("%s", msg)
+		} else {
+			l.Warnf("%s", msg)
+		}
 	}
 }
 

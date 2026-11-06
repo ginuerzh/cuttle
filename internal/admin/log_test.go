@@ -45,3 +45,34 @@ func TestPutConfigAppliesLogLevel(t *testing.T) {
 		t.Fatalf("config log = %+v", got.Log)
 	}
 }
+
+func TestSetConfigKeepsExternalLogLevel(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+	log := &trackingLogger{Logger: xlogger.Nop(), level: "info", format: "json"}
+	srv.log = log
+
+	next := *srv.cfg
+	next.Log = config.Log{Level: "debug", Format: "json"}
+	srv.SetConfig(&next)
+	log.level = "debug" // main applies the level after SIGHUP
+
+	resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[]`, csrf)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("put entrypoints status = %d", resp.StatusCode)
+	}
+	if log.level != "debug" {
+		t.Fatalf("level after admin save = %q, want debug", log.level)
+	}
+
+	resp = doJSON(t, client, http.MethodGet, ts.URL+"/api/config", "", "")
+	var got struct {
+		Log config.Log `json:"log"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Log.Level != "debug" {
+		t.Fatalf("config log = %+v", got.Log)
+	}
+}
