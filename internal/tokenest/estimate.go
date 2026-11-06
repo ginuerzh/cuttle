@@ -39,6 +39,7 @@ type contentBlock struct {
 	Type     string          `json:"type"`
 	Text     string          `json:"text"`
 	Thinking string          `json:"thinking"`
+	Data     string          `json:"data"`
 	Name     string          `json:"name"`
 	Input    json.RawMessage `json:"input"`
 	Content  json.RawMessage `json:"content"`
@@ -109,8 +110,10 @@ func countBlock(raw json.RawMessage) float64 {
 	switch b.Type {
 	case "text":
 		return estimateText(b.Text)
-	case "thinking", "redacted_thinking":
+	case "thinking":
 		return estimateText(b.Thinking)
+	case "redacted_thinking":
+		return estimateText(b.Data)
 	case "tool_use":
 		return estimateText(b.Name) + estimateText(string(b.Input))
 	case "tool_result":

@@ -17,7 +17,7 @@
 - Do not change `inboundGroups`, the x hop group/selector, x node names, or the routing chain (entrypoint → route → node → provider model).
 - Anthropic targets pass `count_tokens` through unchanged. Malformed or non-JSON bodies pass through on every route.
 - A locally answered `count_tokens` request returns `200 {"input_tokens": N}` with `N >= 1`; it makes no upstream request and writes no stats row or capture.
-- The wrapper handles the first request per connection. `http.keepalive=false` in `Gateway.New` is an invariant; do not remove it.
+- The wrapper handles the first request per connection. `http.keepalive=false` makes node-forwarded responses advertise `Connection: close`, so compliant clients reconnect; do not remove it. A client that ignores the header can bypass the wrapper on later requests (documented limitation).
 - Code, comments, docs and commit messages are English.
 - Commit after every task. Keep the task's **Implementation record** in this plan; follow the repo precedent of a separate `docs(plan): record task N` commit that names the code commit SHA.
 - Never push.
@@ -242,7 +242,7 @@ var runCoef  = [6]float64{0.4920, 0.0000, 0.0000, 0.9205, 0.0000, 0.3490}
 - `classOf(r rune) int`: ASCII letters/digits/space/other; CJK ranges `0x4E00-0x9FFF`, `0x3040-0x30FF`, `0xAC00-0xD7AF`; everything else is class 5.
 - `estimateText` accumulates per-class character and run counts and returns the weighted sum.
 - `countContent(json.RawMessage) float64` handles a JSON string or an array of blocks.
-- `countBlock(json.RawMessage) float64`: `text` → text; `thinking`/`redacted_thinking` → thinking; `tool_use` → name + input JSON; `tool_result` → nested content; `image` → `imageTokens`; `document` → `documentTokens`; default → the block's raw JSON.
+- `countBlock(json.RawMessage) float64`: `text` → text; `thinking` → thinking text; `redacted_thinking` → `data`; `tool_use` → name + input JSON; `tool_result` → nested content; `image` → `imageTokens`; `document` → `documentTokens`; default → the block's raw JSON.
 - `EstimateAnthropic` returns an error for an empty body, a non-object body, or invalid JSON.
 
 - [x] **Step 4: Run the focused tests**
@@ -828,7 +828,7 @@ Create `internal/gateway/count_tokens.go`:
   8. `tokenest.EstimateAnthropic(body, tokenest.DefaultSafetyFactor)`. On error, replay and delegate.
   9. Unmarshal the top-level `model`; if `policy.Load().estimateFor(model)` is false, replay and delegate.
   10. Log at debug: model, tokens, bytes. Write `200`, `application/json`, `Connection: close`, `{"input_tokens": N}` and return.
-- Replay: set `req.Body` from the captured bytes, `req.ContentLength`, clear `req.TransferEncoding`, `req.Write` into a buffer, and delegate through a `replayConn` over the buffer plus `br`.
+- Replay: set `req.Body` from the captured bytes, `req.ContentLength`, clear `req.TransferEncoding`, `req.Write` into a buffer, and delegate through a `replayConn` over that buffer. The conn then reports EOF after the single replayed request, which closes the delegated connection.
 - `isCountTokensLine(line []byte) bool` parses `strings.Fields`, requires `POST`, strips the query, and compares with `countTokensPath`.
 - Response helpers set `ProtoMajor/Minor` from the request, `Content-Type: application/json`, `Connection: close`, `ContentLength`, and use `resp.Write(conn)`.
 - The error helper writes `{"type":"error","error":{"type":"invalid_request_error","message":...}}`.

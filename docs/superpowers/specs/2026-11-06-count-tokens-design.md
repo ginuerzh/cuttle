@@ -1,7 +1,7 @@
 # Local `count_tokens` for routes without a native endpoint
 
 Date: 2026-11-06
-Status: draft for approval
+Status: approved 2026-11-06
 Repository: `llm-gw`
 
 ## Intent
@@ -63,9 +63,11 @@ anywhere new, and without changing the behavior of routes that already work.
 - The GOST rewriter interface is body-only (`Rewrite(ctx, body) ([]byte,
   error)`). `HTTPURLRewriteConfig` rewrites `req.URL.Path`, not the host, so a
   local estimator cannot be reached by URL rewriting.
-- The gateway sets `http.keepalive=false` on the forward handler, so every
-  client request arrives on a fresh connection. Intercepting the first request
-  per connection is sufficient.
+- The gateway sets `http.keepalive=false`, so node-forwarded responses
+  advertise `Connection: close` and compliant clients reconnect. The wrapper
+  intercepts the first request per connection; a client that ignores
+  `Connection: close` and reuses the connection can bypass the wrapper on later
+  requests. Claude Code honors the header.
 - The image builds with `CGO_ENABLED=0` and has no local `replace` directives.
 
 ## Approaches considered
@@ -207,7 +209,7 @@ Parsing:
 - `system`: a string or an array of content blocks.
 - `messages[].content`: a string or an array of content blocks.
 - Blocks counted: `text`, `tool_use` (name + input JSON), `tool_result`
-  (string or nested blocks), `thinking` / `redacted_thinking` (thinking text),
+  (string or nested blocks), `thinking` text and `redacted_thinking` data,
   `image` (fixed 1600 tokens), `document` (fixed 2000 tokens), unknown blocks
   via their raw JSON.
 - `tools[]`: the raw JSON of each tool schema.

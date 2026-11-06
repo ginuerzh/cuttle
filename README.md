@@ -549,7 +549,8 @@ it. The layout lives in the `topology_positions` table of `stats.sqlite`.
 Claude Code calls `POST /v1/messages/count_tokens` to size tool definitions,
 skills and conversation fragments.
 
-- Routes whose target API is Anthropic pass the request through unchanged.
+- Routes whose target API is Anthropic pass the request through; the existing
+  top-level model rewrite still applies.
 - Routes whose target API is Chat Completions, Responses or Gemini are
   answered locally with a conservative estimate. No upstream request is made,
   and the value is an approximation calibrated on DeepSeek V4; it is
@@ -568,7 +569,8 @@ input/output/cached tokens) come from hourly rollups for the selected 24-hour,
 - **CommandCode**: credits and the 5-hour/weekly windows from
   `/alpha/billing/credits`.
 - **OpenCode Go**: rolling, weekly and monthly windows from
-  `/zen/go/v1/usage`.
+  `/zen/go/v1/usage`, or `/inference/go/v1/usage` for providers created with
+  the new inference base URLs.
 
 OpenCode Zen does not expose a key's credits through an API; its card says to
 use the OpenCode console. `generic` providers have no known balance contract and

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -154,5 +155,23 @@ func TestCalibration(t *testing.T) {
 	}
 	if ratio := float64(under) / float64(rows); ratio > 0.08 {
 		t.Fatalf("under-estimated = %.3f, want <= 0.08", ratio)
+	}
+}
+
+func TestEstimateAnthropicRedactedThinking(t *testing.T) {
+	without := []byte(`{"model":"m","messages":[{"role":"assistant","content":[{"type":"text","text":"ok"}]}]}`)
+	data := strings.Repeat("A", 2000)
+	with := []byte(`{"model":"m","messages":[{"role":"assistant","content":[{"type":"text","text":"ok"},{"type":"redacted_thinking","data":"` + data + `"}]}]}`)
+
+	nw, err := EstimateAnthropic(without, DefaultSafetyFactor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := EstimateAnthropic(with, DefaultSafetyFactor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < nw+100 {
+		t.Fatalf("redacted_thinking estimate = %d, without = %d; want at least +100", n, nw)
 	}
 }

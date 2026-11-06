@@ -19,8 +19,10 @@ import (
 	"github.com/go-gost/llm-gw/internal/tokenest"
 )
 
-const (
-	countTokensPath        = "/v1/messages/count_tokens"
+const countTokensPath = "/v1/messages/count_tokens"
+
+// Test seams: the production values are 32 MiB and 15s.
+var (
 	countTokensBodyLimit   = 32 << 20
 	countTokensReadTimeout = 15 * time.Second
 )
@@ -62,8 +64,10 @@ func (h *countTokensHandler) Handle(ctx context.Context, conn net.Conn, opts ...
 		return h.next.Handle(ctx, &replayConn{Conn: conn, r: io.MultiReader(bytes.NewReader(line), br)}, opts...)
 	}
 
+	_ = conn.SetReadDeadline(time.Now().Add(countTokensReadTimeout))
 	req, err := http.ReadRequest(bufio.NewReader(io.MultiReader(bytes.NewReader(line), br)))
 	if err != nil {
+		_ = conn.SetReadDeadline(time.Time{})
 		return err
 	}
 
@@ -73,7 +77,8 @@ func (h *countTokensHandler) Handle(ctx context.Context, conn net.Conn, opts ...
 		}
 	}
 
-	body, err := io.ReadAll(io.LimitReader(req.Body, countTokensBodyLimit+1))
+	body, err := io.ReadAll(io.LimitReader(req.Body, int64(countTokensBodyLimit)+1))
+	_ = conn.SetReadDeadline(time.Time{})
 	if err != nil {
 		return err
 	}
