@@ -18,6 +18,8 @@ type Fact struct {
 	ErrorDirection  string
 	UpstreamError   string
 	UpstreamErrorTy string
+	FinishReason    string
+	SawDone         bool
 	SSEPhase        string
 	EventIndex      int
 	ClientModel     string
@@ -124,6 +126,23 @@ func (f *Facts) AddUpstreamError(sid, message, typ string) {
 	fact := f.m[sid]
 	fact.UpstreamError = message
 	fact.UpstreamErrorTy = typ
+	fact.Updated = time.Now()
+	f.m[sid] = fact
+}
+
+// AddStreamState records the terminal state observed in a response stream.
+func (f *Facts) AddStreamState(sid, finishReason string, sawDone bool) {
+	if f == nil || sid == "" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	fact := f.m[sid]
+	if finishReason != "" {
+		fact.FinishReason = finishReason
+	}
+	fact.SawDone = fact.SawDone || sawDone
 	fact.Updated = time.Now()
 	f.m[sid] = fact
 }

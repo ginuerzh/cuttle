@@ -45,6 +45,9 @@ type Request struct {
 	OutputTokens    int64            `json:"outputTokens"`
 	CachedTokens    int64            `json:"cachedTokens"`
 	Stream          bool             `json:"stream"`
+	SawDone         bool             `json:"sawDone,omitempty"`
+	Truncated       bool             `json:"truncated,omitempty"`
+	FinishReason    string           `json:"finishReason,omitempty"`
 	BytesIn         uint64           `json:"bytesIn"`
 	BytesOut        uint64           `json:"bytesOut"`
 	HasCapture      bool             `json:"hasCapture,omitempty"`
@@ -211,6 +214,9 @@ func (s *Store) migrate() error {
 		"user_agent":       "TEXT NOT NULL DEFAULT ''",
 		"upstream":         "TEXT NOT NULL DEFAULT ''",
 		"client_status":    "INTEGER NOT NULL DEFAULT 0",
+		"finish_reason":    "TEXT NOT NULL DEFAULT ''",
+		"saw_done":         "INTEGER NOT NULL DEFAULT 0",
+		"truncated":        "INTEGER NOT NULL DEFAULT 0",
 		"error_stage":      "TEXT NOT NULL DEFAULT ''",
 		"error_direction":  "TEXT NOT NULL DEFAULT ''",
 		"error_class":      "TEXT NOT NULL DEFAULT ''",
@@ -383,13 +389,15 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 		 protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		 effort, status, error, error_class, duration_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
-		 uri, method, client_ip, user_agent, upstream, client_status)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 uri, method, client_ip, user_agent, upstream, client_status,
+		 finish_reason, saw_done, truncated)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node,
 		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
 		r.Effort, r.Status, r.Error, r.ErrorClass, r.DurationMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut),
-		r.URI, r.Method, r.ClientIP, r.UserAgent, r.Upstream, r.ClientStatus)
+		r.URI, r.Method, r.ClientIP, r.UserAgent, r.Upstream, r.ClientStatus,
+		r.FinishReason, boolInt(r.SawDone), boolInt(r.Truncated))
 	if err != nil {
 		return err
 	}
@@ -453,6 +461,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 		effort, status, error, error_class,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		uri, method, client_ip, user_agent, upstream, client_status,
+		finish_reason, saw_done, truncated,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, max(f.Offset, 0))
@@ -472,6 +481,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 		effort, status, error, error_class,
 		duration_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		uri, method, client_ip, user_agent, upstream, client_status,
+		finish_reason, saw_done, truncated,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests WHERE request_id = ?`
 	rows, err := s.db.QueryContext(ctx, q, id)
@@ -559,6 +569,7 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var r Request
 		var ts int64
 		var stream int
+		var sawDone, truncated int
 		var bytesIn, bytesOut int64
 		var hasCapture int
 		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel,
@@ -566,11 +577,14 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 			&r.InboundProtocol, &r.ErrorStage, &r.ErrorDirection, &r.SSEPhase, &r.EventIndex,
 			&r.Effort, &r.Status, &r.Error, &r.ErrorClass, &r.DurationMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut,
-			&r.URI, &r.Method, &r.ClientIP, &r.UserAgent, &r.Upstream, &r.ClientStatus, &hasCapture); err != nil {
+			&r.URI, &r.Method, &r.ClientIP, &r.UserAgent, &r.Upstream, &r.ClientStatus,
+			&r.FinishReason, &sawDone, &truncated, &hasCapture); err != nil {
 			return nil, err
 		}
 		r.TS = time.UnixMilli(ts).UTC()
 		r.Stream = stream != 0
+		r.SawDone = sawDone != 0
+		r.Truncated = truncated != 0
 		r.BytesIn = uint64(bytesIn)
 		r.BytesOut = uint64(bytesOut)
 		r.HasCapture = hasCapture != 0

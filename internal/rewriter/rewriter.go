@@ -23,6 +23,7 @@ type Sink interface {
 	AddInboundProtocol(sid, protocol string)
 	AddRewriteError(sid, stage, direction, ssePhase string, eventIndex int)
 	AddUpstreamError(sid, message, typ string)
+	AddStreamState(sid, finishReason string, sawDone bool)
 }
 
 // Options configures one route-scoped body rewriter.
@@ -78,6 +79,11 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 	if strings.EqualFold(meta.Direction, "response") && r.opts.Sink != nil {
 		if message, typ := extractErrorSummary(b); message != "" {
 			r.opts.Sink.AddUpstreamError(meta.SID, message, typ)
+		}
+		if meta.SSEPhase != "" {
+			if reason, done := extractStreamState(b); reason != "" || done {
+				r.opts.Sink.AddStreamState(meta.SID, reason, done)
+			}
 		}
 	}
 	if err != nil {

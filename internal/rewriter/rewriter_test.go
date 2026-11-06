@@ -11,6 +11,8 @@ import (
 
 type sinkStub struct {
 	sid, message, typ string
+	finish            string
+	done              bool
 }
 
 func (s *sinkStub) Add(string, string, string, engine.Result)           {}
@@ -18,6 +20,35 @@ func (s *sinkStub) AddInboundProtocol(string, string)                   {}
 func (s *sinkStub) AddRewriteError(string, string, string, string, int) {}
 func (s *sinkStub) AddUpstreamError(sid, message, typ string) {
 	s.sid, s.message, s.typ = sid, message, typ
+}
+
+func (s *sinkStub) AddStreamState(sid, finishReason string, sawDone bool) {
+	s.finish, s.done = finishReason, sawDone
+}
+
+func TestRewriteReportsStreamState(t *testing.T) {
+	sink := &sinkStub{}
+	rw := New(engine.New(engine.Options{}), Options{Sink: sink, Protocol: "chat"})
+	meta := func() corerewriter.RewriteOption {
+		return corerewriter.MetadataRewriteOption(map[string]any{
+			"sid":       "sid-1",
+			"direction": "response",
+			"uri":       "/v1/chat/completions",
+			"sse_phase": "event",
+		})
+	}
+	if _, err := rw.Rewrite(context.Background(), []byte(`data: {"choices":[{"finish_reason":"stop"}]}`), meta()); err != nil {
+		t.Fatal(err)
+	}
+	if sink.finish != "stop" || sink.done {
+		t.Fatalf("sink = %+v", sink)
+	}
+	if _, err := rw.Rewrite(context.Background(), []byte(`data: [DONE]`), meta()); err != nil {
+		t.Fatal(err)
+	}
+	if !sink.done {
+		t.Fatalf("sink = %+v", sink)
+	}
 }
 
 func TestRewriteReportsUpstreamError(t *testing.T) {

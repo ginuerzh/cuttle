@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ginuerzh/llm-api-converter/engine"
+
 	"github.com/go-gost/llm-gw/internal/capture"
 )
 
@@ -132,6 +134,47 @@ func TestRecorderClientStatusForUpstreamFailure(t *testing.T) {
 	}
 	if got.ClientStatus != 502 || got.ErrorClass != ErrorClassGatewayTimeout {
 		t.Fatalf("row = %+v", got)
+	}
+}
+
+func TestRecorderMarksSilentStreamTruncation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		finish    string
+		done      bool
+		truncated bool
+	}{
+		{"no terminal event", "", false, true},
+		{"finish reason", "stop", false, false},
+		{"done sentinel", "", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newStore(t)
+			facts := NewFacts()
+			ctx := context.Background()
+			sid := "stream"
+			facts.Add(sid, "p", "chat", engine.Result{Stream: true})
+			facts.AddStreamState(sid, tc.finish, tc.done)
+			body, err := json.Marshal(map[string]any{
+				"sid":  sid,
+				"node": "r/p/n",
+				"time": time.Now().UTC(),
+				"http": map[string]any{"statusCode": 200},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := NewRecorder(s, facts, nil, nil).Record(ctx, body); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.Get(ctx, sid)
+			if err != nil || got == nil {
+				t.Fatalf("get = %+v err=%v", got, err)
+			}
+			if got.Truncated != tc.truncated || got.SawDone != tc.done || got.FinishReason != tc.finish {
+				t.Fatalf("row = %+v", got)
+			}
+		})
 	}
 }
 
