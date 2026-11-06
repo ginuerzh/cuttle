@@ -230,7 +230,7 @@ git commit -m "feat(version): report the build identity"
 
 **Implementation record**:
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` @ (recorded in the follow-up docs commit)
+- Repository + commit SHA: `llm-gw` @ `a649295a`
 - Files changed: `internal/version/version.go`, `internal/version/version_test.go`, `main.go`, `main_test.go`, design spec, plan
 - Tests/commands and results: version tests RED (`undefined: Version`) then PASS; `TestPrintVersion` RED (`undefined: printVersion`) then PASS; `GOWORK=off go test ./internal/version . -count=1` PASS.
 - Review findings and fixes: none.
