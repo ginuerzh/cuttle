@@ -300,7 +300,7 @@ git commit -m "feat(admin): stream incremental graph snapshots over websocket"
 
 **Implementation record (fill after completion):**
 - Date/status: 2026-11-06 — complete.
-- Repo + commit: llm-gw `feat/monotonic-monitor` (code commit; SHA recorded in the follow-up `docs(plan)` commit).
+- Repo + commit: llm-gw `feat/monotonic-monitor` `7bcfbb12` (code); record finalized in the follow-up `docs(plan)` commit.
 - Files changed: `internal/admin/handlers_events.go` (new), `internal/admin/events_test.go` (new), `internal/admin/server.go`, `internal/admin/handlers_stats.go`, `internal/admin/auth.go`, `internal/admin/handlers.go`, `main.go`, `go.mod`, plan.
 - Tests/commands and results: `GOWORK=off go test ./internal/admin -run 'TestEvents|TestParseSubscription|TestSameOrigin' -count=1` → PASS; `GOWORK=off go test ./internal/admin -count=1` → PASS; `GOWORK=off go test ./internal/stats -count=1` → PASS; `GOWORK=off go vet ./internal/admin ./internal/stats` → PASS.
 - Review findings and fixes: the first WS test used routed rows while the test config had no topology, so `TopologyIncludes` filtered them; tests now use unrouted rows. Added a one-second grace to the initial snapshot upper bound so a request completing during `MAX(rowid)` cannot be skipped by the cursor. Split `validSessionHash` out so the socket loop does not re-hash the stored token hash.
