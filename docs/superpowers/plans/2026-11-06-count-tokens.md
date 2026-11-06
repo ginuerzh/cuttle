@@ -924,7 +924,7 @@ git commit -m "docs(plan): record task 3"
 - Consumes: the behavior implemented in Tasks 1–3.
 - Produces: user-facing documentation and the final verification record.
 
-- [ ] **Step 1: Add the README section**
+- [x] **Step 1: Add the README section**
 
 Add a `## Token counting` section after `## Request correlation and capture` and before `## Provider usage and balances`:
 
@@ -944,7 +944,7 @@ skills and conversation fragments.
 - Locally answered requests are not recorded in stats or captures.
 ```
 
-- [ ] **Step 2: Run the full Go gate**
+- [x] **Step 2: Run the full Go gate**
 
 Run:
 
@@ -957,14 +957,14 @@ git diff --check
 
 Expected: all commands pass and `git diff --check` is silent. No web gate is required because no web source changed.
 
-- [ ] **Step 3: Commit the documentation**
+- [x] **Step 3: Commit the documentation**
 
 ```bash
 git add README.md
 git commit -m "docs: describe local token counting"
 ```
 
-- [ ] **Step 4: Record the memory note**
+- [x] **Step 4: Record the memory note**
 
 Create `/root/code/go-gost/.memory/notes/llm-gw-count-tokens.md` with the durable facts: the handler-wrapper interception, the per-route `auto` policy (all Anthropic → pass through, otherwise estimate), the calibrated heuristic and its gate, the no-stats/no-capture rule, and the deferred items from the spec. Add a link in `.memory/MEMORY.md`.
 
@@ -976,7 +976,7 @@ git add .memory/notes/llm-gw-count-tokens.md .memory/MEMORY.md
 git commit -m "docs(memory): record local count_tokens estimation"
 ```
 
-- [ ] **Step 5: Record the task and commit the plan**
+- [x] **Step 5: Record the task and commit the plan**
 
 Fill this task's Implementation record below with its date, repository/commit, files, commands/results, review findings and deferrals. Then:
 
@@ -987,12 +987,17 @@ git commit -m "docs(plan): record count_tokens implementation"
 ```
 
 **Implementation record:**
-- Date/status:
-- Repository/commit:
-- Files changed:
+- Date/status: 2026-11-06 / complete
+- Repository/commit: `llm-gw` `52c80c0c` (README); memory repository `/root/code/go-gost` `b1d2f06`; this docs commit follows
+- Files changed: `README.md`; `/root/code/go-gost/.memory/notes/llm-gw-count-tokens.md`, `/root/code/go-gost/.memory/MEMORY.md`
 - Tests/commands/results:
-- Review findings/fixes:
-- Deferred/limitations:
+  - `GOWORK=off go build ./...` → PASS.
+  - `GOWORK=off go vet ./...` → clean.
+  - `GOWORK=off go test ./... -count=1` → all packages PASS.
+  - `git diff --check` → clean.
+  - No web gate was run because no web source changed.
+- Review findings/fixes: none.
+- Deferred/limitations: no config switch or admin control; Gemini native `:countTokens`, runtime tokenizer, Anthropic-upstream 404 fallback and per-model-family calibration remain deferred per the spec.
 
 ---
 
