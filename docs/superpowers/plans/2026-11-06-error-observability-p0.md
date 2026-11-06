@@ -43,12 +43,12 @@ Tests are run from the `llm-gw` directory unless stated otherwise.
 
 ### Implementation record
 
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items:
+- Date/status: 2026-11-06, complete.
+- Repository + commit: `llm-gw` `04035152`.
+- Files changed: `internal/stats/requestcontext.go` (new), `internal/stats/requestcontext_test.go` (new), `internal/stats/recorder.go`, `internal/stats/recorder_test.go`, `internal/stats/store.go`, `internal/stats/store_test.go`.
+- Tests/commands and results: `gofmt`; `GOWORK=off go test ./internal/stats -count=1` passed.
+- Review findings and fixes: the recorder object's client address JSON key is `client`, not `clientAddr`; the test was corrected. IPv6 addresses are handled through `net.SplitHostPort` and a raw fallback.
+- Deferred items: `upstream` stores the node IP:port plus forwarded path, not the configured hostname or provider base URL. Response headers remain out of scope (P1).
 
 ## Task 3: Configurable upstream header timeout and client status
 
