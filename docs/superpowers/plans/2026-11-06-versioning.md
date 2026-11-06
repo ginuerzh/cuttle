@@ -515,7 +515,7 @@ git commit -m "feat(admin): expose and display the build version"
 
 **Implementation record**:
 - Date/status: 2026-11-06 / complete
-- Repository + commit SHA: `llm-gw` @ (recorded in the follow-up docs commit)
+- Repository + commit SHA: `llm-gw` @ `3464beea`
 - Files changed: `internal/admin/server.go`, `internal/admin/health_test.go`, `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/version.ts`, `web/src/version.test.ts`, `web/src/components/VersionFooter.tsx`, `web/src/components/VersionFooter.test.tsx`, `web/src/App.tsx`, plan
 - Tests/commands and results: health test RED (`Version:""`) then PASS; `version.test.ts` RED (missing module) then 5 PASS; footer test RED (missing component) then 2 PASS; `cd web && npm test` 103 PASS; `npx tsc --noEmit` PASS; `npm run build` PASS; `GOWORK=off go test ./internal/admin -count=1` PASS.
 - Review findings and fixes: none.
