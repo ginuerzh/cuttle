@@ -682,7 +682,7 @@ git commit -m "feat(web): add gateway keys page"
 - Consumes: `RequestRow.gatewayKey`, `RequestQuery.gatewayKey` and `getRequests` from Task 5.
 - Produces: `gatewayKeyLabel(row: RequestRow): string` (returns `key:<name>` or `''`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `web/src/pages/Requests.test.ts`:
 
@@ -693,12 +693,12 @@ it('labels the gateway key only when present', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd web && npm test -- --run pages/Requests.test.ts`
 Expected: FAIL because `gatewayKeyLabel` does not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - Export `gatewayKeyLabel(row)` as above.
 - Add `const [gatewayKey, setGatewayKey] = useState('')`.
@@ -707,7 +707,7 @@ Expected: FAIL because `gatewayKeyLabel` does not exist.
 - Append `gatewayKeyLabel(r)` to the `ListCard` subtitle when non-empty.
 - Add a detail row `<Descriptions.Item label={t('请求密钥')}>{selected.gatewayKey || '—'}</Descriptions.Item>` after `route`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd web && npm test -- --run pages/Requests.test.ts`
 Expected: PASS.
@@ -715,7 +715,7 @@ Expected: PASS.
 Run typecheck: `cd web && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/pages/Requests.tsx web/src/pages/Requests.test.ts
@@ -723,12 +723,12 @@ git commit -m "feat(web): filter sessions by gateway key"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-07 — complete.
+- Repository + commit: `llm-gw` (worktree `/tmp/opencode/llm-gw-gateway-keys`) — see commit (`feat(web): filter sessions by gateway key`).
+- Files changed: `web/src/pages/Requests.tsx` (`gatewayKeyLabel` export, gateway-key filter state/input/query dependency, subtitle label, detail row), `web/src/pages/Requests.test.ts` (label test), plus this plan.
+- Tests/commands and results: RED `cd web && npm test -- --run pages/Requests.test.ts` — 1 test failed with `gatewayKeyLabel is not a function` (log: `.superpowers/sdd/2026-11-07-gateway-keys/task-6-red.log`). GREEN same focused command — 4 tests passed. Full `cd web && npm test` — 24 files / 175 tests passed. `npx tsc --noEmit` passed with no output. `npm run build` passed.
+- Review findings and fixes: self-review only (controller review follows). The filter trims input and maps through the existing `RequestQuery.gatewayKey`/`getRequests` path without duplicating URL construction; `gatewayKeyLabel` returns an empty string when the key is absent so the subtitle has no stray separator; the detail row follows `route` and falls back to `—`. No fixes were required.
+- Deferred items/limitations: UI behavior was verified by Vitest, TypeScript and the production build only (no browser visual regression tests); the filter matches the exact key name, consistent with the admin query parameter, and is not a prefix search.
 
 ---
 
