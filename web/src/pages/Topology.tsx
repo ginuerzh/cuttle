@@ -11,6 +11,10 @@ import {
   type EdgeMouseHandler,
   type NodeMouseHandler,
   type OnEdgesChange,
+  type OnMove,
+  type OnMoveEnd,
+  type OnMoveStart,
+  type ReactFlowInstance,
   useNodesState,
   type OnNodeDrag,
   type Viewport,
@@ -27,6 +31,15 @@ import {
   type PositionMap,
 } from '../graph/positions';
 import { nodeTypes } from '../graph/nodes';
+import {
+  clampVelocity,
+  decayVelocity,
+  dragVelocity,
+  INERTIA_MIN_SPEED,
+  INERTIA_MIN_START_SPEED,
+  speedOf,
+  type PanSample,
+} from '../graph/inertia';
 import { edgeTypes } from './edges';
 import { translate as t } from '../i18n';
 
@@ -144,6 +157,75 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
   const saveVersionRef = useRef(0);
   const saveToServerRef = useRef(createPositionSaver(putTopologyPositions));
   const saveToServer = saveToServerRef.current;
+  const flowRef = useRef<ReactFlowInstance<GraphNode, Edge> | null>(null);
+  const dragRef = useRef<{ active: boolean; samples: PanSample[] }>({
+    active: false,
+    samples: [],
+  });
+  const inertiaRef = useRef<number | null>(null);
+
+  const stopInertia = useCallback(() => {
+    if (inertiaRef.current !== null) {
+      cancelAnimationFrame(inertiaRef.current);
+      inertiaRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => stopInertia, [stopInertia]);
+
+  const startMove: OnMoveStart = useCallback(
+    (event) => {
+      if (!event) return;
+      if (event.type !== 'mousedown' && event.type !== 'touchstart') return;
+      if (event.type === 'touchstart' && (event as TouchEvent).touches.length > 1) return;
+      stopInertia();
+      dragRef.current = { active: true, samples: [] };
+    },
+    [stopInertia],
+  );
+
+  const trackMove: OnMove = useCallback((_event, viewport) => {
+    if (!dragRef.current.active) return;
+    const samples = dragRef.current.samples;
+    samples.push({ t: performance.now(), x: viewport.x, y: viewport.y });
+    if (samples.length > 10) samples.shift();
+  }, []);
+
+  const endMove: OnMoveEnd = useCallback((_event, viewport) => {
+    lastViewport = viewport;
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+
+    const velocity = clampVelocity(dragVelocity(dragRef.current.samples, performance.now()));
+    if (speedOf(velocity) < INERTIA_MIN_START_SPEED) return;
+
+    let current = velocity;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = Math.min(now - last, 32);
+      last = now;
+      const instance = flowRef.current;
+      if (!instance) {
+        inertiaRef.current = null;
+        return;
+      }
+      const viewportNow = instance.getViewport();
+      const next = {
+        x: viewportNow.x + current.vx * dt,
+        y: viewportNow.y + current.vy * dt,
+        zoom: viewportNow.zoom,
+      };
+      instance.setViewport(next);
+      lastViewport = next;
+      current = decayVelocity(current, dt);
+      if (speedOf(current) < INERTIA_MIN_SPEED) {
+        inertiaRef.current = null;
+        return;
+      }
+      inertiaRef.current = requestAnimationFrame(step);
+    };
+    inertiaRef.current = requestAnimationFrame(step);
+  }, []);
 
   const persist = useCallback(
     (next: PositionMap) => {
@@ -269,7 +351,11 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
   };
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
+    <div
+      style={{ width: '100%', height: '100%' }}
+      onPointerDownCapture={stopInertia}
+      onWheelCapture={stopInertia}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -282,9 +368,12 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
         onPaneClick={() => onSelect(null)}
         onConnect={canEdit ? onConnect : undefined}
         onNodeDragStop={canEdit ? onNodeDragStop : undefined}
-        onMoveEnd={(_event, viewport) => {
-          lastViewport = viewport;
+        onInit={(instance) => {
+          flowRef.current = instance;
         }}
+        onMoveStart={startMove}
+        onMove={trackMove}
+        onMoveEnd={endMove}
         nodesConnectable={canEdit}
         nodesDraggable={canEdit}
         connectOnClick={canEdit}
