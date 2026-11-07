@@ -1008,10 +1008,10 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
 export type AddKind = 'provider' | 'node' | 'route' | 'entrypoint';
 
 const ADD_LABELS: Record<AddKind, string> = {
-  provider: '添加提供商',
-  node: '添加节点',
-  route: '添加路由',
-  entrypoint: '添加入口',
+  provider: '提供商',
+  node: '节点',
+  route: '路由',
+  entrypoint: '入口',
 };
 
 /** The four add actions shown over the editable canvas. */
