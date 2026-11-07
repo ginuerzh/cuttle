@@ -158,7 +158,7 @@ git commit -m "feat(config): add gateway keys"
   // Filter gains:  GatewayKey string
   ```
 
-- [ ] **Step 1: Write failing stats tests**
+- [x] **Step 1: Write failing stats tests**
 
 Add to `internal/stats/gatewaykey_test.go`:
 
@@ -207,12 +207,12 @@ func TestRecorderRecordsGatewayKey(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/stats -run 'GatewayKey|KeyRollups|MigratesGatewayKey' -count=1`
 Expected: FAIL because the context helpers, fields and table do not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `gatewaykey.go`: unexported context key type; the two functions above.
 - `Request`: add `GatewayKey` after `Node`.
@@ -230,12 +230,12 @@ Expected: FAIL because the context helpers, fields and table do not exist.
 - `Cleanup`: `DELETE FROM key_rollups WHERE bucket < ?` with the rollups cutoff, before returning.
 - `recorder.go`: set `req.GatewayKey = GatewayKeyFromContext(ctx)` before the facts merge.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/stats -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/stats
@@ -243,12 +243,12 @@ git commit -m "feat(stats): record gateway key and key usage"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-07, complete.
+- Repository + commit: llm-gw @ see commit (this commit, `feat(stats): record gateway key and key usage`)
+- Files changed: `internal/stats/gatewaykey.go` (new context carrier), `internal/stats/store.go` (`Request.GatewayKey`, `Filter.GatewayKey`, `KeyUsage`, `key_rollups` schema/index, insert, query/scan, cleanup), `internal/stats/recorder.go` (reads the key name from the context), `internal/stats/gatewaykey_test.go`, `internal/stats/store_test.go`, `internal/stats/recorder_test.go`, plus this plan.
+- Tests/commands and results: RED `GOWORK=off go test ./internal/stats -run 'GatewayKey|KeyRollups|MigratesGatewayKey' -count=1` failed to build because the context helpers, fields and table did not exist; GREEN focused run passed; `GOWORK=off go test ./internal/stats -count=1`, `GOWORK=off go build ./...`, `GOWORK=off go vet ./internal/stats` and `GOWORK=off go test ./... -count=1` passed.
+- Review findings and fixes: the `requests.gateway_key` index is created after `ensureColumns` so opening a pre-change database does not fail on the missing column; `key_rollups` is written only for non-empty key names in the same transaction as `rollups`; cleanup reuses the rollups cutoff; `KeyUsage` returns an empty non-nil slice.
+- Deferred items/limitations: Task 3 places the key name in the context and Task 4 exposes `KeyUsage` and the request filter through the admin API; existing rows are not backfilled and open-mode traffic has no key rollup.
 
 ---
 

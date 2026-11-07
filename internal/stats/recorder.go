@@ -77,6 +77,7 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		BytesOut:   ro.OutputBytes,
 	}
 	req.URI, req.Method, req.ClientIP, req.UserAgent, req.Upstream = requestContext(&ro)
+	req.GatewayKey = GatewayKeyFromContext(ctx)
 	if req.ID == "" {
 		req.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
