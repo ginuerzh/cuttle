@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Button,
+  Card,
   Descriptions,
   Divider,
   Drawer,
@@ -102,6 +103,28 @@ function rate(m?: { requests: number; errors: number }): string {
   return `${((m.errors / m.requests) * 100).toFixed(1)}%`;
 }
 
+function ErrorCard({ error }: { error: ErrorRow }) {
+  return (
+    <Card
+      size="small"
+      style={{ borderInlineStart: '3px solid #dc2626' }}
+      styles={{ body: { padding: '8px 10px' } }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <Tag color="red" style={{ marginInlineEnd: 0 }}>
+          {error.status || 'ERR'}
+        </Tag>
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          {formatDateTime(error.ts)}
+        </Typography.Text>
+      </div>
+      <Typography.Text style={{ display: 'block', fontSize: 12, wordBreak: 'break-word' }}>
+        {error.message || '—'}
+      </Typography.Text>
+    </Card>
+  );
+}
+
 export function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics; errors: ErrorRow[] }) {
   const mine = useMemo(() => errors.filter((e) => errorMatchesNodeId(id, e)), [errors, id]);
 
@@ -140,13 +163,9 @@ export function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeM
       {mine.length === 0 ? (
         <Typography.Text type="secondary">{translate('最近窗口内没有错误')}</Typography.Text>
       ) : (
-        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {mine.slice(0, 5).map((e) => (
-            <div key={e.requestId} style={{ fontSize: 12 }}>
-              <Tag color="red">{e.status || 'ERR'}</Tag>
-              <Typography.Text type="secondary">{formatDateTime(e.ts)}</Typography.Text>{' '}
-              {e.message}
-            </div>
+            <ErrorCard key={e.requestId} error={e} />
           ))}
         </Space>
       )}

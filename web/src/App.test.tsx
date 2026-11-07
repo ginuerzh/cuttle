@@ -26,4 +26,28 @@ describe('NodePanel', () => {
     );
     expect(html).not.toContain('输出速度');
   });
+
+  it('renders recent errors as cards with status and message', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel
+        id="node:fast"
+        metrics={metrics}
+        errors={[
+          {
+            requestId: 'r1',
+            ts: '2026-11-07T10:20:30Z',
+            route: 'fast',
+            node: 'fast',
+            provider: 'p',
+            status: 502,
+            message: 'upstream connect failed',
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('ant-card');
+    expect(html).toContain('502');
+    expect(html).toContain('upstream connect failed');
+  });
 });
