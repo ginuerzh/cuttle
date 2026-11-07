@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -25,16 +27,24 @@ import (
 
 const (
 	// gatewayAuthHeaderLimit bounds the request line plus headers buffered by
-	// the auth handler. The body is never buffered here.
+	// the auth handler. The bufio.Reader may also hold body bytes beyond the
+	// head; those are replayed to the next handler and are never buffered in
+	// full here.
 	gatewayAuthHeaderLimit = 1 << 20
 	gatewayAuthReadTimeout = 15 * time.Second
+	// gatewayAuthChunkLineLimit bounds a chunk-size line or trailer line read
+	// while passing a chunked body through. Chunk data itself is streamed.
+	gatewayAuthChunkLineLimit = 32 << 10
 )
 
 var (
 	gatewayAuthErrorBody     = []byte(`{"error":{"message":"invalid gateway key","type":"authentication_error"}}`)
 	gatewayMalformedHeadBody = []byte(`{"error":{"message":"malformed request","type":"invalid_request_error"}}`)
 
-	errGatewayAuthHeadTooLarge = errors.New("request head too large")
+	errGatewayAuthHeadTooLarge            = errors.New("request head too large")
+	errGatewayAuthInvalidTransferEncoding = errors.New("invalid transfer-encoding")
+	errGatewayAuthInvalidContentLength    = errors.New("invalid content-length")
+	errGatewayAuthInvalidChunkedBody      = errors.New("invalid chunked body")
 )
 
 // authPolicy is the compiled form of gateway.keys. Disabled entries stay in
@@ -127,8 +137,10 @@ func (p *authPolicy) authenticate(candidates []string) (name, reason string, ok 
 }
 
 // gatewayAuthHandler authenticates data-plane requests when gateway.keys is
-// non-empty. It buffers only the request head, replays it byte for byte and
-// passes the untouched buffered stream to the next handler.
+// non-empty. It buffers the request head and replays it byte for byte together
+// with the buffered body bytes. The next handler receives a connection that
+// yields exactly one request and then EOF, so x's keep-alive loop cannot serve
+// a second request on the connection without re-authenticating it.
 type gatewayAuthHandler struct {
 	next   handler.Handler
 	policy *atomic.Pointer[authPolicy]
@@ -166,14 +178,87 @@ func (h *gatewayAuthHandler) Handle(ctx context.Context, conn net.Conn, opts ...
 		return writeGatewayAuthResponse(conn, http.StatusBadRequest, gatewayMalformedHeadBody, false)
 	}
 
+	// Log only the path: a query string can carry a credential.
+	logTarget := gatewayAuthLogTarget(target)
+
+	body, err := gatewayAuthBodyReader(br, header)
+	if err != nil {
+		h.log.Warnf("gateway auth: %s %s from %s: %v", method, logTarget, gatewayAuthRemoteAddr(conn), err)
+		return writeGatewayAuthResponse(conn, http.StatusBadRequest, gatewayMalformedHeadBody, false)
+	}
+
 	name, reason, authenticated := policy.authenticate(gatewayAuthCandidates(header))
 	if !authenticated {
-		h.log.Warnf("gateway auth: %s %s from %s: %s", method, target, gatewayAuthRemoteAddr(conn), reason)
+		h.log.Warnf("gateway auth: %s %s from %s: %s", method, logTarget, gatewayAuthRemoteAddr(conn), reason)
 		return writeGatewayAuthResponse(conn, http.StatusUnauthorized, gatewayAuthErrorBody, true)
 	}
 
-	nextConn := &replayConn{Conn: conn, r: io.MultiReader(bytes.NewReader(head), br)}
+	// Yield the first request and then EOF. x would otherwise loop and
+	// process a second request on the already-authenticated connection
+	// without re-entering this handler, even though responses advertise
+	// Connection: close.
+	nextConn := &replayConn{Conn: conn, r: io.MultiReader(bytes.NewReader(head), body)}
 	return h.next.Handle(stats.WithGatewayKey(ctx, name), nextConn, opts...)
+}
+
+// gatewayAuthBodyReader returns a reader that reproduces the framed request
+// body exactly as received and then returns io.EOF. Content-Length bodies are
+// bounded with io.LimitReader; chunked bodies are passed through chunk by
+// chunk. A body can therefore never extend past its declared boundary into the
+// next request on the same connection.
+func gatewayAuthBodyReader(br *bufio.Reader, header textproto.MIMEHeader) (io.Reader, error) {
+	if values := header.Values("Transfer-Encoding"); len(values) > 0 {
+		encodings := strings.Split(strings.Join(values, ","), ",")
+		chunked := false
+		for i, encoding := range encodings {
+			if !strings.EqualFold(strings.TrimSpace(encoding), "chunked") {
+				continue
+			}
+			if i != len(encodings)-1 {
+				return nil, errGatewayAuthInvalidTransferEncoding
+			}
+			chunked = true
+		}
+		if !chunked {
+			return nil, errGatewayAuthInvalidTransferEncoding
+		}
+		// Transfer-Encoding takes precedence over Content-Length.
+		return newGatewayAuthChunkedReader(br), nil
+	}
+
+	values := header.Values("Content-Length")
+	if len(values) == 0 {
+		return bytes.NewReader(nil), nil
+	}
+	if len(values) != 1 {
+		return nil, errGatewayAuthInvalidContentLength
+	}
+	value := strings.TrimSpace(values[0])
+	if value == "" {
+		return nil, errGatewayAuthInvalidContentLength
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return nil, errGatewayAuthInvalidContentLength
+		}
+	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return nil, errGatewayAuthInvalidContentLength
+	}
+	return io.LimitReader(br, n), nil
+}
+
+// gatewayAuthLogTarget returns only the path of a request target for logging.
+// Query strings may carry credentials and must not reach the logs.
+func gatewayAuthLogTarget(target string) string {
+	if i := strings.IndexByte(target, '?'); i >= 0 {
+		target = target[:i]
+	}
+	if u, err := url.Parse(target); err == nil && u.Path != "" {
+		return u.Path
+	}
+	return target
 }
 
 // readGatewayAuthHead reads the request line and headers, including the blank
@@ -246,6 +331,144 @@ func gatewayAuthCandidates(header textproto.MIMEHeader) []string {
 		}
 	}
 	return candidates
+}
+
+type gatewayAuthChunkState int
+
+const (
+	gatewayAuthChunkSize gatewayAuthChunkState = iota
+	gatewayAuthChunkData
+	gatewayAuthChunkDataEnd
+	gatewayAuthChunkTrailer
+	gatewayAuthChunkDone
+)
+
+// gatewayAuthChunkedReader passes a chunked body through without decoding it:
+// it yields the chunk-size lines, the data bytes, the CRLF separators and the
+// trailer section exactly as received, then returns io.EOF after the terminal
+// chunk. Only one chunk-size or trailer line is buffered at a time.
+type gatewayAuthChunkedReader struct {
+	br        *bufio.Reader
+	pending   []byte
+	remaining int64
+	state     gatewayAuthChunkState
+}
+
+func newGatewayAuthChunkedReader(br *bufio.Reader) io.Reader {
+	return &gatewayAuthChunkedReader{br: br, state: gatewayAuthChunkSize}
+}
+
+func (r *gatewayAuthChunkedReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	for {
+		if len(r.pending) > 0 {
+			n := copy(p, r.pending)
+			r.pending = r.pending[n:]
+			return n, nil
+		}
+
+		switch r.state {
+		case gatewayAuthChunkSize:
+			line, err := readGatewayAuthChunkLine(r.br)
+			if err != nil {
+				return 0, err
+			}
+			size, err := parseGatewayAuthChunkSize(line)
+			if err != nil {
+				return 0, err
+			}
+			r.pending = line
+			if size == 0 {
+				r.state = gatewayAuthChunkTrailer
+			} else {
+				r.remaining = size
+				r.state = gatewayAuthChunkData
+			}
+
+		case gatewayAuthChunkData:
+			if r.remaining == 0 {
+				r.state = gatewayAuthChunkDataEnd
+				continue
+			}
+			n := len(p)
+			if int64(n) > r.remaining {
+				n = int(r.remaining)
+			}
+			nr, err := r.br.Read(p[:n])
+			if nr > 0 {
+				r.remaining -= int64(nr)
+			}
+			if nr > 0 || err != nil {
+				return nr, err
+			}
+
+		case gatewayAuthChunkDataEnd:
+			line, err := readGatewayAuthChunkLine(r.br)
+			if err != nil {
+				return 0, err
+			}
+			if !isBlankGatewayAuthLine(line) {
+				return 0, errGatewayAuthInvalidChunkedBody
+			}
+			r.pending = line
+			r.state = gatewayAuthChunkSize
+
+		case gatewayAuthChunkTrailer:
+			line, err := readGatewayAuthChunkLine(r.br)
+			if err != nil {
+				return 0, err
+			}
+			r.pending = line
+			if isBlankGatewayAuthLine(line) {
+				r.state = gatewayAuthChunkDone
+			}
+
+		case gatewayAuthChunkDone:
+			return 0, io.EOF
+		}
+	}
+}
+
+// readGatewayAuthChunkLine reads one chunk header or trailer line including
+// its terminating newline, capped at gatewayAuthChunkLineLimit.
+func readGatewayAuthChunkLine(br *bufio.Reader) ([]byte, error) {
+	line := make([]byte, 0, 64)
+	for {
+		frag, err := br.ReadSlice('\n')
+		line = append(line, frag...)
+		if len(line) > gatewayAuthChunkLineLimit {
+			return nil, errGatewayAuthInvalidChunkedBody
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return line, nil
+	}
+}
+
+// parseGatewayAuthChunkSize parses the hexadecimal size before any chunk
+// extension. The line still includes its CRLF.
+func parseGatewayAuthChunkSize(line []byte) (int64, error) {
+	line = bytes.TrimSuffix(line, []byte("\n"))
+	line = bytes.TrimSuffix(line, []byte("\r"))
+	if i := bytes.IndexByte(line, ';'); i >= 0 {
+		line = line[:i]
+	}
+	line = bytes.TrimSpace(line)
+	if len(line) == 0 || len(line) > 16 {
+		return 0, errGatewayAuthInvalidChunkedBody
+	}
+	n, err := strconv.ParseInt(string(line), 16, 64)
+	if err != nil || n < 0 {
+		return 0, errGatewayAuthInvalidChunkedBody
+	}
+	return n, nil
 }
 
 func writeGatewayAuthResponse(conn net.Conn, status int, payload []byte, challenge bool) error {

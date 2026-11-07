@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -161,8 +162,8 @@ func TestGatewayAuthRejectsMissingInvalidAndDisabled(t *testing.T) {
 			if got := resp.Header.Get("Content-Type"); got != "application/json" {
 				t.Fatalf("content-type = %q", got)
 			}
-			if got := resp.Header.Get("WWW-Authenticate"); !strings.Contains(got, "Bearer") {
-				t.Fatalf("www-authenticate = %q, want a Bearer challenge", got)
+			if got := resp.Header.Get("WWW-Authenticate"); got != `Bearer realm="llm-gw"` {
+				t.Fatalf("www-authenticate = %q, want %q", got, `Bearer realm="llm-gw"`)
 			}
 			if !resp.Close {
 				t.Fatal("response does not advertise Connection: close")
@@ -356,6 +357,297 @@ func TestGatewayAuthReplaysLargeBody(t *testing.T) {
 	defer mu.Unlock()
 	if gotLen != bodySize {
 		t.Fatalf("upstream body = %d bytes, want %d (head=%q tail=%q)", gotLen, bodySize, gotHead, gotTail)
+	}
+}
+
+// authRawDial opens a raw TCP connection so a test can reuse the socket for a
+// second request that a normal HTTP client would suppress after the first
+// response advertises Connection: close.
+func authRawDial(t *testing.T, gw *Gateway) (net.Conn, *bufio.Reader) {
+	t.Helper()
+
+	conn, err := net.Dial("tcp", gw.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	return conn, bufio.NewReader(conn)
+}
+
+func authRawWrite(t *testing.T, conn net.Conn, raw string) {
+	t.Helper()
+
+	if _, err := io.WriteString(conn, raw); err != nil {
+		t.Fatalf("write raw request: %v", err)
+	}
+}
+
+func authRawReadResponse(t *testing.T, br *bufio.Reader) (*http.Response, string) {
+	t.Helper()
+
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read raw response: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read raw response body: %v", err)
+	}
+	return resp, string(body)
+}
+
+// authRawSecondRequest sends a request on an already-used socket and returns
+// the response status, or -1 when the server closed the connection.
+func authRawSecondRequest(t *testing.T, conn net.Conn, br *bufio.Reader, raw string) int {
+	t.Helper()
+
+	if _, err := io.WriteString(conn, raw); err != nil {
+		return -1
+	}
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		return -1
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("second request on the same connection: status = %d body = %q, want 401 or a closed connection",
+			resp.StatusCode, body)
+	}
+	return resp.StatusCode
+}
+
+func authRawPOSTRequest(path, body string, headers map[string]string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "POST %s HTTP/1.1\r\nHost: gateway.test\r\nContent-Length: %d\r\n", path, len(body))
+	for name, value := range headers {
+		fmt.Fprintf(&b, "%s: %s\r\n", name, value)
+	}
+	b.WriteString("\r\n")
+	b.WriteString(body)
+	return b.String()
+}
+
+func authRawChunkedRequest(path, chunkedBody string, headers map[string]string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "POST %s HTTP/1.1\r\nHost: gateway.test\r\nTransfer-Encoding: chunked\r\n", path)
+	for name, value := range headers {
+		fmt.Fprintf(&b, "%s: %s\r\n", name, value)
+	}
+	b.WriteString("\r\n")
+	b.WriteString(chunkedBody)
+	return b.String()
+}
+
+// TestGatewayAuthSecondRequestOnSameConnectionIsRejected is the regression test
+// for connection-scoped authentication: x's keep-alive loop must not process a
+// second request on an already-authenticated socket.
+func TestGatewayAuthSecondRequestOnSameConnectionIsRejected(t *testing.T) {
+	up, hits := authUpstream(t)
+	gw := startGateway(t, authConfig(up.URL, gwconfig.GatewayKey{Name: "client", Key: authTestSecret}))
+
+	conn, br := authRawDial(t, gw)
+	authRawWrite(t, conn, authRawPOSTRequest("/unknown", authTestChatBody, map[string]string{
+		"Authorization": "Bearer " + authTestSecret,
+		"Content-Type":  "application/json",
+	}))
+	resp, body := authRawReadResponse(t, br)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first status = %d body = %s", resp.StatusCode, body)
+	}
+
+	authRawSecondRequest(t, conn, br, authRawPOSTRequest("/unknown", authTestChatBody, map[string]string{
+		"Content-Type": "application/json",
+	}))
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1: the second request on the connection must not reach the upstream", got)
+	}
+}
+
+func TestGatewayAuthSecondChunkedRequestOnSameConnectionIsRejected(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		gotBody string
+		hits    atomic.Int32
+	)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		b, err := io.ReadAll(r.Body)
+		mu.Lock()
+		if err == nil {
+			gotBody = string(b)
+		}
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(up.Close)
+
+	gw := startGateway(t, authConfig(up.URL, gwconfig.GatewayKey{Name: "client", Key: authTestSecret}))
+	conn, br := authRawDial(t, gw)
+
+	body := `{"model":"deepseek-chat","messages":[{"role":"user","content":"` + strings.Repeat("c", 5000) + `"}]}`
+	var chunked strings.Builder
+	for i, part := range []string{body[:7], body[7:2048], body[2048:]} {
+		if i == 0 {
+			// Chunk extensions must be passed through with the size line.
+			fmt.Fprintf(&chunked, "%x;test=1\r\n%s\r\n", len(part), part)
+			continue
+		}
+		fmt.Fprintf(&chunked, "%x\r\n%s\r\n", len(part), part)
+	}
+	chunked.WriteString("0\r\n")
+	chunked.WriteString("X-Test-Trailer: yes\r\n")
+	chunked.WriteString("\r\n")
+
+	authRawWrite(t, conn, authRawChunkedRequest("/unknown", chunked.String(), map[string]string{
+		"Authorization": "Bearer " + authTestSecret,
+		"Content-Type":  "application/json",
+		"Trailer":       "X-Test-Trailer",
+	}))
+	resp, respBody := authRawReadResponse(t, br)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first status = %d body = %s", resp.StatusCode, respBody)
+	}
+
+	mu.Lock()
+	received := gotBody
+	mu.Unlock()
+	if received != body {
+		t.Fatalf("upstream body = %d bytes, want %d", len(received), len(body))
+	}
+
+	authRawSecondRequest(t, conn, br, authRawPOSTRequest("/unknown", authTestChatBody, nil))
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1: the second request on the connection must not reach the upstream", got)
+	}
+}
+
+func TestGatewayAuthNoBodyFirstRequestClosesConnection(t *testing.T) {
+	up, hits := authUpstream(t)
+	gw := startGateway(t, authConfig(up.URL, gwconfig.GatewayKey{Name: "client", Key: authTestSecret}))
+
+	conn, br := authRawDial(t, gw)
+	authRawWrite(t, conn, "GET /unknown HTTP/1.1\r\nHost: gateway.test\r\nAuthorization: Bearer "+authTestSecret+"\r\n\r\n")
+	resp, body := authRawReadResponse(t, br)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first status = %d body = %s", resp.StatusCode, body)
+	}
+
+	authRawSecondRequest(t, conn, br, "GET /unknown HTTP/1.1\r\nHost: gateway.test\r\n\r\n")
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1: the second request on the connection must not reach the upstream", got)
+	}
+}
+
+func TestGatewayAuthAllDisabledRejectsMissingCredential(t *testing.T) {
+	up, hits := authUpstream(t)
+	gw := startGateway(t, authConfig(up.URL, gwconfig.GatewayKey{
+		Name:    "off",
+		Key:     "off-secret",
+		Enabled: boolPtr(false),
+	}))
+
+	resp, body := authRequest(t, gw, http.MethodPost, "/v1/chat/completions", authTestChatBody, nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d body = %s, want 401", resp.StatusCode, body)
+	}
+	if body != authTestWant401 {
+		t.Fatalf("body = %q, want %q", body, authTestWant401)
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); got != `Bearer realm="llm-gw"` {
+		t.Fatalf("www-authenticate = %q, want %q", got, `Bearer realm="llm-gw"`)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("upstream hits = %d, want 0", got)
+	}
+}
+
+func TestGatewayAuthLogTargetStripsQuery(t *testing.T) {
+	for _, tc := range []struct {
+		target string
+		want   string
+	}{
+		{"/v1/chat/completions", "/v1/chat/completions"},
+		{"/v1/chat/completions?key=secret", "/v1/chat/completions"},
+		{"http://user:pass@example.test/v1/messages?api_key=secret", "/v1/messages"},
+		{"*", "*"},
+	} {
+		if got := gatewayAuthLogTarget(tc.target); got != tc.want {
+			t.Fatalf("gatewayAuthLogTarget(%q) = %q, want %q", tc.target, got, tc.want)
+		}
+	}
+}
+
+func TestGatewayAuthReloadToEmptyKeysTurnsAuthOff(t *testing.T) {
+	up, hits := authUpstream(t)
+	gw := startGateway(t, authConfig(up.URL, gwconfig.GatewayKey{Name: "client", Key: authTestSecret}))
+
+	if resp, body := authRequest(t, gw, http.MethodPost, "/v1/chat/completions", authTestChatBody, nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status before reload = %d body = %s, want 401", resp.StatusCode, body)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("upstream hits before reload = %d, want 0", got)
+	}
+
+	if err := gw.Reload(testConfig(up.URL)); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, body := authRequest(t, gw, http.MethodPost, "/v1/chat/completions", authTestChatBody, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status after reload = %d body = %s, want 200", resp.StatusCode, body)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits after reload = %d, want 1", got)
+	}
+}
+
+func TestGatewayAuthRejectsInvalidBodyFraming(t *testing.T) {
+	up, hits := authUpstream(t)
+	gw := startGateway(t, authConfig(up.URL, gwconfig.GatewayKey{Name: "client", Key: authTestSecret}))
+
+	for _, tc := range []struct {
+		name string
+		head string
+	}{
+		{
+			name: "invalid content-length",
+			head: "POST /unknown HTTP/1.1\r\nHost: gateway.test\r\nAuthorization: Bearer " + authTestSecret + "\r\nContent-Length: nope\r\n\r\n",
+		},
+		{
+			name: "negative content-length",
+			head: "POST /unknown HTTP/1.1\r\nHost: gateway.test\r\nAuthorization: Bearer " + authTestSecret + "\r\nContent-Length: -1\r\n\r\n",
+		},
+		{
+			name: "duplicate content-length",
+			head: "POST /unknown HTTP/1.1\r\nHost: gateway.test\r\nAuthorization: Bearer " + authTestSecret + "\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\n",
+		},
+		{
+			name: "unsupported transfer-encoding",
+			head: "POST /unknown HTTP/1.1\r\nHost: gateway.test\r\nAuthorization: Bearer " + authTestSecret + "\r\nTransfer-Encoding: gzip\r\n\r\n",
+		},
+		{
+			name: "chunked not final",
+			head: "POST /unknown HTTP/1.1\r\nHost: gateway.test\r\nAuthorization: Bearer " + authTestSecret + "\r\nTransfer-Encoding: chunked, gzip\r\n\r\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, br := authRawDial(t, gw)
+			authRawWrite(t, conn, tc.head)
+			resp, body := authRawReadResponse(t, br)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d body = %s, want 400", resp.StatusCode, body)
+			}
+		})
+	}
+
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("upstream hits = %d, want 0", got)
 	}
 }
 
