@@ -20,13 +20,13 @@ import {
   CloudServerOutlined,
   DatabaseOutlined,
   DesktopOutlined,
+  GatewayOutlined,
   GlobalOutlined,
   MenuOutlined,
   MoonOutlined,
   PartitionOutlined,
   SettingOutlined,
   SunOutlined,
-  TagOutlined,
 } from '@ant-design/icons';
 import { getConfig, getHealth, getRequests, logout, UnauthorizedError, type RequestQuery } from './api/client';
 import type { ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow } from './api/types';
@@ -58,7 +58,7 @@ const NAV_ICONS: Record<Page, ReactNode> = {
   providers: <CloudServerOutlined />,
   nodes: <ApiOutlined />,
   routes: <BranchesOutlined />,
-  entrypoints: <TagOutlined />,
+  entrypoints: <GatewayOutlined />,
   requests: <DatabaseOutlined />,
   settings: <SettingOutlined />,
 };

@@ -1,6 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { NodeBody, NodeStats, handleStyle, selectionStyle } from './nodes';
+import type { NodeProps } from '@xyflow/react';
+import { ReactFlowProvider } from '@xyflow/react';
+import type { GraphNode } from './build';
+import { EntrypointNode, NodeBody, NodeStats, handleStyle, selectionStyle } from './nodes';
 
 describe('selectionStyle', () => {
   it('draws selection inside the box without changing its size', () => {
@@ -26,6 +29,26 @@ describe('NodeBody', () => {
     expect(html).toContain('route');
     expect(html).toContain('4 nodes · round');
     expect(html).not.toContain('position:absolute');
+  });
+});
+
+describe('EntrypointNode', () => {
+  it('uses the gateway icon instead of the old alias tag', () => {
+    const props = {
+      id: 'entrypoint:main',
+      type: 'entrypoint',
+      data: { kind: 'entrypoint', label: 'main' },
+      selected: false,
+      isConnectable: false,
+    } as unknown as NodeProps<GraphNode>;
+
+    const html = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <EntrypointNode {...props} />
+      </ReactFlowProvider>,
+    );
+    expect(html).toContain('anticon-gateway');
+    expect(html).not.toContain('anticon-tag');
   });
 });
 

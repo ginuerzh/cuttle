@@ -3,7 +3,7 @@ import {
   ApiOutlined,
   BranchesOutlined,
   CloudServerOutlined,
-  TagOutlined,
+  GatewayOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import type { NodeMetrics } from '../api/types';
@@ -161,7 +161,7 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
   return (
     <div style={{ ...box, ...selectionStyle(selected, '#6366f1'), background: 'var(--gw-node-entrypoint-bg)', minWidth: 220 }}>
       <IconBadge color="#6366f1">
-        <TagOutlined />
+        <GatewayOutlined />
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
