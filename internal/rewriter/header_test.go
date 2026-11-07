@@ -23,6 +23,57 @@ func TestHeaderRewriterAddsRequestID(t *testing.T) {
 	}
 }
 
+func TestOpenCodeSessionRewriterAddsFallback(t *testing.T) {
+	in := []byte("Content-Type: application/json\r\n\r\n")
+	out, err := (&OpenCodeSessionRewriter{}).Rewrite(nil, in, corerewriter.MetadataRewriteOption(
+		map[string]any{"sid": "req-123"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "X-Opencode-Session: req-123") {
+		t.Fatalf("session header missing: %q", out)
+	}
+}
+
+func TestOpenCodeSessionRewriterPreservesClientSession(t *testing.T) {
+	in := []byte("Content-Type: application/json\r\nx-opencode-session: client-session\r\n\r\n")
+	out, err := (&OpenCodeSessionRewriter{}).Rewrite(nil, in, corerewriter.MetadataRewriteOption(
+		map[string]any{"sid": "req-123"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.ToLower(string(out)), "x-opencode-session: client-session") {
+		t.Fatalf("client session changed: %q", out)
+	}
+	if strings.Contains(string(out), "X-Opencode-Session: req-123") {
+		t.Fatalf("fallback overwrote client session: %q", out)
+	}
+}
+
+func TestOpenCodeSessionRewriterPreservesNativeClaudeSession(t *testing.T) {
+	in := []byte("Content-Type: application/json\r\nx-claude-code-session-id: native-session\r\n\r\n")
+	out, err := (&OpenCodeSessionRewriter{}).Rewrite(nil, in, corerewriter.MetadataRewriteOption(
+		map[string]any{"sid": "req-123"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(string(out)), "x-opencode-session") {
+		t.Fatalf("native session should not get a custom header: %q", out)
+	}
+}
+
+func TestOpenCodeSessionRewriterFailsOpen(t *testing.T) {
+	in := []byte("not a header block")
+	out, err := (&OpenCodeSessionRewriter{}).Rewrite(nil, in, corerewriter.MetadataRewriteOption(
+		map[string]any{"sid": "req-123"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != string(in) {
+		t.Fatalf("output changed: %q", out)
+	}
+}
+
 func TestHeaderRewriterFailsOpen(t *testing.T) {
 	in := []byte("not a header block")
 	out, err := (&HeaderRewriter{}).Rewrite(nil, in, corerewriter.MetadataRewriteOption(

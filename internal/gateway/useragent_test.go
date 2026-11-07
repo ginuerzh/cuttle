@@ -38,6 +38,61 @@ func TestUpstreamUserAgentIsGatewayOwned(t *testing.T) {
 	}
 }
 
+func TestOpenCodeSessionHeaderInjected(t *testing.T) {
+	var got string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("x-opencode-session")
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	t.Cleanup(up.Close)
+
+	cfg := testConfig(up.URL)
+	cfg.Providers[0].Type = "opencode-go"
+	gw := startGateway(t, cfg)
+	req, _ := http.NewRequest(http.MethodPost,
+		"http://"+gw.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	if got == "" {
+		t.Fatal("x-opencode-session was not injected")
+	}
+}
+
+func TestOpenCodeSessionHeaderNotInjectedForGenericProvider(t *testing.T) {
+	var got string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("x-opencode-session")
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	t.Cleanup(up.Close)
+
+	cfg := testConfig(up.URL) // generic provider
+	gw := startGateway(t, cfg)
+	req, _ := http.NewRequest(http.MethodPost,
+		"http://"+gw.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	if got != "" {
+		t.Fatalf("x-opencode-session leaked to generic provider: %q", got)
+	}
+}
+
 func TestProviderHeadersAreApplied(t *testing.T) {
 	var gotUA, gotCustom string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

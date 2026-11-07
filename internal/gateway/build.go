@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-gost/core/hop"
 	"github.com/go-gost/core/logger"
+	corerewriter "github.com/go-gost/core/rewriter"
 	corerouting "github.com/go-gost/core/routing"
 	xconfig "github.com/go-gost/x/config"
 	hop_parser "github.com/go-gost/x/config/parsing/hop"
@@ -358,6 +359,14 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 				FailCodes: "429,5xx",
 			},
 		}
+		if strings.EqualFold(strings.TrimSpace(p.Type), "opencode-go") {
+			// Session affinity is an OpenCode Go requirement. Attach this
+			// rewriter only to that provider's nodes; it must never run for
+			// generic, CommandCode or DeepSeek providers.
+			nodeCfg.HTTP.RewriteRequestHeader = []xconfig.HTTPHeaderRewriteConfig{{
+				Rewriter: gwrewriter.OpenCodeSessionRewriterName,
+			}}
+		}
 		nodes = append(nodes, nodeCfg)
 	}
 	return nodes, nil
@@ -409,10 +418,17 @@ func rewriterName(route, variant, node string) string {
 }
 
 func registerHeaderRewriter() error {
-	name := gwrewriter.RequestIDRewriterName
-	registry.RewriterRegistry().Unregister(name)
-	if err := registry.RewriterRegistry().Register(name, &gwrewriter.HeaderRewriter{}); err != nil {
-		return fmt.Errorf("register header rewriter %s: %w", name, err)
+	for _, item := range []struct {
+		name     string
+		rewriter corerewriter.Rewriter
+	}{
+		{gwrewriter.RequestIDRewriterName, &gwrewriter.HeaderRewriter{}},
+		{gwrewriter.OpenCodeSessionRewriterName, &gwrewriter.OpenCodeSessionRewriter{}},
+	} {
+		registry.RewriterRegistry().Unregister(item.name)
+		if err := registry.RewriterRegistry().Register(item.name, item.rewriter); err != nil {
+			return fmt.Errorf("register header rewriter %s: %w", item.name, err)
+		}
 	}
 	return nil
 }

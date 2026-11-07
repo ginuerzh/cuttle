@@ -448,6 +448,12 @@ This prevents clients such as `Python-urllib` from being rejected by
 Cloudflare bot rules (CommandCode `error code: 1010`). The client's own UA is
 still recorded in `stats.requests.user_agent` for attribution.
 
+For `opencode-go` providers the gateway injects `x-opencode-session` from the
+request ID when the client sent no session-like header at all. If the client
+already sends a session header, including Claude Code's native session header,
+it is preserved. Without a recognized session header, OpenCode returns 400
+`MissingSessionID`.
+
 With the quick-start example above, Claude Code talking Anthropic Messages to
 `/v1/messages` is forwarded to DeepSeek's native
 `https://api.deepseek.com/anthropic` endpoint instead of being converted to the
@@ -591,9 +597,10 @@ received (502 for a failed request with no upstream response). `errorClass` is
 one of `upstream_auth`, `upstream_forbidden`, `upstream_not_found`,
 `upstream_quota`, `upstream_bad_request`, `upstream_unavailable`,
 `upstream_truncated`, `upstream_error`, `gateway_timeout`, `network`,
-`rewrite_error` or `client_error`. `truncated` marks a streaming request that
-ended without a terminal `finish_reason`/`stop_reason` or `[DONE]`; it is how a
-clean-looking HTTP 200 cut is surfaced.
+`rewrite_error`, `client_error` or `client_disconnect`. `truncated` marks a
+streaming request that ended without a terminal
+`finish_reason`/`stop_reason` or `[DONE]`; it is how a clean-looking HTTP 200
+cut is surfaced.
 
 `PUT /api/entrypoints` replaces the whole ordered list. Entrypoint order is
 precedence, so the list is edited and saved as one unit.
