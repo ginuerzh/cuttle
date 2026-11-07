@@ -655,8 +655,10 @@ const (
 	gatewayKeyValueMax = 512
 )
 
-// validateGatewayKeys checks the named data-plane access keys. Error messages
-// name the index and field but never echo a key value.
+// validateGatewayKeys checks the named data-plane access keys. Names and values
+// must survive config.Load's environment expansion on every reload, so a
+// literal "$" is rejected. Error messages name the index and field but never
+// echo a key value.
 func validateGatewayKeys(keys []GatewayKey) error {
 	names := make(map[string]struct{}, len(keys))
 	values := make(map[string]struct{}, len(keys))
@@ -669,6 +671,8 @@ func validateGatewayKeys(keys []GatewayKey) error {
 			return fmt.Errorf("gateway.keys[%d]: name must be at most %d characters", i, gatewayKeyNameMax)
 		case strings.Contains(name, "/"):
 			return fmt.Errorf("gateway.keys[%d]: name must not contain '/'", i)
+		case strings.Contains(name, "$"):
+			return fmt.Errorf("gateway.keys[%d]: name must not contain '$'", i)
 		case strings.ContainsFunc(name, unicode.IsControl):
 			return fmt.Errorf("gateway.keys[%d]: name contains control characters", i)
 		}
@@ -685,6 +689,12 @@ func validateGatewayKeys(keys []GatewayKey) error {
 			return fmt.Errorf("gateway.keys[%d]: key is too short", i)
 		case utf8.RuneCountInString(key) > gatewayKeyValueMax:
 			return fmt.Errorf("gateway.keys[%d]: key is too long", i)
+		case strings.Contains(key, "$"):
+			// config.Load expands the environment on every reload; a literal
+			// "$" stored through the admin API would change or fail later.
+			return fmt.Errorf("gateway.keys[%d]: key must not contain '$'", i)
+		case strings.ContainsFunc(key, unicode.IsControl):
+			return fmt.Errorf("gateway.keys[%d]: key contains control characters", i)
 		}
 		if _, ok := values[key]; ok {
 			return fmt.Errorf("gateway.keys[%d]: duplicate key value", i)

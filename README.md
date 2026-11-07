@@ -340,9 +340,16 @@ gateway:
 
 | Field | Required | Description |
 | --- | --- | --- |
-| `name` | yes | Unique name, at most 64 characters, no `/` or control characters |
-| `key` | yes | Unique value, 8–512 characters; `${VAR}`/`$VAR` are expanded |
+| `name` | yes | Unique name, at most 64 characters, no `/`, `$` or control characters |
+| `key` | yes | Unique value, 8–512 characters, no `$` or control characters; `${VAR}`/`$VAR` are expanded |
 | `enabled` | no | Default `true`; a disabled entry stays configured but never authenticates |
+
+Names and values must not contain a literal `$` after environment expansion.
+`config.Load` expands `${VAR}` and `$VAR` on every reload, so a value stored
+verbatim through the admin API would be reinterpreted or fail startup the next
+time the config is loaded. Put the secret in the environment and reference it,
+or paste a value that contains no `$`. Control characters are rejected in
+values as well because they can never authenticate.
 
 An absent or empty `keys` list keeps the data plane open. Any entry turns
 authentication on. If every entry is disabled, every data-plane request is
@@ -686,10 +693,14 @@ range totals plus per-key requests, errors and tokens. Configured keys appear in
 order including zero usage, deleted keys are appended alphabetically with
 `configured:false`, and the endpoint returns `503` when stats are disabled.
 
-`GET /api/config` reports `gateway.keysSet` and `gateway.authRequired` but never
-key values. `PUT /api/config` preserves the current `gateway.keys` when the
-field is absent and clears them only when the request sends `[]`; a non-empty
-list replaces the whole set.
+`GET /api/config` reports `gateway.readTimeout`, `gateway.userAgent`,
+`gateway.keysSet` and `gateway.authRequired` but never key values.
+`PUT /api/config` is a full replacement for the fields the view exposes:
+write-only provider keys, `gateway.keys` and the admin password are preserved
+when absent (provider keys per provider name), and `gateway.keys` is cleared
+only when the request sends `[]`. Fields the view does not expose, such as
+provider `userAgent` and `headers`, are not round-trippable through GET then
+PUT; send them explicitly with the update.
 
 `GET /api/events` is a WebSocket subscription. It accepts `range=...`,
 `since=<RFC3339>` to resume a session, or `reset=1` to start at zero. The server

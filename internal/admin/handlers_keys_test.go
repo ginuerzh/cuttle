@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-gost/llm-gw/internal/config"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
@@ -229,12 +230,35 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 
 	created, _ := createGatewayKeyTest(t, client, ts.URL, csrf, `{"name":"claude-code"}`)
 
+	// Seed a provider key. GET /api/config must not echo it and PUT must
+	// preserve it when the decoded field is absent.
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers",
+		`{"name":"upstream","type":"generic","chat":"https://example.test/v1","keys":["sk-provider-secret"]}`, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create provider status = %d: %s", resp.StatusCode, b)
+	}
+
 	cfgResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/config", "", "")
 	cfgBody, err := io.ReadAll(cfgResp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", string(cfgBody), csrf); resp.StatusCode != http.StatusNoContent {
+	if strings.Contains(string(cfgBody), "sk-provider-secret") {
+		t.Fatalf("config leaked the provider key: %s", cfgBody)
+	}
+
+	// Round-trip the GET body with custom gateway fields the view exposes.
+	var roundTrip config.Config
+	if err := json.Unmarshal(cfgBody, &roundTrip); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	roundTrip.Gateway.ReadTimeout = config.Duration(90 * time.Second)
+	roundTrip.Gateway.UserAgent = "llm-gw-test-agent/1.0"
+	putBody, err := json.Marshal(&roundTrip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", string(putBody), csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("put config status = %d: %s", resp.StatusCode, b)
 	}
@@ -243,6 +267,39 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 	}
 	if got := rel.cfg.Gateway.Keys[0]; got.Name != "claude-code" || got.Key != created.Key {
 		t.Fatalf("preserved key = %+v, want name claude-code and the original value", got)
+	}
+	if len(rel.cfg.Providers) != 1 || len(rel.cfg.Providers[0].Keys) != 1 ||
+		rel.cfg.Providers[0].Keys[0] != "sk-provider-secret" {
+		t.Fatalf("providers after read-modify-write = %+v, want the provider key preserved", rel.cfg.Providers)
+	}
+	if rel.cfg.Gateway.ReadTimeout != config.Duration(90*time.Second) || rel.cfg.Gateway.UserAgent != "llm-gw-test-agent/1.0" {
+		t.Fatalf("gateway after read-modify-write = %+v, want readTimeout 90s and the custom userAgent", rel.cfg.Gateway)
+	}
+
+	// The view must expose the custom fields and still hide the key.
+	cfgResp = doJSON(t, client, http.MethodGet, ts.URL+"/api/config", "", "")
+	cfgBody, err = io.ReadAll(cfgResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"readTimeout":"1m30s"`, `"userAgent":"llm-gw-test-agent/1.0"`, `"keysSet":1`, `"authRequired":true`} {
+		if !strings.Contains(string(cfgBody), want) {
+			t.Fatalf("config = %s, want it to contain %s", cfgBody, want)
+		}
+	}
+	if strings.Contains(string(cfgBody), "sk-provider-secret") {
+		t.Fatalf("config leaked the provider key: %s", cfgBody)
+	}
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", string(cfgBody), csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("second put config status = %d: %s", resp.StatusCode, b)
+	}
+	if rel.cfg.Gateway.ReadTimeout != config.Duration(90*time.Second) || rel.cfg.Gateway.UserAgent != "llm-gw-test-agent/1.0" {
+		t.Fatalf("gateway after second round-trip = %+v", rel.cfg.Gateway)
+	}
+	if len(rel.cfg.Providers) != 1 || len(rel.cfg.Providers[0].Keys) != 1 ||
+		rel.cfg.Providers[0].Keys[0] != "sk-provider-secret" {
+		t.Fatalf("providers after second round-trip = %+v", rel.cfg.Providers)
 	}
 
 	clearBody := `{"gateway":{"listen":"127.0.0.1:0","keys":[]}}`
@@ -277,6 +334,32 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 	}
 	if strings.Contains(listRaw, "replacement-secret") {
 		t.Fatalf("list leaked the replacement key: %s", listRaw)
+	}
+}
+
+func TestPutConfigRejectsDollarInGatewayKey(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	created, _ := createGatewayKeyTest(t, client, ts.URL, csrf, `{"name":"keep"}`)
+
+	body := `{"gateway":{"listen":"127.0.0.1:0","keys":[{"name":"env","key":"${MISSING}"}]}}`
+	resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", body, csrf)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d: %s", resp.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "must not contain '$'") {
+		t.Fatalf("error = %s, want the '$' restriction", raw)
+	}
+	if strings.Contains(string(raw), "${MISSING}") {
+		t.Fatalf("error leaked the gateway key value: %s", raw)
+	}
+	if len(rel.cfg.Gateway.Keys) != 1 || rel.cfg.Gateway.Keys[0].Key != created.Key {
+		t.Fatalf("keys after rejected update = %+v, want the original key", rel.cfg.Gateway.Keys)
 	}
 }
 

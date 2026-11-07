@@ -815,3 +815,90 @@ git commit -m "docs: document gateway keys"
 - Tests/commands and results: from `/tmp/opencode/llm-gw-gateway-keys`: `GOWORK=off go build ./...` passed; `GOWORK=off go vet ./...` passed with no output; `GOWORK=off go test ./... -count=1` passed for every package. From `web/`: `npm test` — 24 files / 175 tests passed; `npx tsc --noEmit` passed with no output; `npm run build` passed and rebuilt `internal/admin/dist` (Vite emitted only the pre-existing >500 kB chunk warning). Back in the repository root: `GOWORK=off go build -o llm-gw .` passed and `./llm-gw version` printed `dev`.
 - Review findings and fixes: self-review only (controller review follows). Checked the documentation against the shipped code: route list matches `server.go`; create/rotate response bodies and status codes match `handlers_keys.go`; `GET /api/config` `keysSet`/`authRequired` and `PUT` nil-preserve/`[]`-clear behavior match `handlers.go`; 401 status, headers, body and warning fields match `auth.go`; retention, key filter and no-backfill behavior match `store.go`; one-request-per-connection and all-disabled warning match the implementation. No code changes were required; drafting fixes were limited to wording and line wrapping.
 - Deferred items/limitations: no browser visual regression tests; UI behavior is covered by TypeScript, Vitest and HTTP checks only, and this task changed no UI code. The gates ran from the isolated worktree rather than the plan's hardcoded `/root/code/go-gost/llm-gw` path, per the ledger ruling. The pre-existing unrelated change to `web/node_modules/.vite/vitest/results.json` was not included in the commit.
+
+---
+
+## Final review fix wave
+
+Date: 2026-11-07
+Status: complete
+
+The final whole-branch review returned "With fixes" and recorded one Critical and
+three Important findings in
+`.superpowers/sdd/2026-11-07-gateway-keys/final-review-findings.md`. All four,
+plus the listed minor test additions, are fixed in one wave with no scope
+expansion.
+
+### Findings and fixes
+
+1. **Critical — unbounded head-line allocation.** `readGatewayAuthHead` used
+   `bufio.Reader.ReadBytes('\n')`, which accumulates every `ErrBufferFull`
+   fragment before the 1 MiB check runs. It now reads fragments with
+   `ReadSlice('\n')`, checks `len(head)+len(line)` against
+   `gatewayAuthHeaderLimit` before each append, and continues on
+   `bufio.ErrBufferFull`. A single unterminated line can no longer allocate
+   more than the limit plus one 4 KiB `bufio` buffer. The 15s read deadline is
+   unchanged.
+2. **Important — log target could leak userinfo and control characters.**
+   `gatewayAuthLogTarget` now keeps the `"*"` case, parses with `url.Parse`,
+   returns the path re-escaped from the decoded `u.Path` so lower-case control
+   escapes such as `%0a` become visible `%0A`, returns `/` when the path is
+   empty (absolute-form userinfo targets), and never returns the raw target,
+   userinfo or query. `sanitizeGatewayAuthMethod` returns `-` for any method
+   containing bytes outside printable ASCII `0x21..0x7e`; both warn calls use
+   it.
+3. **Important — config read-modify-write wiped provider keys and gateway
+   fields.** `configView.Gateway` now exposes `readTimeout` and `userAgent`, and
+   `handleGetConfig` fills them. `handlePutConfig` preserves each existing
+   provider's `keys` when the decoded field is nil, keyed by provider name; an
+   explicit `[]` still clears and a new provider stays keyless. Gateway key and
+   admin password preservation are unchanged. README and AGENTS now document
+   that PUT is a full replacement for exposed fields, write-only values are
+   preserved when absent, and non-exposed provider fields are not
+   round-trippable. `web/src/api/types.ts` mirrors the expanded gateway view.
+4. **Important — `$` and control characters in key names/values.**
+   `validateGatewayKeys` now rejects `$` in names and values with the exact
+   messages `gateway.keys[%d]: name must not contain '$'` and
+   `gateway.keys[%d]: key must not contain '$'`, and rejects control characters
+   in values like it already did for names. Errors still never echo a value.
+   README and AGENTS document the environment-expansion restriction.
+5. **Minor test additions.** `TestInsertRecordsGatewayKeyAndRollups` now writes
+   and asserts `CachedTokens`; config tests cover the exact 8/512 boundaries,
+   whitespace trimming, a `$` and control characters in both names and values,
+   and environment expansion of a key name; admin tests cover provider-key and
+   custom gateway-field round-trips and a rejected `${MISSING}` gateway key.
+
+### Files changed
+
+- `internal/gateway/auth.go`, `internal/gateway/auth_test.go`
+- `internal/config/config.go`, `internal/config/config_test.go`
+- `internal/admin/handlers.go`, `internal/admin/handlers_keys_test.go`
+- `internal/stats/store_test.go`
+- `web/src/api/types.ts`
+- `README.md`, `AGENTS.md`
+- `docs/superpowers/plans/2026-11-07-gateway-keys.md` (this section)
+
+### Verification gates
+
+Run from `/tmp/opencode/llm-gw-gateway-keys`:
+
+```bash
+GOWORK=off go build ./...
+GOWORK=off go vet ./...
+GOWORK=off go test ./... -count=1
+cd web && npm test && npx tsc --noEmit && npm run build
+cd .. && GOWORK=off go build -o llm-gw .
+```
+
+All passed. `go test` passed for every package; `npm test` passed 24 files /
+175 tests; `npx tsc --noEmit` produced no output; `npm run build` rebuilt
+`internal/admin/dist` with only the pre-existing >500 kB chunk warning; the
+final `./llm-gw version` printed `dev`.
+
+**Implementation record**
+- Date/status: 2026-11-07 — complete.
+- Repository + commit: `llm-gw` (worktree `/tmp/opencode/llm-gw-gateway-keys`) — see commit (`fix: harden gateway key auth, validation and config round-trip`).
+- Files changed: `internal/gateway/auth.go` (fragment-capped head reader, safe log target, method sanitizer), `internal/gateway/auth_test.go` (oversized-line reader test, expanded log-target table, method table), `internal/config/config.go` (`$` and control-character rejection), `internal/config/config_test.go` (name env expansion, trimmed key, `$`/control cases, 8/512 boundaries), `internal/admin/handlers.go` (gateway view fields, provider-key preservation), `internal/admin/handlers_keys_test.go` (provider key plus gateway field round-trip, rejected `${MISSING}`), `internal/stats/store_test.go` (cached-token assertion), `web/src/api/types.ts` (`ConfigResponse.gateway`), `README.md` and `AGENTS.md` (restrictions and PUT contract), plus this plan section.
+- Tests/commands and results: focused `GOWORK=off go test ./internal/gateway -run 'TestGatewayAuthLogTargetStripsQuery|TestSanitizeGatewayAuthMethod|TestReadGatewayAuthHeadRejectsOversizedLine' -count=1` passed; `./internal/config -run 'TestLoadGatewayKeys|TestValidateGatewayKeys'` passed; `./internal/admin -run 'TestPutConfig'` passed; `./internal/stats -run TestInsertRecordsGatewayKeyAndRollups` passed. Full gates listed above all passed.
+- Review findings and fixes: self-review after the fix wave. Verified the head reader's worst case reads at most `gatewayAuthHeaderLimit + 4096` bytes; the log target returns only a canonically escaped path or `/`; the method sanitizer rejects space, DEL, newline and non-ASCII; `handlePutConfig` distinguishes nil from `[]` for provider keys and preserves keys only for existing names; validation messages never contain the offending value. No issues remained after the focused fixes (the first log-target version preserved lower-case `RawPath`; the test caught it and the path is now re-escaped from the decoded value).
+- Deferred items/limitations: the optional handler-level oversized-head test was not added (the unit test pins the allocation bound); the last-key deletion warning, provider `userAgent`/`headers` view exposure and the x keepalive root fix stay out of scope; no browser visual regression tests. The unrelated `web/node_modules/.vite/vitest/results.json` change was not committed. Nothing was pushed.

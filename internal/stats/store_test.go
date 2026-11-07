@@ -499,7 +499,7 @@ func TestInsertRecordsGatewayKeyAndRollups(t *testing.T) {
 	now := time.Date(2026, 11, 7, 10, 30, 0, 0, time.UTC)
 
 	for _, r := range []Request{
-		{ID: "a1", SID: "a1", TS: now, Provider: "p", GatewayKey: "alpha", Status: 200, InputTokens: 10, OutputTokens: 2},
+		{ID: "a1", SID: "a1", TS: now, Provider: "p", GatewayKey: "alpha", Status: 200, InputTokens: 10, OutputTokens: 2, CachedTokens: 3},
 		{ID: "a2", SID: "a2", TS: now.Add(time.Minute), Provider: "p", GatewayKey: "alpha", Status: 500, Error: "boom"},
 		{ID: "c1", SID: "c1", TS: now.Add(2 * time.Minute), Provider: "p", Status: 200},
 	} {
@@ -530,7 +530,7 @@ func TestInsertRecordsGatewayKeyAndRollups(t *testing.T) {
 	}
 	got := usage[0]
 	if got.Key != "alpha" || got.Requests != 2 || got.Errors != 1 ||
-		got.InputTokens != 10 || got.OutputTokens != 2 {
+		got.InputTokens != 10 || got.OutputTokens != 2 || got.CachedTokens != 3 {
 		t.Fatalf("key usage = %+v", got)
 	}
 }

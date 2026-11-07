@@ -178,18 +178,20 @@ func (h *gatewayAuthHandler) Handle(ctx context.Context, conn net.Conn, opts ...
 		return writeGatewayAuthResponse(conn, http.StatusBadRequest, gatewayMalformedHeadBody, false)
 	}
 
-	// Log only the path: a query string can carry a credential.
+	// Log only the path: a query string can carry a credential. The method is
+	// sanitized because it is client-controlled and reaches the log line.
+	logMethod := sanitizeGatewayAuthMethod(method)
 	logTarget := gatewayAuthLogTarget(target)
 
 	body, err := gatewayAuthBodyReader(br, header)
 	if err != nil {
-		h.log.Warnf("gateway auth: %s %s from %s: %v", method, logTarget, gatewayAuthRemoteAddr(conn), err)
+		h.log.Warnf("gateway auth: %s %s from %s: %v", logMethod, logTarget, gatewayAuthRemoteAddr(conn), err)
 		return writeGatewayAuthResponse(conn, http.StatusBadRequest, gatewayMalformedHeadBody, false)
 	}
 
 	name, reason, authenticated := policy.authenticate(gatewayAuthCandidates(header))
 	if !authenticated {
-		h.log.Warnf("gateway auth: %s %s from %s: %s", method, logTarget, gatewayAuthRemoteAddr(conn), reason)
+		h.log.Warnf("gateway auth: %s %s from %s: %s", logMethod, logTarget, gatewayAuthRemoteAddr(conn), reason)
 		return writeGatewayAuthResponse(conn, http.StatusUnauthorized, gatewayAuthErrorBody, true)
 	}
 
@@ -250,27 +252,53 @@ func gatewayAuthBodyReader(br *bufio.Reader, header textproto.MIMEHeader) (io.Re
 }
 
 // gatewayAuthLogTarget returns only the path of a request target for logging.
-// Query strings may carry credentials and must not reach the logs.
+// Query strings can carry credentials, userinfo can carry a password, and the
+// decoded path can hide control characters; none of them may reach the logs.
+// The raw target is never returned.
 func gatewayAuthLogTarget(target string) string {
-	if i := strings.IndexByte(target, '?'); i >= 0 {
-		target = target[:i]
+	if target == "*" {
+		return "*"
 	}
-	if u, err := url.Parse(target); err == nil && u.Path != "" {
-		return u.Path
+	u, err := url.Parse(target)
+	if err != nil {
+		return "/"
 	}
-	return target
+	if u.Path != "" {
+		// Re-escape from the decoded path instead of trusting RawPath: a
+		// lower-case escape such as %0a would otherwise be preserved, and
+		// control bytes must always be rendered as visible escapes.
+		return (&url.URL{Path: u.Path}).EscapedPath()
+	}
+	return "/"
+}
+
+// sanitizeGatewayAuthMethod returns the request method when it is printable
+// ASCII and a fixed placeholder otherwise. The method is client-controlled and
+// is interpolated into a log line.
+func sanitizeGatewayAuthMethod(method string) string {
+	for i := 0; i < len(method); i++ {
+		if method[i] < 0x21 || method[i] > 0x7e {
+			return "-"
+		}
+	}
+	return method
 }
 
 // readGatewayAuthHead reads the request line and headers, including the blank
-// line that terminates the head. It never reads the body.
+// line that terminates the head. It never reads the body, and it checks the
+// accumulated size before each append so a single unterminated line cannot
+// allocate more than the limit plus one bufio buffer.
 func readGatewayAuthHead(br *bufio.Reader) ([]byte, error) {
 	head := make([]byte, 0, 512)
 	for {
-		line, err := br.ReadBytes('\n')
+		line, err := br.ReadSlice('\n')
 		if len(head)+len(line) > gatewayAuthHeaderLimit {
 			return head, errGatewayAuthHeadTooLarge
 		}
 		head = append(head, line...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
 		if err != nil {
 			return head, err
 		}

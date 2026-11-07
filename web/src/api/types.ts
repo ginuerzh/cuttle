@@ -130,7 +130,13 @@ export interface TopologyPosition {
 }
 
 export interface ConfigResponse {
-  gateway: { listen: string };
+  gateway: {
+    listen: string;
+    readTimeout?: string;
+    userAgent?: string;
+    keysSet?: number;
+    authRequired?: boolean;
+  };
   admin: { listen: string; sessionTTL: string };
   log?: { level?: string; format?: string };
   entrypoints: Entrypoint[];

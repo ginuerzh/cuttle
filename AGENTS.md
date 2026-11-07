@@ -172,13 +172,15 @@ Entrypoint -> Route -> Node -> Provider model
 - `gateway.keys` empty (absent or `[]`) leaves the data plane open. Any entry
   turns authentication on, including a list where every entry is disabled.
 - Gateway key names are required, trimmed, at most 64 characters, unique, and
-  must not contain `/` or control characters. Values are required, trimmed,
-  8–512 characters, unique, and rejected without echoing the value.
+  must not contain `/`, `$` or control characters. Values are required,
+  trimmed, 8–512 characters, unique, must not contain `$` or control
+  characters, and are rejected without echoing the value.
 - `enabled` defaults to true. A disabled entry stays configured but never
   authenticates. An all-disabled list logs a warning at apply time and rejects
   every data-plane request.
 - `config.Load` environment-expands gateway key values. Admin writes apply
-  defaults and validation only and must not expand a literal `$`.
+  defaults and validation only and must not expand a literal `$`; a literal
+  `$` is rejected so the next reload cannot reinterpret or fail on it.
 
 ## Admin API invariants
 
@@ -225,10 +227,14 @@ Entrypoint -> Route -> Node -> Provider model
   /api/gateway-keys` 201 body and the `POST /api/gateway-keys/{name}/rotate`
   200 body; `PUT` changes only `enabled`, and `DELETE` returns 204 and keeps
   usage history.
-- `GET /api/config` exposes `gateway.keysSet` and `gateway.authRequired`, never
-  key values. `PUT /api/config` preserves `gateway.keys` when the field is
-  nil/absent and clears it only on an explicit `[]`; a non-empty list replaces
-  the whole set and is validated without echoing values.
+- `GET /api/config` exposes `gateway.readTimeout`, `gateway.userAgent`,
+  `gateway.keysSet` and `gateway.authRequired`, never key values.
+  `PUT /api/config` is a full replacement for the exposed fields. Write-only
+  provider keys (per provider name), `gateway.keys` and the admin password are
+  preserved when absent; `gateway.keys` clears only on an explicit `[]`; a
+  non-empty list replaces the whole set and is validated without echoing
+  values. Fields the view does not expose (for example provider `userAgent` and
+  `headers`) are not round-trippable through GET then PUT.
 - `GET /api/gateway-key-usage` merges `key_rollups` with the current list:
   configured keys stay in order including zero usage, deleted keys are appended
   alphabetically with `configured:false`, and `keys` is never `null`. Return

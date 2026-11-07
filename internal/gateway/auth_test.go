@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -573,13 +574,63 @@ func TestGatewayAuthLogTargetStripsQuery(t *testing.T) {
 		want   string
 	}{
 		{"/v1/chat/completions", "/v1/chat/completions"},
-		{"/v1/chat/completions?key=secret", "/v1/chat/completions"},
+		{"/v1/chat?key=secret", "/v1/chat"},
 		{"http://user:pass@example.test/v1/messages?api_key=secret", "/v1/messages"},
+		{"http://user:pass@host", "/"},
+		{"http://user:pass@host/v1?x", "/v1"},
+		{"/x%0a", "/x%0A"},
 		{"*", "*"},
+		{"://bad", "/"},
 	} {
 		if got := gatewayAuthLogTarget(tc.target); got != tc.want {
 			t.Fatalf("gatewayAuthLogTarget(%q) = %q, want %q", tc.target, got, tc.want)
 		}
+	}
+}
+
+func TestSanitizeGatewayAuthMethod(t *testing.T) {
+	for _, tc := range []struct {
+		method string
+		want   string
+	}{
+		{"GET", "GET"},
+		{"POST", "POST"},
+		{"BAD METHOD", "-"},
+		{"GET\n", "-"},
+		{"GET\x7f", "-"},
+		{"GÉT", "-"},
+	} {
+		if got := sanitizeGatewayAuthMethod(tc.method); got != tc.want {
+			t.Fatalf("sanitizeGatewayAuthMethod(%q) = %q, want %q", tc.method, got, tc.want)
+		}
+	}
+}
+
+// authFillingReader emits 'a' forever without a newline, recording how many
+// bytes the head reader consumed.
+type authFillingReader struct {
+	read int
+}
+
+func (r *authFillingReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'a'
+	}
+	r.read += len(p)
+	return len(p), nil
+}
+
+func TestReadGatewayAuthHeadRejectsOversizedLine(t *testing.T) {
+	reader := &authFillingReader{}
+	head, err := readGatewayAuthHead(bufio.NewReader(reader))
+	if !errors.Is(err, errGatewayAuthHeadTooLarge) {
+		t.Fatalf("err = %v, want errGatewayAuthHeadTooLarge", err)
+	}
+	if len(head) > gatewayAuthHeaderLimit {
+		t.Fatalf("head = %d bytes, want at most %d", len(head), gatewayAuthHeaderLimit)
+	}
+	if max := gatewayAuthHeaderLimit + 4096; reader.read > max {
+		t.Fatalf("read %d bytes, want at most %d (limit plus one bufio buffer)", reader.read, max)
 	}
 }
 
