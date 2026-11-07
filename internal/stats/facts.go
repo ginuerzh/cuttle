@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -70,7 +71,7 @@ func (f *Facts) Add(sid, provider, protocol string, res engine.Result) {
 	if res.Effort != "" {
 		fact.Effort = res.Effort
 	}
-	fact.InputTokens = max(fact.InputTokens, res.InputTokens)
+	fact.InputTokens = max(fact.InputTokens, normalizedInputTokens(protocol, res))
 	fact.OutputTokens = max(fact.OutputTokens, res.OutputTokens)
 	fact.CachedTokens = max(fact.CachedTokens, res.CachedTokens)
 	fact.Stream = fact.Stream || res.Stream
@@ -82,6 +83,17 @@ func (f *Facts) Add(sid, provider, protocol string, res engine.Result) {
 			delete(f.m, k)
 		}
 	}
+}
+
+// normalizedInputTokens returns total input tokens for stats. Anthropic's
+// input_tokens excludes cache reads, so add cached_tokens there; OpenAI-style
+// usage already includes cached tokens in prompt_tokens and must not be
+// double-counted.
+func normalizedInputTokens(protocol string, res engine.Result) int {
+	if strings.EqualFold(protocol, "anthropic") {
+		return res.InputTokens + res.CachedTokens
+	}
+	return res.InputTokens
 }
 
 // AddInboundProtocol records the client-facing protocol for sid.
