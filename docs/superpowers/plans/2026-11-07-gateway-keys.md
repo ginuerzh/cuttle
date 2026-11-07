@@ -270,7 +270,7 @@ git commit -m "feat(stats): record gateway key and key usage"
   // Gateway gains: auth atomic.Pointer[authPolicy]
   ```
 
-- [ ] **Step 1: Write failing gateway auth tests**
+- [x] **Step 1: Write failing gateway auth tests**
 
 Add to `internal/gateway/auth_test.go` (same package `gateway`):
 
@@ -340,12 +340,12 @@ func TestGatewayAuthRecordsGatewayKey(t *testing.T)
 // assert row.GatewayKey == "alpha".
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'GatewayAuth|AuthPolicy|HelloStaysPublic' -count=1`
 Expected: FAIL because the auth handler and policy do not exist.
 
-- [ ] **Step 3: Implement `auth.go`**
+- [x] **Step 3: Implement `auth.go`**
 
 - Constants: header limit 1 MiB, header read deadline 15s.
 - `newAuthPolicy`: `required = len(keys) > 0`; one entry per key with `sha256.Sum256([]byte(key))` and `enabled = key.Enabled == nil || *key.Enabled`. Skip entries with an empty key; they cannot be produced by validation.
@@ -374,7 +374,7 @@ Expected: FAIL because the auth handler and policy do not exist.
     ```
     Store the policy next to `g.countTokens.Store(policy)`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'GatewayAuth|AuthPolicy|HelloStaysPublic' -count=1`
 Expected: PASS.
@@ -382,7 +382,7 @@ Expected: PASS.
 Run the full package: `GOWORK=off go test ./internal/gateway -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/gateway
@@ -390,12 +390,12 @@ git commit -m "feat(gateway): require configured gateway keys"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-07, complete.
+- Repository + commit: llm-gw @ see commit (this commit, `feat(gateway): require configured gateway keys`)
+- Files changed: `internal/gateway/auth.go` (new `authPolicy`/`authEntry`, `newAuthPolicy`, `gatewayAuthHandler`, raw head read/replay, candidate collection, constant-time authentication, 400/401 responses), `internal/gateway/auth_test.go` (new coverage for open mode, accepted headers, any-candidate matching, missing/invalid/disabled rejection, reasons, hello exemption, count_tokens, malformed head, header leakage, large-body replay, reload rotation), `internal/gateway/gateway.go` (`Gateway.auth`, hello → auth → count_tokens chain, policy store and all-disabled warning in `apply`), `internal/gateway/stats_test.go` (`TestGatewayAuthRecordsGatewayKey`), plus this plan.
+- Tests/commands and results: RED `GOWORK=off go test ./internal/gateway -run 'GatewayAuth|AuthPolicy|HelloStaysPublic' -count=1` failed to build with `undefined: newAuthPolicy`; GREEN focused run passed every case; `GOWORK=off go test ./internal/gateway -count=1` passed; `GOWORK=off go build ./...`, `GOWORK=off go vet ./...` and `GOWORK=off go test ./... -count=1` passed.
+- Review findings and fixes: the chat body rewriter normalizes request bodies, so the exact-byte replay test targets an unmapped path that bypasses rewriting; Go's client strips the `Connection` header from `Response.Header`, so the test asserts `resp.Close`, which reflects the wire header; the handler replays the exact consumed head plus the same `bufio.Reader` remainder and never reads the body; every digest is compared with every candidate without early exit; empty-key entries are skipped defensively; credentials are absent from logs and from upstream headers.
+- Deferred items/limitations: admin key CRUD/usage API, web page and documentation belong to Tasks 4–7; 401 requests are logged only and not recorded in stats (by design); no per-IP rate limiting in v1.
 
 ---
 

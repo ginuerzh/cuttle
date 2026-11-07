@@ -43,6 +43,7 @@ type Gateway struct {
 	hop         hop.Hop
 	rewriters   []string
 	countTokens atomic.Pointer[countTokensPolicy]
+	auth        atomic.Pointer[authPolicy]
 	ln          listener.Listener
 	svc         service.Service
 	facts       *stats.Facts
@@ -98,7 +99,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 	}
 
 	ct := newCountTokensHandler(base, &g.countTokens, log)
-	h := newHelloHandler(ct, log)
+	h := newHelloHandler(newGatewayAuthHandler(ct, &g.auth, log), log)
 	readTimeout := time.Duration(cfg.Gateway.ReadTimeout)
 	if readTimeout <= 0 {
 		readTimeout = 60 * time.Second
@@ -347,7 +348,12 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	g.rewriters = rewriters
 	g.mu.Unlock()
 
+	ap := newAuthPolicy(cfg.Gateway.Keys)
 	g.countTokens.Store(policy)
+	g.auth.Store(ap)
+	if ap.required && !ap.hasEnabled() {
+		g.log.Warnf("gateway keys: all configured keys are disabled; all data-plane requests will be rejected")
+	}
 	g.forwarder.Forward(group)
 	if g.capture != nil {
 		g.capture.SetPolicy(capturePolicy(cfg.Stats.Capture))
