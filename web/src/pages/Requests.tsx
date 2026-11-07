@@ -81,11 +81,16 @@ export function errorClassLabel(r: RequestRow): string {
   return t(ERROR_CLASS_LABELS[r.errorClass] || r.errorClass);
 }
 
+export function gatewayKeyLabel(row: RequestRow): string {
+  return row.gatewayKey ? `key:${row.gatewayKey}` : '';
+}
+
 export function RequestsPage() {
   const isMobile = useIsMobile();
   const [rangeMs, setRangeMs] = useState(60 * 60_000);
   const [provider, setProvider] = useState('');
   const [route, setRoute] = useState('');
+  const [gatewayKey, setGatewayKey] = useState('');
   const [clientModel, setClientModel] = useState('');
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [capturedOnly, setCapturedOnly] = useState(false);
@@ -116,6 +121,7 @@ export function RequestsPage() {
           to,
           provider: provider.trim() || undefined,
           route: route.trim() || undefined,
+          gatewayKey: gatewayKey.trim() || undefined,
           clientModel: clientModel.trim() || undefined,
           errorsOnly,
           capturedOnly,
@@ -133,7 +139,7 @@ export function RequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [rangeMs, provider, route, clientModel, errorsOnly, capturedOnly, errorClass]);
+  }, [rangeMs, provider, route, gatewayKey, clientModel, errorsOnly, capturedOnly, errorClass]);
 
   const loadCaptures = useCallback(async () => {
     try {
@@ -266,6 +272,13 @@ export function RequestsPage() {
         <Input size="small" placeholder="route" value={route} onChange={(e) => setRoute(e.target.value)} style={{ width: isMobile ? '100%' : 120 }} />
         <Input
           size="small"
+          placeholder={t('请求密钥')}
+          value={gatewayKey}
+          onChange={(e) => setGatewayKey(e.target.value)}
+          style={{ width: isMobile ? '100%' : 140 }}
+        />
+        <Input
+          size="small"
           placeholder="client model"
           value={clientModel}
           onChange={(e) => setClientModel(e.target.value)}
@@ -295,11 +308,12 @@ export function RequestsPage() {
       {rows.map((r) => {
         const failed = r.status >= 400 || !!r.error;
         const classLabel = errorClassLabel(r);
+        const keyLabel = gatewayKeyLabel(r);
         return (
           <ListCard
             key={r.requestId}
             title={r.clientModel || r.model || r.requestId}
-            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
+            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok${keyLabel ? ` · ${keyLabel}` : ''}${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
             tags={
               <Space size={4}>
                 {r.truncated ? <Tag color="volcano">{t('已截断')}</Tag> : null}
@@ -330,6 +344,7 @@ export function RequestsPage() {
               <Descriptions.Item label="sid">{selected.sid}</Descriptions.Item>
               <Descriptions.Item label={t('时间')}>{formatDateTime(selected.ts)}</Descriptions.Item>
               <Descriptions.Item label="route">{selected.route || '—'}</Descriptions.Item>
+              <Descriptions.Item label={t('请求密钥')}>{selected.gatewayKey || '—'}</Descriptions.Item>
               <Descriptions.Item label="provider">{selected.provider}</Descriptions.Item>
               <Descriptions.Item label="client model">{selected.clientModel || '—'}</Descriptions.Item>
               <Descriptions.Item label="provider model">{selected.model}</Descriptions.Item>

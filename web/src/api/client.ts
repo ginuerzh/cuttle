@@ -1,4 +1,4 @@
-import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
+import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -175,6 +175,7 @@ export interface RequestQuery {
   node?: string;
   entrypoint?: string;
   clientModel?: string;
+  gatewayKey?: string;
   errorsOnly?: boolean;
   capturedOnly?: boolean;
   errorClass?: string;
@@ -192,6 +193,7 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
   if (q.node) params.set('node', q.node);
   if (q.entrypoint) params.set('entrypoint', q.entrypoint);
   if (q.clientModel) params.set('clientModel', q.clientModel);
+  if (q.gatewayKey) params.set('key', q.gatewayKey);
   if (q.errorsOnly) params.set('errors', '1');
   if (q.capturedOnly) params.set('captured', '1');
   if (q.errorClass) params.set('errorClass', q.errorClass);
@@ -224,6 +226,52 @@ export function getProviderUsage(q: { from: Date; to: Date; refresh?: boolean })
     ...r,
     providers: (r.providers ?? []).map((p) => ({ ...p, accounts: p.accounts ?? [] })),
   }));
+}
+
+export function listGatewayKeys(): Promise<GatewayKey[]> {
+  return request<GatewayKey[] | null>('GET', '/api/gateway-keys').then((keys) => keys ?? []);
+}
+
+export function createGatewayKey(input: {
+  name: string;
+  enabled?: boolean;
+}): Promise<{ name: string; key: string }> {
+  return request<{ name: string; key: string }>('POST', '/api/gateway-keys', input);
+}
+
+export function updateGatewayKey(name: string, input: { enabled: boolean }): Promise<void> {
+  return request<void>('PUT', `/api/gateway-keys/${encodeURIComponent(name)}`, input);
+}
+
+export function rotateGatewayKey(name: string): Promise<{ name: string; key: string }> {
+  return request<{ name: string; key: string }>(
+    'POST',
+    `/api/gateway-keys/${encodeURIComponent(name)}/rotate`,
+  );
+}
+
+export function deleteGatewayKey(name: string): Promise<void> {
+  return request<void>('DELETE', `/api/gateway-keys/${encodeURIComponent(name)}`);
+}
+
+export function getGatewayKeyUsage(q: { from: Date; to: Date }): Promise<GatewayKeyUsageResponse> {
+  const params = new URLSearchParams({
+    from: q.from.toISOString(),
+    to: q.to.toISOString(),
+  });
+  return request<GatewayKeyUsageResponse>('GET', `/api/gateway-key-usage?${params.toString()}`).then(
+    (r) => ({
+      ...r,
+      totals: r.totals ?? {
+        requests: 0,
+        errors: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedTokens: 0,
+      },
+      keys: r.keys ?? [],
+    }),
+  );
 }
 
 export function listCaptureRules(): Promise<CaptureRule[]> {

@@ -1061,6 +1061,177 @@ stats:
 	}
 }
 
+func TestLoadGatewayKeys(t *testing.T) {
+	t.Setenv("GW_KEY", "sk-gw-secret")
+	t.Setenv("GW_NAME", "claude-code")
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: "127.0.0.1:0"
+  keys:
+    - name: " ${GW_NAME} "
+      key: " ${GW_KEY} "
+    - name: disabled
+      key: sk-gw-disabled
+      enabled: false
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Gateway.Keys) != 2 {
+		t.Fatalf("keys = %d, want 2", len(c.Gateway.Keys))
+	}
+	first := c.Gateway.Keys[0]
+	if first.Name != "claude-code" {
+		t.Fatalf("keys[0].name = %q, want claude-code", first.Name)
+	}
+	if first.Key != "sk-gw-secret" {
+		t.Fatalf("keys[0].key = %q, want expanded value", first.Key)
+	}
+	if first.Enabled != nil {
+		t.Fatalf("keys[0].enabled = %v, want nil (default true)", *first.Enabled)
+	}
+	second := c.Gateway.Keys[1]
+	if second.Enabled == nil || *second.Enabled {
+		t.Fatalf("keys[1].enabled = %v, want explicit false", second.Enabled)
+	}
+}
+
+func TestLoadGatewayKeysEmptyIsOpen(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: "127.0.0.1:0"
+  keys: []
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Gateway.Keys) != 0 {
+		t.Fatalf("keys = %#v, want none", c.Gateway.Keys)
+	}
+}
+
+func TestValidateGatewayKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		keys []GatewayKey
+		want string
+	}{
+		{
+			name: "duplicate name",
+			keys: []GatewayKey{
+				{Name: "dup", Key: "sk-gateway-key-1"},
+				{Name: "dup", Key: "sk-gateway-key-2"},
+			},
+			want: `gateway.keys[1]: duplicate name "dup"`,
+		},
+		{
+			name: "empty name",
+			keys: []GatewayKey{{Name: "  ", Key: "sk-gateway-key-1"}},
+			want: "gateway.keys[0]: name is required",
+		},
+		{
+			name: "slash in name",
+			keys: []GatewayKey{{Name: "a/b", Key: "sk-gateway-key-1"}},
+			want: "gateway.keys[0]: name must not contain '/'",
+		},
+		{
+			name: "dollar in name",
+			keys: []GatewayKey{{Name: "bad$name", Key: "sk-gateway-key-1"}},
+			want: "gateway.keys[0]: name must not contain '$'",
+		},
+		{
+			name: "control character in name",
+			keys: []GatewayKey{{Name: "bad\x01name", Key: "sk-gateway-key-1"}},
+			want: "gateway.keys[0]: name contains control characters",
+		},
+		{
+			name: "name too long",
+			keys: []GatewayKey{{Name: strings.Repeat("n", 65), Key: "sk-gateway-key-1"}},
+			want: "gateway.keys[0]: name must be at most 64 characters",
+		},
+		{
+			name: "empty key",
+			keys: []GatewayKey{{Name: "a", Key: ""}},
+			want: "gateway.keys[0]: key is required",
+		},
+		{
+			name: "key too short",
+			keys: []GatewayKey{{Name: "a", Key: "abc1234"}},
+			want: "gateway.keys[0]: key is too short",
+		},
+		{
+			name: "key too long",
+			keys: []GatewayKey{{Name: "a", Key: strings.Repeat("k", 513)}},
+			want: "gateway.keys[0]: key is too long",
+		},
+		{
+			name: "dollar in key",
+			keys: []GatewayKey{{Name: "a", Key: "sk-gateway-$key"}},
+			want: "gateway.keys[0]: key must not contain '$'",
+		},
+		{
+			name: "control character in key",
+			keys: []GatewayKey{{Name: "a", Key: "sk-gateway\nkey"}},
+			want: "gateway.keys[0]: key contains control characters",
+		},
+		{
+			name: "NUL in key",
+			keys: []GatewayKey{{Name: "a", Key: "sk-gateway\x00key"}},
+			want: "gateway.keys[0]: key contains control characters",
+		},
+		{
+			name: "duplicate key",
+			keys: []GatewayKey{
+				{Name: "a", Key: "sk-gateway-key-1"},
+				{Name: "b", Key: "sk-gateway-key-1"},
+			},
+			want: "gateway.keys[1]: duplicate key value",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Gateway: Gateway{Keys: tt.keys}}
+			ApplyDefaults(cfg)
+			err := Validate(cfg)
+			if err == nil {
+				t.Fatal("want validation error")
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, tt.want) {
+				t.Fatalf("err = %q, want it to contain %q", msg, tt.want)
+			}
+			for _, k := range tt.keys {
+				if k.Key != "" && strings.Contains(msg, k.Key) {
+					t.Fatalf("err = %q leaks key value", msg)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateGatewayKeysLengthBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		key     string
+		wantErr bool
+	}{
+		{"minimum", "12345678", false},
+		{"trimmed minimum", "  12345678  ", false},
+		{"maximum", strings.Repeat("k", 512), false},
+		{"too short", "1234567", true},
+		{"too long", strings.Repeat("k", 513), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{Gateway: Gateway{Keys: []GatewayKey{{Name: "a", Key: tc.key}}}}
+			ApplyDefaults(cfg)
+			err := Validate(cfg)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestWriteNewDoesNotOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "llm-gw.yaml")

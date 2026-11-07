@@ -3,17 +3,25 @@ import { translateFor } from './i18n';
 import { NAV_LABELS, NAV_ORDER } from './nav';
 
 describe('NAV_ORDER', () => {
-  it('places usage directly after requests', () => {
+  it('places gateway keys before sessions and usage directly after them', () => {
     expect(NAV_ORDER).toEqual([
       'topology',
       'providers',
       'nodes',
       'routes',
       'entrypoints',
+      'gateway-keys',
       'requests',
       'usage',
       'settings',
     ]);
+  });
+});
+
+describe('gateway keys navigation', () => {
+  it('labels the page in Chinese and English', () => {
+    expect(NAV_LABELS['gateway-keys']).toBe('网关密钥');
+    expect(translateFor('en-US', NAV_LABELS['gateway-keys'])).toBe('Gateway keys');
   });
 });
 

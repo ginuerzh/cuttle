@@ -53,6 +53,7 @@ docker build -t llm-gw .
 | `main.go` | CLI: `serve`, `hash-password`, `SIGHUP` reload; first-run bootstrap wiring and session reset. The admin server starts only when `admin.passwordHash` is set. |
 | `internal/bootstrap` | Zero-config path resolution, first-run config generation, admin password generation, and ignored-env warnings. |
 | `internal/config` | Strict YAML schema, environment expansion, defaults, validation, atomic `0600` writes. |
+| `internal/gateway/auth.go` | Data-plane gateway-key authentication, request-head replay and fixed 401 responses. |
 | `internal/gateway/build.go` | Compiles one hop entry per entrypoint and inbound protocol variant, with route plans cached by route name. |
 | `internal/gateway/protocol.go` | Inbound protocol path groups and path/model matcher construction. |
 | `internal/gateway/upstream.go` | Resolves default and per-protocol upstream targets per node and rewrites inbound paths/models. |
@@ -98,6 +99,36 @@ Entrypoint -> Route -> Node -> Provider model
   repository, then bump the tagged dependency here; record that repository's
   commit separately.
 
+## Gateway invariants
+
+- The data-plane chain is public hello handler -> gateway auth -> count_tokens
+  -> x forward. `GET|HEAD /api/hello` is exempt; every other path, including
+  Anthropic `count_tokens`, requires a key when any key is configured.
+- Open mode (no `gateway.keys`) must be a pass-through that does not parse the
+  request.
+- Accepted credentials are `Authorization: Bearer <value>`, `x-api-key`,
+  `x-goog-api-key` and `api-key`. Any candidate may authenticate; a junk value
+  in one header must not veto a valid value in another. Query-string keys are
+  not supported.
+- Attribution goes to the first enabled match in configuration order. Compare
+  every candidate against every entry digest in constant time, including
+  disabled entries; a disabled match only changes the failure reason
+  (`missing`, `disabled` or `invalid`).
+- A rejected request gets the fixed JSON 401 with
+  `WWW-Authenticate: Bearer realm="llm-gw"` and `Connection: close`. Never call
+  the upstream and never log the credential; log only client IP, method, path
+  and the failure reason. A malformed request head returns 400.
+- The auth handler reads only the request head (1 MiB / 15s bound) and replays
+  the exact head plus the framed body. It must yield exactly one request and
+  then EOF: x's keep-alive loop would otherwise serve a second request on the
+  same connection without re-entering the auth handler.
+- `Gateway` keeps the compiled policy in an `atomic.Pointer`. SIGHUP and admin
+  reloads swap it after the new hop group builds; a failed build keeps the old
+  group and policy. Warn at apply time when every configured key is disabled.
+- The authenticated key name travels only in the request context for stats. It
+  is never added as an upstream header, and inbound credentials are stripped
+  as before.
+
 ## Configuration invariants
 
 - `config.Load` uses `yaml.KnownFields(true)`. Unknown fields must keep failing
@@ -138,6 +169,18 @@ Entrypoint -> Route -> Node -> Provider model
   `Authorization`/`x-api-key` values; do not leave trace enabled in production.
 - `config.Write` must stay atomic (temp file, `fsync`, rename, `0600`).
 - `example.yaml` must always load with the current schema.
+- `gateway.keys` empty (absent or `[]`) leaves the data plane open. Any entry
+  turns authentication on, including a list where every entry is disabled.
+- Gateway key names are required, trimmed, at most 64 characters, unique, and
+  must not contain `/`, `$` or control characters. Values are required,
+  trimmed, 8–512 characters, unique, must not contain `$` or control
+  characters, and are rejected without echoing the value.
+- `enabled` defaults to true. A disabled entry stays configured but never
+  authenticates. An all-disabled list logs a warning at apply time and rejects
+  every data-plane request.
+- `config.Load` environment-expands gateway key values. Admin writes apply
+  defaults and validation only and must not expand a literal `$`; a literal
+  `$` is rejected so the next reload cannot reinterpret or fail on it.
 
 ## Admin API invariants
 
@@ -179,6 +222,25 @@ Entrypoint -> Route -> Node -> Provider model
 - Provider model overrides live in `provider.models.<id>.disabled`. They stay
   local, are merged into catalog responses, and must not invalidate the catalog
   cache.
+- Gateway keys are write-only through `GET /api/gateway-keys`: only
+  `keyPreview` is returned. The raw secret appears only in the `POST
+  /api/gateway-keys` 201 body and the `POST /api/gateway-keys/{name}/rotate`
+  200 body; `PUT` changes only `enabled`, and `DELETE` returns 204 and keeps
+  usage history.
+- `GET /api/config` exposes `gateway.readTimeout`, `gateway.userAgent`,
+  `gateway.keysSet` and `gateway.authRequired`, never key values.
+  `PUT /api/config` is a full replacement for the exposed fields. Write-only
+  provider keys (per provider name), `gateway.keys` and the admin password are
+  preserved when absent; `gateway.keys` clears only on an explicit `[]`; a
+  non-empty list replaces the whole set and is validated without echoing
+  values. Fields the view does not expose (for example provider `userAgent` and
+  `headers`) are not round-trippable through GET then PUT.
+- `GET /api/gateway-key-usage` merges `key_rollups` with the current list:
+  configured keys stay in order including zero usage, deleted keys are appended
+  alphabetically with `configured:false`, and `keys` is never `null`. Return
+  503 when stats are disabled.
+- Gateway-key create is the deliberate exception to the empty-201 rule: the
+  one-time secret must be in the response body.
 
 ## Stats invariants
 
@@ -209,6 +271,18 @@ Entrypoint -> Route -> Node -> Provider model
 - Rollups store `cached_tokens`; `Store.ProviderUsage` aggregates them by
   provider for the Usage page. The column is additive; old rollup rows read 0
   cached tokens and are not backfilled.
+- `requests.gateway_key` and the `idx_requests_gateway_key_ts` index are added
+  by `ensureColumns`; old rows read as empty. `Filter.GatewayKey` maps to
+  `GET /api/requests?key=<name>` (exact name).
+- Hourly `key_rollups` (bucket + gateway_key) store per-key requests, errors and
+  token counters. Insert them only for authenticated requests, in the same
+  transaction as `rollups`. `Cleanup` deletes them with the same
+  `retainRollups` cutoff.
+- No backfill: pre-upgrade rows and rollups have no key. Rejected 401 requests
+  are not recorded; locally answered `count_tokens` requests produce no usage
+  row either.
+- `Store.KeyUsage` aggregates `key_rollups`; the admin layer appends deleted key
+  names with `configured:false` so history survives deletion.
 - The live monitor tails `requests` by `seq`, a monotonic counter stored in
   `request_seq`, never by `ts` or `rowid`; a long request can complete after
   its start time, and retention can reuse rowids. `GraphAggregate` seeds the
@@ -240,6 +314,14 @@ Entrypoint -> Route -> Node -> Provider model
   display and reconnects with `reset=1`; the status shows the last update and
   the session start.
 - Requests show client model and target model; there is no logical model.
+- The navigation has a `网关密钥` (`gateway-keys`) page between Entrypoints and
+  Sessions. It shows the open-data-plane and all-keys-disabled alerts, 24h/7d/30d
+  usage, enable switches, rotate and delete.
+- Create and rotate open the one-time secret dialog; the raw key is never kept
+  in list state or rendered anywhere else. The dialog must say the value is
+  shown only once.
+- Sessions (the Requests page) has a `网关密钥` exact-name filter, labels rows
+  with `key:<name>` and shows `gatewayKey` in the detail.
 
 ## Testing
 

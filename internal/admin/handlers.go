@@ -35,7 +35,11 @@ type providerView struct {
 
 type configView struct {
 	Gateway struct {
-		Listen string `json:"listen"`
+		Listen       string          `json:"listen"`
+		ReadTimeout  config.Duration `json:"readTimeout"`
+		UserAgent    string          `json:"userAgent,omitempty"`
+		KeysSet      int             `json:"keysSet"`
+		AuthRequired bool            `json:"authRequired"`
 	} `json:"gateway"`
 	Admin struct {
 		Listen     string          `json:"listen"`
@@ -173,6 +177,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 
 	var v configView
 	v.Gateway.Listen = s.cfg.Gateway.Listen
+	v.Gateway.ReadTimeout = s.cfg.Gateway.ReadTimeout
+	v.Gateway.UserAgent = s.cfg.Gateway.UserAgent
+	v.Gateway.KeysSet = len(s.cfg.Gateway.Keys)
+	v.Gateway.AuthRequired = len(s.cfg.Gateway.Keys) > 0
 	v.Admin.Listen = s.cfg.Admin.Listen
 	v.Admin.SessionTTL = s.cfg.Admin.SessionTTL
 	v.Stats = s.cfg.Stats
@@ -194,6 +202,26 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.mutate(func(dst *config.Config) error {
 		c.Admin.PasswordHash = dst.Admin.PasswordHash
+		// GET /api/config never returns key values, so an absent list must
+		// preserve them; only an explicit [] clears the set.
+		if c.Gateway.Keys == nil {
+			c.Gateway.Keys = dst.Gateway.Keys
+		}
+		// Provider keys are write-only too. Preserve them per existing
+		// provider name when the decoded field is absent; an explicit []
+		// still clears and a new provider stays keyless.
+		oldProviders := make(map[string]config.Provider, len(dst.Providers))
+		for _, p := range dst.Providers {
+			oldProviders[p.Name] = p
+		}
+		for i := range c.Providers {
+			if c.Providers[i].Keys != nil {
+				continue
+			}
+			if old, ok := oldProviders[c.Providers[i].Name]; ok {
+				c.Providers[i].Keys = old.Keys
+			}
+		}
 		*dst = c
 		return nil
 	}); err != nil {

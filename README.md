@@ -14,8 +14,10 @@ provider model, converts between wire APIs, and records per-request statistics.
   precedence order.
 - Balances or fails over across provider keys, nodes and backup nodes.
 - Locks provider keys to a write-only admin flow and masks previews in the API.
-- Serves an admin console for providers, nodes, routes, entrypoints, requests,
-  a provider usage/balance view and a live topology view.
+- Authenticates data-plane clients with named gateway keys and reports per-key
+  usage, or stays open when no keys are configured.
+- Serves an admin console for providers, nodes, routes, entrypoints, gateway
+  keys, requests, a provider usage/balance view and a live topology view.
 - Stores request history and rollups in SQLite; the topology can be filtered by
   time range down to one minute.
 - Reloads configuration on `SIGHUP` or immediately after an admin edit.
@@ -253,6 +255,7 @@ when `admin.passwordHash` is set.
 | Nodes | Provider, one model, backup flag, weight, enabled switch |
 | Routes | Ordered node list and strategy |
 | Entrypoints | Ordered model globs and the route they select |
+| Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
 | Overview | Entrypoint → route → node → provider graph with live metrics, including per-node output token speed |
@@ -316,6 +319,90 @@ routes: [ ... ]
 | `listen` | `:8787` | Data-plane listen address |
 | `readTimeout` | `60s` | Deadline for reading upstream HTTP response headers; 1s–300s |
 | `userAgent` | `llm-gw/<version>` | Upstream User-Agent; provider-level `userAgent` or `headers` can override it |
+| `keys` | empty (data plane open) | Named data-plane access keys; see [Gateway keys](#gateway-keys) |
+
+### Gateway keys
+
+Named gateway keys authenticate clients on the data-plane port. They are
+separate from the admin password and are never forwarded to a provider.
+
+```yaml
+gateway:
+  listen: ":8787"
+  keys:
+    - name: claude-code
+      key: ${CLAUDE_GATEWAY_KEY}
+      enabled: true
+    - name: laptop-sdk
+      key: sk-gw-...
+      enabled: false
+```
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `name` | yes | Unique name, at most 64 characters, no `/`, `$` or control characters |
+| `key` | yes | Unique value, 8–512 characters, no `$` or control characters; `${VAR}`/`$VAR` are expanded |
+| `enabled` | no | Default `true`; a disabled entry stays configured but never authenticates |
+
+Names and values must not contain a literal `$` after environment expansion.
+`config.Load` expands `${VAR}` and `$VAR` on every reload, so a value stored
+verbatim through the admin API would be reinterpreted or fail startup the next
+time the config is loaded. Put the secret in the environment and reference it,
+or paste a value that contains no `$`. Control characters are rejected in
+values as well because they can never authenticate.
+
+An absent or empty `keys` list keeps the data plane open. Any entry turns
+authentication on. If every entry is disabled, every data-plane request is
+rejected with 401 and the gateway logs a warning when the configuration is
+applied.
+
+Accepted credential headers:
+
+- `Authorization: Bearer <value>` (the scheme is case-insensitive)
+- `x-api-key: <value>`
+- `x-goog-api-key: <value>`
+- `api-key: <value>`
+
+**Any candidate may authenticate.** A junk value in one header does not veto a
+valid value in another, which is the normal Claude Code and SDK case. When
+several candidates match, the request is attributed to the first enabled key in
+configuration order. Query-string credentials (for example Gemini's `?key=`) are
+not supported and do not authenticate.
+
+`GET` and `HEAD /api/hello` remain public for Claude Code's connection probe.
+Every other path, including `POST /v1/messages/count_tokens`, requires a valid
+key when any key is configured. In authenticated mode the gateway serves exactly
+one request per connection; keep-alive reuse requires a new connection and
+re-authentication.
+
+A rejected request gets:
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+WWW-Authenticate: Bearer realm="llm-gw"
+Connection: close
+
+{"error":{"message":"invalid gateway key","type":"authentication_error"}}
+```
+
+The gateway does not call the upstream. It logs a warning with the client IP,
+method, path and reason (`missing`, `disabled` or `invalid`); the credential is
+never logged. A malformed request head returns 400. The 401 body and headers are
+the same for every inbound protocol.
+
+Manage keys on the Gateway keys page or through the [Admin API](#admin-api).
+`POST /api/gateway-keys` and `POST /api/gateway-keys/{name}/rotate` return the
+new secret once; copy it then, because later reads only return a masked preview.
+`PUT` changes only the enabled flag. Rotation and deletion take effect on the
+next request without a restart: the data plane reloads before the config file is
+written.
+
+Per-key requests, errors and input/output/cached tokens come from hourly
+`key_rollups`, so they remain accurate for the 7-day and 30-day views even
+though raw request rows are retained for 168 hours by default. Usage recorded
+before this feature has no key attribution, and deleted keys keep their history
+as unconfigured rows until normal rollup retention removes it.
 
 ### `admin`
 
@@ -502,10 +589,19 @@ chat API.
 ## Stats and topology
 
 Requests are recorded with route, node, provider, client model, target model,
-status, duration and token counts. Raw rows are retained for
-`stats.retainRequests`; rollups are retained for `stats.retainRollups`.
-Rollups also store `cached_tokens`; rows written before that column existed
-read as 0 cached tokens.
+gateway key, status, duration and token counts. The `gateway_key` column holds
+the name of the key that authenticated the request and is empty in open mode.
+Raw rows are retained for `stats.retainRequests`; rollups are retained for
+`stats.retainRollups`. Rollups also store `cached_tokens`; rows written before
+that column existed read as 0 cached tokens.
+
+Hourly `key_rollups` store requests, errors and input/output/cached tokens per
+gateway key for the per-key usage view. They use the same
+`stats.retainRollups` cutoff as provider rollups, so deleting a key keeps its
+history only until normal cleanup removes it. Rows and rollups written before
+gateway keys existed have no key attribution and are not backfilled. Rejected
+401 requests and locally answered `count_tokens` requests are not recorded, so
+they produce no key usage.
 
 `GET /api/routes/health` returns each route's node markers: `failCount`,
 `lastFailure`, `dead` and `deadUntil`. The state is x's in-memory marker,
@@ -555,6 +651,11 @@ GET           /api/routes/health
 PUT|DELETE    /api/routes/{name}
 GET|PUT       /api/entrypoints
 
+GET|POST      /api/gateway-keys
+PUT|DELETE    /api/gateway-keys/{name}
+POST          /api/gateway-keys/{name}/rotate
+GET           /api/gateway-key-usage
+
 GET  /api/stats/summary
 GET  /api/stats/errors
 GET  /api/stats/graph
@@ -569,13 +670,37 @@ DELETE        /api/captures/{id}
 PUT  /api/admin/password
 ```
 
-`GET /api/requests` accepts `errors=1`, `captured=1` and `errorClass=<class>`.
-Request detail includes an optional `capture` object; the list only reports a
-cheap `hasCapture` flag. `GET /api/stats/errors` aggregates the window by
-`error_class`, provider, route and client model, and returns top message
+`GET /api/requests` accepts `errors=1`, `captured=1`, `errorClass=<class>` and
+`key=<name>` (exact gateway key name). Request rows carry an optional
+`gatewayKey` field with the authenticated key name; the Sessions list and detail
+show it. Request detail includes an optional `capture` object; the list only
+reports a cheap `hasCapture` flag. `GET /api/stats/errors` aggregates the window
+by `error_class`, provider, route and client model, and returns top message
 fingerprints plus hourly buckets. `GET /api/alerts` evaluates the last 15
 minutes for auth failures, an error-rate spike, gateway timeouts and excessive
 stream truncation; alerts are UI-only in P1.
+
+`GET /api/gateway-keys` lists `{name,keyPreview,enabled}` in configuration
+order and returns `[]` when none are configured. `POST /api/gateway-keys` takes
+`{name,enabled}`, generates a 256-bit `sk-gw-...` secret and returns `201` with
+`{name,key}`. `PUT /api/gateway-keys/{name}` changes only `enabled` and returns
+`204`; `DELETE` returns `204` and keeps historical usage.
+`POST /api/gateway-keys/{name}/rotate` returns `200` with a new `{name,key}`,
+and the old value stops working on the next request. Create and rotate are the
+only responses that contain a raw key; create is the deliberate exception to the
+empty `201` body. `GET /api/gateway-key-usage` accepts `from`/`to` and returns
+range totals plus per-key requests, errors and tokens. Configured keys appear in
+order including zero usage, deleted keys are appended alphabetically with
+`configured:false`, and the endpoint returns `503` when stats are disabled.
+
+`GET /api/config` reports `gateway.readTimeout`, `gateway.userAgent`,
+`gateway.keysSet` and `gateway.authRequired` but never key values.
+`PUT /api/config` is a full replacement for the fields the view exposes:
+write-only provider keys, `gateway.keys` and the admin password are preserved
+when absent (provider keys per provider name), and `gateway.keys` is cleared
+only when the request sends `[]`. Fields the view does not expose, such as
+provider `userAgent` and `headers`, are not round-trippable through GET then
+PUT; send them explicitly with the update.
 
 `GET /api/events` is a WebSocket subscription. It accepts `range=...`,
 `since=<RFC3339>` to resume a session, or `reset=1` to start at zero. The server
@@ -758,7 +883,7 @@ Rebuild the web bundle before a Go build if the console changed:
 main.go                 CLI: serve, hash-password, SIGHUP reload, first-run bootstrap
 internal/bootstrap      zero-config path resolution and first-run generation
 internal/config         strict YAML schema, defaults, validation
-internal/gateway        data plane: entrypoint matchers, routes, nodes
+internal/gateway        data plane: gateway-key auth, entrypoint matchers, routes, nodes
 internal/provider       provider adapters and model catalogs
 internal/rewriter       protocol/path conversion for upstream requests
 internal/admin          management API and embedded console
@@ -772,6 +897,13 @@ DOCKER.md               image build and CI notes
 
 - Provider API keys are stored in the YAML config. Protect the file and mount
   secrets through environment variables where possible.
+- Gateway keys are also stored in plaintext in the YAML config, like provider
+  keys. Protect the file (`0600`) and inject keys through environment variables
+  where possible. Raw gateway keys appear only in the create and rotate
+  responses; list, config and console views expose masked previews only.
+  Query-string credentials are not accepted, so keys do not leak into recorded
+  URIs or reverse-proxy logs. Gateway keys never authenticate the admin API,
+  and an admin session never authenticates the data plane.
 - The generated config contains a bcrypt admin hash, not the plaintext
   password. The one-time password is printed to stderr/logs on the first run.
   In production, set `LLM_GW_ADMIN_PASSWORD` through your orchestrator's secret

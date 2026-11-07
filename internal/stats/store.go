@@ -25,6 +25,7 @@ type Request struct {
 	Provider        string           `json:"provider"`
 	Route           string           `json:"route,omitempty"`
 	Node            string           `json:"node,omitempty"`
+	GatewayKey      string           `json:"gatewayKey,omitempty"`
 	Protocol        string           `json:"protocol"`
 	InboundProtocol string           `json:"inboundProtocol,omitempty"`
 	URI             string           `json:"uri,omitempty"`
@@ -66,6 +67,7 @@ type Filter struct {
 	ClientModelPatterns []string
 	Route               string
 	Node                string
+	GatewayKey          string
 	Status              int
 	OnlyErrors          bool
 	Captured            bool
@@ -99,6 +101,16 @@ type Summary struct {
 // ProviderUsage aggregates one provider's hourly rollups for a time window.
 type ProviderUsage struct {
 	Provider     string `json:"provider,omitempty"`
+	Requests     int64  `json:"requests"`
+	Errors       int64  `json:"errors"`
+	InputTokens  int64  `json:"inputTokens"`
+	OutputTokens int64  `json:"outputTokens"`
+	CachedTokens int64  `json:"cachedTokens"`
+}
+
+// KeyUsage aggregates one gateway key's hourly rollups for a time window.
+type KeyUsage struct {
+	Key          string `json:"key"`
 	Requests     int64  `json:"requests"`
 	Errors       int64  `json:"errors"`
 	InputTokens  int64  `json:"inputTokens"`
@@ -205,6 +217,16 @@ func (s *Store) migrate() error {
 			cached_tokens INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (bucket, provider, model)
 		)`,
+		`CREATE TABLE IF NOT EXISTS key_rollups (
+			bucket TEXT NOT NULL,
+			gateway_key TEXT NOT NULL DEFAULT '',
+			requests INTEGER NOT NULL DEFAULT 0,
+			errors INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			cached_tokens INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (bucket, gateway_key)
+		)`,
 		`CREATE TABLE IF NOT EXISTS request_seq (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			value INTEGER NOT NULL DEFAULT 0
@@ -236,7 +258,11 @@ func (s *Store) migrate() error {
 		"event_index":      "INTEGER NOT NULL DEFAULT 0",
 		"ttft_ms":          "INTEGER NOT NULL DEFAULT 0",
 		"seq":              "INTEGER NOT NULL DEFAULT 0",
+		"gateway_key":      "TEXT NOT NULL DEFAULT ''",
 	}); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_requests_gateway_key_ts ON requests(gateway_key, ts)`); err != nil {
 		return err
 	}
 	if err := s.ensureColumns("request_captures", map[string]string{
@@ -433,14 +459,14 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 	}
 
 	_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO requests
-		(request_id, seq, sid, ts, model, client_model, provider, route, node,
+		(request_id, seq, sid, ts, model, client_model, provider, route, node, gateway_key,
 		 protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		 effort, status, error, error_class, duration_ms, ttft_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		 uri, method, client_ip, user_agent, upstream, client_status,
 		 finish_reason, saw_done, truncated)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		r.ID, seq, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, seq, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node, r.GatewayKey,
 		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
 		r.Effort, r.Status, r.Error, r.ErrorClass, r.DurationMS, r.TTFTMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut),
@@ -467,6 +493,21 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 		bucket, r.Provider, r.Model, failed, r.InputTokens, r.OutputTokens, r.CachedTokens)
 	if err != nil {
 		return err
+	}
+	if r.GatewayKey != "" {
+		_, err = tx.ExecContext(ctx, `INSERT INTO key_rollups
+			(bucket, gateway_key, requests, errors, input_tokens, output_tokens, cached_tokens)
+			VALUES (?,?,1,?,?,?,?)
+			ON CONFLICT(bucket, gateway_key) DO UPDATE SET
+				requests = requests + 1,
+				errors = errors + excluded.errors,
+				input_tokens = input_tokens + excluded.input_tokens,
+				output_tokens = output_tokens + excluded.output_tokens,
+				cached_tokens = cached_tokens + excluded.cached_tokens`,
+			bucket, r.GatewayKey, failed, r.InputTokens, r.OutputTokens, r.CachedTokens)
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -497,6 +538,32 @@ func (s *Store) ProviderUsage(ctx context.Context, from, to time.Time) ([]Provid
 	return out, rows.Err()
 }
 
+// KeyUsage aggregates key rollups by gateway key for a time window.
+func (s *Store) KeyUsage(ctx context.Context, from, to time.Time) ([]KeyUsage, error) {
+	fromBucket := from.UTC().Truncate(time.Hour).Format(time.RFC3339)
+	toBucket := to.UTC().Format(time.RFC3339)
+	rows, err := s.db.QueryContext(ctx, `SELECT gateway_key,
+		COALESCE(SUM(requests),0), COALESCE(SUM(errors),0),
+		COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+		COALESCE(SUM(cached_tokens),0)
+		FROM key_rollups WHERE bucket >= ? AND bucket < ? GROUP BY gateway_key ORDER BY gateway_key`,
+		fromBucket, toBucket)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]KeyUsage, 0)
+	for rows.Next() {
+		var u KeyUsage
+		if err := rows.Scan(&u.Key, &u.Requests, &u.Errors,
+			&u.InputTokens, &u.OutputTokens, &u.CachedTokens); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // Query returns requests in reverse time order.
 func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 	where, args := f.where()
@@ -504,7 +571,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
+	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node, gateway_key,
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		effort, status, error, error_class,
 		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
@@ -524,7 +591,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 
 // Get returns one request by id.
 func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
-	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node,
+	q := `SELECT request_id, sid, ts, model, client_model, provider, route, node, gateway_key,
 		protocol, inbound_protocol, error_stage, error_direction, sse_phase, event_index,
 		effort, status, error, error_class,
 		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
@@ -648,7 +715,7 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var bytesIn, bytesOut int64
 		var hasCapture int
 		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel,
-			&r.Provider, &r.Route, &r.Node, &r.Protocol,
+			&r.Provider, &r.Route, &r.Node, &r.GatewayKey, &r.Protocol,
 			&r.InboundProtocol, &r.ErrorStage, &r.ErrorDirection, &r.SSEPhase, &r.EventIndex,
 			&r.Effort, &r.Status, &r.Error, &r.ErrorClass, &r.DurationMS, &r.TTFTMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut,
@@ -760,7 +827,11 @@ func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore, capt
 		capturesBefore.UnixMilli()); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM rollups WHERE bucket < ?`,
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM rollups WHERE bucket < ?`,
+		rollupsBefore.UTC().Format(time.RFC3339)); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM key_rollups WHERE bucket < ?`,
 		rollupsBefore.UTC().Format(time.RFC3339))
 	return err
 }
@@ -822,6 +893,10 @@ func (f Filter) where() (string, []any) {
 	if f.Node != "" {
 		conds = append(conds, "node = ?")
 		args = append(args, f.Node)
+	}
+	if f.GatewayKey != "" {
+		conds = append(conds, "gateway_key = ?")
+		args = append(args, f.GatewayKey)
 	}
 	if f.OnlyErrors {
 		conds = append(conds, "(status >= 400 OR error != '')")

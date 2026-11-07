@@ -3,6 +3,13 @@
 # This file is the full manual configuration for multi-provider topologies.
 gateway:
   listen: ":8787"
+  # Data-plane access keys. Empty or absent keeps the gateway open.
+  # keys:
+  #   - name: claude-code
+  #     key: ${CLAUDE_GATEWAY_KEY}
+  #   - name: disabled-example
+  #     key: sk-gw-example
+  #     enabled: false
 
 admin:
   listen: "127.0.0.1:8788"

@@ -148,6 +148,41 @@ func TestStatsRecordsStreamingUsage(t *testing.T) {
 	}
 }
 
+func TestGatewayAuthRecordsGatewayKey(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
+	}))
+	defer upstream.Close()
+
+	cfg := statsConfig(t, upstream.URL)
+	cfg.Gateway.Keys = []config.GatewayKey{{Name: "alpha", Key: "secret-key"}}
+	gw, err := gateway.New(cfg, xlogger.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4.5","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer secret-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	row := waitRow(t, gw)
+	if row.GatewayKey != "alpha" {
+		t.Fatalf("gateway key = %q, want alpha (row %+v)", row.GatewayKey, row)
+	}
+}
+
 func TestStatsRecordsStreamTTFT(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

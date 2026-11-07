@@ -493,6 +493,167 @@ func TestProviderUsageFromRollups(t *testing.T) {
 	}
 }
 
+func TestInsertRecordsGatewayKeyAndRollups(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 7, 10, 30, 0, 0, time.UTC)
+
+	for _, r := range []Request{
+		{ID: "a1", SID: "a1", TS: now, Provider: "p", GatewayKey: "alpha", Status: 200, InputTokens: 10, OutputTokens: 2, CachedTokens: 3},
+		{ID: "a2", SID: "a2", TS: now.Add(time.Minute), Provider: "p", GatewayKey: "alpha", Status: 500, Error: "boom"},
+		{ID: "c1", SID: "c1", TS: now.Add(2 * time.Minute), Provider: "p", Status: 200},
+	} {
+		if err := s.Insert(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := s.Query(ctx, Filter{GatewayKey: "alpha"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("query rows = %d, want 2", len(rows))
+	}
+	for _, r := range rows {
+		if r.GatewayKey != "alpha" {
+			t.Fatalf("queried row = %+v, want gatewayKey alpha", r)
+		}
+	}
+
+	usage, err := s.KeyUsage(ctx, now.Truncate(time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(usage) != 1 {
+		t.Fatalf("key usage = %+v, want one alpha row", usage)
+	}
+	got := usage[0]
+	if got.Key != "alpha" || got.Requests != 2 || got.Errors != 1 ||
+		got.InputTokens != 10 || got.OutputTokens != 2 || got.CachedTokens != 3 {
+		t.Fatalf("key usage = %+v", got)
+	}
+}
+
+func TestOpenMigratesGatewayKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE requests (
+		request_id TEXT PRIMARY KEY,
+		sid TEXT NOT NULL DEFAULT '',
+		ts INTEGER NOT NULL,
+		model TEXT NOT NULL DEFAULT '',
+		provider TEXT NOT NULL DEFAULT '',
+		node TEXT NOT NULL DEFAULT '',
+		protocol TEXT NOT NULL DEFAULT '',
+		effort TEXT NOT NULL DEFAULT '',
+		status INTEGER NOT NULL DEFAULT 0,
+		error TEXT NOT NULL DEFAULT '',
+		duration_ms INTEGER NOT NULL DEFAULT 0,
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		cached_tokens INTEGER NOT NULL DEFAULT 0,
+		stream INTEGER NOT NULL DEFAULT 0,
+		bytes_in INTEGER NOT NULL DEFAULT 0,
+		bytes_out INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO requests(request_id, sid, ts, provider) VALUES('old', 'old', ?, 'p')`, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ctx := context.Background()
+
+	found := false
+	rows, err := s.db.Query(`PRAGMA table_info(requests)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if name == "gateway_key" {
+			found = true
+		}
+	}
+	rows.Close()
+	if !found {
+		t.Fatal("requests table did not gain gateway_key")
+	}
+
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'key_rollups'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("key_rollups table was not created")
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_requests_gateway_key_ts'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("idx_requests_gateway_key_ts index was not created")
+	}
+
+	old, err := s.Get(ctx, "old")
+	if err != nil || old == nil {
+		t.Fatalf("old row = %+v err=%v", old, err)
+	}
+	if old.GatewayKey != "" {
+		t.Fatalf("old row gateway key = %q, want empty", old.GatewayKey)
+	}
+
+	if err := s.Insert(ctx, Request{
+		ID: "new", TS: time.Now(), Provider: "p", GatewayKey: "alpha",
+	}); err != nil {
+		t.Fatalf("insert after migration: %v", err)
+	}
+}
+
+func TestCleanupRemovesOldKeyRollups(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+
+	if err := s.Insert(ctx, Request{
+		ID: "old", SID: "old", TS: now.Add(-48 * time.Hour),
+		Provider: "p", GatewayKey: "old", Status: 200,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Cleanup(ctx, now, now.Add(-24*time.Hour), now); err != nil {
+		t.Fatal(err)
+	}
+
+	usage, err := s.KeyUsage(ctx, now.Add(-7*24*time.Hour), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage == nil {
+		t.Fatal("key usage must be non-nil")
+	}
+	if len(usage) != 0 {
+		t.Fatalf("old key rollups survived cleanup: %+v", usage)
+	}
+}
+
 func TestProviderUsageMigratesOldRollups(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "stats.sqlite")
 	db, err := sql.Open("sqlite", path)

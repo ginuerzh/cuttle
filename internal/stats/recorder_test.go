@@ -44,6 +44,37 @@ func TestRecorderCopiesRewriteFields(t *testing.T) {
 	}
 }
 
+func TestRecorderRecordsGatewayKey(t *testing.T) {
+	s := newStore(t)
+	facts := NewFacts()
+	sid := "gateway-key"
+
+	facts.AddInboundProtocol(sid, "anthropic")
+	facts.AddRewriteError(sid, "stream_rewrite", "response", "end", 7)
+
+	body, err := json.Marshal(map[string]any{
+		"sid":  sid,
+		"node": "route/provider/node",
+		"time": time.Now().UTC(),
+		"http": map[string]any{"statusCode": 200},
+		"err":  "rewrite failed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, facts, nil, nil).Record(WithGatewayKey(context.Background(), "alpha"), body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Get(context.Background(), sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.GatewayKey != "alpha" {
+		t.Fatalf("gateway key = %q, want alpha", got.GatewayKey)
+	}
+}
+
 func TestRecorderStoresStreamTTFT(t *testing.T) {
 	s := newStore(t)
 	facts := NewFacts()
