@@ -168,6 +168,8 @@ export interface RequestQuery {
   to: Date;
   provider?: string;
   route?: string;
+  node?: string;
+  entrypoint?: string;
   clientModel?: string;
   errorsOnly?: boolean;
   capturedOnly?: boolean;
@@ -183,6 +185,8 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
   });
   if (q.provider) params.set('provider', q.provider);
   if (q.route) params.set('route', q.route);
+  if (q.node) params.set('node', q.node);
+  if (q.entrypoint) params.set('entrypoint', q.entrypoint);
   if (q.clientModel) params.set('clientModel', q.clientModel);
   if (q.errorsOnly) params.set('errors', '1');
   if (q.capturedOnly) params.set('captured', '1');

@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Button,
   Card,
   Descriptions,
-  Divider,
   Drawer,
   Dropdown,
   Grid,
@@ -29,14 +28,14 @@ import {
   SunOutlined,
   TagOutlined,
 } from '@ant-design/icons';
-import { getConfig, getHealth, logout, UnauthorizedError } from './api/client';
-import type { ConfigResponse, EdgeMetrics, ErrorRow, GraphMetrics, Health, NodeMetrics } from './api/types';
+import { getConfig, getHealth, getRequests, logout, UnauthorizedError, type RequestQuery } from './api/client';
+import type { ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow } from './api/types';
 import type { SnapshotMessage } from './api/events';
 import { Login } from './pages/Login';
 import { EntrypointsPage } from './pages/Entrypoints';
 import { ProvidersPage } from './pages/Providers';
 import { NodesPage } from './pages/Nodes';
-import { RequestsPage } from './pages/Requests';
+import { RequestsPage, statusLabel } from './pages/Requests';
 import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
@@ -44,7 +43,7 @@ import { VersionFooter } from './components/VersionFooter';
 import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
-import { errorMatchesNodeId } from './pages/selection';
+import { splitId } from './pages/selection';
 import { useLiveGraph } from './useLiveGraph';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
@@ -103,30 +102,115 @@ function rate(m?: { requests: number; errors: number }): string {
   return `${((m.errors / m.requests) * 100).toFixed(1)}%`;
 }
 
-function ErrorCard({ error }: { error: ErrorRow }) {
+const SESSION_LIMIT = 100;
+
+export function sessionQuery(id: string, from: Date, to: Date, errorsOnly: boolean): RequestQuery {
+  const [kind, name] = splitId(id);
+  const query: RequestQuery = { from, to, limit: SESSION_LIMIT, errorsOnly };
+  if (kind === 'node') query.node = name;
+  else if (kind === 'route') query.route = name;
+  else if (kind === 'provider') query.provider = name;
+  else if (kind === 'entrypoint') query.entrypoint = name;
+  return query;
+}
+
+function useNodeSessions(id: string, since: string, rangeMs: number, errorsOnly: boolean, refreshKey: number) {
+  const [rows, setRows] = useState<RequestRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const to = new Date();
+    const from = since ? new Date(since) : new Date(to.getTime() - rangeMs);
+    setLoading(true);
+    setFailed(false);
+    void getRequests(sessionQuery(id, from, to, errorsOnly))
+      .then((list) => {
+        if (active) setRows(list);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, since, rangeMs, errorsOnly, refreshKey]);
+
+  return { rows, loading, failed };
+}
+
+export function SessionCard({ row }: { row: RequestRow }) {
+  const failed = row.status === 0 || row.status >= 400 || !!row.error;
+  const model =
+    row.clientModel && row.model && row.clientModel !== row.model
+      ? `${row.clientModel} → ${row.model}`
+      : row.clientModel || row.model || row.requestId;
+
   return (
     <Card
       size="small"
-      style={{ borderInlineStart: '3px solid #dc2626' }}
+      style={failed ? { borderInlineStart: '3px solid #dc2626' } : undefined}
       styles={{ body: { padding: '8px 10px' } }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <Tag color="red" style={{ marginInlineEnd: 0 }}>
-          {error.status || 'ERR'}
+        <Tag
+          color={failed ? 'red' : row.status >= 300 ? 'orange' : 'green'}
+          style={{ marginInlineEnd: 0 }}
+        >
+          {statusLabel(row)}
         </Tag>
         <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-          {formatDateTime(error.ts)}
+          {formatDateTime(row.ts)}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 11, marginInlineStart: 'auto' }}>
+          {formatDurationMs(row.durationMs)}
         </Typography.Text>
       </div>
-      <Typography.Text style={{ display: 'block', fontSize: 12, wordBreak: 'break-word' }}>
-        {error.message || '—'}
+      <Typography.Text strong style={{ display: 'block', fontSize: 12, wordBreak: 'break-all' }}>
+        {model}
       </Typography.Text>
+      <Typography.Text
+        type="secondary"
+        style={{ display: 'block', fontSize: 11, marginTop: 2, wordBreak: 'break-all' }}
+      >
+        {row.route || 'unrouted'} · {row.provider}
+        {row.node ? `/${row.node}` : ''} · {row.inputTokens}/{row.outputTokens} tok
+      </Typography.Text>
+      {row.error ? (
+        <Typography.Text
+          type="danger"
+          style={{ display: 'block', fontSize: 12, marginTop: 4, wordBreak: 'break-word' }}
+        >
+          {row.error}
+        </Typography.Text>
+      ) : null}
     </Card>
   );
 }
 
-export function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeMetrics; errors: ErrorRow[] }) {
-  const mine = useMemo(() => errors.filter((e) => errorMatchesNodeId(id, e)), [errors, id]);
+export function NodePanel({
+  id,
+  metrics,
+  since = '',
+  rangeMs,
+}: {
+  id: string;
+  metrics?: NodeMetrics;
+  since?: string;
+  rangeMs: number;
+}) {
+  const [errorsOnly, setErrorsOnly] = useState(false);
+  const { rows, loading, failed } = useNodeSessions(
+    id,
+    since,
+    rangeMs,
+    errorsOnly,
+    metrics?.requests ?? 0,
+  );
 
   return (
     <div>
@@ -157,15 +241,40 @@ export function NodePanel({ id, metrics, errors }: { id: string; metrics?: NodeM
         </Descriptions.Item>
       </Descriptions>
 
-      <Divider orientation="left" plain>
-        {translate('最近错误')}
-      </Divider>
-      {mine.length === 0 ? (
-        <Typography.Text type="secondary">{translate('最近窗口内没有错误')}</Typography.Text>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          marginTop: 16,
+          marginBottom: 8,
+        }}
+      >
+        <Typography.Text strong>{translate('最近会话')}</Typography.Text>
+        <Button
+          size="small"
+          type={errorsOnly ? 'primary' : 'default'}
+          aria-pressed={errorsOnly}
+          onClick={() => setErrorsOnly((value) => !value)}
+        >
+          {translate('仅错误')}
+        </Button>
+      </div>
+      {failed && rows.length === 0 ? (
+        <Typography.Text type="secondary">{translate('加载失败')}</Typography.Text>
+      ) : rows.length === 0 ? (
+        <Typography.Text type="secondary">
+          {loading
+            ? translate('加载中…')
+            : errorsOnly
+              ? translate('最近窗口内没有错误')
+              : translate('没有请求')}
+        </Typography.Text>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          {mine.slice(0, 5).map((e) => (
-            <ErrorCard key={e.requestId} error={e} />
+          {rows.map((row) => (
+            <SessionCard key={row.requestId} row={row} />
           ))}
         </Space>
       )}
@@ -278,6 +387,7 @@ export default function App() {
   const [since, setSince] = useState<string>('');
   const [resetKey, setResetKey] = useState(0);
   const [sessionKey, setSessionKey] = useState(0);
+  const rangeMs = RANGES.find((item) => item.value === range)?.ms ?? 60 * 60_000;
 
   const loadConfig = useCallback(async () => {
     try {
@@ -489,7 +599,8 @@ export default function App() {
                   <NodePanel
                     id={selection.id}
                     metrics={metrics?.nodes[selection.id]}
-                    errors={metrics?.errors ?? []}
+                    since={since}
+                    rangeMs={rangeMs}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
@@ -509,7 +620,8 @@ export default function App() {
                   <NodePanel
                     id={selection.id}
                     metrics={metrics?.nodes[selection.id]}
-                    errors={metrics?.errors ?? []}
+                    since={since}
+                    rangeMs={rangeMs}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />

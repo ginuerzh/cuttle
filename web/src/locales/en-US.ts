@@ -35,6 +35,7 @@ export const enUS: Record<string, string> = {
   '错误率': 'Error rate',
   '入 {input} · 出 {output} · 缓存 {cached}': 'In {input} · Out {output} · Cached {cached}',
   '最近错误': 'Recent errors',
+  '最近会话': 'Recent sessions',
   '最近窗口内没有错误': 'No errors in the recent window',
   '连线': 'Edge',
   '路径': 'Path',
