@@ -22,6 +22,7 @@ import {
   DesktopOutlined,
   GatewayOutlined,
   GlobalOutlined,
+  KeyOutlined,
   MenuOutlined,
   MoonOutlined,
   PartitionOutlined,
@@ -33,6 +34,7 @@ import type { ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, Re
 import type { SnapshotMessage } from './api/events';
 import { Login } from './pages/Login';
 import { EntrypointsPage } from './pages/Entrypoints';
+import { GatewayKeysPage } from './pages/GatewayKeys';
 import { ProvidersPage } from './pages/Providers';
 import { NodesPage } from './pages/Nodes';
 import { RequestsPage, statusLabel } from './pages/Requests';
@@ -59,6 +61,7 @@ const NAV_ICONS: Record<Page, ReactNode> = {
   nodes: <ApiOutlined />,
   routes: <BranchesOutlined />,
   entrypoints: <GatewayOutlined />,
+  'gateway-keys': <KeyOutlined />,
   requests: <DatabaseOutlined />,
   settings: <SettingOutlined />,
 };
@@ -574,6 +577,8 @@ export default function App() {
               config ? <RoutesPage config={config} onReload={loadConfig} /> : null
             ) : page === 'entrypoints' ? (
               config ? <EntrypointsPage config={config} onReload={loadConfig} /> : null
+            ) : page === 'gateway-keys' ? (
+              <GatewayKeysPage />
             ) : page === 'requests' ? (
               <RequestsPage />
             ) : (

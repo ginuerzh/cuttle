@@ -261,6 +261,8 @@ export interface RequestRow {
   clientModel?: string;
   provider: string;
   route?: string;
+  /** Gateway key name that authenticated the request, when keys are enabled. */
+  gatewayKey?: string;
   node?: string;
   protocol: string;
   inboundProtocol?: string;
@@ -343,4 +345,34 @@ export interface ProviderUsageResponse {
   totals?: ProviderUsageLocal;
   localError?: string;
   providers: ProviderUsage[];
+}
+
+/** One configured data-plane key; the raw value is never returned by the list API. */
+export interface GatewayKey {
+  name: string;
+  keyPreview: string;
+  enabled: boolean;
+}
+
+export interface KeyUsageCounts {
+  requests: number;
+  errors: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+}
+
+/** Per-key usage row, including keys that were deleted but still have history. */
+export interface GatewayKeyUsage extends KeyUsageCounts {
+  name: string;
+  configured: boolean;
+  enabled: boolean;
+  keyPreview?: string;
+}
+
+export interface GatewayKeyUsageResponse {
+  from: string;
+  to: string;
+  totals: KeyUsageCounts;
+  keys: GatewayKeyUsage[];
 }

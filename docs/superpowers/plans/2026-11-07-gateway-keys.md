@@ -557,7 +557,7 @@ git commit -m "feat(admin): manage gateway keys and usage"
   export function GatewayKeysPage(): JSX.Element
   ```
 
-- [ ] **Step 1: Write failing web tests**
+- [x] **Step 1: Write failing web tests**
 
 Add to `web/src/api/client.test.ts`:
 
@@ -608,12 +608,12 @@ expect(NAV_ORDER).toEqual([
 expect(NAV_LABELS['gateway-keys']).toBe('网关密钥');
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd web && npm test -- --run api/client.test.ts pages/GatewayKeys.test.tsx nav.test.ts`
 Expected: FAIL because the types, functions, page and nav entry do not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `types.ts`: add the four types; add `gatewayKey?: string` to `RequestRow` (needed by Task 6, harmless now).
 - `client.ts`: add the six functions. `getGatewayKeyUsage` normalizes `keys` and `totals` (`keys ?? []`, zero totals if absent). `RequestQuery` gains `gatewayKey?: string`; `getRequests` sets `key` when present.
@@ -647,7 +647,7 @@ Expected: FAIL because the types, functions, page and nav entry do not exist.
   '请求密钥': 'Request key',
   ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd web && npm test -- --run api/client.test.ts pages/GatewayKeys.test.tsx nav.test.ts`
 Expected: PASS.
@@ -655,7 +655,7 @@ Expected: PASS.
 Run typecheck: `cd web && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src
@@ -663,12 +663,12 @@ git commit -m "feat(web): add gateway keys page"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-07 — complete.
+- Repository + commit: `llm-gw` (worktree `/tmp/opencode/llm-gw-gateway-keys`) — see commit (`feat(web): add gateway keys page`).
+- Files changed: `web/src/api/types.ts` (`GatewayKey`, `KeyUsageCounts`, `GatewayKeyUsage`, `GatewayKeyUsageResponse`, `RequestRow.gatewayKey`), `web/src/api/client.ts` (six gateway-key calls, `getGatewayKeyUsage` normalization, `RequestQuery.gatewayKey` mapped to `key`), `web/src/api/client.test.ts` (create/usage/request-filter tests), `web/src/nav.ts` (`gateway-keys` page, order and label), `web/src/nav.test.ts`, `web/src/App.tsx` (`KeyOutlined` icon and page switch), `web/src/pages/GatewayKeys.tsx` (new page, key card, state classifier, Sessions drawer, add/rotate/delete flows and one-time secret dialog), `web/src/pages/GatewayKeys.test.tsx`, `web/src/locales/en-US.ts`, plus this plan.
+- Tests/commands and results: RED `cd web && npm test -- --run api/client.test.ts pages/GatewayKeys.test.tsx nav.test.ts` — 3 files failed, 6 tests failed, `GatewayKeys` module missing and the new client/nav symbols absent (log: `.superpowers/sdd/2026-11-07-gateway-keys/task-5-red.log`). GREEN same focused command — 3 files / 18 tests passed. Full `cd web && npm test` — 24 files / 174 tests passed. `npx tsc --noEmit` passed with no output. `npm run build` passed; a grep of `internal/admin/dist` for the fake test secrets found none.
+- Review findings and fixes: self-review only (controller review follows). Deleted keys with retained usage are rendered as read-only historical `ListCard`s (`已删除` tag, no switch/actions), matching the design; usage failures are isolated from the key list via `Promise.allSettled` and shown as a warning alert; list failures show an error alert and do not mislabel the page as unconfigured; the secret dialog only exists while its response is held in component state, and the page never fetches raw keys. Sessions rows are rendered locally with `ListCard`, avoiding the `App.tsx` import cycle. No fixes were required after review.
+- Deferred items/limitations: Task 6 adds the Sessions page `网关密钥` filter and detail row using the `RequestRow.gatewayKey`/`RequestQuery.gatewayKey` fields added here; UI behavior was verified by SSR markup, Vitest and TypeScript only (no browser visual regression tests); the usage totals object is typed and normalized but not rendered as a separate summary because the page shows per-key counters.
 
 ---
 

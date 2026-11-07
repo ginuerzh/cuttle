@@ -5,6 +5,7 @@ export type Page =
   | 'nodes'
   | 'routes'
   | 'entrypoints'
+  | 'gateway-keys'
   | 'requests'
   | 'settings';
 
@@ -15,6 +16,7 @@ export const NAV_ORDER: readonly Page[] = [
   'nodes',
   'routes',
   'entrypoints',
+  'gateway-keys',
   'requests',
   'usage',
   'settings',
@@ -27,6 +29,7 @@ export const NAV_LABELS: Record<Page, string> = {
   nodes: '节点',
   routes: '路由',
   entrypoints: '入口',
+  'gateway-keys': '网关密钥',
   requests: '会话',
   settings: '设置',
 };
