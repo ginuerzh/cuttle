@@ -743,7 +743,7 @@ git commit -m "feat(web): filter sessions by gateway key"
 - Consumes: all prior tasks.
 - Produces: documentation matching the shipped behavior; no code interfaces.
 
-- [ ] **Step 1: Update README**
+- [x] **Step 1: Update README**
 
 - `### gateway` table: add `keys` with default "empty (data plane open)" and a one-line description.
 - Add a `### Gateway keys` subsection after `### gateway` covering:
@@ -760,7 +760,7 @@ git commit -m "feat(web): filter sessions by gateway key"
 - Stats section: document `key_rollups`, retention, and that old rows have no key.
 - Security notes: gateway keys are plaintext in YAML like provider keys; protect the file; only masked previews reach the browser.
 
-- [ ] **Step 2: Update AGENTS.md**
+- [x] **Step 2: Update AGENTS.md**
 
 - Configuration invariants: empty keys = open; any entry = auth on; duplicates, short keys and duplicate values rejected; names ≤64, keys 8–512; admin writes do not expand `$`.
 - Admin API invariants: CRUD routes; create/rotate are the only raw-key responses; `GET /api/config` exposes only `keysSet`/`authRequired`; `PUT /api/config` preserves nil keys and clears on `[]`.
@@ -768,7 +768,7 @@ git commit -m "feat(web): filter sessions by gateway key"
 - Gateway invariants: chain is hello → auth → count_tokens → forward; any supported header may authenticate; all keys compared constant-time; disabled matches only affect the log reason.
 - Web invariants: `网关密钥` page; one-time secret dialog; key filter on Sessions.
 
-- [ ] **Step 3: Run the full Go gate**
+- [x] **Step 3: Run the full Go gate**
 
 Run:
 
@@ -781,7 +781,7 @@ GOWORK=off go test ./... -count=1
 
 Expected: all succeed.
 
-- [ ] **Step 4: Run the full web gate and rebuild the embedded bundle**
+- [x] **Step 4: Run the full web gate and rebuild the embedded bundle**
 
 Run:
 
@@ -801,7 +801,7 @@ GOWORK=off go build -o llm-gw .
 
 Expected: all succeed. Note in the final report that there are no browser visual regression tests; UI behavior is covered by TypeScript, Vitest and HTTP checks.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md AGENTS.md example.yaml
@@ -809,9 +809,9 @@ git commit -m "docs: document gateway keys"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-07 — complete.
+- Repository + commit: `llm-gw` (worktree `/tmp/opencode/llm-gw-gateway-keys`) — see commit (`docs: document gateway keys`).
+- Files changed: `README.md` (gateway `keys` table row, new `Gateway keys` subsection, console page table row, gateway-key admin routes and request `key`/`gatewayKey` fields, `key_rollups` retention/backfill notes, security notes, project layout), `AGENTS.md` (architecture row, new Gateway invariants section, configuration/admin/stats/web invariants), `docs/superpowers/plans/2026-11-07-gateway-keys.md` (this record). `example.yaml`: verified the Task 1 commented keys block is present and complete; unchanged.
+- Tests/commands and results: from `/tmp/opencode/llm-gw-gateway-keys`: `GOWORK=off go build ./...` passed; `GOWORK=off go vet ./...` passed with no output; `GOWORK=off go test ./... -count=1` passed for every package. From `web/`: `npm test` — 24 files / 175 tests passed; `npx tsc --noEmit` passed with no output; `npm run build` passed and rebuilt `internal/admin/dist` (Vite emitted only the pre-existing >500 kB chunk warning). Back in the repository root: `GOWORK=off go build -o llm-gw .` passed and `./llm-gw version` printed `dev`.
+- Review findings and fixes: self-review only (controller review follows). Checked the documentation against the shipped code: route list matches `server.go`; create/rotate response bodies and status codes match `handlers_keys.go`; `GET /api/config` `keysSet`/`authRequired` and `PUT` nil-preserve/`[]`-clear behavior match `handlers.go`; 401 status, headers, body and warning fields match `auth.go`; retention, key filter and no-backfill behavior match `store.go`; one-request-per-connection and all-disabled warning match the implementation. No code changes were required; drafting fixes were limited to wording and line wrapping.
+- Deferred items/limitations: no browser visual regression tests; UI behavior is covered by TypeScript, Vitest and HTTP checks only, and this task changed no UI code. The gates ran from the isolated worktree rather than the plan's hardcoded `/root/code/go-gost/llm-gw` path, per the ledger ruling. The pre-existing unrelated change to `web/node_modules/.vite/vitest/results.json` was not included in the commit.
