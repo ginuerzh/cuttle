@@ -133,6 +133,45 @@ func TestGraphEntrypointMetrics(t *testing.T) {
 	}
 }
 
+// TestGraphEmptyClientModelUsesCatchallEntrypoint covers requests that reach
+// the catch-all entrypoint with no model (for example an empty JSON body).
+// The empty client model must still be passed to the resolver so a "*" glob
+// can attribute the row to catchall.
+func TestGraphEmptyClientModelUsesCatchallEntrypoint(t *testing.T) {
+	s := newStore(t)
+	base := time.Date(2026, 11, 7, 0, 53, 0, 0, time.UTC)
+
+	rows := []Request{
+		{ID: "empty-error", TS: base, ClientModel: "", Route: "free", Node: "oc-go-free", Provider: "opencode-go", Status: 400, Error: "`model` must be a non-empty string"},
+		{ID: "empty-ok", TS: base.Add(time.Minute), ClientModel: "", Route: "free", Node: "oc-go-free", Provider: "opencode-go", Status: 200},
+	}
+	for _, r := range rows {
+		if err := s.Insert(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resolve := func(clientModel string) string {
+		if clientModel == "" {
+			return "catchall"
+		}
+		return ""
+	}
+	g, err := s.GraphWithEntrypoints(context.Background(), base.Add(-time.Hour), base.Add(time.Hour), resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Nodes["entrypoint:catchall"]; got.Requests != 2 || got.Errors != 1 {
+		t.Fatalf("catchall entrypoint = %+v", got)
+	}
+	if got := g.Edges["entrypoint:catchall->route:free"]; got.Requests != 2 || got.Errors != 1 {
+		t.Fatalf("catchall edge = %+v", got)
+	}
+	if len(g.Errors) != 1 || g.Errors[0].Entrypoint != "catchall" {
+		t.Fatalf("error rows = %+v, want catchall", g.Errors)
+	}
+}
+
 // TestGraphEntrypointsUseRowRoute: attribution uses the route recorded on the
 // request, not the entrypoint's current configured route.
 func TestGraphEntrypointsUseRowRoute(t *testing.T) {

@@ -209,11 +209,17 @@ func TestResolveEntrypointOrder(t *testing.T) {
 	if got := c.ResolveEntrypointName("gpt-5.5"); got != "specific" {
 		t.Fatalf("ResolveEntrypointName = %q, want specific", got)
 	}
+	if got := c.ResolveEntrypointName(""); got != "fallback" {
+		t.Fatalf("ResolveEntrypointName(empty) = %q, want fallback", got)
+	}
 	noCatchAll := &Config{Entrypoints: []Entrypoint{
 		{Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
 	}}
 	if got := noCatchAll.ResolveEntrypointName("unmatched"); got != "" {
 		t.Fatalf("ResolveEntrypointName(unmatched) = %q, want empty", got)
+	}
+	if got := noCatchAll.ResolveEntrypointName(""); got != "" {
+		t.Fatalf("ResolveEntrypointName(empty) = %q, want empty", got)
 	}
 }
 

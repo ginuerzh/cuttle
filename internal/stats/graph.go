@@ -254,7 +254,7 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		}
 		addNode(routeKey, c)
 
-		if resolve != nil && key.clientModel != "" {
+		if resolve != nil {
 			if match := resolve(key.clientModel); match != "" {
 				entrypointKey := "entrypoint:" + match
 				addNode(entrypointKey, c)
@@ -304,7 +304,7 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 			continue
 		}
 		entrypoint := ""
-		if resolve != nil && e.clientModel != "" {
+		if resolve != nil {
 			entrypoint = resolve(e.clientModel)
 		}
 		msg := e.message
