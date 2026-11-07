@@ -282,6 +282,31 @@ func TestRecorderMarksSilentStreamTruncation(t *testing.T) {
 	}
 }
 
+func TestRecorderMarksUpstreamTruncationWithoutStream(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	sid := "truncated-no-stream"
+	body, err := json.Marshal(map[string]any{
+		"sid":  sid,
+		"node": "r/p/n",
+		"time": time.Now().UTC(),
+		"err":  "unexpected EOF",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(ctx, sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if !got.Truncated || got.ErrorClass != ErrorClassUpstreamTruncated || got.ClientStatus != 502 {
+		t.Fatalf("row = %+v", got)
+	}
+}
+
 func TestRecorderCaptureErrorMode(t *testing.T) {
 	s := newStore(t)
 	facts := NewFacts()

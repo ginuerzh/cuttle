@@ -73,6 +73,7 @@ const ERROR_CLASS_LABELS: Record<string, string> = {
   network: '网络错误',
   rewrite_error: '改写错误',
   client_error: '客户端错误',
+  client_disconnect: '客户端断开',
 };
 
 export function errorClassLabel(r: RequestRow): string {

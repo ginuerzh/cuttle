@@ -17,6 +17,7 @@ const (
 	ErrorClassNetwork             = "network"
 	ErrorClassRewriteError        = "rewrite_error"
 	ErrorClassClientError         = "client_error"
+	ErrorClassClientDisconnect    = "client_disconnect"
 )
 
 // ClassifyError maps an HTTP status, transport error and rewrite stage to one
@@ -24,10 +25,13 @@ const (
 // useful status (0) or that happen inside an otherwise successful stream.
 func ClassifyError(status int, errStr, stage string) string {
 	msg := strings.ToLower(strings.TrimSpace(errStr))
+	if isTruncation(msg) {
+		return ErrorClassUpstreamTruncated
+	}
+	if isClientDisconnect(msg) {
+		return ErrorClassClientDisconnect
+	}
 	if stage != "" {
-		if isTruncation(msg) {
-			return ErrorClassUpstreamTruncated
-		}
 		return ErrorClassRewriteError
 	}
 	if status == 0 {
@@ -42,14 +46,10 @@ func ClassifyError(status int, errStr, stage string) string {
 	}
 	switch {
 	case status == 200 || status == 0:
-		switch {
-		case msg == "":
+		if msg == "" {
 			return ""
-		case isTruncation(msg):
-			return ErrorClassUpstreamTruncated
-		default:
-			return ErrorClassUpstreamError
 		}
+		return ErrorClassUpstreamError
 	case status == 401:
 		return ErrorClassUpstreamAuth
 	case status == 403:
@@ -70,5 +70,13 @@ func isTruncation(msg string) bool {
 	return strings.Contains(msg, "unexpected eof") ||
 		strings.Contains(msg, "unexpected end of json input") ||
 		strings.Contains(msg, "unexpected end of file") ||
+		strings.Contains(msg, "terminal chunk") ||
+		strings.Contains(msg, "stream ended before") ||
 		strings.Contains(msg, "truncated")
+}
+
+func isClientDisconnect(msg string) bool {
+	return strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "use of closed network connection") ||
+		strings.Contains(msg, "client disconnected")
 }

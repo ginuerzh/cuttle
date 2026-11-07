@@ -121,10 +121,8 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		// response at all; record what the client actually saw.
 		req.ClientStatus = 502
 	}
-	if req.Stream {
-		req.Truncated = isTruncation(strings.ToLower(req.Error)) ||
-			(req.Error == "" && req.Status == 200 && !req.SawDone && req.FinishReason == "")
-	}
+	req.Truncated = isTruncation(strings.ToLower(req.Error)) ||
+		(req.Stream && req.Error == "" && req.Status == 200 && !req.SawDone && req.FinishReason == "")
 
 	var cap *capture.Capture
 	if r.capture != nil {

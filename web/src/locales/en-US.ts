@@ -197,6 +197,7 @@ export const enUS: Record<string, string> = {
   '网络错误': 'Network error',
   '改写错误': 'Rewrite error',
   '客户端错误': 'Client error',
+  '客户端断开': 'Client disconnected',
   '捕获详情': 'Capture details',
   '原因': 'Reason',
   '创建时间': 'Created',
