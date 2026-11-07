@@ -58,18 +58,20 @@ type Request struct {
 
 // Filter selects requests.
 type Filter struct {
-	From        time.Time
-	To          time.Time
-	Provider    string
-	Model       string
-	ClientModel string
-	Route       string
-	Status      int
-	OnlyErrors  bool
-	Captured    bool
-	ErrorClass  string
-	Limit       int
-	Offset      int
+	From                time.Time
+	To                  time.Time
+	Provider            string
+	Model               string
+	ClientModel         string
+	ClientModelPatterns []string
+	Route               string
+	Node                string
+	Status              int
+	OnlyErrors          bool
+	Captured            bool
+	ErrorClass          string
+	Limit               int
+	Offset              int
 }
 
 // Group is an aggregated bucket.
@@ -805,9 +807,21 @@ func (f Filter) where() (string, []any) {
 		conds = append(conds, "client_model LIKE ?")
 		args = append(args, "%"+f.ClientModel+"%")
 	}
+	if len(f.ClientModelPatterns) > 0 {
+		likes := make([]string, 0, len(f.ClientModelPatterns))
+		for _, pattern := range f.ClientModelPatterns {
+			likes = append(likes, "client_model LIKE ? ESCAPE '\\'")
+			args = append(args, globToLike(pattern))
+		}
+		conds = append(conds, "("+strings.Join(likes, " OR ")+")")
+	}
 	if f.Route != "" {
 		conds = append(conds, "route = ?")
 		args = append(args, f.Route)
+	}
+	if f.Node != "" {
+		conds = append(conds, "node = ?")
+		args = append(args, f.Node)
 	}
 	if f.OnlyErrors {
 		conds = append(conds, "(status >= 400 OR error != '')")
@@ -827,6 +841,24 @@ func (f Filter) where() (string, []any) {
 		return "", nil
 	}
 	return " WHERE " + strings.Join(conds, " AND "), args
+}
+
+// globToLike converts one entrypoint model glob into a SQL LIKE pattern.
+// Entrypoint globs only use '*', so escape the LIKE metacharacters.
+func globToLike(pattern string) string {
+	var b strings.Builder
+	for _, r := range pattern {
+		switch r {
+		case '*':
+			b.WriteByte('%')
+		case '%', '_', '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func boolInt(b bool) int {

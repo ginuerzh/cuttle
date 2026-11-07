@@ -77,6 +77,75 @@ func TestInsertQuerySummary(t *testing.T) {
 	}
 }
 
+func TestQueryNodeAndEntrypointFilters(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
+	window := Filter{From: base, To: base.Add(time.Hour)}
+
+	for _, r := range []Request{
+		{ID: "r1", TS: base, Provider: "p", Route: "r", Node: "n1", ClientModel: "gpt-4.5", Status: 200},
+		{ID: "r2", TS: base.Add(time.Minute), Provider: "p", Route: "r", Node: "n2", ClientModel: "claude-haiku", Status: 500, Error: "boom"},
+		{ID: "r3", TS: base.Add(2 * time.Minute), Provider: "q", Route: "r", Node: "n1", ClientModel: "", Status: 200},
+		{ID: "r4", TS: base.Add(3 * time.Minute), Provider: "p", Route: "r", Node: "n3", ClientModel: "gpt_100%real", Status: 200},
+	} {
+		if err := s.Insert(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	node := window
+	node.Node = "n1"
+	got, err := s.Query(ctx, node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "r3" || got[1].ID != "r1" {
+		t.Fatalf("node=n1 rows = %+v", got)
+	}
+
+	entrypoint := window
+	entrypoint.ClientModelPatterns = []string{"gpt-4.5*"}
+	got, err = s.Query(ctx, entrypoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "r1" {
+		t.Fatalf("entrypoint rows = %+v", got)
+	}
+
+	catchall := window
+	catchall.ClientModelPatterns = []string{"*"}
+	got, err = s.Query(ctx, catchall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("catchall rows = %d, want 4", len(got))
+	}
+
+	literal := window
+	literal.ClientModelPatterns = []string{"gpt_*"}
+	got, err = s.Query(ctx, literal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "r4" {
+		t.Fatalf("literal underscore rows = %+v", got)
+	}
+
+	failed := window
+	failed.Node = "n2"
+	failed.OnlyErrors = true
+	got, err = s.Query(ctx, failed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "r2" {
+		t.Fatalf("failed rows = %+v", got)
+	}
+}
+
 func TestTTFTRoundTrip(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

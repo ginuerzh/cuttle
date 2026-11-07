@@ -37,11 +37,26 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		Model:       q.Get("model"),
 		ClientModel: q.Get("clientModel"),
 		Route:       q.Get("route"),
+		Node:        q.Get("node"),
 		OnlyErrors:  q.Get("errors") == "1",
 		Captured:    q.Get("captured") == "1",
 		ErrorClass:  q.Get("errorClass"),
 		Limit:       atoi(q.Get("limit")),
 		Offset:      atoi(q.Get("offset")),
+	}
+	if name := q.Get("entrypoint"); name != "" {
+		found := false
+		for _, ep := range s.monitorConfig().Entrypoints {
+			if ep.Name == name {
+				f.ClientModelPatterns = ep.Match
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeJSON(w, http.StatusOK, []stats.Request{})
+			return
+		}
 	}
 	if v := q.Get("status"); v != "" {
 		f.Status = atoi(v)

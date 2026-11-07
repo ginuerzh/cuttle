@@ -604,13 +604,16 @@ func jsonDecode(r io.Reader, v any) error {
 }
 
 func TestStatsAPI(t *testing.T) {
-	_, rel, _, ts := newTestAdmin(t)
+	s, rel, _, ts := newTestAdmin(t)
+	s.mu.Lock()
+	s.cfg.Entrypoints = []config.Entrypoint{{Name: "claude", Match: []string{"claude-*"}, Route: "r"}}
+	s.mu.Unlock()
 	client, _ := login(t, ts.URL)
 
 	base := time.Now().Add(-time.Hour)
 	for _, row := range []stats.Request{
-		{ID: "r1", SID: "s1", TS: base, Provider: "p", Model: "m", Effort: "high", Status: 200, DurationMS: 10, InputTokens: 1, OutputTokens: 2},
-		{ID: "r2", SID: "s2", TS: base.Add(time.Minute), Provider: "p", Model: "m", Effort: "low", Status: 500, Error: "boom", DurationMS: 30, InputTokens: 3, OutputTokens: 4},
+		{ID: "r1", SID: "s1", TS: base, Provider: "p", Model: "m", ClientModel: "claude-opus", Node: "n1", Route: "r", Effort: "high", Status: 200, DurationMS: 10, InputTokens: 1, OutputTokens: 2},
+		{ID: "r2", SID: "s2", TS: base.Add(time.Minute), Provider: "p", Model: "m", ClientModel: "gpt-4.5", Node: "n2", Route: "r", Effort: "low", Status: 500, Error: "boom", DurationMS: 30, InputTokens: 3, OutputTokens: 4},
 	} {
 		if err := rel.store.Insert(context.Background(), row); err != nil {
 			t.Fatal(err)
@@ -633,6 +636,33 @@ func TestStatsAPI(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].ID != "r2" {
 		t.Fatalf("rows = %+v", rows)
+	}
+
+	nodeResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/requests?node=n1", "", "")
+	var nodeRows []stats.Request
+	if err := jsonDecode(nodeResp.Body, &nodeRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(nodeRows) != 1 || nodeRows[0].ID != "r1" {
+		t.Fatalf("node rows = %+v", nodeRows)
+	}
+
+	epResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/requests?entrypoint=claude", "", "")
+	var epRows []stats.Request
+	if err := jsonDecode(epResp.Body, &epRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(epRows) != 1 || epRows[0].ID != "r1" {
+		t.Fatalf("entrypoint rows = %+v", epRows)
+	}
+
+	missingResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/requests?entrypoint=missing", "", "")
+	var missingRows []stats.Request
+	if err := jsonDecode(missingResp.Body, &missingRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(missingRows) != 0 {
+		t.Fatalf("missing entrypoint rows = %+v", missingRows)
 	}
 
 	oneResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/requests/r1", "", "")
