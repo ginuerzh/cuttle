@@ -12,6 +12,10 @@ import (
 
 	xlogger "github.com/go-gost/x/logger"
 
+	corehop "github.com/go-gost/core/hop"
+
+	corechain "github.com/go-gost/core/chain"
+
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
 	gwrewriter "github.com/go-gost/llm-gw/internal/rewriter"
 )
@@ -52,6 +56,64 @@ func startGateway(t *testing.T, cfg *gwconfig.Config) *Gateway {
 	}
 	t.Cleanup(func() { gw.Close() })
 	return gw
+}
+
+func TestRouteHealthUsesRouteFailSettings(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL)
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
+		Name:     "up2",
+		Provider: "up",
+		Model:    "deepseek-chat",
+	})
+	cfg.Routes[0].Nodes = []string{"up", "up2"}
+	cfg.Routes[0].Strategy = "fifo"
+	cfg.Routes[0].MaxFails = 2
+	cfg.Routes[0].FailTimeout = gwconfig.Duration(30 * time.Second)
+
+	gw := startGateway(t, cfg)
+	nl, ok := gw.hop.(corehop.NodeList)
+	if !ok {
+		t.Fatal("hop does not expose nodes")
+	}
+	var first *corechain.Node
+	for _, n := range nl.Nodes() {
+		if configNodeName(n) == "up" {
+			first = n
+			break
+		}
+	}
+	if first == nil {
+		t.Fatal("node up not found")
+	}
+
+	first.Marker().Mark()
+	hr := gw.RouteHealth()
+	if len(hr) != 1 || len(hr[0].Nodes) != 2 {
+		t.Fatalf("route health = %+v", hr)
+	}
+	if hr[0].MaxFails != 2 || hr[0].FailTimeout != "30s" {
+		t.Fatalf("route settings = %+v", hr[0])
+	}
+	if hr[0].Nodes[0].Dead || hr[0].Nodes[0].FailCount != 1 {
+		t.Fatalf("one failure should not be dead with maxFails=2: %+v", hr[0].Nodes[0])
+	}
+	if got := gw.hop.Select(context.Background()); got == nil || configNodeName(got) != "up" {
+		t.Fatalf("selected = %+v, want up before maxFails", got)
+	}
+
+	first.Marker().Mark()
+	hr = gw.RouteHealth()
+	if !hr[0].Nodes[0].Dead || hr[0].Nodes[0].DeadUntil == nil {
+		t.Fatalf("two failures should be dead: %+v", hr[0].Nodes[0])
+	}
+	if got := gw.hop.Select(context.Background()); got == nil || configNodeName(got) != "up2" {
+		t.Fatalf("selected = %+v, want up2 after maxFails", got)
+	}
 }
 
 func TestGatewayForwardsAndRewrites(t *testing.T) {

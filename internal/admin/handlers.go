@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/health"
 	"github.com/go-gost/llm-gw/internal/logging"
 	"github.com/go-gost/llm-gw/internal/provider"
 )
@@ -441,6 +442,14 @@ func (s *Server) handleListRoutes(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	writeJSON(w, http.StatusOK, nonNilSlice(s.cfg.Routes))
+}
+
+func (s *Server) handleRouteHealth(w http.ResponseWriter, r *http.Request) {
+	if s.routeHealth == nil {
+		writeJSON(w, http.StatusOK, []health.Route{})
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNilSlice(s.routeHealth()))
 }
 
 func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {

@@ -82,6 +82,8 @@ routes:
   - name: strong
     nodes: [deepseek-strong]
     strategy: round
+    maxFails: 2
+    failTimeout: 30s
   - name: fast
     nodes: [deepseek-fast]
     strategy: round

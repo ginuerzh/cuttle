@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-gost/llm-gw/internal/capture"
 	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/health"
 	"github.com/go-gost/llm-gw/internal/stats"
 	"github.com/go-gost/llm-gw/internal/version"
 )
@@ -39,12 +40,13 @@ type Server struct {
 	ttl          time.Duration
 	rememberTTL  time.Duration
 
-	mu       sync.Mutex
-	cfg      *config.Config
-	sessions map[string]time.Time
-	probes   map[string]probeResult
-	stats    *stats.Store
-	capture  *capture.Manager
+	mu          sync.Mutex
+	cfg         *config.Config
+	sessions    map[string]time.Time
+	probes      map[string]probeResult
+	stats       *stats.Store
+	capture     *capture.Manager
+	routeHealth func() []health.Route
 
 	wsMu          sync.Mutex
 	wsConns       map[*wsClient]struct{}
@@ -98,6 +100,9 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 	if cp, ok := r.(interface{ Capture() *capture.Manager }); ok {
 		s.capture = cp.Capture()
 	}
+	if hp, ok := r.(interface{ RouteHealth() []health.Route }); ok {
+		s.routeHealth = hp.RouteHealth
+	}
 	if s.stats != nil {
 		if saved, err := s.stats.LoadSessions(context.Background(), time.Now()); err != nil {
 			log.Warnf("load sessions: %v", err)
@@ -148,6 +153,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("PUT /api/nodes/{name}", s.handleUpdateNode)
 	api.HandleFunc("DELETE /api/nodes/{name}", s.handleDeleteNode)
 	api.HandleFunc("GET /api/routes", s.handleListRoutes)
+	api.HandleFunc("GET /api/routes/health", s.handleRouteHealth)
 	api.HandleFunc("POST /api/routes", s.handleCreateRoute)
 	api.HandleFunc("PUT /api/routes/{name}", s.handleUpdateRoute)
 	api.HandleFunc("DELETE /api/routes/{name}", s.handleDeleteRoute)

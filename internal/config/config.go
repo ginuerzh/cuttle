@@ -177,11 +177,14 @@ type TLS struct {
 }
 
 // Route maps client requests to a set of nodes. The entrypoint selects the
-// route; the route only decides which node serves it.
+// route; the route only decides which node serves it. MaxFails and
+// FailTimeout control how long a node is skipped after failures.
 type Route struct {
-	Name     string   `yaml:"name" json:"name"`
-	Nodes    []string `yaml:"nodes" json:"nodes"`
-	Strategy string   `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	Name        string   `yaml:"name" json:"name"`
+	Nodes       []string `yaml:"nodes" json:"nodes"`
+	Strategy    string   `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	MaxFails    int      `yaml:"maxFails,omitempty" json:"maxFails,omitempty"`
+	FailTimeout Duration `yaml:"failTimeout,omitempty" json:"failTimeout,omitempty"`
 }
 
 // Duration is a time.Duration that unmarshals from strings like "12h".
@@ -537,6 +540,12 @@ func (c *Config) applyDefaults() {
 		if c.Routes[i].Strategy == "" {
 			c.Routes[i].Strategy = "round"
 		}
+		if c.Routes[i].MaxFails == 0 {
+			c.Routes[i].MaxFails = 1
+		}
+		if c.Routes[i].FailTimeout == 0 {
+			c.Routes[i].FailTimeout = Duration(10 * time.Second)
+		}
 	}
 }
 
@@ -773,6 +782,12 @@ func Validate(c *Config) error {
 		case "", "fifo", "round", "random":
 		default:
 			return fmt.Errorf("route %q: strategy must be fifo, round or random", name)
+		}
+		if r.MaxFails < 0 {
+			return fmt.Errorf("route %q: maxFails must be >= 0", name)
+		}
+		if r.FailTimeout < 0 {
+			return fmt.Errorf("route %q: failTimeout must be >= 0", name)
 		}
 		used := make(map[string]bool, len(r.Nodes))
 		for _, ref := range r.Nodes {

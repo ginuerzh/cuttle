@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-gost/llm-gw/internal/capture"
 	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/health"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
@@ -30,11 +31,14 @@ type recordingReloader struct {
 	attempts int
 	store    *stats.Store
 	capture  *capture.Manager
+	health   []health.Route
 }
 
 func (r *recordingReloader) Stats() *stats.Store { return r.store }
 
 func (r *recordingReloader) Capture() *capture.Manager { return r.capture }
+
+func (r *recordingReloader) RouteHealth() []health.Route { return r.health }
 
 func (r *recordingReloader) Reload(c *config.Config) error {
 	r.attempts++
@@ -121,6 +125,39 @@ func login(t *testing.T, tsURL string) (*http.Client, string) {
 		t.Fatal("csrf cookie missing")
 	}
 	return c, csrf
+}
+
+func TestRouteHealthEndpoint(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	now := time.Now().UTC()
+	rel.health = []health.Route{{
+		Name:        "deepseek-flash",
+		MaxFails:    2,
+		FailTimeout: "30s",
+		Nodes: []health.Node{{
+			Name:        "cc-dsf",
+			Provider:    "commandcode",
+			FailCount:   2,
+			LastFailure: &now,
+			Dead:        true,
+			DeadUntil:   &now,
+		}},
+	}}
+	client, _ := login(t, ts.URL)
+	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/routes/health", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var got []health.Route
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "deepseek-flash" || len(got[0].Nodes) != 1 {
+		t.Fatalf("health = %+v", got)
+	}
+	if !got[0].Nodes[0].Dead || got[0].Nodes[0].FailCount != 2 || got[0].MaxFails != 2 {
+		t.Fatalf("node health = %+v", got[0])
+	}
 }
 
 func TestAuthAndCSRF(t *testing.T) {

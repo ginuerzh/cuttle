@@ -487,13 +487,17 @@ chat API.
 - name: fast
   nodes: [deepseek-fast, deepseek-backup]
   strategy: round
+  maxFails: 2
+  failTimeout: 30s
 ```
 
 | Field | Required | Description |
 | --- | --- | --- |
 | `name` | yes | Unique route name; no `/` |
-| `nodes` | yes | Non-empty list of existing node names; duplicates rejected |
+| `nodes` | yes | Ordered list of existing node names; duplicates rejected. Order is the selection priority. |
 | `strategy` | no | `fifo`, `round` (default) or `random` |
+| `maxFails` | no | Consecutive failures before a node is marked dead; default `1` |
+| `failTimeout` | no | How long a dead node is skipped; default `10s` |
 
 ## Stats and topology
 
@@ -502,6 +506,12 @@ status, duration and token counts. Raw rows are retained for
 `stats.retainRequests`; rollups are retained for `stats.retainRollups`.
 Rollups also store `cached_tokens`; rows written before that column existed
 read as 0 cached tokens.
+
+`GET /api/routes/health` returns each route's node markers: `failCount`,
+`lastFailure`, `dead` and `deadUntil`. The state is x's in-memory marker,
+resets when the hop is rebuilt, and only reflects the failures x marks (TCP
+dial failures and configured HTTP `failCodes`, currently 429 and 5xx). A
+streaming HTTP 200 truncation is not a marker failure.
 
 The graph API attributes each row to an entrypoint at query time by resolving
 the row's `client_model` through the current entrypoint list:
@@ -541,6 +551,7 @@ GET           /api/providers/{name}/models
 GET|POST      /api/nodes
 GET|PUT|DELETE /api/nodes/{name}
 GET|POST      /api/routes
+GET           /api/routes/health
 PUT|DELETE    /api/routes/{name}
 GET|PUT       /api/entrypoints
 

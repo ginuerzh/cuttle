@@ -844,6 +844,88 @@ func TestTopologyIncludes(t *testing.T) {
 	}
 }
 
+func TestRouteFailSettingsDefaultsAndValidation(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m
+routes:
+  - name: r
+    nodes: [n]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Routes[0].MaxFails; got != 1 {
+		t.Fatalf("maxFails = %d, want 1", got)
+	}
+	if got := time.Duration(c.Routes[0].FailTimeout); got != 10*time.Second {
+		t.Fatalf("failTimeout = %v, want 10s", got)
+	}
+
+	c, err = Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m
+routes:
+  - name: r
+    nodes: [n]
+    maxFails: 3
+    failTimeout: 30s
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Routes[0].MaxFails != 3 || time.Duration(c.Routes[0].FailTimeout) != 30*time.Second {
+		t.Fatalf("route settings = %+v", c.Routes[0])
+	}
+
+	for _, body := range []string{
+		`maxFails: -1`,
+		`failTimeout: -1s`,
+	} {
+		_, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m
+routes:
+  - name: r
+    nodes: [n]
+    `+body+`
+`))
+		if err == nil {
+			t.Fatalf("%s: want validation error", body)
+		}
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "test")
 	c, err := Load("../../example.yaml")

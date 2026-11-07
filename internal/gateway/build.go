@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-gost/core/hop"
 	"github.com/go-gost/core/logger"
@@ -226,10 +227,20 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 	if strategy == "" {
 		strategy = "round"
 	}
+	maxFails := r.MaxFails
+	if maxFails <= 0 {
+		maxFails = 1
+	}
+	failTimeout := time.Duration(r.FailTimeout)
+	if failTimeout <= 0 {
+		failTimeout = 10 * time.Second
+	}
 	return hop_parser.ParseHop(&xconfig.HopConfig{
 		Name: "route/" + r.Name + "/" + variant,
 		Selector: &xconfig.SelectorConfig{
-			Strategy: strategy,
+			Strategy:    strategy,
+			MaxFails:    maxFails,
+			FailTimeout: failTimeout,
 		},
 		Nodes: nodes,
 	}, log)
@@ -335,10 +346,14 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 		if n.Backup {
 			metadata = map[string]any{"backup": true}
 		}
+		if metadata == nil {
+			metadata = make(map[string]any)
+		}
+		// Keep the operator-facing node name separate from the internal
+		// route/provider/node name used by x.
+		metadata["configName"] = n.Name
+		metadata["configRoute"] = route
 		if n.Weight > 0 {
-			if metadata == nil {
-				metadata = make(map[string]any)
-			}
 			metadata["weight"] = n.Weight
 		}
 

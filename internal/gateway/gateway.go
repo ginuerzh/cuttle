@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-gost/llm-gw/internal/capture"
 	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	"github.com/go-gost/llm-gw/internal/health"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
@@ -172,6 +173,137 @@ func (g *Gateway) Addr() net.Addr {
 // Capture returns the body-capture manager.
 func (g *Gateway) Capture() *capture.Manager {
 	return g.capture
+}
+
+// RouteHealth returns the current node marker state for each configured
+// route. Markers are in-memory x state and reset when the hop is rebuilt.
+func (g *Gateway) RouteHealth() []health.Route {
+	g.mu.Lock()
+	h := g.hop
+	cfg := g.cfg
+	g.mu.Unlock()
+	if h == nil || cfg == nil {
+		return nil
+	}
+
+	nl, ok := h.(hop.NodeList)
+	if !ok {
+		return nil
+	}
+	type routeNodeKey struct {
+		route string
+		name  string
+	}
+	nodes := make(map[routeNodeKey]*corechain.Node)
+	for _, n := range nl.Nodes() {
+		if n == nil {
+			continue
+		}
+		name := configNodeName(n)
+		if name == "" {
+			continue
+		}
+		key := routeNodeKey{configRouteName(n), name}
+		prev := nodes[key]
+		if prev == nil || markerCount(n) > markerCount(prev) ||
+			(markerCount(n) == markerCount(prev) && markerTime(n).After(markerTime(prev))) {
+			nodes[key] = n
+		}
+	}
+
+	providerByNode := make(map[string]string, len(cfg.Nodes))
+	for _, n := range cfg.Nodes {
+		providerByNode[n.Name] = n.Provider
+	}
+
+	out := make([]health.Route, 0, len(cfg.Routes))
+	for _, r := range cfg.Routes {
+		maxFails := r.MaxFails
+		if maxFails <= 0 {
+			maxFails = 1
+		}
+		failTimeout := time.Duration(r.FailTimeout)
+		if failTimeout <= 0 {
+			failTimeout = 10 * time.Second
+		}
+		hr := health.Route{
+			Name:        r.Name,
+			MaxFails:    maxFails,
+			FailTimeout: failTimeout.String(),
+			Nodes:       make([]health.Node, 0, len(r.Nodes)),
+		}
+		for _, name := range r.Nodes {
+			n := nodes[routeNodeKey{r.Name, name}]
+			if n == nil {
+				n = nodes[routeNodeKey{"", name}]
+			}
+			if n == nil {
+				continue
+			}
+			m := n.Marker()
+			if m == nil {
+				continue
+			}
+			count := m.Count()
+			last := m.Time()
+			dead := count >= int64(maxFails) && !last.IsZero() && time.Since(last) < failTimeout
+			hn := health.Node{
+				Name:      name,
+				Provider:  providerByNode[name],
+				FailCount: count,
+				Dead:      dead,
+			}
+			if !last.IsZero() {
+				lastCopy := last
+				hn.LastFailure = &lastCopy
+			}
+			if dead {
+				until := last.Add(failTimeout)
+				hn.DeadUntil = &until
+			}
+			hr.Nodes = append(hr.Nodes, hn)
+		}
+		out = append(out, hr)
+	}
+	return out
+}
+
+func configNodeName(n *corechain.Node) string {
+	if n == nil {
+		return ""
+	}
+	if md := n.Metadata(); md != nil {
+		if v, ok := md.Get("configName").(string); ok && v != "" {
+			return v
+		}
+	}
+	return n.Name
+}
+
+func configRouteName(n *corechain.Node) string {
+	if n == nil {
+		return ""
+	}
+	if md := n.Metadata(); md != nil {
+		if v, ok := md.Get("configRoute").(string); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+func markerCount(n *corechain.Node) int64 {
+	if n == nil || n.Marker() == nil {
+		return 0
+	}
+	return n.Marker().Count()
+}
+
+func markerTime(n *corechain.Node) time.Time {
+	if n == nil || n.Marker() == nil {
+		return time.Time{}
+	}
+	return n.Marker().Time()
 }
 
 func capturePolicy(c gwconfig.Capture) capture.Policy {
