@@ -6,6 +6,7 @@ import {
   GatewayOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
+import { Tag } from 'antd';
 import type { NodeMetrics } from '../api/types';
 import type { GraphNode } from './build';
 import { translate as t } from '../i18n';
@@ -193,7 +194,7 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
 }
 
 export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
-  const color = healthColor(data.metrics);
+  const color = data.dead ? '#dc2626' : healthColor(data.metrics);
   return (
     <div
       style={{
@@ -210,6 +211,23 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} showRate />
+      {data.dead ? (
+        <Tag
+          color="red"
+          style={{
+            position: 'absolute',
+            top: -9,
+            right: 8,
+            marginInlineEnd: 0,
+            fontSize: 10,
+            lineHeight: '16px',
+            paddingInline: 5,
+            pointerEvents: 'none',
+          }}
+        >
+          dead
+        </Tag>
+      ) : null}
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>

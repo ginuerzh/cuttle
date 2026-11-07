@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Button,
   Card,
@@ -28,8 +28,8 @@ import {
   SettingOutlined,
   SunOutlined,
 } from '@ant-design/icons';
-import { getConfig, getHealth, getRequests, logout, UnauthorizedError, type RequestQuery } from './api/client';
-import type { ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow } from './api/types';
+import { getConfig, getHealth, getRequests, getRouteHealth, logout, UnauthorizedError, type RequestQuery } from './api/client';
+import type { ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
 import type { SnapshotMessage } from './api/events';
 import { Login } from './pages/Login';
 import { EntrypointsPage } from './pages/Entrypoints';
@@ -44,6 +44,7 @@ import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
 import { splitId } from './pages/selection';
+import { deadNodeNames } from './pages/routeHealth';
 import { useLiveGraph } from './useLiveGraph';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
@@ -197,11 +198,13 @@ export function NodePanel({
   metrics,
   since = '',
   rangeMs,
+  dead = false,
 }: {
   id: string;
   metrics?: NodeMetrics;
   since?: string;
   rangeMs: number;
+  dead?: boolean;
 }) {
   const [errorsOnly, setErrorsOnly] = useState(false);
   const { rows, loading, failed } = useNodeSessions(
@@ -216,6 +219,11 @@ export function NodePanel({
     <div>
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {id}
+        {dead ? (
+          <Tag color="red" style={{ marginInlineStart: 8 }}>
+            dead
+          </Tag>
+        ) : null}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
         <Descriptions.Item label={translate('会话')}>{fmt(metrics?.requests)}</Descriptions.Item>
@@ -387,7 +395,9 @@ export default function App() {
   const [since, setSince] = useState<string>('');
   const [resetKey, setResetKey] = useState(0);
   const [sessionKey, setSessionKey] = useState(0);
+  const [routeHealth, setRouteHealth] = useState<RouteHealth[]>([]);
   const rangeMs = RANGES.find((item) => item.value === range)?.ms ?? 60 * 60_000;
+  const deadNodes = useMemo(() => deadNodeNames(routeHealth), [routeHealth]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -470,6 +480,26 @@ export default function App() {
     onStatus: handleStatus,
     onAuthError: handleAuthError,
   });
+
+  useEffect(() => {
+    if (session !== 'yes' || page !== 'topology') return;
+    let cancelled = false;
+    const load = () => {
+      getRouteHealth()
+        .then((rows) => {
+          if (!cancelled) setRouteHealth(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setRouteHealth([]);
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [session, page, config]);
 
   useEffect(() => {
     if (mode === 'edit') {
@@ -557,10 +587,10 @@ export default function App() {
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                   {mode === 'edit' ? (
                     config ? (
-                      <Edit config={config} onReload={loadConfig} />
+                      <Edit config={config} onReload={loadConfig} deadNodes={deadNodes} />
                     ) : null
                   ) : config ? (
-                    <Topology config={config} metrics={metrics} onSelect={setSelection} />
+                    <Topology config={config} metrics={metrics} onSelect={setSelection} deadNodes={deadNodes} />
                   ) : null}
                 </div>
               </div>
@@ -601,6 +631,7 @@ export default function App() {
                     metrics={metrics?.nodes[selection.id]}
                     since={since}
                     rangeMs={rangeMs}
+                    dead={selection.id.startsWith('node:') && deadNodes.has(selection.id.slice('node:'.length))}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
@@ -622,6 +653,7 @@ export default function App() {
                     metrics={metrics?.nodes[selection.id]}
                     since={since}
                     rangeMs={rangeMs}
+                    dead={selection.id.startsWith('node:') && deadNodes.has(selection.id.slice('node:'.length))}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />

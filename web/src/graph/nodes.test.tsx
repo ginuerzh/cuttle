@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { NodeProps } from '@xyflow/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { GraphNode } from './build';
-import { EntrypointNode, NodeBody, NodeStats, handleStyle, selectionStyle } from './nodes';
+import { BindingNode, EntrypointNode, NodeBody, NodeStats, handleStyle, selectionStyle } from './nodes';
 
 describe('selectionStyle', () => {
   it('draws selection inside the box without changing its size', () => {
@@ -49,6 +49,39 @@ describe('EntrypointNode', () => {
     );
     expect(html).toContain('anticon-gateway');
     expect(html).not.toContain('anticon-tag');
+  });
+});
+
+describe('BindingNode', () => {
+  const props = {
+    id: 'node:a',
+    type: 'node',
+    data: { kind: 'node', label: 'a' },
+    selected: false,
+    isConnectable: false,
+  } as unknown as NodeProps<GraphNode>;
+
+  it('hides the dead marker for a healthy node', () => {
+    const html = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <BindingNode {...props} />
+      </ReactFlowProvider>,
+    );
+    expect(html).not.toContain('ant-tag-red');
+  });
+
+  it('shows the dead marker when the node marker is dead', () => {
+    const deadProps = {
+      ...props,
+      data: { ...props.data, dead: true },
+    } as unknown as NodeProps<GraphNode>;
+    const html = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <BindingNode {...deadProps} />
+      </ReactFlowProvider>,
+    );
+    expect(html).toContain('ant-tag-red');
+    expect(html).toContain('dead');
   });
 });
 

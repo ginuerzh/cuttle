@@ -13,6 +13,8 @@ export interface GraphNodeData extends Record<string, unknown> {
   entrypoint?: Entrypoint;
   node?: BindNode;
   metrics?: NodeMetrics;
+  /** The node's x marker is dead in at least one route. */
+  dead?: boolean;
 }
 
 export type GraphNode = Node<GraphNodeData>;

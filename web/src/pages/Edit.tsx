@@ -60,6 +60,7 @@ import { Topology, type Selection } from './Topology';
 interface Props {
   config: ConfigResponse;
   onReload: () => Promise<void>;
+  deadNodes?: ReadonlySet<string>;
 }
 
 
@@ -1027,7 +1028,7 @@ export function AddButtons({ onAdd }: { onAdd: (kind: AddKind) => void }) {
   );
 }
 
-export function Edit({ config, onReload }: Props) {
+export function Edit({ config, onReload, deadNodes }: Props) {
   const isMobile = !Grid.useBreakpoint().md;
   const [selection, setSelection] = useState<Selection>(null);
   const [addOpen, setAddOpen] = useState<AddKind | null>(null);
@@ -1124,7 +1125,7 @@ export function Edit({ config, onReload }: Props) {
             <Alert style={{ marginTop: 8, maxWidth: 520 }} type="error" message={error} showIcon closable onClose={() => setError('')} />
           ) : null}
         </div>
-        <Topology config={config} metrics={null} onSelect={setSelection} editable onConnect={connect} />
+        <Topology config={config} metrics={null} onSelect={setSelection} editable onConnect={connect} deadNodes={deadNodes} />
       </div>
 
       {isMobile ? (

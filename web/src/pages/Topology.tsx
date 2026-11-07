@@ -55,6 +55,7 @@ interface Props {
   onSelect: (s: Selection) => void;
   editable?: boolean;
   onConnect?: (c: Connection) => void;
+  deadNodes?: ReadonlySet<string>;
 }
 
 /**
@@ -148,7 +149,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
   }
 }
 
-export function Topology({ config, metrics, onSelect, editable, onConnect }: Props) {
+export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes }: Props) {
   const canEdit = canEditTopology(editable);
   const [initialViewport] = useState(() => viewportInit(lastViewport));
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
@@ -330,6 +331,17 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
     );
     setEdges((prev) => prev.map((e) => decorateEdge(e, metrics)));
   }, [metrics, setNodes]);
+
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (!n.id.startsWith('node:')) return n;
+        const dead = !!deadNodes?.has(n.id.slice('node:'.length));
+        if ((n.data.dead ?? false) === dead) return n;
+        return { ...n, data: { ...n.data, dead } };
+      }),
+    );
+  }, [deadNodes, setNodes]);
 
   const onNodeClick: NodeMouseHandler = (_event, node) => {
     onSelect({ kind: 'node', id: node.id });
