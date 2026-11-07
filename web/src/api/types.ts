@@ -98,6 +98,24 @@ export interface Route {
   name: string;
   nodes: string[];
   strategy?: string;
+  maxFails?: number;
+  failTimeout?: string;
+}
+
+export interface RouteNodeHealth {
+  name: string;
+  provider?: string;
+  failCount: number;
+  lastFailure?: string | null;
+  dead: boolean;
+  deadUntil?: string | null;
+}
+
+export interface RouteHealth {
+  name: string;
+  maxFails: number;
+  failTimeout: string;
+  nodes: RouteNodeHealth[];
 }
 
 export interface Entrypoint {

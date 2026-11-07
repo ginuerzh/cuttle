@@ -16,7 +16,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { MinusCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { HolderOutlined, MinusCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import type { Connection } from '@xyflow/react';
 import {
   createNode,
@@ -32,9 +32,10 @@ import {
   updateNode,
   updateRoute,
 } from '../api/client';
-import type { ConfigResponse, Entrypoint, Node as BindNode, Preset, Provider, ProviderApi, ProviderModel, Route } from '../api/types';
+import type { ConfigResponse, Entrypoint, Node as BindNode, Preset, Provider, ProviderApi, ProviderModel, Route, RouteHealth } from '../api/types';
 import { translate as tr } from '../i18n';
 import { entrypointFromNodeId, splitId } from './selection';
+import { addRouteNode, reorderNodes } from './routeNodes';
 import {
   configuredAPIs,
   derivedTargetAPI,
@@ -516,7 +517,119 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
   );
 }
 
-export function RouteForm({ route, config, onSaved }: { route: Route; config: ConfigResponse; onSaved: () => Promise<void> }) {
+function RouteNodeList({
+  value = [],
+  onChange,
+  nodes,
+  health,
+}: {
+  value?: string[];
+  onChange?: (value: string[]) => void;
+  nodes: BindNode[];
+  health?: RouteHealth;
+}) {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const byName = new Map(nodes.map((n) => [n.name, n]));
+  const healthByName = new Map((health?.nodes ?? []).map((n) => [n.name, n]));
+  const available = nodes.filter((n) => !value.includes(n.name));
+  const update = (next: string[]) => onChange?.(next);
+
+  return (
+    <div>
+      {value.length === 0 ? (
+        <Typography.Text type="secondary">{tr('还没有 node，先从下面添加')}</Typography.Text>
+      ) : null}
+      {value.map((name, index) => {
+        const node = byName.get(name);
+        const h = healthByName.get(name);
+        return (
+          <div
+            key={name}
+            draggable
+            onDragStart={(e) => {
+              setDragIndex(index);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragIndex !== null) update(reorderNodes(value, dragIndex, index));
+              setDragIndex(null);
+            }}
+            onDragEnd={() => setDragIndex(null)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 8px',
+              marginBottom: 4,
+              border: '1px solid var(--gw-border)',
+              borderRadius: 6,
+              background: dragIndex === index ? 'var(--gw-bg)' : 'var(--gw-surface)',
+              cursor: 'grab',
+            }}
+          >
+            <HolderOutlined style={{ color: 'var(--gw-text-muted)' }} />
+            <Typography.Text type="secondary" style={{ width: 18, textAlign: 'right' }}>
+              {index + 1}
+            </Typography.Text>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Typography.Text strong style={{ display: 'block', wordBreak: 'break-all' }}>
+                {name}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {node ? `${node.provider} · ${node.model}` : 'node'}
+              </Typography.Text>
+            </div>
+            {h ? (
+              <Tag
+                color={h.dead ? 'red' : h.failCount > 0 ? 'orange' : 'green'}
+                title={
+                  h.dead && h.deadUntil
+                    ? tr('dead until {time}', { time: h.deadUntil })
+                    : h.lastFailure
+                      ? tr('last failure {time}', { time: h.lastFailure })
+                      : undefined
+                }
+              >
+                {h.dead
+                  ? tr('dead ({count})', { count: h.failCount })
+                  : h.failCount > 0
+                    ? tr('失败 ({count})', { count: h.failCount })
+                    : tr('正常')}
+              </Tag>
+            ) : null}
+            <Button
+              type="text"
+              size="small"
+              danger
+              aria-label={tr('移除 {name}', { name })}
+              icon={<MinusCircleOutlined />}
+              onClick={() => update(value.filter((v) => v !== name))}
+            />
+          </div>
+        );
+      })}
+      <Select
+        size="small"
+        showSearch
+        value={null}
+        placeholder={tr('添加 node')}
+        options={available.map((n) => ({ value: n.name, label: `${n.name} (${n.provider})` }))}
+        onSelect={(name) => update(addRouteNode(value, String(name)))}
+        style={{ width: '100%', marginTop: 6 }}
+      />
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '6px 0 0' }}>
+        {tr('拖动行调整顺序；fifo/round 会按这里的顺序选择节点。')}
+      </Typography.Paragraph>
+    </div>
+  );
+}
+
+export function RouteForm({ route, config, onSaved, health }: { route: Route; config: ConfigResponse; onSaved: () => Promise<void>; health?: RouteHealth }) {
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
 
@@ -528,6 +641,8 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
         name: route.name,
         nodes: v.nodes ?? [],
         strategy: v.strategy,
+        maxFails: v.maxFails,
+        failTimeout: v.failTimeout,
       });
       message.success(tr('已保存'));
       await onSaved();
@@ -551,11 +666,6 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
     }
   };
 
-  const nodeOptions = config.nodes.map((n) => ({
-    value: n.name,
-    label: `${n.name} (${n.provider})`,
-  }));
-
   return (
     <Form
       form={form}
@@ -563,6 +673,8 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
       size="small"
       initialValues={{
         strategy: route.strategy ?? 'round',
+        maxFails: route.maxFails ?? 1,
+        failTimeout: route.failTimeout ?? '10s',
         nodes: route.nodes,
       }}
     >
@@ -572,8 +684,32 @@ export function RouteForm({ route, config, onSaved }: { route: Route; config: Co
       <Form.Item name="strategy" label="strategy">
         <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
       </Form.Item>
-      <Form.Item name="nodes" label={tr('Nodes（顺序 = 优先级）')}>
-        <Select mode="multiple" options={nodeOptions} />
+      <Space size={12} wrap align="start">
+        <Form.Item
+          name="maxFails"
+          label="maxFails"
+          tooltip={tr('连续失败达到该次数后标记为 dead。默认 1。')}
+          rules={[{ required: true, message: tr('必填') }]}
+          style={{ marginBottom: 8 }}
+        >
+          <InputNumber min={1} max={100} size="small" style={{ width: 90 }} />
+        </Form.Item>
+        <Form.Item
+          name="failTimeout"
+          label="failTimeout"
+          tooltip={tr('dead 节点被跳过的时长，例如 10s、30s、1m。默认 10s。')}
+          rules={[{ required: true, message: tr('必填') }]}
+          style={{ marginBottom: 8 }}
+        >
+          <Input size="small" placeholder="10s" style={{ width: 110 }} />
+        </Form.Item>
+      </Space>
+      <Form.Item
+        name="nodes"
+        label={tr('Nodes（拖动排序，顺序 = 优先级）')}
+        rules={[{ required: true, message: tr('至少选择一个 node') }]}
+      >
+        <RouteNodeList nodes={config.nodes} health={health} />
       </Form.Item>
       <Divider />
       <Space>
@@ -1250,7 +1386,6 @@ export function AddRouteModal({
 }) {
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
-  const options = config.nodes.map((n) => ({ value: n.name, label: `${n.name} (${n.provider})` }));
 
   const submit = async () => {
     const v = await form.validateFields();
@@ -1260,6 +1395,8 @@ export function AddRouteModal({
         name: v.name,
         nodes: v.nodes ?? [],
         strategy: v.strategy,
+        maxFails: v.maxFails,
+        failTimeout: v.failTimeout,
       });
       form.resetFields();
       await onDone();
@@ -1279,8 +1416,20 @@ export function AddRouteModal({
         <Form.Item name="strategy" label="strategy" initialValue="round">
           <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
         </Form.Item>
-        <Form.Item name="nodes" label={tr('Nodes（顺序 = 优先级）')}>
-          <Select mode="multiple" options={options} />
+        <Space size={12} wrap align="start">
+          <Form.Item name="maxFails" label="maxFails" initialValue={1} style={{ marginBottom: 8 }}>
+            <InputNumber min={1} max={100} size="small" style={{ width: 90 }} />
+          </Form.Item>
+          <Form.Item name="failTimeout" label="failTimeout" initialValue="10s" style={{ marginBottom: 8 }}>
+            <Input size="small" placeholder="10s" style={{ width: 110 }} />
+          </Form.Item>
+        </Space>
+        <Form.Item
+          name="nodes"
+          label={tr('Nodes（拖动排序，顺序 = 优先级）')}
+          rules={[{ required: true, message: tr('至少选择一个 node') }]}
+        >
+          <RouteNodeList nodes={config.nodes} />
         </Form.Item>
       </Form>
     </Modal>

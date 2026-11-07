@@ -1,4 +1,4 @@
-import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, TopologyPosition } from './types';
+import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -146,6 +146,10 @@ export function updateRoute(name: string, r: Partial<Route>): Promise<void> {
 
 export function deleteRoute(name: string): Promise<void> {
   return request<void>('DELETE', `/api/routes/${encodeURIComponent(name)}`);
+}
+
+export function getRouteHealth(): Promise<RouteHealth[]> {
+  return request<RouteHealth[]>('GET', '/api/routes/health');
 }
 
 export function putEntrypoints(entrypoints: Entrypoint[]): Promise<void> {
