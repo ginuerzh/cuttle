@@ -38,6 +38,7 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		ClientModel: q.Get("clientModel"),
 		Route:       q.Get("route"),
 		Node:        q.Get("node"),
+		GatewayKey:  q.Get("key"),
 		OnlyErrors:  q.Get("errors") == "1",
 		Captured:    q.Get("captured") == "1",
 		ErrorClass:  q.Get("errorClass"),

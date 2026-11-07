@@ -35,7 +35,9 @@ type providerView struct {
 
 type configView struct {
 	Gateway struct {
-		Listen string `json:"listen"`
+		Listen       string `json:"listen"`
+		KeysSet      int    `json:"keysSet"`
+		AuthRequired bool   `json:"authRequired"`
 	} `json:"gateway"`
 	Admin struct {
 		Listen     string          `json:"listen"`
@@ -173,6 +175,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 
 	var v configView
 	v.Gateway.Listen = s.cfg.Gateway.Listen
+	v.Gateway.KeysSet = len(s.cfg.Gateway.Keys)
+	v.Gateway.AuthRequired = len(s.cfg.Gateway.Keys) > 0
 	v.Admin.Listen = s.cfg.Admin.Listen
 	v.Admin.SessionTTL = s.cfg.Admin.SessionTTL
 	v.Stats = s.cfg.Stats
@@ -194,6 +198,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.mutate(func(dst *config.Config) error {
 		c.Admin.PasswordHash = dst.Admin.PasswordHash
+		// GET /api/config never returns key values, so an absent list must
+		// preserve them; only an explicit [] clears the set.
+		if c.Gateway.Keys == nil {
+			c.Gateway.Keys = dst.Gateway.Keys
+		}
 		*dst = c
 		return nil
 	}); err != nil {

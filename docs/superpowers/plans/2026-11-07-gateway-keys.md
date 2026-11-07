@@ -421,7 +421,7 @@ git commit -m "feat(gateway): require configured gateway keys"
   func generateGatewayKey() (string, error)
   ```
 
-- [ ] **Step 1: Write failing admin tests**
+- [x] **Step 1: Write failing admin tests**
 
 Add `internal/admin/handlers_keys_test.go` using `newTestAdmin`, `login` and `doJSON`:
 
@@ -467,12 +467,12 @@ func TestGatewayKeyUsageStatsDisabled(t *testing.T)
 // newTestAdmin, then s.stats = nil; GET => 503.
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'GatewayKey|PutConfigPreserves' -count=1`
 Expected: FAIL because the routes and handlers do not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `handlers_keys.go`:
   - `gwKeyEnabled(k)` returns `k.Enabled == nil || *k.Enabled`.
@@ -495,7 +495,7 @@ Expected: FAIL because the routes and handlers do not exist.
   - Do not add keys to any other view.
 - `handlers_stats.go`: in `handleRequests`, set `GatewayKey: q.Get("key")` in the `stats.Filter` literal.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/admin -run 'GatewayKey|PutConfigPreserves' -count=1`
 Expected: PASS.
@@ -503,7 +503,7 @@ Expected: PASS.
 Run the full package: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/admin
@@ -511,12 +511,12 @@ git commit -m "feat(admin): manage gateway keys and usage"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-07 — complete.
+- Repository + commit: `llm-gw` (worktree `/tmp/opencode/llm-gw-gateway-keys`) — see commit.
+- Files changed: `internal/admin/handlers_keys.go` (new), `internal/admin/handlers_keys_test.go` (new), `internal/admin/server.go` (six authenticated routes), `internal/admin/handlers.go` (`configView.Gateway.KeysSet`/`AuthRequired`, `handlePutConfig` key preservation), `internal/admin/handlers_stats.go` (`key` request filter).
+- Tests/commands and results: RED `GOWORK=off go test ./internal/admin -run 'GatewayKey|PutConfigPreserves' -count=1` failed with 404 for every new route/handler (log: `.superpowers/sdd/2026-11-07-gateway-keys/task-4-red.log`). GREEN same command passed; full `GOWORK=off go test ./internal/admin -count=1` passed (9.5s); `GOWORK=off go build ./...`, `GOWORK=off go vet ./internal/admin` and full `GOWORK=off go test ./... -count=1` passed.
+- Review findings and fixes: self-review only (controller review follows). Confirmed raw keys never appear in list/config/log paths, empty list serializes as `[]`, PUT config preserves absent keys but clears explicit `[]`, usage merges zero-usage configured keys and deleted historical keys, and stats-disabled returns 503 `stats disabled`. No fixes required.
+- Deferred items/limitations: console page/renderers are Task 5 and docs are Task 7; `POST /api/gateway-keys` deliberately returns a one-time secret body (ruled exception to the empty-201 invariant); PUT ignores key values by design; open-mode traffic has no per-key usage rows (stats behavior from Task 2); no backfill of pre-change usage.
 
 ---
 
