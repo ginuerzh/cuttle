@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/net/http/httpguts"
@@ -37,6 +39,17 @@ type Gateway struct {
 	// UserAgent is sent to upstream providers instead of the client's
 	// User-Agent. A provider can override it.
 	UserAgent string `yaml:"userAgent,omitempty" json:"userAgent,omitempty"`
+	// Keys are named data-plane access credentials. No entries keeps the
+	// gateway open; any entry requires authentication.
+	Keys []GatewayKey `yaml:"keys,omitempty" json:"keys,omitempty"`
+}
+
+// GatewayKey is one named data-plane access credential. Enabled defaults to
+// true; a disabled entry stays configured but never authenticates.
+type GatewayKey struct {
+	Name    string `yaml:"name" json:"name"`
+	Key     string `yaml:"key" json:"key,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 // Admin holds the management API settings.
@@ -353,6 +366,11 @@ func (c *Config) Normalize() {
 func (c *Config) expandEnv() {
 	c.Gateway.Listen = ExpandEnv(c.Gateway.Listen)
 	c.Gateway.UserAgent = ExpandEnv(c.Gateway.UserAgent)
+	for i := range c.Gateway.Keys {
+		k := &c.Gateway.Keys[i]
+		k.Name = ExpandEnv(k.Name)
+		k.Key = ExpandEnv(k.Key)
+	}
 	c.Admin.Listen = ExpandEnv(c.Admin.Listen)
 	c.Stats.Path = ExpandEnv(c.Stats.Path)
 	c.Log.Level = ExpandEnv(c.Log.Level)
@@ -430,6 +448,11 @@ func (c *Config) applyDefaults() {
 	c.Gateway.UserAgent = strings.TrimSpace(c.Gateway.UserAgent)
 	if c.Gateway.UserAgent == "" {
 		c.Gateway.UserAgent = "llm-gw/" + version.Current().Version
+	}
+	for i := range c.Gateway.Keys {
+		k := &c.Gateway.Keys[i]
+		k.Name = strings.TrimSpace(k.Name)
+		k.Key = strings.TrimSpace(k.Key)
 	}
 	if c.Admin.Listen == "" {
 		c.Admin.Listen = "127.0.0.1:8788"
@@ -626,6 +649,51 @@ func validateProviderBaseURL(name, field, raw string) error {
 	return nil
 }
 
+const (
+	gatewayKeyNameMax  = 64
+	gatewayKeyValueMin = 8
+	gatewayKeyValueMax = 512
+)
+
+// validateGatewayKeys checks the named data-plane access keys. Error messages
+// name the index and field but never echo a key value.
+func validateGatewayKeys(keys []GatewayKey) error {
+	names := make(map[string]struct{}, len(keys))
+	values := make(map[string]struct{}, len(keys))
+	for i := range keys {
+		name := strings.TrimSpace(keys[i].Name)
+		switch {
+		case name == "":
+			return fmt.Errorf("gateway.keys[%d]: name is required", i)
+		case utf8.RuneCountInString(name) > gatewayKeyNameMax:
+			return fmt.Errorf("gateway.keys[%d]: name must be at most %d characters", i, gatewayKeyNameMax)
+		case strings.Contains(name, "/"):
+			return fmt.Errorf("gateway.keys[%d]: name must not contain '/'", i)
+		case strings.ContainsFunc(name, unicode.IsControl):
+			return fmt.Errorf("gateway.keys[%d]: name contains control characters", i)
+		}
+		if _, ok := names[name]; ok {
+			return fmt.Errorf("gateway.keys[%d]: duplicate name %q", i, name)
+		}
+		names[name] = struct{}{}
+
+		key := strings.TrimSpace(keys[i].Key)
+		switch {
+		case key == "":
+			return fmt.Errorf("gateway.keys[%d]: key is required", i)
+		case utf8.RuneCountInString(key) < gatewayKeyValueMin:
+			return fmt.Errorf("gateway.keys[%d]: key is too short", i)
+		case utf8.RuneCountInString(key) > gatewayKeyValueMax:
+			return fmt.Errorf("gateway.keys[%d]: key is too long", i)
+		}
+		if _, ok := values[key]; ok {
+			return fmt.Errorf("gateway.keys[%d]: duplicate key value", i)
+		}
+		values[key] = struct{}{}
+	}
+	return nil
+}
+
 // Validate checks structural and reference errors.
 func Validate(c *Config) error {
 	if c == nil {
@@ -665,6 +733,9 @@ func Validate(c *Config) error {
 	}
 	if c.Stats.Capture.Retain < 0 {
 		return fmt.Errorf("stats.capture.retain must be positive")
+	}
+	if err := validateGatewayKeys(c.Gateway.Keys); err != nil {
+		return err
 	}
 
 	seen := make(map[string]bool, len(c.Providers))
