@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -631,6 +632,35 @@ func TestReadGatewayAuthHeadRejectsOversizedLine(t *testing.T) {
 	}
 	if max := gatewayAuthHeaderLimit + 4096; reader.read > max {
 		t.Fatalf("read %d bytes, want at most %d (limit plus one bufio buffer)", reader.read, max)
+	}
+}
+
+func TestReadGatewayAuthHeadLongLine(t *testing.T) {
+	const longHeaderPrefix = "X-Long: "
+	for _, contentLength := range []int{4095, 4096, 8191, 8192} {
+		t.Run(fmt.Sprintf("content-%d", contentLength), func(t *testing.T) {
+			// The header line's content (prefix plus value) is exactly
+			// contentLength bytes, so the terminating CRLF lands on the next
+			// 4096-byte fragment boundary. Before fragments were accumulated,
+			// that lone CRLF was mistaken for the blank line and the rest of
+			// the head was left unread.
+			raw := "GET /v1/models HTTP/1.1\r\nHost: gateway.test\r\n" +
+				longHeaderPrefix + strings.Repeat("a", contentLength-len(longHeaderPrefix)) + "\r\n" +
+				"X-After: after\r\n\r\n"
+			head, err := readGatewayAuthHead(bufio.NewReader(strings.NewReader(raw)))
+			if err != nil {
+				t.Fatalf("read head: %v", err)
+			}
+			if string(head) != raw {
+				t.Fatalf("head = %d bytes, want %d", len(head), len(raw))
+			}
+			if !bytes.Contains(head, []byte("X-After: after\r\n")) {
+				t.Fatalf("head does not contain the header following the long line")
+			}
+			if !bytes.HasSuffix(head, []byte("\r\n\r\n")) {
+				t.Fatalf("head does not end with the blank line")
+			}
+		})
 	}
 }
 

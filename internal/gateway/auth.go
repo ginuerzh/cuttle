@@ -285,26 +285,31 @@ func sanitizeGatewayAuthMethod(method string) string {
 }
 
 // readGatewayAuthHead reads the request line and headers, including the blank
-// line that terminates the head. It never reads the body, and it checks the
-// accumulated size before each append so a single unterminated line cannot
-// allocate more than the limit plus one bufio buffer.
+// line that terminates the head. It never reads the body. Each logical line is
+// accumulated across bufio.ErrBufferFull fragments before it is appended to the
+// head and tested for blankness, and the accumulated size is checked before
+// every append so a single unterminated line cannot allocate more than the
+// limit plus one bufio buffer.
 func readGatewayAuthHead(br *bufio.Reader) ([]byte, error) {
 	head := make([]byte, 0, 512)
+	line := make([]byte, 0, 512)
 	for {
-		line, err := br.ReadSlice('\n')
-		if len(head)+len(line) > gatewayAuthHeaderLimit {
+		frag, err := br.ReadSlice('\n')
+		if len(head)+len(line)+len(frag) > gatewayAuthHeaderLimit {
 			return head, errGatewayAuthHeadTooLarge
 		}
-		head = append(head, line...)
+		line = append(line, frag...)
 		if err == bufio.ErrBufferFull {
 			continue
 		}
+		head = append(head, line...)
 		if err != nil {
 			return head, err
 		}
 		if isBlankGatewayAuthLine(line) {
 			return head, nil
 		}
+		line = line[:0]
 	}
 }
 

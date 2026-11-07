@@ -902,3 +902,34 @@ final `./llm-gw version` printed `dev`.
 - Tests/commands and results: focused `GOWORK=off go test ./internal/gateway -run 'TestGatewayAuthLogTargetStripsQuery|TestSanitizeGatewayAuthMethod|TestReadGatewayAuthHeadRejectsOversizedLine' -count=1` passed; `./internal/config -run 'TestLoadGatewayKeys|TestValidateGatewayKeys'` passed; `./internal/admin -run 'TestPutConfig'` passed; `./internal/stats -run TestInsertRecordsGatewayKeyAndRollups` passed. Full gates listed above all passed.
 - Review findings and fixes: self-review after the fix wave. Verified the head reader's worst case reads at most `gatewayAuthHeaderLimit + 4096` bytes; the log target returns only a canonically escaped path or `/`; the method sanitizer rejects space, DEL, newline and non-ASCII; `handlePutConfig` distinguishes nil from `[]` for provider keys and preserves keys only for existing names; validation messages never contain the offending value. No issues remained after the focused fixes (the first log-target version preserved lower-case `RawPath`; the test caught it and the path is now re-escaped from the decoded value).
 - Deferred items/limitations: the optional handler-level oversized-head test was not added (the unit test pins the allocation bound); the last-key deletion warning, provider `userAgent`/`headers` view exposure and the x keepalive root fix stay out of scope; no browser visual regression tests. The unrelated `web/node_modules/.vite/vitest/results.json` change was not committed. Nothing was pushed.
+
+### Follow-up: long header-line regression
+
+Date: 2026-11-07
+Status: complete
+
+The re-review found that the fragment-capped `readGatewayAuthHead` above tested
+each `bufio.ErrBufferFull` fragment for blankness instead of the whole logical
+line. For a header line whose content length is 4095/4096 modulo 4096, the
+final fragment is exactly `\r\n` or `\n`; the reader stopped there with a
+truncated head, `textproto.ReadMIMEHeader` then returned `EOF`, and `Handle`
+answered 400 for an otherwise valid request. It failed closed, but it regressed
+the previous `bufio.Reader.ReadBytes` behavior.
+
+`readGatewayAuthHead` now accumulates each logical line in a local `line`
+buffer across fragments, checks the 1 MiB cap before every append, then appends
+the complete line to `head` and only then calls `isBlankGatewayAuthLine`.
+Oversized lines still return `errGatewayAuthHeadTooLarge`, and short lines,
+malformed heads and the cap are unchanged. `TestReadGatewayAuthHeadLongLine`
+covers header line content lengths 4095, 4096, 8191 and 8192, each followed by
+a normal header and the blank terminator; it fails on the previous
+implementation.
+
+**Implementation record**
+- Date/status: 2026-11-07 — complete.
+- Repository + commit: `llm-gw` (worktree `/tmp/opencode/llm-gw-gateway-keys`) — see commit (`fix(gateway): accumulate fragments before testing head blank line`).
+- Files changed: `internal/gateway/auth.go` (per-line fragment accumulation), `internal/gateway/auth_test.go` (`TestReadGatewayAuthHeadLongLine`), `docs/superpowers/plans/2026-11-07-gateway-keys.md` (this note).
+- Tests/commands and results: `GOWORK=off go test ./internal/gateway -run 'GatewayAuth|ReadGatewayAuthHead' -count=1` passed; `GOWORK=off go test ./internal/gateway -count=1` passed; `GOWORK=off go build ./...` and `GOWORK=off go vet ./...` passed. The new test failed on the previous reader for all four lengths (truncated head, following header missing) and passes with the fix.
+- Review findings and fixes: the test initially used the long header value length as the target and did not fail on the old reader; it was corrected to make the header line's total content length (including the `X-Long: ` prefix) match 4095/4096/8191/8192 so the terminating CRLF is a lone fragment, which reproduces the regression.
+- Deferred items/limitations: none. Nothing was pushed.
+
