@@ -26,6 +26,7 @@ import { buildGraph, type GraphNode } from '../graph/build';
 import { layoutGraph } from '../graph/layout';
 import {
   createPositionSaver,
+  mergeNodeState,
   mergePositions,
   pickInitialPositions,
   type PositionMap,
@@ -316,7 +317,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect }: Pro
   }, [persist, positions, serverReadOK, serverReady, structure.nodes]);
 
   useEffect(() => {
-    setNodes(structure.nodes);
+    setNodes((prev) => mergeNodeState(prev, structure.nodes));
     setEdges(structure.edges.map((e) => decorateEdge(e, metrics)));
     // metrics is intentionally read once per structure change; the metrics
     // effect below keeps labels fresh without touching positions.

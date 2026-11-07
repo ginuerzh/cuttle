@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPositionSaver, mergePositions, pickInitialPositions } from './positions';
+import { createPositionSaver, mergeNodeState, mergePositions, pickInitialPositions } from './positions';
 
 describe('mergePositions', () => {
   it('fills missing nodes while keeping saved positions', () => {
@@ -20,6 +20,47 @@ describe('mergePositions', () => {
   it('returns the original map when every node already has a position', () => {
     const saved = { a: { x: 1, y: 2 } };
     expect(mergePositions(saved, [{ id: 'a', position: { x: 3, y: 4 } }])).toBe(saved);
+  });
+});
+
+describe('mergeNodeState', () => {
+  it('keeps React Flow measurements and selection when rebuilding nodes', () => {
+    const current = [
+      {
+        id: 'node:a',
+        position: { x: 1, y: 2 },
+        measured: { width: 250, height: 96 },
+        selected: true,
+        data: { label: 'old', metrics: { requests: 4 } },
+      },
+    ];
+    const next = [
+      {
+        id: 'node:a',
+        position: { x: 10, y: 20 },
+        data: { label: 'new' },
+      },
+    ];
+
+    expect(mergeNodeState(current, next)).toEqual([
+      {
+        id: 'node:a',
+        position: { x: 10, y: 20 },
+        measured: { width: 250, height: 96 },
+        selected: true,
+        data: { label: 'new', metrics: { requests: 4 } },
+      },
+    ]);
+  });
+
+  it('adds new nodes and drops removed ones', () => {
+    const current = [{ id: 'a', position: { x: 0, y: 0 }, data: {} }];
+    const next = [
+      { id: 'a', position: { x: 1, y: 1 }, data: {} },
+      { id: 'b', position: { x: 2, y: 2 }, data: {} },
+    ];
+
+    expect(mergeNodeState(current, next).map((n) => n.id)).toEqual(['a', 'b']);
   });
 });
 

@@ -20,6 +20,27 @@ export function mergePositions(
   return next;
 }
 
+/**
+ * Merge rebuilt graph nodes into the live node state. Replacing them with fresh
+ * objects drops React Flow's `measured` dimensions and handle bounds, and an
+ * edge whose endpoint is unmeasured is not rendered.
+ */
+export function mergeNodeState<T extends { id: string; data: Record<string, unknown> }>(
+  current: readonly T[],
+  next: readonly T[],
+): T[] {
+  const byId = new Map(current.map((node) => [node.id, node]));
+  return next.map((node) => {
+    const existing = byId.get(node.id);
+    if (!existing) return node;
+    return {
+      ...existing,
+      ...node,
+      data: { ...existing.data, ...node.data },
+    };
+  });
+}
+
 /** Server positions win; an empty server is seeded from the local backup. */
 export function pickInitialPositions(
   server: PositionMap,
