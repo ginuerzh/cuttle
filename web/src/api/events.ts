@@ -1,10 +1,11 @@
-import type { GraphMetrics } from './types';
+import type { GraphMetrics, RouteHealth } from './types';
 
 export type SnapshotMessage = {
   type: 'snapshot';
   since: string;
   to: string;
   metrics: GraphMetrics;
+  health?: RouteHealth[];
 };
 
 export type LiveMessage = SnapshotMessage | { type: 'error'; error: string };
@@ -46,11 +47,15 @@ export function parseLiveMessage(data: string): LiveMessage | null {
     if (typeof msg.metrics !== 'object' || msg.metrics === null || Array.isArray(msg.metrics)) {
       return null;
     }
+    if (msg.health !== undefined && !Array.isArray(msg.health)) {
+      return null;
+    }
     return {
       type: 'snapshot',
       since: msg.since,
       to: msg.to,
       metrics: msg.metrics as GraphMetrics,
+      ...(Array.isArray(msg.health) ? { health: msg.health as RouteHealth[] } : {}),
     };
   }
   if (msg.type === 'error') {

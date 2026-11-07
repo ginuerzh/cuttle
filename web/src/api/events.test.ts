@@ -25,12 +25,21 @@ describe('parseLiveMessage', () => {
         since: '2026-11-06T11:00:00Z',
         to: '2026-11-06T12:00:00Z',
         metrics: { nodes: {}, edges: {}, errors: [] },
+        health: [
+          {
+            name: 'r',
+            maxFails: 1,
+            failTimeout: '10s',
+            nodes: [{ name: 'n', failCount: 1, dead: true }],
+          },
+        ],
       }),
     );
     expect(snapshot?.type).toBe('snapshot');
     if (snapshot?.type === 'snapshot') {
       expect(snapshot.since).toBe('2026-11-06T11:00:00Z');
       expect(snapshot.metrics.nodes).toEqual({});
+      expect(snapshot.health?.[0].nodes[0].dead).toBe(true);
     }
 
     const error = parseLiveMessage(JSON.stringify({ type: 'error', error: 'boom' }));
@@ -46,6 +55,11 @@ describe('parseLiveMessage', () => {
     expect(
       parseLiveMessage(
         JSON.stringify({ type: 'snapshot', since: 'x', to: 'y', metrics: null }),
+      ),
+    ).toBeNull();
+    expect(
+      parseLiveMessage(
+        JSON.stringify({ type: 'snapshot', since: 'x', to: 'y', metrics: {}, health: {} }),
       ),
     ).toBeNull();
     expect(parseLiveMessage(JSON.stringify({ type: 'error' }))).toBeNull();

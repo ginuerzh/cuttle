@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  Badge,
   Button,
   Card,
   Descriptions,
@@ -10,6 +11,7 @@ import {
   Menu,
   Space,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -223,9 +225,9 @@ export function NodePanel({
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {id}
         {dead ? (
-          <Tag color="red" style={{ marginInlineStart: 8 }}>
-            dead
-          </Tag>
+          <Tooltip title="dead">
+            <Badge status="error" style={{ marginInlineStart: 8 }} />
+          </Tooltip>
         ) : null}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
@@ -452,6 +454,7 @@ export default function App() {
     setSince(msg.since);
     setUpdatedAt(formatDateTime(msg.to));
     setStale(false);
+    if (msg.health) setRouteHealth(msg.health);
   }, []);
 
   const handleStatus = useCallback((connected: boolean) => {
@@ -485,7 +488,9 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (session !== 'yes' || page !== 'topology') return;
+    // Monitor mode receives route health with every 1s WebSocket snapshot.
+    // Edit mode has no live graph, so keep a slower fallback poll.
+    if (session !== 'yes' || page !== 'topology' || mode !== 'edit') return;
     let cancelled = false;
     const load = () => {
       getRouteHealth()
@@ -497,12 +502,12 @@ export default function App() {
         });
     };
     load();
-    const timer = window.setInterval(load, 10_000);
+    const timer = window.setInterval(load, 5_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [session, page, config]);
+  }, [session, page, mode, config]);
 
   useEffect(() => {
     if (mode === 'edit') {

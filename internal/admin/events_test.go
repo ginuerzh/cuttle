@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/go-gost/llm-gw/internal/health"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
@@ -19,6 +20,7 @@ type eventSnapshot struct {
 	Since   string             `json:"since"`
 	To      string             `json:"to"`
 	Metrics stats.GraphMetrics `json:"metrics"`
+	Health  []health.Route     `json:"health"`
 }
 
 func newEventsAdmin(t *testing.T) (*Server, *recordingReloader, *httptest.Server) {
@@ -88,6 +90,25 @@ func insertRequest(t *testing.T, rel *recordingReloader, id string, ts time.Time
 		ID: id, TS: ts, Provider: "p", Status: 200, DurationMS: 10,
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEventsCarriesRouteHealth(t *testing.T) {
+	_, rel, ts := newEventsAdmin(t)
+	rel.health = []health.Route{{
+		Name:        "r",
+		MaxFails:    1,
+		FailTimeout: "10s",
+		Nodes:       []health.Node{{Name: "n", FailCount: 1, Dead: true}},
+	}}
+	client, _ := login(t, ts.URL)
+	conn, _, err := dialEvents(t, ts.URL, client.Jar, "?range=1h", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := readSnapshot(t, conn)
+	if len(snap.Health) != 1 || !snap.Health[0].Nodes[0].Dead {
+		t.Fatalf("health = %+v", snap.Health)
 	}
 }
 

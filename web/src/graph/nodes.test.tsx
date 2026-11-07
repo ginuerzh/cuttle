@@ -67,10 +67,10 @@ describe('BindingNode', () => {
         <BindingNode {...props} />
       </ReactFlowProvider>,
     );
-    expect(html).not.toContain('ant-tag-red');
+    expect(html).not.toContain('ant-badge-status-error');
   });
 
-  it('shows the dead marker when the node marker is dead', () => {
+  it('shows a dead badge icon without text when the node marker is dead', () => {
     const deadProps = {
       ...props,
       data: { ...props.data, dead: true },
@@ -80,8 +80,8 @@ describe('BindingNode', () => {
         <BindingNode {...deadProps} />
       </ReactFlowProvider>,
     );
-    expect(html).toContain('ant-tag-red');
-    expect(html).toContain('dead');
+    expect(html).toContain('ant-badge-status-error');
+    expect(html).not.toContain('>dead<');
   });
 });
 

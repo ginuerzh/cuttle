@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/go-gost/llm-gw/internal/health"
 	"github.com/go-gost/llm-gw/internal/stats"
 )
 
@@ -26,7 +27,15 @@ type eventMessage struct {
 	Since   string              `json:"since,omitempty"`
 	To      string              `json:"to,omitempty"`
 	Metrics *stats.GraphMetrics `json:"metrics,omitempty"`
+	Health  []health.Route      `json:"health,omitempty"`
 	Error   string              `json:"error,omitempty"`
+}
+
+func (s *Server) currentRouteHealth() []health.Route {
+	if s.routeHealth == nil {
+		return nil
+	}
+	return s.routeHealth()
 }
 
 type wsClient struct {
@@ -112,6 +121,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		Since:   since.UTC().Format(time.RFC3339),
 		To:      now.UTC().Format(time.RFC3339),
 		Metrics: &prev,
+		Health:  s.currentRouteHealth(),
 	}); err != nil {
 		return
 	}
@@ -174,6 +184,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				Since:   since.UTC().Format(time.RFC3339),
 				To:      now.UTC().Format(time.RFC3339),
 				Metrics: &metrics,
+				Health:  s.currentRouteHealth(),
 			}); err != nil {
 				return
 			}

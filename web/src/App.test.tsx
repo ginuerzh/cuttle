@@ -36,13 +36,13 @@ describe('NodePanel', () => {
     expect(html).toContain('仅错误');
   });
 
-  it('marks a dead node in the panel', () => {
+  it('marks a dead node in the panel with a badge icon', () => {
     const html = renderToStaticMarkup(
       <NodePanel id="node:fast" metrics={metrics} since="" rangeMs={3_600_000} dead />,
     );
 
-    expect(html).toContain('ant-tag-red');
-    expect(html).toContain('dead');
+    expect(html).toContain('ant-badge-status-error');
+    expect(html).not.toContain('>dead<');
   });
 });
 

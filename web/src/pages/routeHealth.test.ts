@@ -9,13 +9,22 @@ const node = (name: string, dead: boolean) => ({
 });
 
 describe('deadNodeNames', () => {
-  it('collects nodes marked dead in any route', () => {
+  it('marks a node dead only when every route that references it is dead', () => {
     const health: RouteHealth[] = [
       { name: 'r1', maxFails: 1, failTimeout: '10s', nodes: [node('a', true), node('b', false)] },
       { name: 'r2', maxFails: 1, failTimeout: '10s', nodes: [node('b', true), node('c', false)] },
     ];
 
-    expect([...deadNodeNames(health)].sort()).toEqual(['a', 'b']);
+    expect([...deadNodeNames(health)].sort()).toEqual(['a']);
+  });
+
+  it('marks a shared node dead when all of its routes are dead', () => {
+    const health: RouteHealth[] = [
+      { name: 'r1', maxFails: 1, failTimeout: '10s', nodes: [node('a', true)] },
+      { name: 'r2', maxFails: 1, failTimeout: '10s', nodes: [node('a', true)] },
+    ];
+
+    expect([...deadNodeNames(health)]).toEqual(['a']);
   });
 
   it('returns an empty set when every node is healthy', () => {
