@@ -146,7 +146,7 @@ function ProviderCard({ provider, isMobile }: { provider: ProviderUsage; isMobil
       }
     >
       <Descriptions size="small" column={isMobile ? 1 : 5} bordered>
-        <Descriptions.Item label={t('请求')}>{formatCount(local?.requests)}</Descriptions.Item>
+        <Descriptions.Item label={t('会话')}>{formatCount(local?.requests)}</Descriptions.Item>
         <Descriptions.Item label={t('错误')}>{formatCount(local?.errors)}</Descriptions.Item>
         <Descriptions.Item label={t('输入 tokens')}>{formatCount(local?.inputTokens)}</Descriptions.Item>
         <Descriptions.Item label={t('输出 tokens')}>{formatCount(local?.outputTokens)}</Descriptions.Item>
@@ -201,7 +201,7 @@ export function UsagePage() {
 
   const totals = data?.totals;
   const stats = [
-    { label: t('请求'), value: formatCount(totals?.requests) },
+    { label: t('会话'), value: formatCount(totals?.requests) },
     { label: t('错误'), value: formatCount(totals?.errors) },
     { label: t('输入 tokens'), value: formatCount(totals?.inputTokens) },
     { label: t('输出 tokens'), value: formatCount(totals?.outputTokens) },

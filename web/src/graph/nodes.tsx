@@ -36,7 +36,7 @@ function errorPercent(m: NodeMetrics): string {
 }
 
 function metricsText(m: NodeMetrics, showRate: boolean): string {
-  if (m.requests === 0) return t('暂无请求');
+  if (m.requests === 0) return t('暂无会话');
   const error = m.errors > 0 ? ` · ${errorPercent(m)}` : '';
   const rate = showRate ? formatTokenRate(m.outputTokensPerSecond) : '';
   const speed = rate ? ` · ${rate}` : '';

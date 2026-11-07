@@ -8,7 +8,7 @@ export type Page =
   | 'requests'
   | 'settings';
 
-/** Left navigation order. Usage sits directly below Requests. */
+/** Left navigation order. Usage sits directly below Sessions. */
 export const NAV_ORDER: readonly Page[] = [
   'topology',
   'providers',
@@ -27,6 +27,6 @@ export const NAV_LABELS: Record<Page, string> = {
   nodes: '节点',
   routes: '路由',
   entrypoints: '入口',
-  requests: '请求',
+  requests: '会话',
   settings: '设置',
 };

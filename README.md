@@ -253,7 +253,7 @@ when `admin.passwordHash` is set.
 | Nodes | Provider, one model, backup flag, weight, enabled switch |
 | Routes | Ordered node list and strategy |
 | Entrypoints | Ordered model globs and the route they select |
-| Requests | Request history, timing, tokens, status and errors |
+| Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
 | Overview | Entrypoint → route → node → provider graph with live metrics, including per-node output token speed |
 | Settings | Listen addresses, retention and admin password |
@@ -340,7 +340,7 @@ routes: [ ... ]
 
 `errors` buffers every request but persists only failures (`status >= 400` or a
 non-empty error). `sample` persists a random subset. On-demand capture rules can
-be created from the Requests page or `POST /api/captures`; they are
+be created from the Sessions page or `POST /api/captures`; they are
 time/limit-bounded, in-memory, and lost on restart. `stats.storeBody` is removed.
 
 Captured failures also include an allowlisted header subset: `content-type`,
@@ -583,7 +583,7 @@ Gateway-generated 502/503 responses (no entrypoint match, upstream unreachable
 before headers) do not pass through the node header rewrite and are a known v1
 gap, as are request-side failures that produce no response.
 
-The Requests page shows the structured rewriter fields (`inboundProtocol`,
+The Sessions page shows the structured rewriter fields (`inboundProtocol`,
 `errorStage`, `errorDirection`, `ssePhase`, `eventIndex`) and any captured
 original/rewritten previews. The Capture control creates a rule for a route
 and/or client-model glob; use the "captured only" filter to find rows if the

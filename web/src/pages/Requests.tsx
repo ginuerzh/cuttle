@@ -209,7 +209,7 @@ export function RequestsPage() {
   return (
     <ListPage>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
-        {t('请求')}
+        {t('会话')}
       </Typography.Title>
       {alerts.map((a) => (
         <AntAlert
@@ -226,7 +226,7 @@ export function RequestsPage() {
           <Space wrap>
             <Typography.Text strong>{t('错误概览')}</Typography.Text>
             <Tag color="red">
-              {t('{errors} 错误 / {total} 请求', { errors: errorSummary.errors, total: errorSummary.total })}
+              {t('{errors} 错误 / {total} 会话', { errors: errorSummary.errors, total: errorSummary.total })}
             </Tag>
             <Tag color="orange">{`${(errorSummary.errorRate * 100).toFixed(1)}%`}</Tag>
             {errorSummary.byClass.slice(0, 6).map((g) => (
@@ -312,10 +312,10 @@ export function RequestsPage() {
         );
       })}
       {rows.length === 0 && !loading ? (
-        <Typography.Text type="secondary">{t('没有请求')}</Typography.Text>
+        <Typography.Text type="secondary">{t('没有会话')}</Typography.Text>
       ) : null}
 
-      <Drawer width={isMobile ? '100%' : 560} title={t('请求详情')} open={!!selected} onClose={() => setSelected(null)} destroyOnClose>
+      <Drawer width={isMobile ? '100%' : 560} title={t('会话详情')} open={!!selected} onClose={() => setSelected(null)} destroyOnClose>
         {selected ? (
           <>
             <Descriptions size="small" column={1} bordered>

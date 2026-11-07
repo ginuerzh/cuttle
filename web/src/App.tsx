@@ -218,7 +218,7 @@ export function NodePanel({
         {id}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
-        <Descriptions.Item label={translate('请求')}>{fmt(metrics?.requests)}</Descriptions.Item>
+        <Descriptions.Item label={translate('会话')}>{fmt(metrics?.requests)}</Descriptions.Item>
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误率')}>
             <span style={{ color: '#dc2626' }}>{rate(metrics)}</span>
@@ -269,7 +269,7 @@ export function NodePanel({
             ? translate('加载中…')
             : errorsOnly
               ? translate('最近窗口内没有错误')
-              : translate('没有请求')}
+              : translate('没有会话')}
         </Typography.Text>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -291,7 +291,7 @@ function EdgePanel({ id, metrics }: { id: string; metrics?: EdgeMetrics }) {
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
         <Descriptions.Item label={translate('路径')}>{parts.join(' → ')}</Descriptions.Item>
-        <Descriptions.Item label={translate('请求')}>{fmt(metrics?.requests)}</Descriptions.Item>
+        <Descriptions.Item label={translate('会话')}>{fmt(metrics?.requests)}</Descriptions.Item>
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误')}>
             <span style={{ color: '#dc2626' }}>{fmt(metrics.errors)}（{rate(metrics)}）</span>
