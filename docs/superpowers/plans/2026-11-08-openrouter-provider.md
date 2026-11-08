@@ -390,12 +390,12 @@ git commit -m "fix(gateway): estimate count_tokens for OpenRouter"
 ```
 
 **Implementation record**
-- Date/status: pending
-- Repo/commit: pending
-- Files changed: pending
-- Tests/commands and results: pending
-- Review findings/fixes: pending
-- Deferred items/limitations: pending
+- Date/status: 2026-11-08, complete
+- Repo/commit: `0de6d244ff56c5aeea44d8b13582c7c9d9645bfc` (`fix(gateway): estimate count_tokens for OpenRouter`)
+- Files changed: `internal/provider/capabilities.go` (new), `internal/provider/capabilities_test.go` (new), `internal/gateway/count_tokens_policy.go`, `internal/gateway/count_tokens_policy_test.go`
+- Tests/commands and results: `GOWORK=off go test ./internal/provider ./internal/gateway` → pass
+- Review findings/fixes: the policy test failed first with `routeNeedsCountTokensEstimate = false` for an OpenRouter Anthropic target, proving the missing capability gate. Existing Anthropic providers keep the native path.
+- Deferred items/limitations: none
 
 ---
 
