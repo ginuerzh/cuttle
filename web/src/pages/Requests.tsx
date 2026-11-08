@@ -3,8 +3,6 @@ import {
   Alert as AntAlert,
   Button,
   Checkbox,
-  Descriptions,
-  Drawer,
   Input,
   InputNumber,
   Modal,
@@ -14,77 +12,24 @@ import {
   Typography,
   message,
 } from 'antd';
-import { createCaptureRule, deleteCaptureRule, getAlerts, getErrorSummary, getRequest, getRequests, listCaptureRules } from '../api/client';
+import { createCaptureRule, deleteCaptureRule, getAlerts, getErrorSummary, getRequests, listCaptureRules } from '../api/client';
 import { translate as t } from '../i18n';
 import type { Alert, CaptureRule, ErrorSummary, RequestRow } from '../api/types';
+import { RequestDetailDrawer } from '../components/RequestDetail';
 import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
 import { formatCount } from '../format';
+import { errorClassLabel, errorClassText, gatewayKeyLabel, statusLabel } from '../requestLabels';
 import { formatDateTime } from '../time';
+
+export { errorClassLabel, gatewayKeyLabel, statusLabel };
 
 const RANGES = [
   { label: '15 分钟', value: 15 * 60_000 },
   { label: '1 小时', value: 60 * 60_000 },
   { label: '24 小时', value: 24 * 60 * 60_000 },
 ];
-
-function Preview({ label, text }: { label: string; text?: string }) {
-  if (!text) return null;
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <Typography.Text strong>{label}</Typography.Text>
-      <pre
-        style={{
-          margin: '4px 0 0',
-          padding: 8,
-          maxHeight: 220,
-          overflow: 'auto',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-all',
-          background: 'var(--gw-surface)',
-          border: '1px solid var(--gw-border)',
-          borderRadius: 6,
-          fontSize: 12,
-        }}
-      >
-        {text}
-      </pre>
-    </div>
-  );
-}
-
-export function statusLabel(r: RequestRow): string {
-  if (r.status === 0) {
-    return r.errorClass === 'gateway_timeout' ? t('502 网关超时') : t('502 上游失败');
-  }
-  return String(r.status);
-}
-
-const ERROR_CLASS_LABELS: Record<string, string> = {
-  upstream_auth: '上游认证失败',
-  upstream_forbidden: '上游拒绝',
-  upstream_not_found: '上游 404',
-  upstream_quota: '上游限流/额度',
-  upstream_bad_request: '上游请求错误',
-  upstream_unavailable: '上游不可用',
-  upstream_truncated: '上游流截断',
-  upstream_error: '上游错误',
-  gateway_timeout: '网关超时',
-  network: '网络错误',
-  rewrite_error: '改写错误',
-  client_error: '客户端错误',
-  client_disconnect: '客户端断开',
-};
-
-export function errorClassLabel(r: RequestRow): string {
-  if (!r.errorClass) return '';
-  return t(ERROR_CLASS_LABELS[r.errorClass] || r.errorClass);
-}
-
-export function gatewayKeyLabel(row: RequestRow): string {
-  return row.gatewayKey ? `key:${row.gatewayKey}` : '';
-}
 
 export function RequestsPage() {
   const isMobile = useIsMobile();
@@ -154,25 +99,6 @@ export function RequestsPage() {
     void load();
   }, [load, tick]);
 
-  const openRequest = async (row: RequestRow) => {
-    setSelected(row);
-    try {
-      const full = await getRequest(row.requestId);
-      setSelected((current) => (current?.requestId === row.requestId ? full : current));
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const copyID = async (id: string) => {
-    try {
-      await navigator.clipboard.writeText(id);
-      message.success(t('已复制'));
-    } catch {
-      message.error(t('复制失败'));
-    }
-  };
-
   const startCapture = async () => {
     setCaptureBusy(true);
     try {
@@ -200,18 +126,6 @@ export function RequestsPage() {
       message.error(err instanceof Error ? err.message : String(err));
     }
   };
-
-  const cap = selected?.capture;
-  const hasPreview = !!(
-    cap?.requestOriginal ||
-    cap?.requestRewritten ||
-    cap?.responseOriginal ||
-    cap?.responseRewritten ||
-    cap?.sseFirstOriginal ||
-    cap?.sseFirstRewritten ||
-    cap?.sseLastOriginal ||
-    cap?.sseLastRewritten
-  );
 
   return (
     <ListPage>
@@ -243,7 +157,7 @@ export function RequestsPage() {
                 style={{ cursor: 'pointer' }}
                 onClick={() => setErrorClass(errorClass === g.key ? '' : g.key)}
               >
-                {`${t(ERROR_CLASS_LABELS[g.key] || g.key)} ${g.errors}`}
+                {`${errorClassText(g.key)} ${g.errors}`}
               </Tag>
             ))}
             {errorClass ? (
@@ -260,7 +174,7 @@ export function RequestsPage() {
                   type="secondary"
                   style={{ display: 'block', fontSize: 12 }}
                 >
-                  {`${m.count}× ${t(ERROR_CLASS_LABELS[m.class] || m.class)}: ${m.message}`}
+                  {`${m.count}× ${errorClassText(m.class)}: ${m.message}`}
                 </Typography.Text>
               ))}
             </div>
@@ -322,7 +236,7 @@ export function RequestsPage() {
                 <Tag color={failed ? 'red' : r.status >= 300 ? 'orange' : 'green'}>{statusLabel(r)}</Tag>
               </Space>
             }
-            onClick={() => void openRequest(r)}
+            onClick={() => setSelected(r)}
           />
         );
       })}
@@ -330,117 +244,7 @@ export function RequestsPage() {
         <Typography.Text type="secondary">{t('没有会话')}</Typography.Text>
       ) : null}
 
-      <Drawer width={isMobile ? '100%' : 560} title={t('会话详情')} open={!!selected} onClose={() => setSelected(null)} destroyOnClose>
-        {selected ? (
-          <>
-            <Descriptions size="small" column={1} bordered>
-              <Descriptions.Item label="requestId">
-                <Space>
-                  <span>{selected.requestId}</span>
-                  <Button size="small" onClick={() => void copyID(selected.requestId)}>
-                    {t('复制')}
-                  </Button>
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="sid">{selected.sid}</Descriptions.Item>
-              <Descriptions.Item label={t('时间')}>{formatDateTime(selected.ts)}</Descriptions.Item>
-              <Descriptions.Item label="route">{selected.route || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('请求密钥')}>{selected.gatewayKey || '—'}</Descriptions.Item>
-              <Descriptions.Item label="provider">{selected.provider}</Descriptions.Item>
-              <Descriptions.Item label="client model">{selected.clientModel || '—'}</Descriptions.Item>
-              <Descriptions.Item label="provider model">{selected.model}</Descriptions.Item>
-              <Descriptions.Item label={t('入站协议')}>{selected.inboundProtocol || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('上游协议')}>{selected.protocol || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('请求路径')}>
-                {`${selected.method || '—'} ${selected.uri || '—'}`}
-              </Descriptions.Item>
-              <Descriptions.Item label="client ip">{selected.clientIp || '—'}</Descriptions.Item>
-              <Descriptions.Item label="user agent">{selected.userAgent || '—'}</Descriptions.Item>
-              <Descriptions.Item label="upstream">{selected.upstream || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('错误阶段')}>{selected.errorStage || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('错误方向')}>{selected.errorDirection || '—'}</Descriptions.Item>
-              <Descriptions.Item label={t('错误分类')}>{errorClassLabel(selected) || '—'}</Descriptions.Item>
-              <Descriptions.Item label="SSE phase / index">
-                {selected.ssePhase ? `${selected.ssePhase} / ${selected.eventIndex ?? 0}` : '— / —'}
-              </Descriptions.Item>
-              <Descriptions.Item label="status / error">
-                <Typography.Text type={selected.error || selected.status >= 400 ? 'danger' : undefined}>
-                  {`${statusLabel(selected)}${selected.clientStatus && selected.clientStatus !== selected.status ? ` (client ${selected.clientStatus})` : ''} ${selected.error || ''}`}
-                </Typography.Text>
-              </Descriptions.Item>
-              <Descriptions.Item label={t('耗时')}>{`${selected.durationMs} ms`}</Descriptions.Item>
-              <Descriptions.Item label="tokens">
-                {t('入 {input} · 出 {output} · 缓存 {cached}', { input: formatCount(selected.inputTokens), output: formatCount(selected.outputTokens), cached: formatCount(selected.cachedTokens) })}
-              </Descriptions.Item>
-              <Descriptions.Item label="bytes">
-                {`${selected.bytesIn} in / ${selected.bytesOut} out`}
-              </Descriptions.Item>
-              <Descriptions.Item label="stream">{selected.stream ? t('是') : t('否')}</Descriptions.Item>
-              <Descriptions.Item label={t('流式终止')}>
-                {selected.stream
-                  ? `${selected.finishReason || '—'} / done=${selected.sawDone ? t('是') : t('否')}${selected.truncated ? ` / ${t('已截断')}` : ''}`
-                  : '—'}
-              </Descriptions.Item>
-            </Descriptions>
-
-            <Typography.Title level={5} style={{ marginTop: 20 }}>
-              {t('捕获详情')}
-            </Typography.Title>
-            {cap ? (
-              <>
-                <Descriptions size="small" column={1} bordered style={{ marginBottom: 12 }}>
-                  <Descriptions.Item label={t('原因')}>{cap.reason || '—'}</Descriptions.Item>
-                  <Descriptions.Item label={t('创建时间')}>{formatDateTime(cap.createdAt)}</Descriptions.Item>
-                  <Descriptions.Item label={t('事件数')}>{cap.sseEvents ?? 0}</Descriptions.Item>
-                  <Descriptions.Item label="sha256">
-                    <Typography.Text code>{`${cap.requestSha256 || '—'} / ${cap.responseSha256 || '—'}`}</Typography.Text>
-                  </Descriptions.Item>
-                </Descriptions>
-                {cap.requestHeaders && Object.keys(cap.requestHeaders).length > 0 ? (
-                  <>
-                    <Typography.Text strong>{t('请求头')}</Typography.Text>
-                    <Descriptions size="small" column={1} bordered style={{ marginBottom: 12 }}>
-                      {Object.entries(cap.requestHeaders).map(([key, value]) => (
-                        <Descriptions.Item key={key} label={key}>
-                          <Typography.Text code>{value}</Typography.Text>
-                        </Descriptions.Item>
-                      ))}
-                    </Descriptions>
-                  </>
-                ) : null}
-                {cap.responseHeaders && Object.keys(cap.responseHeaders).length > 0 ? (
-                  <>
-                    <Typography.Text strong>{t('响应头')}</Typography.Text>
-                    <Descriptions size="small" column={1} bordered style={{ marginBottom: 12 }}>
-                      {Object.entries(cap.responseHeaders).map(([key, value]) => (
-                        <Descriptions.Item key={key} label={key}>
-                          <Typography.Text code>{value}</Typography.Text>
-                        </Descriptions.Item>
-                      ))}
-                    </Descriptions>
-                  </>
-                ) : null}
-                {hasPreview ? (
-                  <>
-                    <Preview label={t('原始请求')} text={cap.requestOriginal} />
-                    <Preview label={t('改写后请求')} text={cap.requestRewritten} />
-                    <Preview label={t('原始响应')} text={cap.responseOriginal} />
-                    <Preview label={t('改写后响应')} text={cap.responseRewritten} />
-                    <Preview label={t('SSE 首事件（原始）')} text={cap.sseFirstOriginal} />
-                    <Preview label={t('SSE 首事件（改写后）')} text={cap.sseFirstRewritten} />
-                    <Preview label={t('SSE 末事件（原始）')} text={cap.sseLastOriginal} />
-                    <Preview label={t('SSE 末事件（改写后）')} text={cap.sseLastRewritten} />
-                  </>
-                ) : (
-                  <Typography.Text type="secondary">{t('预览为空')}</Typography.Text>
-                )}
-              </>
-            ) : (
-              <Typography.Text type="secondary">{t('无捕获数据')}</Typography.Text>
-            )}
-          </>
-        ) : null}
-      </Drawer>
+      <RequestDetailDrawer request={selected} onClose={() => setSelected(null)} />
 
       <Modal
         title={t('捕获规则')}

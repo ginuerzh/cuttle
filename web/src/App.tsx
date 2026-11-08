@@ -41,6 +41,7 @@ import { RequestsPage, statusLabel } from './pages/Requests';
 import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
+import { RequestDetailDrawer } from './components/RequestDetail';
 import { VersionFooter } from './components/VersionFooter';
 import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
@@ -143,7 +144,7 @@ function useNodeSessions(id: string, since: string, rangeMs: number, errorsOnly:
   return { rows, loading, failed };
 }
 
-export function SessionCard({ row }: { row: RequestRow }) {
+export function SessionCard({ row, onOpen }: { row: RequestRow; onOpen?: (row: RequestRow) => void }) {
   const failed = row.status === 0 || row.status >= 400 || !!row.error;
   const model =
     row.clientModel && row.model && row.clientModel !== row.model
@@ -153,7 +154,12 @@ export function SessionCard({ row }: { row: RequestRow }) {
   return (
     <Card
       size="small"
-      style={failed ? { borderInlineStart: '3px solid #dc2626' } : undefined}
+      hoverable={!!onOpen}
+      onClick={onOpen ? () => onOpen(row) : undefined}
+      style={{
+        cursor: onOpen ? 'pointer' : undefined,
+        ...(failed ? { borderInlineStart: '3px solid #dc2626' } : {}),
+      }}
       styles={{ body: { padding: '8px 10px' } }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -206,6 +212,7 @@ export function NodePanel({
   dead?: boolean;
 }) {
   const [errorsOnly, setErrorsOnly] = useState(false);
+  const [detail, setDetail] = useState<RequestRow | null>(null);
   const { rows, loading, failed } = useNodeSessions(
     id,
     since,
@@ -213,6 +220,11 @@ export function NodePanel({
     errorsOnly,
     metrics?.requests ?? 0,
   );
+
+  // Selecting another graph node must not keep the previous node's open detail.
+  useEffect(() => {
+    setDetail(null);
+  }, [id]);
 
   return (
     <div>
@@ -283,10 +295,11 @@ export function NodePanel({
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {rows.map((row) => (
-            <SessionCard key={row.requestId} row={row} />
+            <SessionCard key={row.requestId} row={row} onOpen={setDetail} />
           ))}
         </Space>
       )}
+      <RequestDetailDrawer request={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
