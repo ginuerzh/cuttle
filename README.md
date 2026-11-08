@@ -278,9 +278,12 @@ change the configuration. Node positions are stored in the stats SQLite
 database and shared by every admin; `localStorage` keeps a local backup and is
 used if the server cannot be reached.
 
-The monitor streams live data over the `GET /api/events` WebSocket. The time
-selector picks the initial lookback; the end is always the current time, so
-request, error and token totals only increase until you start a new session.
+The monitor streams live data over the `GET /api/events` WebSocket. New traffic
+flashes the node icon once and sends light dots along the connection. The
+toolbar `动画` (Animation) switch stops both effects without pausing metrics and
+is remembered per browser. The time selector picks the initial lookback; the end
+is always the current time, so request, error and token totals only increase
+until you start a new session.
 The selector keeps its labels but now means "look back this far when the
 session starts". **Reset stats** clears the display and reconnects with
 `reset=1`, starting at zero without querying history. A session older than

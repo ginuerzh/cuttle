@@ -314,9 +314,13 @@ Entrypoint -> Route -> Node -> Provider model
   display and reconnects with `reset=1`; the status shows the last update and
   the session start.
 - Requests show client model and target model; there is no logical model.
-- The navigation has a `网关密钥` (`gateway-keys`) page between Entrypoints and
-  Sessions. It shows the open-data-plane and all-keys-disabled alerts, 24h/7d/30d
-  usage, enable switches, rotate and delete.
+- The navigation labels the `gateway-keys` page `密钥` between Entrypoints and
+  Sessions. The page heading, dialogs and Sessions filter keep `网关密钥`. It
+  shows the open-data-plane and all-keys-disabled alerts, 24h/7d/30d usage,
+  enable switches, rotate and delete.
+- Overview animations share one toolbar switch persisted in `localStorage`
+  (`llm-gw.animation`). Off stops node icon flashes and edge light dots without
+  pausing metrics. The node flash is one-shot; do not reintroduce the card ring.
 - Create and rotate open the one-time secret dialog; the raw key is never kept
   in list state or rendered anywhere else. The dialog must say the value is
   shown only once.
