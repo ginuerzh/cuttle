@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -261,5 +262,54 @@ func TestStatsRecordsStreamTTFT(t *testing.T) {
 	}
 	if row.TTFTMS >= 250 {
 		t.Fatalf("ttft = %d, want the first event, not the last", row.TTFTMS)
+	}
+}
+
+func TestStatsRecordsDialFailure(t *testing.T) {
+	// Close a listener so its port is deterministically refused.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	gw, err := gateway.New(statsConfig(t, "http://"+addr), xlogger.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4.5","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+	}
+
+	row := waitRow(t, gw)
+	if row.Route != "r" || row.Provider != "p" || row.Node != "p" {
+		t.Fatalf("route/provider/node = %q/%q/%q, want r/p/p", row.Route, row.Provider, row.Node)
+	}
+	if row.Status != http.StatusServiceUnavailable || row.ClientStatus != http.StatusServiceUnavailable {
+		t.Fatalf("status/clientStatus = %d/%d, want 503/503", row.Status, row.ClientStatus)
+	}
+	if row.Error == "" {
+		t.Fatal("error should be recorded")
+	}
+	if row.ErrorClass != stats.ErrorClassUpstreamUnavailable {
+		t.Fatalf("errorClass = %q, want %q", row.ErrorClass, stats.ErrorClassUpstreamUnavailable)
+	}
+	if row.URI != "/v1/chat/completions" || row.Method != http.MethodPost {
+		t.Fatalf("uri/method = %q/%q", row.URI, row.Method)
 	}
 }

@@ -111,6 +111,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		"sniffing":       true,
 		"readTimeout":    readTimeout.String(),
 		"http.keepalive": false,
+		"clientID":       clientIDFromRequest,
 	})); err != nil {
 		return nil, err
 	}
