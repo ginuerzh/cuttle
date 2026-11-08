@@ -179,6 +179,22 @@ export interface GraphMetrics {
   errors: ErrorRow[];
 }
 
+/** One rejected data-plane gateway-key authentication attempt. */
+export interface AuthFailure {
+  ts: string;
+  reason: string;
+  method?: string;
+  path?: string;
+  clientIp?: string;
+  userAgent?: string;
+}
+
+/** Bounded in-memory record streamed with the monitor snapshot. */
+export interface AuthFailureSnapshot {
+  recent: AuthFailure[];
+  truncated?: boolean;
+}
+
 /** One preset per upstream endpoint; it fills the type and every API base URL. */
 export interface Preset {
   name: string;

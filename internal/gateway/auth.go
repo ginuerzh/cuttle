@@ -16,11 +16,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-gost/core/handler"
 	"github.com/go-gost/core/logger"
 	"github.com/go-gost/core/metadata"
 
+	"github.com/ginuerzh/cuttle/internal/authfail"
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
@@ -142,13 +144,14 @@ func (p *authPolicy) authenticate(candidates []string) (name, reason string, ok 
 // yields exactly one request and then EOF, so x's keep-alive loop cannot serve
 // a second request on the connection without re-authenticating it.
 type gatewayAuthHandler struct {
-	next   handler.Handler
-	policy *atomic.Pointer[authPolicy]
-	log    logger.Logger
+	next     handler.Handler
+	policy   *atomic.Pointer[authPolicy]
+	failures *authfail.Tracker
+	log      logger.Logger
 }
 
-func newGatewayAuthHandler(next handler.Handler, policy *atomic.Pointer[authPolicy], log logger.Logger) *gatewayAuthHandler {
-	return &gatewayAuthHandler{next: next, policy: policy, log: log}
+func newGatewayAuthHandler(next handler.Handler, policy *atomic.Pointer[authPolicy], failures *authfail.Tracker, log logger.Logger) *gatewayAuthHandler {
+	return &gatewayAuthHandler{next: next, policy: policy, failures: failures, log: log}
 }
 
 func (h *gatewayAuthHandler) Init(md metadata.Metadata) error {
@@ -191,6 +194,7 @@ func (h *gatewayAuthHandler) Handle(ctx context.Context, conn net.Conn, opts ...
 
 	name, reason, authenticated := policy.authenticate(gatewayAuthCandidates(header))
 	if !authenticated {
+		h.recordFailure(conn, header, logMethod, logTarget, reason)
 		h.log.Warnf("gateway auth: %s %s from %s: %s", logMethod, logTarget, gatewayAuthRemoteAddr(conn), reason)
 		return writeGatewayAuthResponse(conn, http.StatusUnauthorized, gatewayAuthErrorBody, true)
 	}
@@ -530,4 +534,53 @@ func gatewayAuthRemoteAddr(conn net.Conn) string {
 		return addr.String()
 	}
 	return "unknown"
+}
+
+const (
+	authFailurePathLimit      = 256
+	authFailureUserAgentLimit = 200
+)
+
+// recordFailure keeps a bounded, credential-free entry for the admin console.
+func (h *gatewayAuthHandler) recordFailure(conn net.Conn, header textproto.MIMEHeader, method, path, reason string) {
+	if h.failures == nil {
+		return
+	}
+	h.failures.Add(authfail.Failure{
+		TS:        time.Now(),
+		Reason:    reason,
+		Method:    method,
+		Path:      truncateAuthFailure(path, authFailurePathLimit),
+		ClientIP:  gatewayAuthClientIP(conn),
+		UserAgent: truncateAuthFailure(header.Get("User-Agent"), authFailureUserAgentLimit),
+	})
+}
+
+func gatewayAuthClientIP(conn net.Conn) string {
+	addr := conn.RemoteAddr()
+	if addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return addr.String()
+	}
+	return host
+}
+
+// truncateAuthFailure trims and caps a client-controlled string without
+// splitting a multi-byte rune.
+func truncateAuthFailure(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	if limit <= 0 || len(s) <= limit {
+		return s
+	}
+	for len(s) > limit {
+		_, size := utf8.DecodeLastRuneInString(s)
+		if size <= 0 {
+			return s[:limit]
+		}
+		s = s[:len(s)-size]
+	}
+	return s
 }

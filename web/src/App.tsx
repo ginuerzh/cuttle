@@ -30,7 +30,7 @@ import {
   SunOutlined,
 } from '@ant-design/icons';
 import { getConfig, getHealth, getRequests, getRouteHealth, logout, UnauthorizedError, type RequestQuery } from './api/client';
-import type { ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
+import type { AuthFailureSnapshot, ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
 import type { SnapshotMessage } from './api/events';
 import { Login } from './pages/Login';
 import { EntrypointsPage } from './pages/Entrypoints';
@@ -396,6 +396,7 @@ export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
+  const [authFailures, setAuthFailures] = useState<AuthFailureSnapshot | null>(null);
   const [mode, setMode] = useState<Mode>('monitor');
   const [range, setRange] = useState('1h');
   const [animate, setAnimateState] = useState(loadAnimationEnabled);
@@ -454,6 +455,7 @@ export default function App() {
     setSession('no');
     setConfig(null);
     setMetrics(null);
+    setAuthFailures(null);
     setSince('');
     setUpdatedAt('');
     setStale(false);
@@ -470,6 +472,7 @@ export default function App() {
     setUpdatedAt(formatDateTime(msg.to));
     setStale(false);
     if (msg.health) setRouteHealth(msg.health);
+    if (msg.authFailures) setAuthFailures(msg.authFailures);
   }, []);
 
   const handleStatus = useCallback((connected: boolean) => {
@@ -479,6 +482,7 @@ export default function App() {
   const handleAuthError = useCallback(() => {
     setSession('no');
     setMetrics(null);
+    setAuthFailures(null);
     setSince('');
     setUpdatedAt('');
     setStale(false);
@@ -487,6 +491,7 @@ export default function App() {
 
   const handleReset = useCallback(() => {
     setMetrics({ nodes: {}, edges: {}, errors: [] });
+    setAuthFailures(null);
     setSince('');
     setUpdatedAt('');
     setResetKey((key) => key + 1);
@@ -631,6 +636,7 @@ export default function App() {
                       onSelect={setSelection}
                       deadNodes={deadNodes}
                       since={since}
+                      authFailures={authFailures}
                       animate={animate}
                     />
                   ) : null}

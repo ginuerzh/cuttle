@@ -11,16 +11,19 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/ginuerzh/cuttle/internal/authfail"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/health"
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 type eventSnapshot struct {
-	Type    string             `json:"type"`
-	Since   string             `json:"since"`
-	To      string             `json:"to"`
-	Metrics stats.GraphMetrics `json:"metrics"`
-	Health  []health.Route     `json:"health"`
+	Type         string             `json:"type"`
+	Since        string             `json:"since"`
+	To           string             `json:"to"`
+	Metrics      stats.GraphMetrics `json:"metrics"`
+	Health       []health.Route     `json:"health"`
+	AuthFailures *authfail.Snapshot `json:"authFailures"`
 }
 
 func newEventsAdmin(t *testing.T) (*Server, *recordingReloader, *httptest.Server) {
@@ -109,6 +112,50 @@ func TestEventsCarriesRouteHealth(t *testing.T) {
 	snap := readSnapshot(t, conn)
 	if len(snap.Health) != 1 || !snap.Health[0].Nodes[0].Dead {
 		t.Fatalf("health = %+v", snap.Health)
+	}
+}
+
+type authFailuresReloader struct {
+	tracker *authfail.Tracker
+}
+
+func (r authFailuresReloader) Reload(*gwconfig.Config) error { return nil }
+
+func (r authFailuresReloader) AuthFailures() *authfail.Tracker { return r.tracker }
+
+func TestNewWiresAuthFailuresFromReloader(t *testing.T) {
+	tracker := authfail.New(1)
+	server := New("", &gwconfig.Config{}, authFailuresReloader{tracker: tracker}, nil)
+	if server.authFailures != tracker {
+		t.Fatal("admin server did not pick up the data-plane auth failure tracker")
+	}
+}
+
+func TestEventsCarriesAuthFailures(t *testing.T) {
+	s, _, ts := newEventsAdmin(t)
+	tr := authfail.New(5)
+	tr.Add(authfail.Failure{
+		TS:        time.Now(),
+		Reason:    "invalid",
+		Method:    http.MethodPost,
+		Path:      "/v1/messages",
+		ClientIP:  "192.0.2.7",
+		UserAgent: "claude-code",
+	})
+	s.SetAuthFailures(tr)
+
+	client, _ := login(t, ts.URL)
+	conn, _, err := dialEvents(t, ts.URL, client.Jar, "?range=1h", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := readSnapshot(t, conn)
+	if snap.AuthFailures == nil || len(snap.AuthFailures.Recent) != 1 {
+		t.Fatalf("auth failures = %+v", snap.AuthFailures)
+	}
+	got := snap.AuthFailures.Recent[0]
+	if got.Reason != "invalid" || got.ClientIP != "192.0.2.7" || got.Path != "/v1/messages" {
+		t.Fatalf("auth failure = %+v", got)
 	}
 }
 

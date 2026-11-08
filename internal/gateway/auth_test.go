@@ -108,6 +108,9 @@ func TestGatewayAuthAcceptsSupportedHeaders(t *testing.T) {
 			if got := hits.Load(); got != tc.wantHit {
 				t.Fatalf("upstream hits = %d, want %d", got, tc.wantHit)
 			}
+			if snap := gw.AuthFailures().Snapshot(); len(snap.Recent) != 0 {
+				t.Fatalf("authenticated request recorded as a failure: %+v", snap.Recent)
+			}
 		})
 	}
 }
@@ -135,20 +138,24 @@ func TestGatewayAuthRejectsMissingInvalidAndDisabled(t *testing.T) {
 		name    string
 		keys    []gwconfig.GatewayKey
 		headers map[string]string
+		reason  string
 	}{
 		{
-			name: "missing",
-			keys: []gwconfig.GatewayKey{{Name: "client", Key: authTestSecret}},
+			name:   "missing",
+			keys:   []gwconfig.GatewayKey{{Name: "client", Key: authTestSecret}},
+			reason: "missing",
 		},
 		{
 			name:    "invalid",
 			keys:    []gwconfig.GatewayKey{{Name: "client", Key: authTestSecret}},
 			headers: map[string]string{"Authorization": "Bearer wrong-value"},
+			reason:  "invalid",
 		},
 		{
 			name:    "disabled",
 			keys:    []gwconfig.GatewayKey{{Name: "off", Key: "off-secret", Enabled: boolPtr(false)}},
 			headers: map[string]string{"Authorization": "Bearer off-secret"},
+			reason:  "disabled",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -169,6 +176,27 @@ func TestGatewayAuthRejectsMissingInvalidAndDisabled(t *testing.T) {
 			}
 			if !resp.Close {
 				t.Fatal("response does not advertise Connection: close")
+			}
+
+			snap := gw.AuthFailures().Snapshot()
+			if len(snap.Recent) != 1 {
+				t.Fatalf("recent failures = %d, want 1", len(snap.Recent))
+			}
+			got := snap.Recent[0]
+			if got.Reason != tc.reason {
+				t.Fatalf("reason = %q, want %q", got.Reason, tc.reason)
+			}
+			if got.Method != http.MethodPost || got.Path != "/v1/chat/completions" {
+				t.Fatalf("method/path = %q %q", got.Method, got.Path)
+			}
+			if got.ClientIP == "" {
+				t.Fatal("client IP is empty")
+			}
+			for _, secret := range []string{authTestSecret, "wrong-value", "off-secret"} {
+				if strings.Contains(got.Method, secret) || strings.Contains(got.Path, secret) ||
+					strings.Contains(got.ClientIP, secret) || strings.Contains(got.UserAgent, secret) {
+					t.Fatalf("credential leaked into failure record: %+v", got)
+				}
 			}
 		})
 	}

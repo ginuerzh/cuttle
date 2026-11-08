@@ -24,6 +24,7 @@ import (
 	xrecorder "github.com/go-gost/x/recorder"
 	xservice "github.com/go-gost/x/service"
 
+	"github.com/ginuerzh/cuttle/internal/authfail"
 	"github.com/ginuerzh/cuttle/internal/capture"
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/health"
@@ -33,23 +34,24 @@ import (
 // Gateway owns the data plane: one service, one forward handler and a hop
 // group that can be replaced at runtime.
 type Gateway struct {
-	buildMu     sync.Mutex
-	mu          sync.Mutex
-	cfg         *gwconfig.Config
-	log         logger.Logger
-	router      *xchain.Router
-	handler     handler.Handler
-	forwarder   handler.Forwarder
-	hop         hop.Hop
-	rewriters   []string
-	countTokens atomic.Pointer[countTokensPolicy]
-	auth        atomic.Pointer[authPolicy]
-	ln          listener.Listener
-	svc         service.Service
-	facts       *stats.Facts
-	store       *stats.Store
-	capture     *capture.Manager
-	cancel      context.CancelFunc
+	buildMu      sync.Mutex
+	mu           sync.Mutex
+	cfg          *gwconfig.Config
+	log          logger.Logger
+	router       *xchain.Router
+	handler      handler.Handler
+	forwarder    handler.Forwarder
+	hop          hop.Hop
+	rewriters    []string
+	countTokens  atomic.Pointer[countTokensPolicy]
+	auth         atomic.Pointer[authPolicy]
+	ln           listener.Listener
+	svc          service.Service
+	facts        *stats.Facts
+	store        *stats.Store
+	capture      *capture.Manager
+	authFailures *authfail.Tracker
+	cancel       context.CancelFunc
 }
 
 // New builds the data plane from cfg. The listener is bound but not serving
@@ -90,16 +92,17 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 	base := forwardlocal.NewHandler(opts...)
 
 	g := &Gateway{
-		cfg:     cfg,
-		log:     log,
-		router:  router,
-		facts:   facts,
-		store:   store,
-		capture: capMgr,
+		cfg:          cfg,
+		log:          log,
+		router:       router,
+		facts:        facts,
+		store:        store,
+		capture:      capMgr,
+		authFailures: authfail.New(authfail.DefaultLimit),
 	}
 
 	ct := newCountTokensHandler(base, &g.countTokens, log)
-	h := newHelloHandler(newGatewayAuthHandler(ct, &g.auth, log), log)
+	h := newHelloHandler(newGatewayAuthHandler(ct, &g.auth, g.authFailures, log), log)
 	readTimeout := time.Duration(cfg.Gateway.ReadTimeout)
 	if readTimeout <= 0 {
 		readTimeout = 60 * time.Second
@@ -174,6 +177,12 @@ func (g *Gateway) Addr() net.Addr {
 // Capture returns the body-capture manager.
 func (g *Gateway) Capture() *capture.Manager {
 	return g.capture
+}
+
+// AuthFailures returns the bounded in-memory record of rejected data-plane
+// authentication attempts.
+func (g *Gateway) AuthFailures() *authfail.Tracker {
+	return g.authFailures
 }
 
 // RouteHealth returns the current node marker state for each configured

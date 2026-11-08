@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/ginuerzh/cuttle/internal/authfail"
 	"github.com/ginuerzh/cuttle/internal/health"
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
@@ -23,12 +24,23 @@ const (
 )
 
 type eventMessage struct {
-	Type    string              `json:"type"`
-	Since   string              `json:"since,omitempty"`
-	To      string              `json:"to,omitempty"`
-	Metrics *stats.GraphMetrics `json:"metrics,omitempty"`
-	Health  []health.Route      `json:"health,omitempty"`
-	Error   string              `json:"error,omitempty"`
+	Type         string              `json:"type"`
+	Since        string              `json:"since,omitempty"`
+	To           string              `json:"to,omitempty"`
+	Metrics      *stats.GraphMetrics `json:"metrics,omitempty"`
+	Health       []health.Route      `json:"health,omitempty"`
+	AuthFailures *authfail.Snapshot  `json:"authFailures,omitempty"`
+	Error        string              `json:"error,omitempty"`
+}
+
+// authFailureSnapshot snapshots the optional tracker; nil keeps the field out
+// of the events payload for callers that do not attach one.
+func (s *Server) authFailureSnapshot() *authfail.Snapshot {
+	if s.authFailures == nil {
+		return nil
+	}
+	snap := s.authFailures.Snapshot()
+	return &snap
 }
 
 func (s *Server) currentRouteHealth() []health.Route {
@@ -117,11 +129,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	prev := agg.Metrics(cfg.ResolveEntrypointName, cfg.TopologyIncludes, stats.GraphMetrics{}, true)
 	lastPct := time.Now()
 	if err := writeEvent(client, eventMessage{
-		Type:    "snapshot",
-		Since:   since.UTC().Format(time.RFC3339),
-		To:      now.UTC().Format(time.RFC3339),
-		Metrics: &prev,
-		Health:  s.currentRouteHealth(),
+		Type:         "snapshot",
+		Since:        since.UTC().Format(time.RFC3339),
+		To:           now.UTC().Format(time.RFC3339),
+		Metrics:      &prev,
+		Health:       s.currentRouteHealth(),
+		AuthFailures: s.authFailureSnapshot(),
 	}); err != nil {
 		return
 	}
@@ -180,11 +193,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			prev = metrics
 			if err := writeEvent(client, eventMessage{
-				Type:    "snapshot",
-				Since:   since.UTC().Format(time.RFC3339),
-				To:      now.UTC().Format(time.RFC3339),
-				Metrics: &metrics,
-				Health:  s.currentRouteHealth(),
+				Type:         "snapshot",
+				Since:        since.UTC().Format(time.RFC3339),
+				To:           now.UTC().Format(time.RFC3339),
+				Metrics:      &metrics,
+				Health:       s.currentRouteHealth(),
+				AuthFailures: s.authFailureSnapshot(),
 			}); err != nil {
 				return
 			}

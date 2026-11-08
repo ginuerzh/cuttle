@@ -264,7 +264,7 @@ when `admin.passwordHash` is set.
 | Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
-| Overview | Entrypoint → route → node → provider graph with live metrics, per-node output token speed and one-shot traffic-flow dots |
+| Overview | Entrypoint → route → node → provider graph with live metrics, per-node output token speed, one-shot traffic-flow dots and recent gateway-key auth failures |
 | Settings | Listen addresses, retention and admin password |
 
 Admin edits validate the new configuration, apply it to the data plane, and
@@ -290,6 +290,10 @@ toolbar `动画` (Animation) switch stops both effects without pausing metrics a
 is remembered per browser. The time selector picks the initial lookback; the end
 is always the current time, so request, error and token totals only increase
 until you start a new session.
+Rejected gateway-key requests are tracked in memory (the last 50 since process
+start; credentials are never kept). When any failure falls inside the selected
+window, Overview shows a warning panel with the reason, client IP, method and
+path. These failures are not written to SQLite.
 The selector keeps its labels but now means "look back this far when the
 session starts". **Reset stats** clears the display and reconnects with
 `reset=1`, starting at zero without querying history. A session older than
@@ -397,7 +401,9 @@ Connection: close
 
 The gateway does not call the upstream. It logs a warning with the client IP,
 method, path and reason (`missing`, `disabled` or `invalid`); the credential is
-never logged. A malformed request head returns 400. The 401 body and headers are
+never logged. The same failures are kept in a bounded in-memory record and shown
+on Overview with the monitor window filter; they reset when the gateway
+restarts. A malformed request head returns 400. The 401 body and headers are
 the same for every inbound protocol.
 
 Manage keys on the Gateway keys page or through the [Admin API](#admin-api).
@@ -625,8 +631,9 @@ gateway key for the per-key usage view. They use the same
 `stats.retainRollups` cutoff as provider rollups, so deleting a key keeps its
 history only until normal cleanup removes it. Rows and rollups written before
 gateway keys existed have no key attribution and are not backfilled. Rejected
-401 requests and locally answered `count_tokens` requests are not recorded, so
-they produce no key usage.
+401 requests and locally answered `count_tokens` requests are not recorded in
+SQLite, so they produce no key usage; rejected 401s are still surfaced in memory
+on Overview.
 
 `GET /api/routes/health` returns each route's node markers: `failCount`,
 `lastFailure`, `dead` and `deadUntil`. The state is x's in-memory marker,

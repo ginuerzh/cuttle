@@ -20,7 +20,7 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import { message } from 'antd';
-import type { ConfigResponse, GraphMetrics, NodeMetrics } from '../api/types';
+import type { AuthFailureSnapshot, ConfigResponse, GraphMetrics, NodeMetrics } from '../api/types';
 import { getTopologyPositions, putTopologyPositions } from '../api/client';
 import { buildGraph, type GraphNode } from '../graph/build';
 import { layoutGraph, placeNewNodes } from '../graph/layout';
@@ -32,6 +32,7 @@ import {
   type PositionMap,
 } from '../graph/positions';
 import { nodeTypes } from '../graph/nodes';
+import { AuthFailureAlert, recentAuthFailures } from '../components/AuthFailureAlert';
 import {
   accumulateActivity,
   emptyActivity,
@@ -64,6 +65,7 @@ interface Props {
   onConnect?: (c: Connection) => void;
   deadNodes?: ReadonlySet<string>;
   since?: string;
+  authFailures?: AuthFailureSnapshot | null;
   animate?: boolean;
 }
 
@@ -176,7 +178,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
   }
 }
 
-export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes, since, animate = true }: Props) {
+export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes, since, authFailures, animate = true }: Props) {
   const canEdit = canEditTopology(editable);
   const [initialViewport] = useState(() => viewportInit(lastViewport));
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
@@ -467,6 +469,11 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
         <Background gap={20} color="var(--gw-border)" />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} />
+        {recentAuthFailures(authFailures, since).length > 0 ? (
+          <Panel position="top-left">
+            <AuthFailureAlert failures={authFailures} since={since} />
+          </Panel>
+        ) : null}
         <Panel position="top-right">
           <button
             onClick={resetLayout}

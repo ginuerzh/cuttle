@@ -11,6 +11,7 @@ import (
 	"github.com/go-gost/core/logger"
 	xlogger "github.com/go-gost/x/logger"
 
+	"github.com/ginuerzh/cuttle/internal/authfail"
 	"github.com/ginuerzh/cuttle/internal/capture"
 	"github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/health"
@@ -40,13 +41,14 @@ type Server struct {
 	ttl          time.Duration
 	rememberTTL  time.Duration
 
-	mu          sync.Mutex
-	cfg         *config.Config
-	sessions    map[string]time.Time
-	probes      map[string]probeResult
-	stats       *stats.Store
-	capture     *capture.Manager
-	routeHealth func() []health.Route
+	mu           sync.Mutex
+	cfg          *config.Config
+	sessions     map[string]time.Time
+	probes       map[string]probeResult
+	stats        *stats.Store
+	capture      *capture.Manager
+	authFailures *authfail.Tracker
+	routeHealth  func() []health.Route
 
 	wsMu          sync.Mutex
 	wsConns       map[*wsClient]struct{}
@@ -103,6 +105,9 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 	if hp, ok := r.(interface{ RouteHealth() []health.Route }); ok {
 		s.routeHealth = hp.RouteHealth
 	}
+	if af, ok := r.(interface{ AuthFailures() *authfail.Tracker }); ok {
+		s.authFailures = af.AuthFailures()
+	}
 	if s.stats != nil {
 		if saved, err := s.stats.LoadSessions(context.Background(), time.Now()); err != nil {
 			log.Warnf("load sessions: %v", err)
@@ -113,6 +118,12 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 		}
 	}
 	return s
+}
+
+// SetAuthFailures attaches the data-plane auth failure tracker. New also picks
+// it up from the Reloader when that value implements AuthFailures.
+func (s *Server) SetAuthFailures(t *authfail.Tracker) {
+	s.authFailures = t
 }
 
 // SetConfig replaces the management snapshot after an external config reload

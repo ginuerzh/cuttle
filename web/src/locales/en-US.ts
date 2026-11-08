@@ -286,4 +286,8 @@ export const enUS: Record<string, string> = {
   '关闭': 'Close',
   '密钥': 'Key',
   '请求密钥': 'Request key',
+  '最近 {count} 次网关密钥鉴权失败': '{count} recent gateway key authentication failures',
+  '未提供密钥': 'Missing key',
+  '密钥已禁用': 'Key disabled',
+  '密钥无效': 'Invalid key',
 };

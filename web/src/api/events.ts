@@ -1,4 +1,4 @@
-import type { GraphMetrics, RouteHealth } from './types';
+import type { AuthFailureSnapshot, GraphMetrics, RouteHealth } from './types';
 
 export type SnapshotMessage = {
   type: 'snapshot';
@@ -6,6 +6,7 @@ export type SnapshotMessage = {
   to: string;
   metrics: GraphMetrics;
   health?: RouteHealth[];
+  authFailures?: AuthFailureSnapshot;
 };
 
 export type LiveMessage = SnapshotMessage | { type: 'error'; error: string };
@@ -50,12 +51,25 @@ export function parseLiveMessage(data: string): LiveMessage | null {
     if (msg.health !== undefined && !Array.isArray(msg.health)) {
       return null;
     }
+    let authFailures: AuthFailureSnapshot | undefined;
+    if (msg.authFailures !== undefined) {
+      if (
+        typeof msg.authFailures !== 'object' ||
+        msg.authFailures === null ||
+        Array.isArray(msg.authFailures) ||
+        !Array.isArray((msg.authFailures as Record<string, unknown>).recent)
+      ) {
+        return null;
+      }
+      authFailures = msg.authFailures as AuthFailureSnapshot;
+    }
     return {
       type: 'snapshot',
       since: msg.since,
       to: msg.to,
       metrics: msg.metrics as GraphMetrics,
       ...(Array.isArray(msg.health) ? { health: msg.health as RouteHealth[] } : {}),
+      ...(authFailures ? { authFailures } : {}),
     };
   }
   if (msg.type === 'error') {
