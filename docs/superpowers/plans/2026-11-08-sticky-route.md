@@ -223,7 +223,7 @@ Expected: PASS, including the dial-failure stats row.
 - Repository + commit: cuttle / `0dc7b57c` (`feat(gateway): keep sticky sessions on one node`)
 - Files: `internal/gateway/session.go`, `internal/gateway/session_test.go`, `internal/gateway/sticky_test.go`, `internal/gateway/gateway.go`, `internal/gateway/stats_test.go`, `go.mod`, `go.sum`
 - Tests: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test -p 1 -count=1 ./...` → PASS. The integration covers same-session stickiness, the 10:3 split, a 503 failover that sticks to the new node, and the dial-failure stats row.
-- Review findings/fixes: session and subagent values are SHA-256 hashed; the subagent has its own stick; the distribution test caught the FNV bias that was fixed in x. The auth handler and open mode are untouched.
+- Review findings/fixes: session and subagent values are SHA-256 hashed; the subagent has its own stick; the distribution test caught the FNV bias that was fixed in x. The auth handler and open mode are untouched. The first live SIGHUP reload rejected `sticky` because `internal/config.Validate` still allowed only fifo/round/random; `47f1a0cd` adds sticky plus a validation test, and the live config was reverted to `fifo` while the fix was built.
 - Deferred: the client session ID is not stored in stats, so production verification uses node distribution and cache-hit rates rather than per-session grouping.
 
 ---
