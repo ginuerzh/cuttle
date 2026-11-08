@@ -622,6 +622,7 @@ export default function App() {
                       onSelect={setSelection}
                       deadNodes={deadNodes}
                       since={since}
+                      animate={animate}
                     />
                   ) : null}
                 </div>

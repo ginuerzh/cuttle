@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphMetrics } from '../api/types';
-import { diffActivity, emptyActivity, flowDuration, mergeActivity } from './activity';
+import { accumulateActivity, diffActivity, emptyActivity, flowDuration, mergeActivity } from './activity';
 
 function metrics(nodes: Record<string, [number, number]>, edges: Record<string, [number, number]> = {}): GraphMetrics {
   const nodeMap = Object.fromEntries(
@@ -68,5 +68,33 @@ describe('mergeActivity', () => {
   it('returns the current map when there is no new activity', () => {
     const current = emptyActivity();
     expect(mergeActivity(current, emptyActivity())).toBe(current);
+  });
+});
+
+describe('accumulateActivity', () => {
+  const before = metrics({ 'node:a': [2, 0] });
+  const after = metrics({ 'node:a': [5, 1] });
+
+  it('merges new traffic while animations are on', () => {
+    const out = accumulateActivity(emptyActivity(), before, after, true, 7);
+    expect(out.nodes['node:a']).toMatchObject({ pulse: 7, error: true });
+  });
+
+  it('clears activity while animations are off', () => {
+    const current = {
+      nodes: { 'node:a': { pulse: 1, error: false, duration: 0.9 } },
+      edges: {},
+    };
+    expect(accumulateActivity(current, before, after, false, 7)).toEqual(emptyActivity());
+  });
+
+  it('does not replay activity recorded while animations were off', () => {
+    const cleared = accumulateActivity(emptyActivity(), before, after, false, 7);
+    const reenabled = accumulateActivity(cleared, after, after, true, 8);
+    expect(reenabled).toEqual(emptyActivity());
+  });
+
+  it('does not animate the first snapshot', () => {
+    expect(accumulateActivity(emptyActivity(), null, after, true, 7)).toEqual(emptyActivity());
   });
 });

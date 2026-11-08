@@ -74,3 +74,19 @@ export function mergeActivity(current: ActivityMap, next: ActivityMap): Activity
     edges: { ...current.edges, ...next.edges },
   };
 }
+
+/**
+ * Advance the activity baseline every snapshot, but only keep an animation
+ * when animations are enabled. Clearing while disabled is what prevents an
+ * old pulse from replaying when the switch is turned back on.
+ */
+export function accumulateActivity(
+  current: ActivityMap,
+  prev: GraphMetrics | null,
+  next: GraphMetrics,
+  animate: boolean,
+  pulse: number,
+): ActivityMap {
+  if (!animate || prev === null) return emptyActivity();
+  return mergeActivity(current, diffActivity(prev, next, pulse));
+}

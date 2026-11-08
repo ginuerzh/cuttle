@@ -86,18 +86,39 @@ describe('BindingNode', () => {
     expect(html).not.toContain('>dead<');
   });
 
-  it('renders one activity ring for a traffic pulse, red for errors', () => {
+  it('flashes the icon for a traffic pulse and turns red for errors', () => {
     const pulseProps = {
       ...props,
-      data: { ...props.data, pulse: 3, error: true },
+      data: { ...props.data, pulse: 3, error: false },
     } as unknown as NodeProps<GraphNode>;
     const html = renderToStaticMarkup(
       <ReactFlowProvider>
         <BindingNode {...pulseProps} />
       </ReactFlowProvider>,
     );
-    expect(html).toContain('gw-node-pulse');
-    expect(html).toContain('gw-node-pulse-error');
+    expect(html).toContain('gw-node-flash');
+    expect(html).not.toContain('gw-node-pulse');
+    expect(html).not.toContain('gw-node-flash-error');
+
+    const errorProps = {
+      ...props,
+      data: { ...props.data, pulse: 3, error: true },
+    } as unknown as NodeProps<GraphNode>;
+    const errorHtml = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <BindingNode {...errorProps} />
+      </ReactFlowProvider>,
+    );
+    expect(errorHtml).toContain('gw-node-flash-error');
+  });
+
+  it('does not flash while idle', () => {
+    const html = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <BindingNode {...props} />
+      </ReactFlowProvider>,
+    );
+    expect(html).not.toContain('gw-node-flash');
   });
 });
 

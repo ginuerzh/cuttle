@@ -33,9 +33,8 @@ import {
 } from '../graph/positions';
 import { nodeTypes } from '../graph/nodes';
 import {
-  diffActivity,
+  accumulateActivity,
   emptyActivity,
-  mergeActivity,
   type Activity,
   type ActivityMap,
 } from '../graph/activity';
@@ -64,6 +63,7 @@ interface Props {
   onConnect?: (c: Connection) => void;
   deadNodes?: ReadonlySet<string>;
   since?: string;
+  animate?: boolean;
 }
 
 /**
@@ -100,7 +100,12 @@ interface EdgeData extends Record<string, unknown> {
   duration?: number;
 }
 
-export function decorateEdge(e: Edge, metrics: GraphMetrics | null, activity?: Activity): Edge {
+export function decorateEdge(
+  e: Edge,
+  metrics: GraphMetrics | null,
+  activity?: Activity,
+  animate = true,
+): Edge {
   const m = metrics?.edges[e.id];
   const data = e.data as EdgeData | undefined;
   const label = m ? edgeLabel(m) : undefined;
@@ -112,8 +117,8 @@ export function decorateEdge(e: Edge, metrics: GraphMetrics | null, activity?: A
     type: 'dot',
     data: {
       ...data,
-      pulse: activity?.pulse ?? 0,
-      error: !!activity?.error,
+      pulse: animate ? activity?.pulse ?? 0 : 0,
+      error: animate ? !!activity?.error : false,
       duration: activity?.duration ?? 0,
     },
     style: { ...e.style, stroke: color, strokeWidth: width },
@@ -170,7 +175,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
   }
 }
 
-export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes, since }: Props) {
+export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes, since, animate = true }: Props) {
   const canEdit = canEditTopology(editable);
   const [initialViewport] = useState(() => viewportInit(lastViewport));
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
@@ -200,17 +205,17 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
       setActivity(emptyActivity());
       return;
     }
-    if (prevMetricsRef.current === null || sinceRef.current !== since) {
+    const pulse = ++pulseRef.current;
+    const prev = prevMetricsRef.current;
+    if (prev === null || sinceRef.current !== since) {
       prevMetricsRef.current = metrics;
       sinceRef.current = since;
       setActivity(emptyActivity());
       return;
     }
-    const pulse = ++pulseRef.current;
-    const next = diffActivity(prevMetricsRef.current, metrics, pulse);
+    setActivity((current) => accumulateActivity(current, prev, metrics, animate, pulse));
     prevMetricsRef.current = metrics;
-    setActivity((current) => mergeActivity(current, next));
-  }, [metrics, since]);
+  }, [metrics, since, animate]);
 
   const stopInertia = useCallback(() => {
     if (inertiaRef.current !== null) {
@@ -365,18 +370,22 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
 
   useEffect(() => {
     setNodes((prev) => mergeNodeState(prev, structure.nodes));
-    setEdges(structure.edges.map((e) => decorateEdge(e, metrics, activityRef.current.edges[e.id])));
+    setEdges(
+      structure.edges.map((e) =>
+        decorateEdge(e, metrics, activityRef.current.edges[e.id], animate),
+      ),
+    );
     // metrics is intentionally read once per structure change; the metrics
     // effect below keeps labels fresh without touching positions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structure]);
+  }, [structure, animate]);
 
   useEffect(() => {
     setNodes((prev) =>
       prev.map((n) => {
         const a = activity.nodes[n.id];
-        const pulse = a?.pulse ?? 0;
-        const error = !!a?.error;
+        const pulse = animate ? a?.pulse ?? 0 : 0;
+        const error = animate ? !!a?.error : false;
         const m = metrics?.nodes[n.id];
         if (n.data.metrics === m && (n.data.pulse ?? 0) === pulse && (n.data.error ?? false) === error) {
           return n;
@@ -384,8 +393,8 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
         return { ...n, data: { ...n.data, metrics: m, pulse, error } };
       }),
     );
-    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics, activity.edges[e.id])));
-  }, [metrics, activity, setNodes]);
+    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics, activity.edges[e.id], animate)));
+  }, [metrics, activity, animate, setNodes]);
 
   useEffect(() => {
     setNodes((prev) =>

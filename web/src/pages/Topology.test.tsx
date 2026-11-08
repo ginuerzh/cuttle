@@ -56,4 +56,10 @@ describe('decorateEdge', () => {
 
     expect(decorated.data).toMatchObject({ pulse: 7, error: true, duration: 0.6 });
   });
+
+  it('suppresses the pulse when animations are off', () => {
+    const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
+    const decorated = decorateEdge(edge, null, { pulse: 7, error: false, duration: 0.6 }, false);
+    expect(decorated.data).toMatchObject({ pulse: 0 });
+  });
 });
