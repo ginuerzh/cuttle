@@ -42,7 +42,7 @@ client model
 Entrypoint ──► Route ──► Node ──► Provider model
                  │          │
                  │          └─ one provider + one model
-                 └─ ordered nodes + strategy (fifo / round / random)
+                 └─ ordered nodes + strategy (fifo / round / random / sticky)
 ```
 
 - An **entrypoint** is the client-facing ingress. It has a name, a non-empty
@@ -615,9 +615,15 @@ Messages to the native endpoint.
 | --- | --- | --- |
 | `name` | yes | Unique route name; no `/` |
 | `nodes` | yes | Ordered list of existing node names; duplicates rejected. Order is the selection priority. |
-| `strategy` | no | `fifo`, `round` (default) or `random` |
+| `strategy` | no | `fifo`, `round` (default), `random` or `sticky` |
 | `maxFails` | no | Consecutive failures before a node is marked dead; default `1` |
 | `failTimeout` | no | How long a dead node is skipped; default `10s` |
+
+`sticky` keeps one conversation on one node: it reads the client's session
+header (`x-claude-code-session-id`, `x-opencode-session`, `x-session-id` and the
+other known session headers) and uses weighted rendezvous hashing, so new
+conversations split by node weight while a conversation keeps its upstream
+prompt cache. A request without a session header falls back to weighted random.
 
 ## Stats and topology
 

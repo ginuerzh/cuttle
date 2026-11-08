@@ -82,8 +82,8 @@ Entrypoint -> Route -> Node -> Provider model
   affect entrypoint precedence or route choice; they only select the upstream
   wire API inside a matched entrypoint. There is no host matching and no
   client-model pass-through.
-- A route contains only nodes and a strategy (`fifo`, `round`, `random`). It
-  does not match anything itself.
+- A route contains only nodes and a strategy (`fifo`, `round`, `random`,
+  `sticky`). It does not match anything itself.
 - A node binds exactly one provider and exactly one provider model.
   `Node.Models`, `EffectiveModel`, logical models and `*` model fallbacks must
   not come back.

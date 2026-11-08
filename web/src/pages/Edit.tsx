@@ -683,7 +683,7 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
         {route.name}
       </Typography.Title>
       <Form.Item name="strategy" label="strategy">
-        <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
+        <Select options={['round', 'fifo', 'random', 'sticky'].map((v) => ({ value: v, label: v }))} />
       </Form.Item>
       <Space size={12} wrap align="start">
         <Form.Item
@@ -1415,7 +1415,7 @@ export function AddRouteModal({
           <Input placeholder="strong" />
         </Form.Item>
         <Form.Item name="strategy" label="strategy" initialValue="round">
-          <Select options={['round', 'fifo', 'random'].map((v) => ({ value: v, label: v }))} />
+          <Select options={['round', 'fifo', 'random', 'sticky'].map((v) => ({ value: v, label: v }))} />
         </Form.Item>
         <Space size={12} wrap align="start">
           <Form.Item name="maxFails" label="maxFails" initialValue={1} style={{ marginBottom: 8 }}>
