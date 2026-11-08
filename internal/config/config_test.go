@@ -898,9 +898,35 @@ routes:
 		t.Fatalf("route settings = %+v", c.Routes[0])
 	}
 
+	c, err = Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m
+routes:
+  - name: r
+    nodes: [n]
+    strategy: sticky
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Routes[0].Strategy != "sticky" {
+		t.Fatalf("strategy = %q, want sticky", c.Routes[0].Strategy)
+	}
+
 	for _, body := range []string{
 		`maxFails: -1`,
 		`failTimeout: -1s`,
+		`strategy: bogus`,
 	} {
 		_, err := Load(writeConfig(t, `
 entrypoints:

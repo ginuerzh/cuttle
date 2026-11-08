@@ -861,9 +861,9 @@ func Validate(c *Config) error {
 			return fmt.Errorf("route %q: nodes is required", name)
 		}
 		switch strings.ToLower(r.Strategy) {
-		case "", "fifo", "round", "random":
+		case "", "fifo", "round", "random", "sticky":
 		default:
-			return fmt.Errorf("route %q: strategy must be fifo, round or random", name)
+			return fmt.Errorf("route %q: strategy must be fifo, round, random or sticky", name)
 		}
 		if r.MaxFails < 0 {
 			return fmt.Errorf("route %q: maxFails must be >= 0", name)
