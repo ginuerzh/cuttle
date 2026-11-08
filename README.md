@@ -493,7 +493,7 @@ union.
 | Field | Required | Description |
 | --- | --- | --- |
 | `name` | yes | Unique provider name |
-| `type` | yes | `deepseek`, `opencode-go`, `opencode-zen`, `commandcode`, `generic` |
+| `type` | yes | `deepseek`, `opencode-go`, `opencode-zen`, `commandcode`, `openrouter`, `generic` |
 | `chat` | no | OpenAI Chat Completions base URL |
 | `responses` | no | OpenAI Responses base URL |
 | `anthropic` | no | Anthropic Messages base URL |
@@ -545,6 +545,22 @@ With the quick-start example above, Claude Code talking Anthropic Messages to
 `/v1/messages` is forwarded to DeepSeek's native
 `https://api.deepseek.com/anthropic` endpoint instead of being converted to the
 chat API.
+
+`openrouter` is a built-in provider type with native Chat, Responses and
+Anthropic Messages endpoints. All three use `Authorization: Bearer`:
+
+```yaml
+- name: openrouter
+  type: openrouter
+  chat: https://openrouter.ai/api/v1
+  responses: https://openrouter.ai/api/v1
+  anthropic: https://openrouter.ai/api
+  keys: ["${OPENROUTER_API_KEY}"]
+```
+
+OpenRouter does not implement `/v1/messages/count_tokens`, so its routes answer
+those requests with the gateway's local token estimate while still forwarding
+Messages to the native endpoint.
 
 ### `nodes[]`
 
@@ -779,6 +795,9 @@ appears. Token counts use k/M/B units. Upstream values are queried per API key:
 - **OpenCode Go**: rolling, weekly and monthly windows from
   `/zen/go/v1/usage`, or `/inference/go/v1/usage` for providers created with
   the new inference base URLs.
+- **OpenRouter**: per-key `limit`, `limit_remaining`, `limit_reset` and
+  `usage` from `/api/v1/key`. A key without a limit shows its all-time spend;
+  account-wide `/credits` requires a management key and is not queried.
 
 OpenCode Zen does not expose a key's credits through an API; its card says to
 use the OpenCode console. `generic` providers have no known balance contract and

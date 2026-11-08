@@ -72,6 +72,14 @@ providers:
     #   deepseek-v4-flash:
     #     disabled: true
 
+  # OpenRouter exposes Chat, Responses and Anthropic Messages with one key.
+  # - name: openrouter
+  #   type: openrouter
+  #   chat: https://openrouter.ai/api/v1
+  #   responses: https://openrouter.ai/api/v1
+  #   anthropic: https://openrouter.ai/api
+  #   keys: ["${OPENROUTER_API_KEY}"]
+
 # A node binds one provider model plus routing policy. backup: true makes it a
 # fallback; weight controls the round-robin share.
 nodes:
