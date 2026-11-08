@@ -33,6 +33,13 @@ import {
 } from '../graph/positions';
 import { nodeTypes } from '../graph/nodes';
 import {
+  diffActivity,
+  emptyActivity,
+  mergeActivity,
+  type Activity,
+  type ActivityMap,
+} from '../graph/activity';
+import {
   clampVelocity,
   decayVelocity,
   dragVelocity,
@@ -56,6 +63,7 @@ interface Props {
   editable?: boolean;
   onConnect?: (c: Connection) => void;
   deadNodes?: ReadonlySet<string>;
+  since?: string;
 }
 
 /**
@@ -85,9 +93,16 @@ export function edgeLabel(m: { requests: number; errors: number }): ReactNode {
   );
 }
 
-function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
+interface EdgeData extends Record<string, unknown> {
+  color: string;
+  pulse?: number;
+  error?: boolean;
+  duration?: number;
+}
+
+function decorateEdge(e: Edge, metrics: GraphMetrics | null, activity?: Activity): Edge {
   const m = metrics?.edges[e.id];
-  const data = e.data as { color?: string } | undefined;
+  const data = e.data as EdgeData | undefined;
   const label = m ? edgeLabel(m) : undefined;
   const width = m ? Math.min(4, 1.5 + Math.log10(m.requests + 1)) : 1.5;
   const color = m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
@@ -95,6 +110,12 @@ function decorateEdge(e: Edge, metrics: GraphMetrics | null): Edge {
     ...e,
     label,
     type: 'dot',
+    data: {
+      ...data,
+      pulse: activity?.pulse ?? 0,
+      error: !!activity?.error,
+      duration: activity?.duration ?? 0,
+    },
     style: { ...e.style, stroke: color, strokeWidth: width },
     markerEnd: undefined,
   } as Edge;
@@ -149,7 +170,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
   }
 }
 
-export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes }: Props) {
+export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes, since }: Props) {
   const canEdit = canEditTopology(editable);
   const [initialViewport] = useState(() => viewportInit(lastViewport));
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
@@ -165,6 +186,31 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
     samples: [],
   });
   const inertiaRef = useRef<number | null>(null);
+  const [activity, setActivity] = useState<ActivityMap>(emptyActivity);
+  const prevMetricsRef = useRef<GraphMetrics | null>(null);
+  const sinceRef = useRef<string | undefined>(since);
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
+  const pulseRef = useRef(0);
+
+  useEffect(() => {
+    if (!metrics) {
+      prevMetricsRef.current = null;
+      sinceRef.current = since;
+      setActivity(emptyActivity());
+      return;
+    }
+    if (prevMetricsRef.current === null || sinceRef.current !== since) {
+      prevMetricsRef.current = metrics;
+      sinceRef.current = since;
+      setActivity(emptyActivity());
+      return;
+    }
+    const pulse = ++pulseRef.current;
+    const next = diffActivity(prevMetricsRef.current, metrics, pulse);
+    prevMetricsRef.current = metrics;
+    setActivity((current) => mergeActivity(current, next));
+  }, [metrics, since]);
 
   const stopInertia = useCallback(() => {
     if (inertiaRef.current !== null) {
@@ -319,7 +365,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
 
   useEffect(() => {
     setNodes((prev) => mergeNodeState(prev, structure.nodes));
-    setEdges(structure.edges.map((e) => decorateEdge(e, metrics)));
+    setEdges(structure.edges.map((e) => decorateEdge(e, metrics, activityRef.current.edges[e.id])));
     // metrics is intentionally read once per structure change; the metrics
     // effect below keeps labels fresh without touching positions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -327,10 +373,19 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
 
   useEffect(() => {
     setNodes((prev) =>
-      prev.map((n) => (n.data.metrics === metrics?.nodes[n.id] ? n : { ...n, data: { ...n.data, metrics: metrics?.nodes[n.id] } })),
+      prev.map((n) => {
+        const a = activity.nodes[n.id];
+        const pulse = a?.pulse ?? 0;
+        const error = !!a?.error;
+        const m = metrics?.nodes[n.id];
+        if (n.data.metrics === m && (n.data.pulse ?? 0) === pulse && (n.data.error ?? false) === error) {
+          return n;
+        }
+        return { ...n, data: { ...n.data, metrics: m, pulse, error } };
+      }),
     );
-    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics)));
-  }, [metrics, setNodes]);
+    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics, activity.edges[e.id])));
+  }, [metrics, activity, setNodes]);
 
   useEffect(() => {
     setNodes((prev) =>

@@ -15,6 +15,9 @@ export interface GraphNodeData extends Record<string, unknown> {
   metrics?: NodeMetrics;
   /** The node's x marker is dead in at least one route. */
   dead?: boolean;
+  /** One-shot activity pulse id; 0 means idle. */
+  pulse?: number;
+  error?: boolean;
 }
 
 export type GraphNode = Node<GraphNodeData>;

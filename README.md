@@ -258,7 +258,7 @@ when `admin.passwordHash` is set.
 | Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
-| Overview | Entrypoint → route → node → provider graph with live metrics, including per-node output token speed |
+| Overview | Entrypoint → route → node → provider graph with live metrics, per-node output token speed and one-shot traffic-flow dots |
 | Settings | Listen addresses, retention and admin password |
 
 Admin edits validate the new configuration, apply it to the data plane, and

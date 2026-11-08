@@ -598,7 +598,13 @@ export default function App() {
                       <Edit config={config} onReload={loadConfig} deadNodes={deadNodes} />
                     ) : null
                   ) : config ? (
-                    <Topology config={config} metrics={metrics} onSelect={setSelection} deadNodes={deadNodes} />
+                    <Topology
+                      config={config}
+                      metrics={metrics}
+                      onSelect={setSelection}
+                      deadNodes={deadNodes}
+                      since={since}
+                    />
                   ) : null}
                 </div>
               </div>

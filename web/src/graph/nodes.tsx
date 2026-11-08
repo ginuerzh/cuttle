@@ -7,7 +7,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import type { NodeMetrics } from '../api/types';
-import type { GraphNode } from './build';
+import type { GraphNode, GraphNodeData } from './build';
 import { translate as t } from '../i18n';
 import { formatDurationMs, formatTokenRate } from '../time';
 
@@ -157,6 +157,17 @@ export function NodeStats({ metrics, showRate = false }: { metrics?: NodeMetrics
   );
 }
 
+/** One-shot ring around a node that received traffic in the last snapshot. */
+export function NodePulse({ data }: { data: GraphNodeData }) {
+  if (!data.pulse) return null;
+  return (
+    <span
+      key={data.pulse}
+      className={data.error ? 'gw-node-pulse gw-node-pulse-error' : 'gw-node-pulse'}
+    />
+  );
+}
+
 export function EntrypointNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   return (
     <div style={{ ...box, ...selectionStyle(selected, '#6366f1'), background: 'var(--gw-node-entrypoint-bg)', minWidth: 220 }}>
@@ -165,6 +176,7 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
+      <NodePulse data={data} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#6366f1')} />
     </div>
   );
@@ -186,6 +198,7 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
+      <NodePulse data={data} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
     </div>
@@ -211,6 +224,7 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} showRate />
+      <NodePulse data={data} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>
@@ -234,6 +248,7 @@ export function ProviderNode({ data, selected, isConnectable }: NodeProps<GraphN
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
+      <NodePulse data={data} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#10b981')} />
     </div>
   );
@@ -246,6 +261,7 @@ export function UnroutedNode({ data, selected, isConnectable }: NodeProps<GraphN
         <WarningOutlined />
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
+      <NodePulse data={data} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#dc2626')} />
     </div>
   );

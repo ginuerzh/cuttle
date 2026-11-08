@@ -85,6 +85,20 @@ describe('BindingNode', () => {
     expect(html).not.toContain('ant-badge-status-error');
     expect(html).not.toContain('>dead<');
   });
+
+  it('renders one activity ring for a traffic pulse, red for errors', () => {
+    const pulseProps = {
+      ...props,
+      data: { ...props.data, pulse: 3, error: true },
+    } as unknown as NodeProps<GraphNode>;
+    const html = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <BindingNode {...pulseProps} />
+      </ReactFlowProvider>,
+    );
+    expect(html).toContain('gw-node-pulse');
+    expect(html).toContain('gw-node-pulse-error');
+  });
 });
 
 describe('NodeStats', () => {
