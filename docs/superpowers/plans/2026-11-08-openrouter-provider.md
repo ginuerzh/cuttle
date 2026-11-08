@@ -467,3 +467,46 @@ git commit -m "docs: document OpenRouter provider"
 After Task 5, run `git status` and confirm only expected files changed. Record
 the final commit SHAs in the implementation records above. Do not push until
 the user explicitly requests deployment.
+
+## Final review fixes
+
+Review package: `da8612d4..92d864f4` (10 commits), followed by fix commit
+`52860abd3c992ca75217a35ff293ea8dbb156450`.
+
+Fixed:
+- **Important:** OpenRouter router models return `pricing.prompt`/`completion`
+  of `"-1"`; negative sides are now treated as unreported in both the Go catalog
+  and the web price formatter. Tests: `TestModelsOpenRouterMetadata` and
+  `formatPrice` negative-sentinel case, RED→GREEN.
+- **Important:** Anthropic-only configs now map `https://openrouter.ai/api` to
+  `https://openrouter.ai/api/v1/key` instead of `/api/key`. Test:
+  `TestUsageOpenRouterAnthropicOnlyBase`, RED→GREEN.
+- **Re-graded Important:** a failed refresh for a note-only unlimited-key
+  account now retains the previous note and marks it stale. Test:
+  `TestProviderUsageOpenRouterStaleNote`, RED→GREEN.
+
+Full gate after fixes: `GOWORK=off go build ./...`, `go vet ./...`,
+`go test ./... -count=1`, `npm test` (28 files / 198 tests), and
+`npm run build` all pass.
+
+Deferred minors:
+- A `/key` reply with no limit and no usage returns an error instead of the
+  `unlimited key` note.
+- The unlimited-key note is English and the account empty-state still renders a
+  separate `—` beside it.
+- Optional catalog metadata is typed rather than raw, and `endpoints` filtering
+  is shared across provider types.
+- `is_free_tier` is not parsed or presented.
+- No end-to-end gateway request test for slash model IDs or local OpenRouter
+  count_tokens; policy/compile tests cover the units.
+
+Rulings (reviewer's declined-to-judge items): account-wide `/credits` and
+budget/effective-budget reporting are out of scope because they require
+management/org context; free-tier caps, zero-limit keys and reset instants are
+outside the selected `/key` contract; app-attribution headers, OpenRouter
+routing preferences, Gemini and non-token prices are explicit non-goals;
+catalog endpoints remain display-only because static `Resolve` must not do
+network I/O; batch-only filtering is intentional; Anthropic-version defaults
+and generic `count_tokens` behavior are pre-existing/type-based; no browser
+visual-test harness exists.
+
