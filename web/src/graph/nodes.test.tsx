@@ -105,7 +105,7 @@ describe('BindingNode', () => {
     expect(html).toContain('data-status="dead"');
     expect(html).toContain('aria-label="dead"');
     expect(html).toContain('title="dead"');
-    expect(html).toContain('viewBox="0 0 64 64"');
+    expect(html).toContain('viewBox="0 0 90 90"');
     expect(html).toContain('position:absolute');
     expect(html).toContain('top:4px');
     expect(html).toContain('right:4px');
