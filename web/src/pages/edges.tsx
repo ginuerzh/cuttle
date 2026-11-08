@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { useEffect, useRef } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
 
 interface FlowData extends Record<string, unknown> {
@@ -7,14 +7,16 @@ interface FlowData extends Record<string, unknown> {
   duration?: number;
 }
 
+const DOTS = 3;
+const TRAIL = 0.12;
+
 /**
  * n8n-style connection: a plain bezier with an optional label at the midpoint.
  * The endpoint dots come from the node handles; drawing them here as well
  * would render two dots at every connection point.
  *
- * When a snapshot reports new traffic, one light dot traverses the edge once.
- * The dot is keyed by the pulse id so a new snapshot restarts the animation
- * without any infinite looping.
+ * A snapshot with new traffic starts a one-shot rAF animation: three light
+ * dots follow the exact SVG path and fade out at the end. No SMIL and no loop.
  */
 export function DotEdge({
   sourceX,
@@ -31,9 +33,9 @@ export function DotEdge({
   const [path, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
-    sourcePosition,
     targetX,
     targetY,
+    sourcePosition,
     targetPosition,
   });
   const edgeStyle = selected
@@ -43,30 +45,74 @@ export function DotEdge({
   const flow = data as FlowData | undefined;
   const pulse = flow?.pulse ?? 0;
   const duration = Math.max(0.3, flow?.duration || 0.9);
-  const dotColor = flow?.error ? '#dc2626' : ((style?.stroke as string) || '#0ea5e9');
+  const dotColor = flow?.error ? '#dc2626' : '#0ea5e9';
+  const pathRef = useRef<SVGPathElement | null>(null);
+  const dotRefs = useRef<Array<SVGGElement | null>>([]);
+
+  useEffect(() => {
+    if (!pulse) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const pathEl = pathRef.current;
+    if (!pathEl || typeof pathEl.getTotalLength !== 'function') return;
+    const total = pathEl.getTotalLength();
+    if (!total) return;
+
+    const durationMs = duration * 1000;
+    const start = performance.now();
+    let frame = 0;
+
+    const tick = (now: number) => {
+      const elapsed = (now - start) / durationMs;
+      dotRefs.current.forEach((dot, index) => {
+        if (!dot) return;
+        const progress = elapsed - index * TRAIL;
+        if (progress <= 0 || progress >= 1) {
+          dot.setAttribute('opacity', '0');
+          return;
+        }
+        const point = pathEl.getPointAtLength(progress * total);
+        dot.setAttribute('transform', `translate(${point.x} ${point.y})`);
+        const fadeIn = progress < 0.1 ? progress / 0.1 : 1;
+        const fadeOut = progress > 0.85 ? (1 - progress) / 0.15 : 1;
+        dot.setAttribute('opacity', String(Math.min(fadeIn, fadeOut)));
+      });
+
+      if (elapsed < 1) {
+        frame = requestAnimationFrame(tick);
+      } else {
+        dotRefs.current.forEach((dot) => dot?.setAttribute('opacity', '0'));
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      dotRefs.current.forEach((dot) => dot?.setAttribute('opacity', '0'));
+    };
+  }, [pulse, duration, path]);
 
   return (
     <>
       <BaseEdge path={path} style={edgeStyle} interactionWidth={18} />
-      {pulse > 0 ? (
-        <g
-          key={pulse}
-          opacity={0}
-          pointerEvents="none"
-          style={{ filter: `drop-shadow(0 0 4px ${dotColor})` }}
-        >
-          {createElement('animateMotion', { path, dur: `${duration}s`, fill: 'remove' })}
-          <animate
-            attributeName="opacity"
-            values="0;1;1;0"
-            keyTimes="0;0.1;0.85;1"
-            dur={`${duration}s`}
-            fill="remove"
-          />
-          <circle r="4.5" fill={dotColor} opacity="0.25" />
-          <circle r="2.5" fill={dotColor} />
-        </g>
-      ) : null}
+      <path ref={pathRef} d={path} fill="none" stroke="none" />
+      {pulse > 0
+        ? Array.from({ length: DOTS }, (_, index) => (
+            <g
+              key={`${pulse}-${index}`}
+              ref={(el) => {
+                dotRefs.current[index] = el;
+              }}
+              className="gw-edge-dot"
+              opacity={0}
+              pointerEvents="none"
+              style={{ filter: `drop-shadow(0 0 5px ${dotColor})` }}
+            >
+              <circle r={7 - index * 0.8} fill={dotColor} opacity="0.22" />
+              <circle r={4 - index * 0.6} fill="#fff" opacity="0.95" />
+            </g>
+          ))
+        : null}
       {label ? (
         <EdgeLabelRenderer>
           <div

@@ -100,7 +100,7 @@ interface EdgeData extends Record<string, unknown> {
   duration?: number;
 }
 
-function decorateEdge(e: Edge, metrics: GraphMetrics | null, activity?: Activity): Edge {
+export function decorateEdge(e: Edge, metrics: GraphMetrics | null, activity?: Activity): Edge {
   const m = metrics?.edges[e.id];
   const data = e.data as EdgeData | undefined;
   const label = m ? edgeLabel(m) : undefined;

@@ -1,6 +1,7 @@
+import type { Edge } from '@xyflow/react';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { canEditTopology, edgeLabel, viewportInit } from './Topology';
+import { canEditTopology, decorateEdge, edgeLabel, viewportInit } from './Topology';
 
 describe('viewportInit', () => {
   it('fits the graph on the first visit', () => {
@@ -39,5 +40,20 @@ describe('edgeLabel', () => {
 
     expect(html).toContain('10');
     expect(html).not.toContain('#dc2626');
+  });
+});
+
+describe('decorateEdge', () => {
+  it('carries the one-shot pulse into the edge data', () => {
+    const edge = {
+      id: 'route:r|node:n',
+      source: 'route:r',
+      target: 'node:n',
+      style: { stroke: '#16a34a' },
+    } as Edge;
+
+    const decorated = decorateEdge(edge, null, { pulse: 7, error: true, duration: 0.6 });
+
+    expect(decorated.data).toMatchObject({ pulse: 7, error: true, duration: 0.6 });
   });
 });

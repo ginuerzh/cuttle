@@ -62,10 +62,11 @@ describe('DotEdge', () => {
 
     const html = renderToStaticMarkup(<DotEdge {...props} />);
 
-    expect(html).toContain('animateMotion');
-    expect(html).toContain('dur="0.6s"');
-    expect(html).not.toContain('repeatCount="indefinite"');
-    expect(html).toContain('fill="#16a34a"');
+    expect(html).toContain('gw-edge-dot');
+    expect((html.match(/gw-edge-dot/g) || []).length).toBe(3);
+    expect(html).not.toContain('animateMotion');
+    expect(html).toContain('fill="#0ea5e9"');
+    expect(html).toContain('fill="#fff"');
   });
 
   it('uses red light dots for an error pulse', () => {
