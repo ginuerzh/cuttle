@@ -211,12 +211,12 @@ git commit -m "feat(provider): parse OpenRouter model metadata"
 ```
 
 **Implementation record**
-- Date/status: pending
-- Repo/commit: pending
-- Files changed: pending
-- Tests/commands and results: pending
-- Review findings/fixes: pending
-- Deferred items/limitations: pending
+- Date/status: 2026-11-08, complete
+- Repo/commit: `e267f29ec69a2ea09e3ba722b86a0fadfdd91985` (`feat(provider): parse OpenRouter model metadata`)
+- Files changed: `internal/provider/models.go`, `internal/provider/models_test.go`
+- Tests/commands and results: `GOWORK=off go test ./internal/provider` → pass; `GOWORK=off go test ./internal/provider -run 'TestModels'` → pass
+- Review findings/fixes: the first test configured only the Chat base, so `intersectAPIs` correctly reduced the model APIs to `[chat]`; added the Responses/Anthropic bases to the fixture to exercise the endpoint mapping. Removed a temporary debug log.
+- Deferred items/limitations: input-cache-read pricing remains outside the existing input/output `Price` shape
 
 ---
 
