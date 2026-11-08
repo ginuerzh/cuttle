@@ -290,6 +290,11 @@ describe('formatPrice', () => {
     expect(formatPrice({ input: 0, output: 0.6 })).toBe('输出 $0.60/M');
   });
 
+  it('treats negative sentinel prices as unreported', () => {
+    expect(formatPrice({ input: -1, output: -1 })).toBeNull();
+    expect(formatPrice({ input: -1, output: 0.6 })).toBeNull();
+  });
+
   it('treats a lone zero side as unreported rather than free', () => {
     expect(formatPrice({ input: 0 })).toBeNull();
     expect(formatPrice({ output: 0 })).toBeNull();

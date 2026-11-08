@@ -183,7 +183,13 @@ func (p *baseProvider) usageURL(kind string) (string, bool) {
 		}
 		u.Path = path
 	case "openrouter":
-		u.Path = strings.TrimRight(u.Path, "/") + "/key"
+		path := strings.TrimRight(u.Path, "/")
+		if strings.HasSuffix(path, "/api") {
+			path += "/v1/key"
+		} else {
+			path += "/key"
+		}
+		u.Path = path
 	default:
 		return "", false
 	}

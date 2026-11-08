@@ -433,6 +433,39 @@ func TestProviderUsageOpenRouterNote(t *testing.T) {
 	}
 }
 
+func TestProviderUsageOpenRouterStaleNote(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	var fail atomic.Bool
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail.Load() {
+			http.Error(w, "boom", http.StatusBadGateway)
+			return
+		}
+		w.Write([]byte(`{"data":{"limit":null,"limit_remaining":null,"usage":25.5}}`))
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "openrouter", Type: "openrouter", Chat: vendor.URL + "/api/v1", Keys: []string{"sk-or-secret"},
+	})
+
+	client, _ := login(t, ts.URL)
+	first, _ := decodeUsage(t, doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage?refresh=1", "", ""))
+	if len(first.Providers) != 1 || len(first.Providers[0].Accounts) != 1 ||
+		!strings.Contains(first.Providers[0].Accounts[0].Note, "$25.50") {
+		t.Fatalf("first usage = %+v", first.Providers)
+	}
+
+	fail.Store(true)
+	second, _ := decodeUsage(t, doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage?refresh=1", "", ""))
+	if len(second.Providers) != 1 || len(second.Providers[0].Accounts) != 1 {
+		t.Fatalf("second usage = %+v", second.Providers)
+	}
+	acc := second.Providers[0].Accounts[0]
+	if !acc.Stale || !strings.Contains(acc.Note, "$25.50") {
+		t.Fatalf("stale account = %+v, want the previous note retained", acc)
+	}
+}
+
 func TestProviderUsageUnsupportedKeyless(t *testing.T) {
 	srv, _, _, ts := newTestAdmin(t)
 	var calls atomic.Int32

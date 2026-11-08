@@ -264,6 +264,9 @@ func TestModelsOpenRouterMetadata(t *testing.T) {
 			{"id":"chat-only","name":"Chat Only","context_length":8000,
 			 "pricing":{"prompt":"0.000001","completion":"0.000002"},
 			 "endpoints":["/api/v1/chat/completions"]},
+			{"id":"router/auto","name":"Auto Router","context_length":200000,
+			 "pricing":{"prompt":"-1","completion":"-1"},
+			 "endpoints":["/api/v1/chat/completions"]},
 			{"id":"image-only","name":"Image Only",
 			 "endpoints":["/api/v1/images"]}
 		]}`)
@@ -307,6 +310,14 @@ func TestModelsOpenRouterMetadata(t *testing.T) {
 	chatOnly, ok := findModel(models, "chat-only")
 	if !ok || !slices.Equal(chatOnly.APIs, []API{Chat}) {
 		t.Fatalf("chat-only model = %+v, want [chat]", chatOnly)
+	}
+
+	router, ok := findModel(models, "router/auto")
+	if !ok {
+		t.Fatal("router model missing")
+	}
+	if router.Price != nil {
+		t.Fatalf("router price = %+v, want nil for the -1 sentinel", router.Price)
 	}
 
 	if _, ok := findModel(models, "image-only"); ok {

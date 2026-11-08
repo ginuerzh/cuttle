@@ -187,6 +187,12 @@ export function formatModalities(values?: string[]): string | null {
  */
 export function formatPrice(price?: ProviderModel['price']): string | null {
   if (!price) return null;
+  if (
+    (typeof price.input === 'number' && price.input < 0) ||
+    (typeof price.output === 'number' && price.output < 0)
+  ) {
+    return null;
+  }
   const hasInput = typeof price.input === 'number';
   const hasOutput = typeof price.output === 'number';
   if (!hasInput && !hasOutput) return null;
@@ -209,7 +215,7 @@ export interface ModelDirectionRows {
 
 /** One side of the USD price, omitting an unreported zero. */
 function priceSide(value: number | undefined, free: boolean): string | null {
-  if (typeof value !== 'number') return null;
+  if (typeof value !== 'number' || value < 0) return null;
   if (free) return t('免费');
   if (value === 0) return null;
   return `$${value.toFixed(2)}/M`;

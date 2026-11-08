@@ -480,6 +480,27 @@ func TestUsageOpenRouterSupport(t *testing.T) {
 	}
 }
 
+func TestUsageOpenRouterAnthropicOnlyBase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/key" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"data":{"limit":100,"limit_remaining":50,"limit_reset":"monthly","usage":50}}`))
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "openrouter", Type: "openrouter", Anthropic: srv.URL + "/api", Keys: []string{"sk-or-test"},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 1 || accounts[0].Error != "" || len(accounts[0].Balance) != 1 {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+}
+
 func TestUsageOpenRouterLimitedKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/key" {

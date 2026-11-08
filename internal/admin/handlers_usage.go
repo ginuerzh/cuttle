@@ -193,7 +193,7 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 		}
 		if acc.Error != "" {
 			if oldAcc, ok := oldAccount(old, acc.KeyIndex); ok &&
-				(len(oldAcc.Balance) > 0 || len(oldAcc.Windows) > 0) {
+				(len(oldAcc.Balance) > 0 || len(oldAcc.Windows) > 0 || oldAcc.Note != "") {
 				av.Balance = oldAcc.Balance
 				av.Windows = oldAcc.Windows
 				av.Note = oldAcc.Note

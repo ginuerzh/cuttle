@@ -338,6 +338,11 @@ func (m openAIModelJSON) toItem() modelItem {
 			}
 		}
 	}
+	// OpenRouter uses negative values as "variable/unreported" sentinels for
+	// router models. Never expose them as a numeric price.
+	if item.Price != nil && (item.Price.Input < 0 || item.Price.Output < 0) {
+		item.Price = nil
+	}
 
 	for _, endpoint := range m.Endpoints {
 		if api, ok := apiFromEndpoint(endpoint); ok {
