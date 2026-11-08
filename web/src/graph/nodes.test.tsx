@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { NodeProps } from '@xyflow/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { GraphNode } from './build';
-import { BindingNode, EntrypointNode, NodeBody, NodeStats, handleStyle, nodeMood, selectionStyle } from './nodes';
+import { BindingNode, EntrypointNode, NodeBody, NodeStats, ProviderNode, RouteNode, handleStyle, nodeMood, selectionStyle } from './nodes';
 
 const stats = (requests: number, errors: number) => ({
   requests,
@@ -71,6 +71,45 @@ describe('nodeMood', () => {
     expect(nodeMood(stats(100, 1))).toBe('warn');
     expect(nodeMood(stats(10, 2))).toBe('error');
     expect(nodeMood(stats(10, 0), true)).toBe('dead');
+  });
+});
+
+describe('status badge placement', () => {
+  const nodeProps = (type: string, id: string) =>
+    ({
+      id,
+      type,
+      data: { kind: type, label: type, metrics: stats(10, 0) },
+      selected: false,
+      isConnectable: false,
+    }) as unknown as NodeProps<GraphNode>;
+
+  it('shows the badge only on binding nodes', () => {
+    const entrypoint = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <EntrypointNode {...nodeProps('entrypoint', 'entrypoint:x')} />
+      </ReactFlowProvider>,
+    );
+    const route = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <RouteNode {...nodeProps('route', 'route:x')} />
+      </ReactFlowProvider>,
+    );
+    const provider = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <ProviderNode {...nodeProps('provider', 'provider:x')} />
+      </ReactFlowProvider>,
+    );
+    const binding = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <BindingNode {...nodeProps('node', 'node:x')} />
+      </ReactFlowProvider>,
+    );
+
+    expect(entrypoint).not.toContain('data-status');
+    expect(route).not.toContain('data-status');
+    expect(provider).not.toContain('data-status');
+    expect(binding).toContain('data-status="healthy"');
   });
 });
 

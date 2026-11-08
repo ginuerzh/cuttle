@@ -21,9 +21,9 @@ function errorRate(m?: NodeMetrics): number {
 }
 
 /**
- * Four visible node states share one badge slot: dead, unhealthy, degraded and
- * healthy. A node with no traffic keeps the neutral border and shows no badge,
- * because it has no health signal yet.
+ * Binding nodes show one of four states in a single badge slot: dead,
+ * unhealthy, degraded and healthy. A node with no traffic keeps the neutral
+ * border and shows no badge, because it has no health signal yet.
  */
 export type NodeMood = 'dead' | 'error' | 'warn' | 'healthy' | 'idle';
 
@@ -257,7 +257,6 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
         ...selectionStyle(selected, '#6366f1'),
         background: 'var(--gw-node-entrypoint-bg)',
         minWidth: 220,
-        paddingRight: 24,
       }}
     >
       <IconBadge color="#6366f1" pulse={data.pulse} error={data.error}>
@@ -265,7 +264,6 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
-      <NodeMoodBadge mood={nodeMood(data.metrics)} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#6366f1')} />
     </div>
   );
@@ -280,7 +278,6 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
         ...selectionStyle(selected, color),
         background: 'var(--gw-node-route-bg)',
         minWidth: 250,
-        paddingRight: 24,
       }}
     >
       <IconBadge color="#0ea5e9" pulse={data.pulse} error={data.error}>
@@ -288,7 +285,6 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
-      <NodeMoodBadge mood={nodeMood(data.metrics)} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
     </div>
@@ -336,7 +332,6 @@ export function ProviderNode({ data, selected, isConnectable }: NodeProps<GraphN
         background: data.disabled ? 'var(--gw-node-disabled-bg)' : 'var(--gw-node-provider-bg)',
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 230,
-        paddingRight: 24,
       }}
     >
       <IconBadge color="#10b981" pulse={data.pulse} error={data.error}>
@@ -344,7 +339,6 @@ export function ProviderNode({ data, selected, isConnectable }: NodeProps<GraphN
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
-      <NodeMoodBadge mood={nodeMood(data.metrics)} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#10b981')} />
     </div>
   );
