@@ -74,7 +74,9 @@ export function RequestDetail({ request }: { request: RequestRow }) {
         <Descriptions.Item label="provider">{request.provider}</Descriptions.Item>
         <Descriptions.Item label="client model">{request.clientModel || '—'}</Descriptions.Item>
         <Descriptions.Item label="provider model">{request.model}</Descriptions.Item>
-        <Descriptions.Item label="effort">{request.effort || '—'}</Descriptions.Item>
+        <Descriptions.Item label="effort">
+          {request.effort && request.effort !== 'none' ? request.effort : '—'}
+        </Descriptions.Item>
         <Descriptions.Item label={t('入站协议')}>{request.inboundProtocol || '—'}</Descriptions.Item>
         <Descriptions.Item label={t('上游协议')}>{request.protocol || '—'}</Descriptions.Item>
         <Descriptions.Item label={t('请求路径')}>

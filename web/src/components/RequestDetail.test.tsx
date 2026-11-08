@@ -36,10 +36,8 @@ describe('RequestDetail', () => {
     expect(html).toContain('2.5K');
   });
 
-  it('renders an empty effort as a dash', () => {
-    const html = renderToStaticMarkup(<RequestDetail request={{ ...base, effort: '' }} />);
-
-    expect(html).toContain('effort');
-    expect(html).toContain('—');
+  it('renders an unspecified effort as a dash', () => {
+    expect(renderToStaticMarkup(<RequestDetail request={{ ...base, effort: '' }} />)).toContain('—');
+    expect(renderToStaticMarkup(<RequestDetail request={{ ...base, effort: 'none' }} />)).toContain('—');
   });
 });
