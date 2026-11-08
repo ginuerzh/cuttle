@@ -134,7 +134,7 @@ git commit -m "feat(provider): register OpenRouter"
 
 **Implementation record**
 - Date/status: 2026-11-08, complete
-- Repo/commit: pending (recorded in the follow-up plan commit)
+- Repo/commit: `25decfa364a5489173c6cffc153b1022e5142d28` (`feat(provider): register OpenRouter`)
 - Files changed: `internal/config/config.go`, `internal/provider/adapter_openrouter.go` (new), `internal/provider/provider.go`, `internal/provider/adapters_test.go`, `internal/provider/provider_test.go`, `internal/admin/presets.go`, `internal/admin/server_test.go`, `internal/gateway/upstream_target_test.go`, `web/src/pages/presets.ts`, `web/src/pages/presets.test.ts`, plus the design/plan documents
 - Tests/commands and results: `GOWORK=off go test ./internal/provider ./internal/admin ./internal/gateway` → pass; `npm test -- --run src/pages/presets.test.ts` → 60/60 pass
 - Review findings/fixes: the web type constant was changed before its test, so the first run passed; reverted it, observed the expected RED (`PROVIDER_TYPES` missing `openrouter`), then restored it. Go tests failed first with `unknown type "openrouter"`.
