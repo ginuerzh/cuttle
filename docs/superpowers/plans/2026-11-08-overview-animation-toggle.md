@@ -627,12 +627,12 @@ git commit -m "docs: document overview animation switch"
 ```
 
 **Implementation record**
-- Date/status: TODO
-- Repo/commit: TODO
-- Files changed: TODO
-- Tests/commands and results: TODO
-- Review findings/fixes: TODO
-- Deferred items/limitations: TODO
+- Date/status: 2026-11-08 — complete
+- Repo/commit: `llm-gw` @ `37ff8519` (docs), implementation record committed separately
+- Files changed: `AGENTS.md`, `README.md`, `docs/superpowers/specs/2026-11-08-overview-animation-toggle-design.md`
+- Tests/commands and results: `npm test` → 29 files / 207 tests passed; `npx tsc --noEmit` → clean; `npm run build` → Vite bundle written to `internal/admin/dist` (3440 modules); `GOWORK=off go build ./...` → clean; `GOWORK=off go vet ./...` → clean; `GOWORK=off go test ./... -count=1` → all packages passed.
+- Review findings/fixes: removed a 2.6 GB `web/core` dump produced by the abandoned antd/jsdom Switch test before committing; it was untracked and never part of the change.
+- Deferred items/limitations: no browser screenshot or visual-regression harness, so the flash timing, red error halo and `prefers-reduced-motion` behavior were verified by CSS/test review rather than a rendered browser; the toolbar switch click was not automated because antd `Switch` OOMs jsdom.
 
 ---
 
