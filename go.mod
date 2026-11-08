@@ -3,11 +3,12 @@ module github.com/go-gost/llm-gw
 go 1.26.4
 
 require (
-	github.com/ginuerzh/llm-api-converter v0.5.1
+	github.com/ginuerzh/llm-api-converter v0.5.2
 	github.com/go-gost/core v0.6.1
 	github.com/go-gost/x v0.29.0
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/crypto v0.55.0
+	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.61.1
 )
@@ -69,7 +70,6 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20241210194714-1829a127f884 // indirect
-	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
