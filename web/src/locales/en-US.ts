@@ -238,6 +238,8 @@ export const enUS: Record<string, string> = {
   '7 天': '7 days',
   '30 天': '30 days',
   '更新于 {time}': 'Updated {time}',
+  '每日': 'Daily',
+  '密钥限额': 'Key limit',
   '输入 tokens': 'Input tokens',
   '输出 tokens': 'Output tokens',
   '缓存 tokens': 'Cached tokens',

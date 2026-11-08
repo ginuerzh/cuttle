@@ -20,6 +20,7 @@ type accountUsageView struct {
 	KeyPreview string                 `json:"keyPreview,omitempty"`
 	Balance    []provider.BalancePart `json:"balance,omitempty"`
 	Windows    []provider.QuotaWindow `json:"windows,omitempty"`
+	Note       string                 `json:"note,omitempty"`
 	Error      string                 `json:"error,omitempty"`
 	Stale      bool                   `json:"stale,omitempty"`
 	CheckedAt  string                 `json:"checkedAt,omitempty"`
@@ -186,6 +187,7 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 			KeyPreview: keyPreview,
 			Balance:    acc.Balance,
 			Windows:    acc.Windows,
+			Note:       acc.Note,
 			Error:      acc.Error,
 			CheckedAt:  formatCheckedAt(acc.CheckedAt),
 		}
@@ -194,6 +196,7 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 				(len(oldAcc.Balance) > 0 || len(oldAcc.Windows) > 0) {
 				av.Balance = oldAcc.Balance
 				av.Windows = oldAcc.Windows
+				av.Note = oldAcc.Note
 				av.CheckedAt = oldAcc.CheckedAt
 				av.Stale = true
 			}

@@ -81,7 +81,7 @@ func (e *UsageUnsupportedError) Error() string {
 // when it does not, the operator-facing reason.
 func UsageSupport(typ string) (bool, string) {
 	switch strings.ToLower(strings.TrimSpace(typ)) {
-	case "deepseek", "commandcode", "opencode-go":
+	case "deepseek", "commandcode", "opencode-go", "openrouter":
 		return true, ""
 	case "opencode-zen":
 		return false, OpenCodeZenUsageNote
@@ -109,6 +109,8 @@ func (p *baseProvider) Usage(ctx context.Context) ([]AccountUsage, error) {
 		kind = "commandcode"
 	case "opencode-go":
 		kind = "opencode-go"
+	case "openrouter":
+		kind = "openrouter"
 	}
 
 	if p.usageBaseURL() == "" {
@@ -180,6 +182,8 @@ func (p *baseProvider) usageURL(kind string) (string, bool) {
 			path += "/usage"
 		}
 		u.Path = path
+	case "openrouter":
+		u.Path = strings.TrimRight(u.Path, "/") + "/key"
 	default:
 		return "", false
 	}
@@ -208,6 +212,7 @@ func (p *baseProvider) usageAccount(ctx context.Context, kind, key string, index
 
 	var balance []BalancePart
 	var windows []QuotaWindow
+	var note string
 	switch kind {
 	case "deepseek":
 		balance, windows, err = parseDeepSeekUsage(body)
@@ -219,6 +224,8 @@ func (p *baseProvider) usageAccount(ctx context.Context, kind, key string, index
 		}
 	case "opencode-go":
 		balance, windows, err = parseOpenCodeGoUsage(body)
+	case "openrouter":
+		balance, windows, note, err = parseOpenRouterUsage(body)
 	default:
 		err = fmt.Errorf("usage is not supported for %q", kind)
 	}
@@ -229,6 +236,7 @@ func (p *baseProvider) usageAccount(ctx context.Context, kind, key string, index
 
 	acc.Balance = balance
 	acc.Windows = windows
+	acc.Note = note
 	acc.CheckedAt = time.Now().UTC()
 	return acc
 }
@@ -522,6 +530,45 @@ func parseOpenCodeGoUsage(body []byte) ([]BalancePart, []QuotaWindow, error) {
 		return nil, nil, errors.New("no usage windows in the reply")
 	}
 	return nil, out, nil
+}
+
+func parseOpenRouterUsage(body []byte) ([]BalancePart, []QuotaWindow, string, error) {
+	var r struct {
+		Data struct {
+			Limit          any    `json:"limit"`
+			LimitRemaining any    `json:"limit_remaining"`
+			LimitReset     string `json:"limit_reset"`
+			Usage          any    `json:"usage"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return nil, nil, "", err
+	}
+
+	limit, limitOK := usageNumber(r.Data.Limit)
+	remaining, remainingOK := usageNumber(r.Data.LimitRemaining)
+	usage, usageOK := usageNumber(r.Data.Usage)
+
+	if limitOK && limit > 0 && remainingOK {
+		name := strings.ToLower(strings.TrimSpace(r.Data.LimitReset))
+		switch name {
+		case "daily", "weekly", "monthly":
+		default:
+			name = "key limit"
+		}
+		return []BalancePart{{Currency: "USD", Total: math.Max(0, remaining)}},
+			[]QuotaWindow{{
+				Name:        name,
+				UsedPercent: usageClampPercent(100 * (limit - remaining) / limit),
+			}}, "", nil
+	}
+	if limitOK && limit > 0 {
+		return nil, nil, "", errors.New("key limit has no remaining value")
+	}
+	if usageOK {
+		return nil, nil, fmt.Sprintf("unlimited key · all-time usage $%.2f", usage), nil
+	}
+	return nil, nil, "", errors.New("no key limit or usage in the reply")
 }
 
 func usageNumber(v any) (float64, bool) {

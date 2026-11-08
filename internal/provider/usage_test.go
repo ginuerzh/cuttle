@@ -474,6 +474,80 @@ func TestUsageErrorRedactsKeyBeforeTruncating(t *testing.T) {
 	}
 }
 
+func TestUsageOpenRouterSupport(t *testing.T) {
+	if supported, note := UsageSupport("openrouter"); !supported || note != "" {
+		t.Fatalf("UsageSupport(openrouter) = %v, %q", supported, note)
+	}
+}
+
+func TestUsageOpenRouterLimitedKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/key" {
+			t.Errorf("path = %q, want /api/v1/key", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-or-test" {
+			t.Errorf("auth = %q", got)
+		}
+		w.Write([]byte(`{"data":{"limit":100,"limit_remaining":74.5,"limit_reset":"monthly","usage":25.5,"usage_daily":1.2}}`))
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "openrouter", Type: "openrouter", Chat: srv.URL + "/api/v1", Keys: []string{"sk-or-test"},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+	acc := accounts[0]
+	if len(acc.Balance) != 1 || acc.Balance[0].Currency != "USD" ||
+		math.Abs(acc.Balance[0].Total-74.5) > 1e-9 {
+		t.Fatalf("balance = %+v", acc.Balance)
+	}
+	if len(acc.Windows) != 1 || acc.Windows[0].Name != "monthly" ||
+		math.Abs(acc.Windows[0].UsedPercent-25.5) > 1e-9 {
+		t.Fatalf("windows = %+v", acc.Windows)
+	}
+	if acc.Note != "" {
+		t.Fatalf("note = %q, want empty for a limited key", acc.Note)
+	}
+	if acc.CheckedAt.IsZero() {
+		t.Fatal("checkedAt is zero")
+	}
+}
+
+func TestUsageOpenRouterUnlimitedKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/key" {
+			t.Errorf("path = %q, want /api/v1/key", r.URL.Path)
+		}
+		w.Write([]byte(`{"data":{"limit":null,"limit_remaining":null,"usage":25.5}}`))
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "openrouter", Type: "openrouter", Chat: srv.URL + "/api/v1", Keys: []string{"sk-or-test"},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+	acc := accounts[0]
+	if len(acc.Balance) != 0 || len(acc.Windows) != 0 {
+		t.Fatalf("account = %+v, want no balance/windows", acc)
+	}
+	if !strings.Contains(acc.Note, "unlimited key") || !strings.Contains(acc.Note, "$25.50") {
+		t.Fatalf("note = %q", acc.Note)
+	}
+	if acc.CheckedAt.IsZero() {
+		t.Fatal("checkedAt is zero")
+	}
+}
+
 func TestParseCommandCodeSubscription(t *testing.T) {
 	cases := []struct {
 		name   string

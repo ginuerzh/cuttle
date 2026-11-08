@@ -64,10 +64,12 @@ function formatMoney(b: BalancePart): string {
   return out;
 }
 
-function windowLabel(name: string): string {
+export function windowLabel(name: string): string {
   if (name === '5h') return t('5 小时');
+  if (name === 'daily') return t('每日');
   if (name === 'weekly') return t('每周');
   if (name === 'monthly') return t('每月');
+  if (name === 'key limit') return t('密钥限额');
   return name;
 }
 
@@ -88,7 +90,7 @@ function WindowRow({ window }: { window: QuotaWindow }) {
   );
 }
 
-function AccountRow({ account, first }: { account: AccountUsage; first: boolean }) {
+export function AccountRow({ account, first }: { account: AccountUsage; first: boolean }) {
   return (
     <div
       style={{
@@ -104,6 +106,11 @@ function AccountRow({ account, first }: { account: AccountUsage; first: boolean 
           <Typography.Text type="secondary">{formatDateTime(account.checkedAt)}</Typography.Text>
         ) : null}
       </Space>
+      {account.note ? (
+        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+          {account.note}
+        </Typography.Text>
+      ) : null}
       {account.balance?.map((balance, i) => (
         <div key={i} style={{ marginTop: 8, fontSize: 16, fontWeight: 600 }}>
           {formatMoney(balance)}

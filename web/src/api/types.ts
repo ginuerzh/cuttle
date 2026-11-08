@@ -318,6 +318,7 @@ export interface AccountUsage {
   keyPreview?: string;
   balance?: BalancePart[];
   windows?: QuotaWindow[];
+  note?: string;
   error?: string;
   stale?: boolean;
   checkedAt?: string;

@@ -406,6 +406,33 @@ func TestProviderUsageCanceledRequestNotCached(t *testing.T) {
 	}
 }
 
+func TestProviderUsageOpenRouterNote(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/key" {
+			t.Errorf("path = %q, want /api/v1/key", r.URL.Path)
+		}
+		w.Write([]byte(`{"data":{"limit":null,"limit_remaining":null,"usage":25.5}}`))
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "openrouter", Type: "openrouter", Chat: vendor.URL + "/api/v1", Keys: []string{"sk-or-secret"},
+	})
+
+	client, _ := login(t, ts.URL)
+	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage?refresh=1", "", "")
+	got, raw := decodeUsage(t, resp)
+	if len(got.Providers) != 1 || !got.Providers[0].Supported || len(got.Providers[0].Accounts) != 1 {
+		t.Fatalf("providers = %+v", got.Providers)
+	}
+	if !strings.Contains(raw, `"note"`) || !strings.Contains(raw, "unlimited key") || !strings.Contains(raw, "$25.50") {
+		t.Fatalf("usage response has no note: %s", raw)
+	}
+	if strings.Contains(raw, "sk-or-secret") {
+		t.Fatalf("response leaked key: %s", raw)
+	}
+}
+
 func TestProviderUsageUnsupportedKeyless(t *testing.T) {
 	srv, _, _, ts := newTestAdmin(t)
 	var calls atomic.Int32
