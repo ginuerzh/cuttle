@@ -41,7 +41,7 @@ func routeNeedsCountTokensEstimate(plans []nodePlan) bool {
 		if v, ok := np.targets.variants[provider.Anthropic]; ok {
 			target = v
 		}
-		if target.api != provider.Anthropic {
+		if target.api != provider.Anthropic || !provider.SupportsAnthropicCountTokens(np.provider.Type) {
 			return true
 		}
 	}

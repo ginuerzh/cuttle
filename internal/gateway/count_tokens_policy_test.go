@@ -18,6 +18,7 @@ func TestRouteNeedsCountTokensEstimate(t *testing.T) {
 			provider.Anthropic: {api: provider.Anthropic},
 		},
 	}
+	openRouterAnthropic := nodeTargets{defaultTarget: upstreamTarget{api: provider.Anthropic}}
 
 	cases := []struct {
 		name  string
@@ -29,6 +30,10 @@ func TestRouteNeedsCountTokensEstimate(t *testing.T) {
 		{"chat", []nodePlan{{targets: chat}}, true},
 		{"gemini", []nodePlan{{targets: gemini}}, true},
 		{"anthropic variant wins", []nodePlan{{targets: anthropicVariant}}, false},
+		{"openrouter anthropic target estimates", []nodePlan{{
+			provider: gwconfig.Provider{Type: "openrouter"},
+			targets:  openRouterAnthropic,
+		}}, true},
 		{"mixed", []nodePlan{{targets: anthropic}, {targets: chat}}, true},
 	}
 	for _, tc := range cases {
