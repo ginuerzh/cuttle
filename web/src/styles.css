@@ -45,6 +45,19 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
+}
+
+/* Mobile browsers report 100vh larger than the visible area while the
+ * address bar is shown; dvh follows the dynamic viewport. */
+.gw-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.gw-login {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 body {

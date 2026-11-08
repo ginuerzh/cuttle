@@ -23,8 +23,8 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div
+      className="gw-login"
       style={{
-        minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

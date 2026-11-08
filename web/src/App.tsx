@@ -530,7 +530,7 @@ export default function App() {
   }
 
   return (
-    <Layout style={{ height: '100vh', background: 'var(--gw-bg)' }}>
+    <Layout className="gw-shell" style={{ background: 'var(--gw-bg)' }}>
       <Header
         style={{
           display: 'flex',
@@ -555,7 +555,7 @@ export default function App() {
         </Typography.Text>
       </Header>
 
-      <Layout style={{ background: 'var(--gw-bg)' }}>
+      <Layout style={{ background: 'var(--gw-bg)', minHeight: 0 }}>
         <Drawer
           placement="left"
           open={navOpen}
@@ -576,8 +576,18 @@ export default function App() {
           />
         </Drawer>
 
-        <Content style={{ display: 'flex', minWidth: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Content style={{ display: 'flex', minWidth: 0, minHeight: 0 }}>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              overflowY: page === 'topology' ? 'hidden' : 'auto',
+            }}
+          >
             {page === 'topology' ? (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 <OverviewToolbar
