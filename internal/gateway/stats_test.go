@@ -26,6 +26,7 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
 	cfg.Entrypoints = []config.Entrypoint{
 		{Name: "fast", Match: []string{"gpt-4.5*"}, Route: "r"},
+		{Name: "claude", Match: []string{"claude-*"}, Route: "r"},
 	}
 	cfg.Providers = []config.Provider{{
 		Name: "p",
@@ -105,6 +106,41 @@ func TestStatsRecordsNonStreaming(t *testing.T) {
 	raw := strings.Join([]string{row.ID, row.SID, row.Model, row.Provider, row.Protocol, row.Error}, " ")
 	if strings.Contains(raw, "client-key") || strings.Contains(raw, "sk-secret") {
 		t.Fatalf("sensitive data leaked into stats: %q", raw)
+	}
+}
+
+func TestStatsRecordsExplicitClientEffortLevel(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
+	}))
+	defer upstream.Close()
+
+	gw, err := gateway.New(statsConfig(t, upstream.URL), xlogger.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+"/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-5","max_tokens":16,"output_config":{"effort":"max"},"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	row := waitRow(t, gw)
+	if row.Effort != "max" {
+		t.Fatalf("effort = %q, want max (the client-selected level, not the normalized band)", row.Effort)
+	}
+	if row.ClientModel != "claude-sonnet-5" {
+		t.Fatalf("client model = %q, want claude-sonnet-5", row.ClientModel)
 	}
 }
 

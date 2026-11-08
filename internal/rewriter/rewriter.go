@@ -117,6 +117,9 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		return b, err
 	}
 	r.captureRewrite(meta, b, res.Data, res)
+	if level := requestEffort(meta.Direction, b); level != "" {
+		res.Effort = level
+	}
 	if r.opts.Sink != nil {
 		r.opts.Sink.Add(meta.SID, r.opts.Provider, r.opts.Protocol, res)
 	}
@@ -139,6 +142,61 @@ func (r *Rewriter) captureRewrite(meta engine.Meta, original, rewritten []byte, 
 		return
 	}
 	r.opts.Capture.Offer(meta.SID, "response", original, rewritten, meta.SSEPhase, meta.EventIndex)
+}
+
+// requestEffort returns the explicit effort level on a request body, preserving
+// levels such as xhigh and max that the engine normalizes into a band for
+// routing. Stats show the level the client actually selected.
+func requestEffort(direction string, body []byte) string {
+	if !strings.EqualFold(strings.TrimSpace(direction), "request") || len(body) == 0 {
+		return ""
+	}
+	var v struct {
+		ReasoningEffort string `json:"reasoning_effort"`
+		Reasoning       struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning"`
+		OutputConfig struct {
+			Effort string `json:"effort"`
+		} `json:"output_config"`
+		GenerationConfig struct {
+			ThinkingConfig struct {
+				ThinkingLevel string `json:"thinkingLevel"`
+			} `json:"thinkingConfig"`
+		} `json:"generationConfig"`
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
+		return ""
+	}
+	for _, s := range []string{
+		v.ReasoningEffort,
+		v.Reasoning.Effort,
+		v.OutputConfig.Effort,
+		v.GenerationConfig.ThinkingConfig.ThinkingLevel,
+	} {
+		if level := effortLevel(s); level != "" {
+			return level
+		}
+	}
+	return ""
+}
+
+// effortLevel normalizes an explicit effort string. "minimal" is an OpenAI
+// level below "low" and stays reported as low, matching the engine band.
+func effortLevel(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "minimal", "low":
+		return "low"
+	case "medium":
+		return "medium"
+	case "high":
+		return "high"
+	case "xhigh":
+		return "xhigh"
+	case "max":
+		return "max"
+	}
+	return ""
 }
 
 func requestModel(uri string, body []byte) string {
