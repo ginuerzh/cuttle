@@ -1,4 +1,5 @@
 import type { NodeAPI, Preset, Provider, ProviderApi, ProviderModel } from '../api/types';
+import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 
 /** Form values a preset writes into the add-provider dialog. */
@@ -139,20 +140,10 @@ export function modelApiLabel(model: ProviderModel): string {
   return (model.apis ?? []).join(' · ');
 }
 
-/** Render a token count compactly, e.g. 1000000 → "1M", 384000 → "384K". */
+/** Render a token limit compactly with the shared K/M/B unit scale. */
 export function formatContextSize(n?: number): string | null {
   if (!n || n <= 0 || !Number.isFinite(n)) return null;
-  if (n >= 1_000_000) return `${trimUnit(n / 1_000_000)}M`;
-  if (n >= 1_000) {
-    const thousands = Math.round(n / 1_000);
-    return thousands >= 1_000 ? `${trimUnit(n / 1_000_000)}M` : `${thousands}K`;
-  }
-  return String(n);
-}
-
-/** Drop the trailing zeros of a one-decimal unit value, e.g. 1.0 → "1". */
-function trimUnit(value: number): string {
-  return String(Number(value.toFixed(1)));
+  return formatCount(n);
 }
 
 /** Top-level modality types the UI knows how to display. */

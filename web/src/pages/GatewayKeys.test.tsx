@@ -37,8 +37,8 @@ describe('GatewayKeyCard', () => {
     expect(html).toContain('sk-...abcd');
     expect(html).toContain('会话 12');
     expect(html).toContain('错误 1');
-    expect(html).toContain('输入 1000');
-    expect(html).toContain('输出 2000');
+    expect(html).toContain('输入 1K');
+    expect(html).toContain('输出 2K');
     expect(html).toContain('缓存 500');
     expect(html).toContain('aria-label="启用 claude-code"');
   });

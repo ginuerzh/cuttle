@@ -231,7 +231,7 @@ describe('formatContextSize', () => {
 
   it('rounds to whole units for common context sizes', () => {
     expect(formatContextSize(128_000)).toBe('128K');
-    expect(formatContextSize(8_192)).toBe('8K');
+    expect(formatContextSize(8_192)).toBe('8.2K');
     expect(formatContextSize(999_500)).toBe('1M');
   });
 });

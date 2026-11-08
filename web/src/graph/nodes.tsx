@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import type { NodeMetrics } from '../api/types';
 import type { GraphNode } from './build';
+import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { formatDurationMs, formatTokenRate } from '../time';
 
@@ -43,12 +44,6 @@ function healthColor(m?: NodeMetrics): string {
   return '#16a34a';
 }
 
-function fmt(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return `${n}`;
-}
-
 function errorPercent(m: NodeMetrics): string {
   const err = errorRate(m) * 100;
   return `${err < 10 ? err.toFixed(1) : err.toFixed(0)}%`;
@@ -59,7 +54,7 @@ function metricsText(m: NodeMetrics, showRate: boolean): string {
   const error = m.errors > 0 ? ` · ${errorPercent(m)}` : '';
   const rate = showRate ? formatTokenRate(m.outputTokensPerSecond) : '';
   const speed = rate ? ` · ${rate}` : '';
-  return `${fmt(m.requests)}${error} · p95 ${formatDurationMs(m.p95Ms)}${speed}`;
+  return `${formatCount(m.requests)}${error} · p95 ${formatDurationMs(m.p95Ms)}${speed}`;
 }
 
 const box: React.CSSProperties = {
@@ -237,7 +232,7 @@ export function NodeStats({ metrics, showRate = false }: { metrics?: NodeMetrics
         text
       ) : (
         <>
-          {`${fmt(metrics.requests)}`}
+          {`${formatCount(metrics.requests)}`}
           {metrics.errors > 0 ? (
             <>
               {' · '}

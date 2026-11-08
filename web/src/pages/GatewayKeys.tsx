@@ -31,6 +31,7 @@ import type {
 } from '../api/types';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
+import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { formatDateTime } from '../time';
 
@@ -51,11 +52,11 @@ export function gatewayKeyState(keys: Pick<GatewayKey, 'enabled'>[]): 'none' | '
 function usageLine(usage?: GatewayKeyUsage): string | undefined {
   if (!usage) return undefined;
   return [
-    `${t('会话')} ${usage.requests}`,
-    `${t('错误')} ${usage.errors}`,
-    `${t('输入')} ${usage.inputTokens}`,
-    `${t('输出')} ${usage.outputTokens}`,
-    `${t('缓存')} ${usage.cachedTokens}`,
+    `${t('会话')} ${formatCount(usage.requests)}`,
+    `${t('错误')} ${formatCount(usage.errors)}`,
+    `${t('输入')} ${formatCount(usage.inputTokens)}`,
+    `${t('输出')} ${formatCount(usage.outputTokens)}`,
+    `${t('缓存')} ${formatCount(usage.cachedTokens)}`,
   ].join(' · ');
 }
 
@@ -433,7 +434,7 @@ export function GatewayKeysPage() {
                   key={row.requestId}
                   dense
                   title={row.clientModel || row.model || row.requestId}
-                  subtitle={`${formatDateTime(row.ts)} · ${row.route || 'unrouted'} · ${row.inputTokens}/${row.outputTokens} tok`}
+                  subtitle={`${formatDateTime(row.ts)} · ${row.route || 'unrouted'} · ${formatCount(row.inputTokens)}/${formatCount(row.outputTokens)} tok`}
                   tags={
                     <Tag color={failed ? 'red' : row.status >= 300 ? 'orange' : 'green'}>
                       {row.status}

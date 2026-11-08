@@ -20,6 +20,7 @@ import type { Alert, CaptureRule, ErrorSummary, RequestRow } from '../api/types'
 import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
+import { formatCount } from '../format';
 import { formatDateTime } from '../time';
 
 const RANGES = [
@@ -313,7 +314,7 @@ export function RequestsPage() {
           <ListCard
             key={r.requestId}
             title={r.clientModel || r.model || r.requestId}
-            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${r.inputTokens}/${r.outputTokens} tok${keyLabel ? ` · ${keyLabel}` : ''}${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
+            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${formatCount(r.inputTokens)}/${formatCount(r.outputTokens)} tok${keyLabel ? ` · ${keyLabel}` : ''}${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
             tags={
               <Space size={4}>
                 {r.truncated ? <Tag color="volcano">{t('已截断')}</Tag> : null}
@@ -369,7 +370,7 @@ export function RequestsPage() {
               </Descriptions.Item>
               <Descriptions.Item label={t('耗时')}>{`${selected.durationMs} ms`}</Descriptions.Item>
               <Descriptions.Item label="tokens">
-                {t('入 {input} · 出 {output} · 缓存 {cached}', { input: selected.inputTokens, output: selected.outputTokens, cached: selected.cachedTokens })}
+                {t('入 {input} · 出 {output} · 缓存 {cached}', { input: formatCount(selected.inputTokens), output: formatCount(selected.outputTokens), cached: formatCount(selected.cachedTokens) })}
               </Descriptions.Item>
               <Descriptions.Item label="bytes">
                 {`${selected.bytesIn} in / ${selected.bytesOut} out`}

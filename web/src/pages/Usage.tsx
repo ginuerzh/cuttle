@@ -21,6 +21,7 @@ import { getProviderUsage } from '../api/client';
 import type { AccountUsage, BalancePart, ProviderUsage, ProviderUsageResponse, QuotaWindow } from '../api/types';
 import { useIsMobile } from '../components/useIsMobile';
 import { ListPage } from '../components/ListPage';
+import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { formatDateTime } from '../time';
 
@@ -29,14 +30,6 @@ const RANGES = [
   { label: '7 天', value: 7 * 24 * 3_600_000 },
   { label: '30 天', value: 30 * 24 * 3_600_000 },
 ];
-
-export function formatCount(n?: number): string {
-  if (n === undefined || n === null) return '—';
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
 
 function currencySymbol(currency?: string): string {
   switch ((currency ?? '').toUpperCase()) {

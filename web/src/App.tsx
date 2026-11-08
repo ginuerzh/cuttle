@@ -52,6 +52,7 @@ import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
 import { NAV_LABELS, NAV_ORDER, type Page } from './nav';
 import { loadAnimationEnabled, saveAnimationEnabled } from './animation';
+import { formatCount } from './format';
 import { formatDateTime, formatDurationMs, formatTokenRate } from './time';
 
 const { Header, Content } = Layout;
@@ -95,12 +96,6 @@ const RANGES = [
   { label: '12h', value: '12h', ms: 12 * 60 * 60_000 },
   { label: '24h', value: '24h', ms: 24 * 60 * 60_000 },
 ];
-
-function fmt(n = 0): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return `${n}`;
-}
 
 function rate(m?: { requests: number; errors: number }): string {
   if (!m || m.requests === 0) return '—';
@@ -183,7 +178,7 @@ export function SessionCard({ row }: { row: RequestRow }) {
         style={{ display: 'block', fontSize: 11, marginTop: 2, wordBreak: 'break-all' }}
       >
         {row.route || 'unrouted'} · {row.provider}
-        {row.node ? `/${row.node}` : ''} · {row.inputTokens}/{row.outputTokens} tok
+        {row.node ? `/${row.node}` : ''} · {formatCount(row.inputTokens)}/{formatCount(row.outputTokens)} tok
       </Typography.Text>
       {row.error ? (
         <Typography.Text
@@ -232,7 +227,7 @@ export function NodePanel({
         ) : null}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
-        <Descriptions.Item label={translate('会话')}>{fmt(metrics?.requests)}</Descriptions.Item>
+        <Descriptions.Item label={translate('会话')}>{formatCount(metrics?.requests ?? 0)}</Descriptions.Item>
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误率')}>
             <span style={{ color: '#dc2626' }}>{rate(metrics)}</span>
@@ -248,9 +243,9 @@ export function NodePanel({
         ) : null}
         <Descriptions.Item label="tokens">
           {translate('入 {input} · 出 {output} · 缓存 {cached}', {
-            input: fmt(metrics?.inputTokens),
-            output: fmt(metrics?.outputTokens),
-            cached: fmt(metrics?.cachedTokens),
+            input: formatCount(metrics?.inputTokens ?? 0),
+            output: formatCount(metrics?.outputTokens ?? 0),
+            cached: formatCount(metrics?.cachedTokens ?? 0),
           })}
         </Descriptions.Item>
       </Descriptions>
@@ -305,10 +300,10 @@ function EdgePanel({ id, metrics }: { id: string; metrics?: EdgeMetrics }) {
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
         <Descriptions.Item label={translate('路径')}>{parts.join(' → ')}</Descriptions.Item>
-        <Descriptions.Item label={translate('会话')}>{fmt(metrics?.requests)}</Descriptions.Item>
+        <Descriptions.Item label={translate('会话')}>{formatCount(metrics?.requests ?? 0)}</Descriptions.Item>
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误')}>
-            <span style={{ color: '#dc2626' }}>{fmt(metrics.errors)}（{rate(metrics)}）</span>
+            <span style={{ color: '#dc2626' }}>{formatCount(metrics.errors)}（{rate(metrics)}）</span>
           </Descriptions.Item>
         ) : null}
       </Descriptions>
