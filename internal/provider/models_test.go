@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -240,6 +241,76 @@ func TestModelsVendorFallsBackToFirstConfiguredAPI(t *testing.T) {
 	}
 	if len(models) != 1 || models[0].ID != "deepseek-chat" {
 		t.Fatalf("models = %+v", models)
+	}
+}
+
+func TestModelsOpenRouterMetadata(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/models" {
+			t.Errorf("path = %q, want /api/v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization = %q, want empty for a public catalog", got)
+		}
+		fmt.Fprint(w, `{"data":[
+			{"id":"anthropic/claude-sonnet-4","name":"Anthropic: Claude Sonnet 4","context_length":200000,
+			 "architecture":{"input_modalities":["text","image"],"output_modalities":["text"]},
+			 "pricing":{"prompt":"0.000003","completion":"0.000015"},
+			 "top_provider":{"max_completion_tokens":64000},
+			 "endpoints":["/api/v1/chat/completions","/api/v1/responses","/api/v1/messages"]},
+			{"id":"free/model","name":"Free Model","context_length":32000,
+			 "pricing":{"prompt":"0","completion":"0"},
+			 "endpoints":["/api/v1/chat/completions"]},
+			{"id":"chat-only","name":"Chat Only","context_length":8000,
+			 "pricing":{"prompt":"0.000001","completion":"0.000002"},
+			 "endpoints":["/api/v1/chat/completions"]},
+			{"id":"image-only","name":"Image Only",
+			 "endpoints":["/api/v1/images"]}
+		]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name:      "openrouter",
+		Type:      "openrouter",
+		Chat:      srv.URL + "/api/v1",
+		Responses: srv.URL + "/api/v1",
+		Anthropic: srv.URL + "/api",
+		Keys:      []string{"sk-or-test"},
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claude, ok := findModel(models, "anthropic/claude-sonnet-4")
+	if !ok {
+		t.Fatalf("anthropic model missing from %+v", models)
+	}
+	if !slices.Equal(claude.APIs, []API{Chat, Responses, Anthropic}) {
+		t.Fatalf("anthropic APIs = %v", claude.APIs)
+	}
+	if claude.Context != 200000 || claude.Output != 64000 {
+		t.Fatalf("anthropic limits = context %d output %d", claude.Context, claude.Output)
+	}
+	if !slices.Equal(claude.Inputs, []string{"text", "image"}) || !slices.Equal(claude.Outputs, []string{"text"}) {
+		t.Fatalf("anthropic modalities = %v -> %v", claude.Inputs, claude.Outputs)
+	}
+	if claude.Price == nil || math.Abs(claude.Price.Input-3) > 1e-9 || math.Abs(claude.Price.Output-15) > 1e-9 {
+		t.Fatalf("anthropic price = %+v, want 3/15", claude.Price)
+	}
+
+	free, ok := findModel(models, "free/model")
+	if !ok || free.Price == nil || free.Price.Input != 0 || free.Price.Output != 0 {
+		t.Fatalf("free model = %+v, want a 0/0 price", free)
+	}
+
+	chatOnly, ok := findModel(models, "chat-only")
+	if !ok || !slices.Equal(chatOnly.APIs, []API{Chat}) {
+		t.Fatalf("chat-only model = %+v, want [chat]", chatOnly)
+	}
+
+	if _, ok := findModel(models, "image-only"); ok {
+		t.Fatal("image-only model without a text endpoint should be filtered out")
 	}
 }
 

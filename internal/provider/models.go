@@ -47,6 +47,11 @@ func (p *baseProvider) Models(ctx context.Context) ([]Model, error) {
 		fetched++
 
 		for _, item := range items {
+			if item.EndpointsKnown && len(item.APIs) == 0 {
+				// The catalog explicitly lists endpoints, but none of them is a
+				// text API the gateway can serve (for example an image-only model).
+				continue
+			}
 			m := Model{
 				ID:      item.ID,
 				Name:    item.Name,
@@ -57,7 +62,9 @@ func (p *baseProvider) Models(ctx context.Context) ([]Model, error) {
 				Outputs: item.Outputs,
 				Price:   item.Price,
 			}
-			if classified := p.adapter.classify(item.ID); len(classified) > 0 {
+			if len(item.APIs) > 0 {
+				m.APIs = item.APIs
+			} else if classified := p.adapter.classify(item.ID); len(classified) > 0 {
 				m.APIs = classified
 			} else {
 				m.APIs = []API{api}
@@ -108,14 +115,16 @@ func (p *baseProvider) configuredAPIs() []API {
 }
 
 type modelItem struct {
-	ID      string
-	Name    string
-	Context int
-	Input   int
-	Output  int
-	Inputs  []string
-	Outputs []string
-	Price   *Price
+	ID             string
+	Name           string
+	Context        int
+	Input          int
+	Output         int
+	Inputs         []string
+	Outputs        []string
+	Price          *Price
+	APIs           []API
+	EndpointsKnown bool
 }
 
 func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([]modelItem, error) {
@@ -162,17 +171,36 @@ func ModelsURL(base string, api API) string {
 // metadata is kept raw so a malformed metadata block cannot fail the whole
 // catalog.
 type openAIModelJSON struct {
-	ID               string          `json:"id"`
-	Name             string          `json:"name"`
-	DisplayName      string          `json:"display_name"`
-	ContextLength    int             `json:"context_length"`
-	ContextWindow    int             `json:"context_window"`
-	MaxOutputTokens  int             `json:"max_output_tokens"`
-	InputModalities  []string        `json:"input_modalities"`
-	OutputModalities []string        `json:"output_modalities"`
-	Modalities       json.RawMessage `json:"modalities"`
-	Limit            json.RawMessage `json:"limit"`
-	Cost             json.RawMessage `json:"cost"`
+	ID               string                 `json:"id"`
+	Name             string                 `json:"name"`
+	DisplayName      string                 `json:"display_name"`
+	ContextLength    int                    `json:"context_length"`
+	ContextWindow    int                    `json:"context_window"`
+	MaxOutputTokens  int                    `json:"max_output_tokens"`
+	InputModalities  []string               `json:"input_modalities"`
+	OutputModalities []string               `json:"output_modalities"`
+	Modalities       json.RawMessage        `json:"modalities"`
+	Limit            json.RawMessage        `json:"limit"`
+	Cost             json.RawMessage        `json:"cost"`
+	Architecture     openAIArchitectureJSON `json:"architecture"`
+	Pricing          openAIPricingJSON      `json:"pricing"`
+	TopProvider      openAITopProviderJSON  `json:"top_provider"`
+	Endpoints        []string               `json:"endpoints"`
+}
+
+type openAIArchitectureJSON struct {
+	InputModalities  []string `json:"input_modalities"`
+	OutputModalities []string `json:"output_modalities"`
+}
+
+type openAIPricingJSON struct {
+	Prompt     lenientPrice `json:"prompt"`
+	Completion lenientPrice `json:"completion"`
+}
+
+type openAITopProviderJSON struct {
+	ContextLength       int `json:"context_length"`
+	MaxCompletionTokens int `json:"max_completion_tokens"`
 }
 
 type openAIModalitiesJSON struct {
@@ -255,6 +283,12 @@ func (m openAIModelJSON) toItem() modelItem {
 	item.Inputs = normalizeModalities(modalities.Input)
 	item.Outputs = normalizeModalities(modalities.Output)
 	if len(item.Inputs) == 0 {
+		item.Inputs = normalizeModalities(m.Architecture.InputModalities)
+	}
+	if len(item.Outputs) == 0 {
+		item.Outputs = normalizeModalities(m.Architecture.OutputModalities)
+	}
+	if len(item.Inputs) == 0 {
 		item.Inputs = normalizeModalities(m.InputModalities)
 	}
 	if len(item.Outputs) == 0 {
@@ -274,8 +308,14 @@ func (m openAIModelJSON) toItem() modelItem {
 	if item.Context <= 0 && m.ContextLength > 0 {
 		item.Context = m.ContextLength
 	}
+	if item.Context <= 0 && m.TopProvider.ContextLength > 0 {
+		item.Context = m.TopProvider.ContextLength
+	}
 	if item.Output <= 0 && m.MaxOutputTokens > 0 {
 		item.Output = m.MaxOutputTokens
+	}
+	if item.Output <= 0 && m.TopProvider.MaxCompletionTokens > 0 {
+		item.Output = m.TopProvider.MaxCompletionTokens
 	}
 
 	var cost openAICostJSON
@@ -289,7 +329,40 @@ func (m openAIModelJSON) toItem() modelItem {
 	if (in.Valid && out.Valid) || (in.Valid && in.Value != 0) || (out.Valid && out.Value != 0) {
 		item.Price = &Price{Input: in.Value, Output: out.Value}
 	}
+	if item.Price == nil {
+		prompt, completion := m.Pricing.Prompt, m.Pricing.Completion
+		if (prompt.Valid && completion.Valid) || (prompt.Valid && prompt.Value != 0) || (completion.Valid && completion.Value != 0) {
+			item.Price = &Price{
+				Input:  prompt.Value * 1_000_000,
+				Output: completion.Value * 1_000_000,
+			}
+		}
+	}
+
+	for _, endpoint := range m.Endpoints {
+		if api, ok := apiFromEndpoint(endpoint); ok {
+			item.APIs = append(item.APIs, api)
+		}
+	}
+	item.APIs = normalizeAPIs(item.APIs)
+	item.EndpointsKnown = len(m.Endpoints) > 0
 	return item
+}
+
+// apiFromEndpoint maps an OpenRouter endpoint path to the gateway's wire API.
+// Unsupported endpoints (completions, batches, images, videos) are ignored.
+func apiFromEndpoint(endpoint string) (API, bool) {
+	path := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	switch {
+	case strings.HasSuffix(path, "/chat/completions"):
+		return Chat, true
+	case strings.HasSuffix(path, "/responses"):
+		return Responses, true
+	case strings.HasSuffix(path, "/messages"):
+		return Anthropic, true
+	default:
+		return "", false
+	}
 }
 
 type geminiModelJSON struct {
