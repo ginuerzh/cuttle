@@ -75,7 +75,7 @@ Expected: PASS.
 **Implementation record**
 
 - Date/status: 2026-11-08 / done
-- Repository + commit: cuttle / pending
+- Repository + commit: cuttle / 2f6fcb24
 - Files: `internal/authfail/authfail.go`, `internal/authfail/authfail_test.go`, `internal/admin/handlers_events.go`, `internal/admin/server.go`, `internal/admin/events_test.go`
 - Tests: `GOWORK=off go test ./internal/authfail ./internal/admin -run 'TestClear|TestEventsClearAuthFailures' -count=1` → PASS
 - Review findings/fixes: clear is idempotent and safe on a nil tracker; the handler returns 204 even when no tracker is attached
@@ -150,7 +150,7 @@ Expected: PASS.
 **Implementation record**
 
 - Date/status: 2026-11-08 / done
-- Repository + commit: cuttle / pending
+- Repository + commit: cuttle / 2f6fcb24
 - Files: `web/src/notifications.ts`, `web/src/notifications.test.ts`, `web/src/components/NotificationBell.tsx`, `web/src/components/NotificationBell.test.tsx`, `web/src/components/OverviewToolbar.tsx`, `web/src/components/OverviewToolbar.test.tsx`, `web/src/App.tsx`, `web/src/pages/Topology.tsx`, `web/src/api/client.ts`, `web/src/locales/en-US.ts`; deleted `web/src/components/AuthFailureAlert.tsx` and its test
 - Tests: `npx vitest run src/notifications.test.ts src/components/NotificationBell.test.tsx src/components/OverviewToolbar.test.tsx src/App.test.tsx` → PASS (18 tests); `npx tsc --noEmit` → PASS
 - Review findings/fixes: introduced `sameAuthFailures` so the 1s snapshot does not re-render the edit view when nothing changed; the bell stays live in both monitor and edit modes while monitor stats stay paused in edit mode
@@ -188,7 +188,7 @@ Expected: PASS.
 **Implementation record**
 
 - Date/status: 2026-11-08 / done
-- Repository + commit: cuttle / pending
+- Repository + commit: cuttle / 2f6fcb24
 - Files: `README.md`
 - Tests: Go gate (`build`, `vet`, `test ./... -count=1`) → PASS; web gate (`npm test` 230 tests, `npx tsc --noEmit`, `npm run build`) → PASS; embedded bundle rebuilt and `GOWORK=off go build -o cuttle .` → PASS
 - Review findings/fixes: README now documents the bell, the clear action and `DELETE /api/auth-failures`; the graph no longer has a persistent overlay
