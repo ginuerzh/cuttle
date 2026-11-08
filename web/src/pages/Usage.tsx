@@ -12,6 +12,7 @@ import {
   Skeleton,
   Space,
   Statistic,
+  Switch,
   Tag,
   Typography,
 } from 'antd';
@@ -29,8 +30,9 @@ const RANGES = [
   { label: '30 天', value: 30 * 24 * 3_600_000 },
 ];
 
-function formatCount(n?: number): string {
+export function formatCount(n?: number): string {
   if (n === undefined || n === null) return '—';
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
@@ -125,7 +127,15 @@ function AccountRow({ account, first }: { account: AccountUsage; first: boolean 
   );
 }
 
-function ProviderCard({ provider, isMobile }: { provider: ProviderUsage; isMobile: boolean }) {
+function ProviderCard({
+  provider,
+  isMobile,
+  showStats,
+}: {
+  provider: ProviderUsage;
+  isMobile: boolean;
+  showStats: boolean;
+}) {
   const local = provider.local;
   return (
     <Card
@@ -145,13 +155,15 @@ function ProviderCard({ provider, isMobile }: { provider: ProviderUsage; isMobil
         ) : null
       }
     >
-      <Descriptions size="small" column={isMobile ? 1 : 5} bordered>
-        <Descriptions.Item label={t('会话')}>{formatCount(local?.requests)}</Descriptions.Item>
-        <Descriptions.Item label={t('错误')}>{formatCount(local?.errors)}</Descriptions.Item>
-        <Descriptions.Item label={t('输入 tokens')}>{formatCount(local?.inputTokens)}</Descriptions.Item>
-        <Descriptions.Item label={t('输出 tokens')}>{formatCount(local?.outputTokens)}</Descriptions.Item>
-        <Descriptions.Item label={t('缓存 tokens')}>{formatCount(local?.cachedTokens)}</Descriptions.Item>
-      </Descriptions>
+      {showStats ? (
+        <Descriptions size="small" column={isMobile ? 1 : 5} bordered>
+          <Descriptions.Item label={t('会话')}>{formatCount(local?.requests)}</Descriptions.Item>
+          <Descriptions.Item label={t('错误')}>{formatCount(local?.errors)}</Descriptions.Item>
+          <Descriptions.Item label={t('输入 tokens')}>{formatCount(local?.inputTokens)}</Descriptions.Item>
+          <Descriptions.Item label={t('输出 tokens')}>{formatCount(local?.outputTokens)}</Descriptions.Item>
+          <Descriptions.Item label={t('缓存 tokens')}>{formatCount(local?.cachedTokens)}</Descriptions.Item>
+        </Descriptions>
+      ) : null}
 
       {provider.note ? (
         <Alert
@@ -174,6 +186,7 @@ function ProviderCard({ provider, isMobile }: { provider: ProviderUsage; isMobil
 export function UsagePage() {
   const isMobile = useIsMobile();
   const [rangeMs, setRangeMs] = useState(RANGES[0].value);
+  const [showStats, setShowStats] = useState(false);
   const [data, setData] = useState<ProviderUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -215,11 +228,22 @@ export function UsagePage() {
           <Typography.Title level={4} style={{ margin: 0 }}>
             {t('用量')}
           </Typography.Title>
-          <Segmented
-            value={rangeMs}
-            onChange={(value) => setRangeMs(Number(value))}
-            options={RANGES.map((r) => ({ ...r, label: t(r.label) }))}
-          />
+          <Space size={6}>
+            <Switch
+              size="small"
+              checked={showStats}
+              onChange={setShowStats}
+              aria-label={t('统计')}
+            />
+            <Typography.Text>{t('统计')}</Typography.Text>
+          </Space>
+          {showStats ? (
+            <Segmented
+              value={rangeMs}
+              onChange={(value) => setRangeMs(Number(value))}
+              options={RANGES.map((r) => ({ ...r, label: t(r.label) }))}
+            />
+          ) : null}
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load(true)}>
             {t('刷新')}
           </Button>
@@ -234,24 +258,26 @@ export function UsagePage() {
       {error ? (
         <Alert type="error" showIcon message={t('加载失败')} description={error} style={{ marginBottom: 12 }} />
       ) : null}
-      {data?.localError ? (
+      {showStats && data?.localError ? (
         <Alert type="warning" showIcon message={data.localError} style={{ marginBottom: 12 }} />
       ) : null}
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        {stats.map((stat) => (
-          <Col key={stat.label} xs={12} sm={8} md={4}>
-            <Card size="small">
-              <Statistic title={stat.label} value={stat.value} />
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      {showStats ? (
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+          {stats.map((stat) => (
+            <Col key={stat.label} xs={12} sm={8} md={4}>
+              <Card size="small">
+                <Statistic title={stat.label} value={stat.value} />
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      ) : null}
 
       {loading && !data ? <Skeleton active /> : null}
       {data?.providers.length === 0 ? <Empty description={t('没有可显示的账户')} /> : null}
       {data?.providers.map((provider) => (
-        <ProviderCard key={provider.name} provider={provider} isMobile={isMobile} />
+        <ProviderCard key={provider.name} provider={provider} isMobile={isMobile} showStats={showStats} />
       ))}
     </ListPage>
   );

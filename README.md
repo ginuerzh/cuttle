@@ -768,9 +768,10 @@ probe is not forwarded upstream and is not recorded in stats or captures.
 
 ## Provider usage and balances
 
-The Usage page shows one card per provider. Local totals (requests, errors,
-input/output/cached tokens) come from hourly rollups for the selected 24-hour,
-7-day or 30-day window. Upstream values are queried per API key:
+The Usage page shows one card per provider. The **Statistics** switch, off by
+default, reveals local totals (requests, errors, input/output/cached tokens)
+from hourly rollups; when it is on, a 24-hour, 7-day or 30-day range selector
+appears. Token counts use k/M/B units. Upstream values are queried per API key:
 
 - **DeepSeek**: account balance from `/user/balance`.
 - **CommandCode**: credits and the 5-hour/weekly windows from

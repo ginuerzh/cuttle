@@ -234,6 +234,7 @@ export const enUS: Record<string, string> = {
   'generic 提供商没有静态模型 API 分类；auto 先按入站协议匹配已配置的 base URL，匹配不到时按 {order} 回退。': 'Generic providers have no static model API classification; auto matches configured base URLs by inbound protocol and otherwise falls back to {order}.',
   '{phase} 提供': 'Provided by {phase}',
   '用量': 'Usage',
+  '统计': 'Statistics',
   '7 天': '7 days',
   '30 天': '30 days',
   '更新于 {time}': 'Updated {time}',
