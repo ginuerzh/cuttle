@@ -100,4 +100,33 @@ describe('SessionCard', () => {
     expect(html).toContain('10/20 tok');
     expect(html).toContain('upstream connect failed');
   });
+
+  it('shows the effort when the request specifies one', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        row={{
+          requestId: 'r2',
+          sid: 's2',
+          ts: '2026-11-08T08:30:00Z',
+          model: 'deepseek-v4.1-flash',
+          clientModel: 'claude-opus-5-5',
+          provider: 'opencode-go',
+          route: 'deepseek-flash',
+          node: 'oc-go-dsf',
+          protocol: 'chat',
+          effort: 'high',
+          status: 200,
+          durationMs: 10,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: 0,
+          stream: true,
+          bytesIn: 0,
+          bytesOut: 0,
+        }}
+      />,
+    );
+
+    expect(html).toContain('effort high');
+  });
 });

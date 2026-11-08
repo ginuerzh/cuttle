@@ -228,7 +228,7 @@ export function RequestsPage() {
           <ListCard
             key={r.requestId}
             title={r.clientModel || r.model || r.requestId}
-            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${formatCount(r.inputTokens)}/${formatCount(r.outputTokens)} tok${keyLabel ? ` · ${keyLabel}` : ''}${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
+            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${formatCount(r.inputTokens)}/${formatCount(r.outputTokens)} tok${r.effort && r.effort !== 'none' ? ` · effort ${r.effort}` : ''}${keyLabel ? ` · ${keyLabel}` : ''}${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
             tags={
               <Space size={4}>
                 {r.truncated ? <Tag color="volcano">{t('已截断')}</Tag> : null}

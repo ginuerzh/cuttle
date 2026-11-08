@@ -185,6 +185,7 @@ export function SessionCard({ row, onOpen }: { row: RequestRow; onOpen?: (row: R
       >
         {row.route || 'unrouted'} · {row.provider}
         {row.node ? `/${row.node}` : ''} · {formatCount(row.inputTokens)}/{formatCount(row.outputTokens)} tok
+        {row.effort && row.effort !== 'none' ? ` · effort ${row.effort}` : ''}
       </Typography.Text>
       {row.error ? (
         <Typography.Text
