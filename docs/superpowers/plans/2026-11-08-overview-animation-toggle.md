@@ -559,12 +559,12 @@ git commit -m "feat(web): flash node icons and gate overview animation"
 ```
 
 **Implementation record**
-- Date/status: TODO
-- Repo/commit: TODO
-- Files changed: TODO
-- Tests/commands and results: TODO
-- Review findings/fixes: TODO
-- Deferred items/limitations: TODO
+- Date/status: 2026-11-08 — complete
+- Repo/commit: `llm-gw` @ `70e5380f` (code), implementation record committed separately
+- Files changed: `web/src/graph/nodes.tsx`, `web/src/graph/nodes.test.tsx`, `web/src/graph/activity.ts`, `web/src/graph/activity.test.ts`, `web/src/pages/Topology.tsx`, `web/src/pages/Topology.test.tsx`, `web/src/App.tsx`, `web/src/styles.css`
+- Tests/commands and results: focused run `npx vitest run src/graph/activity.test.ts src/graph/nodes.test.tsx src/pages/Topology.test.tsx` → 33 passed; `npx tsc --noEmit` → clean after removing the now-unused `GraphNodeData` import; full `npm test` → 29 files / 207 tests passed.
+- Review findings/fixes: the flash class lives on the badge and is keyed by the pulse so the one-shot animation restarts correctly; `accumulateActivity` clears while disabled, which prevents replay; `Topology` gates node and edge pulses immediately when `animate` flips.
+- Deferred items/limitations: CSS animation timing and `prefers-reduced-motion` are not covered by a browser visual test; verify manually in the console.
 
 ---
 
