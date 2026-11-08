@@ -113,6 +113,8 @@ func New(cfg config.Provider) (Provider, error) {
 		a = openCodeAdapter{}
 	case "commandcode":
 		a = commandCodeAdapter{}
+	case "openrouter":
+		a = openRouterAdapter{}
 	case "generic":
 		a = genericAdapter{}
 	default:

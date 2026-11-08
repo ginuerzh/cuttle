@@ -19,6 +19,7 @@ import {
   normalizedModalities,
   parseHeadersText,
   presetFormValues,
+  PROVIDER_TYPES,
   providerKeyRows,
   providerKeyUpdates,
   providerPayload,
@@ -359,8 +360,15 @@ describe('isBaseURLLocked', () => {
   it('locks every provider type except generic', () => {
     expect(isBaseURLLocked('deepseek')).toBe(true);
     expect(isBaseURLLocked('opencode-go')).toBe(true);
+    expect(isBaseURLLocked('openrouter')).toBe(true);
     expect(isBaseURLLocked('generic')).toBe(false);
     expect(isBaseURLLocked(' Generic ')).toBe(false);
+  });
+});
+
+describe('PROVIDER_TYPES', () => {
+  it('includes OpenRouter', () => {
+    expect(PROVIDER_TYPES).toContain('openrouter');
   });
 });
 

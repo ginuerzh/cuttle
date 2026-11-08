@@ -136,6 +136,7 @@ var providerTypes = map[string]struct{}{
 	"opencode-go":  {},
 	"opencode-zen": {},
 	"commandcode":  {},
+	"openrouter":   {},
 	"generic":      {},
 }
 

@@ -16,7 +16,7 @@ func mustProvider(t *testing.T, cfg config.Provider) Provider {
 }
 
 func TestFactory(t *testing.T) {
-	for _, typ := range []string{"deepseek", "opencode-go", "opencode-zen", "commandcode", "generic"} {
+	for _, typ := range []string{"deepseek", "opencode-go", "opencode-zen", "commandcode", "openrouter", "generic"} {
 		t.Run(typ, func(t *testing.T) {
 			p := mustProvider(t, config.Provider{
 				Name: typ,

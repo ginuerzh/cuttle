@@ -36,6 +36,40 @@ func TestCompileNodeTargetsAutoDeepSeek(t *testing.T) {
 	}
 }
 
+func TestCompileNodeTargetsOpenRouter(t *testing.T) {
+	p := gwconfig.Provider{
+		Name:      "or",
+		Type:      "openrouter",
+		Chat:      "https://openrouter.ai/api/v1",
+		Responses: "https://openrouter.ai/api/v1",
+		Anthropic: "https://openrouter.ai/api",
+	}
+	n := gwconfig.Node{Name: "n", Provider: "or", Model: "anthropic/claude-sonnet-4"}
+
+	targets, err := compileNodeTargets(p, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := targets.defaultTarget.api; got != provider.Chat {
+		t.Fatalf("default api = %q, want chat", got)
+	}
+	if got := targets.defaultTarget.baseURL; got != p.Chat {
+		t.Fatalf("default base = %q, want %q", got, p.Chat)
+	}
+	if got := targets.defaultTarget.targetModel; got != n.Model {
+		t.Fatalf("target model = %q, want %q", got, n.Model)
+	}
+	if got := targets.variants[provider.Responses].baseURL; got != p.Responses {
+		t.Fatalf("responses base = %q, want %q", got, p.Responses)
+	}
+	if got := targets.variants[provider.Anthropic].baseURL; got != p.Anthropic {
+		t.Fatalf("anthropic base = %q, want %q", got, p.Anthropic)
+	}
+	if got := targets.variants[provider.Anthropic].auth; got.Header != "Authorization" || got.Prefix != "Bearer " {
+		t.Fatalf("anthropic auth = %+v, want bearer", got)
+	}
+}
+
 func TestCompileNodeTargetsGenericUnknownModel(t *testing.T) {
 	p := gwconfig.Provider{
 		Name:      "gm",

@@ -24,6 +24,7 @@ func TestClassify(t *testing.T) {
 		{"opencode-zen glm", "opencode-zen", "glm-5.3", []API{Anthropic}, true},
 		{"commandcode claude", "commandcode", "claude-sonnet-5", []API{Anthropic}, true},
 		{"commandcode other", "commandcode", "gpt-5.5", []API{Chat, Responses}, true},
+		{"openrouter", "openrouter", "anthropic/claude-sonnet-4", []API{Chat, Responses, Anthropic}, true},
 		{"generic", "generic", "anything", nil, false},
 	}
 	for _, tt := range tests {
@@ -64,6 +65,9 @@ func TestAuth(t *testing.T) {
 		{"opencode-go anthropic", "opencode-go", Anthropic, "x-api-key", "", nil},
 		{"commandcode chat", "commandcode", Chat, "Authorization", "Bearer ", nil},
 		{"commandcode anthropic", "commandcode", Anthropic, "Authorization", "Bearer ", nil},
+		{"openrouter chat", "openrouter", Chat, "Authorization", "Bearer ", nil},
+		{"openrouter responses", "openrouter", Responses, "Authorization", "Bearer ", nil},
+		{"openrouter anthropic", "openrouter", Anthropic, "Authorization", "Bearer ", nil},
 		{"generic anthropic", "generic", Anthropic, "x-api-key", "", nil},
 	}
 	for _, tt := range cases {
@@ -165,7 +169,7 @@ func TestAuthOverride(t *testing.T) {
 		KeyHeaders: []config.KeyHeader{{Header: "X-Extra", Prefix: "Key "}},
 		Extra:      map[string]string{"X-Org": "test"},
 	}
-	for _, typ := range []string{"deepseek", "opencode-go", "commandcode", "generic"} {
+	for _, typ := range []string{"deepseek", "opencode-go", "commandcode", "openrouter", "generic"} {
 		t.Run(typ, func(t *testing.T) {
 			p := mustProvider(t, config.Provider{
 				Name: typ,

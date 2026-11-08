@@ -41,4 +41,11 @@ var presets = []Preset{
 		Responses: "https://api.commandcode.ai/provider/v1",
 		Anthropic: "https://api.commandcode.ai/provider",
 	},
+	{
+		Name:      "openrouter",
+		Type:      "openrouter",
+		Chat:      "https://openrouter.ai/api/v1",
+		Responses: "https://openrouter.ai/api/v1",
+		Anthropic: "https://openrouter.ai/api",
+	},
 }
