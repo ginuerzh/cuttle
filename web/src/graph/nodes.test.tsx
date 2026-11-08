@@ -106,9 +106,12 @@ describe('BindingNode', () => {
     expect(html).toContain('aria-label="dead"');
     expect(html).toContain('title="dead"');
     expect(html).toContain('viewBox="0 0 90 90"');
+    expect(html).toContain('width="13"');
     expect(html).toContain('position:absolute');
-    expect(html).toContain('top:4px');
-    expect(html).toContain('right:4px');
+    expect(html).toContain('top:5px');
+    expect(html).toContain('right:6px');
+    expect(html).not.toContain('background:#fff');
+    expect(html).not.toContain('box-shadow:0 1px 2px');
     expect(html).not.toContain('ant-badge-status-error');
     expect(html).not.toContain('>dead<');
   });

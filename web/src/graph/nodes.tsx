@@ -125,7 +125,7 @@ function IconBadge({ color, children, pulse, error }: IconBadgeProps) {
 /** Dead face icon (dead-5102.svg): crossed eyes inside a ring. */
 function DeadFaceIcon() {
   return (
-    <svg viewBox="0 0 90 90" width="16" height="16" aria-hidden="true" focusable="false" fill="currentColor">
+    <svg viewBox="0 0 90 90" width="13" height="13" aria-hidden="true" focusable="false" fill="currentColor">
       <path d="M 45 90 C 20.187 90 0 69.813 0 45 C 0 20.187 20.187 0 45 0 c 24.813 0 45 20.187 45 45 C 90 69.813 69.813 90 45 90 z M 45 4 C 22.393 4 4 22.393 4 45 s 18.393 41 41 41 s 41 -18.393 41 -41 S 67.607 4 45 4 z" />
       <path d="M 63.085 63.621 h -36.17 c -1.104 0 -2 -0.896 -2 -2 s 0.896 -2 2 -2 h 36.17 c 1.104 0 2 0.896 2 2 S 64.189 63.621 63.085 63.621 z" />
       <path d="M 24.714 43.844 c -0.512 0 -1.024 -0.195 -1.414 -0.586 c -0.781 -0.781 -0.781 -2.047 0 -2.828 l 12.579 -12.579 c 0.78 -0.781 2.048 -0.781 2.828 0 c 0.781 0.781 0.781 2.047 0 2.828 L 26.128 43.258 C 25.738 43.648 25.226 43.844 24.714 43.844 z" />
@@ -159,20 +159,16 @@ export function NodeMoodBadge({ mood }: { mood: NodeMood }) {
       title={t(label)}
       style={{
         position: 'absolute',
-        top: 4,
-        right: 4,
-        width: 22,
-        height: 22,
-        borderRadius: '50%',
-        background: '#fff',
-        border: `1px solid ${color}`,
+        top: 5,
+        right: 6,
+        width: 14,
+        height: 14,
         color,
-        fontSize: 14,
+        fontSize: 13,
         lineHeight: 1,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        boxShadow: '0 1px 2px rgba(15, 23, 42, 0.2)',
         pointerEvents: 'none',
         zIndex: 1,
       }}
@@ -266,7 +262,7 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
         ...selectionStyle(selected, '#6366f1'),
         background: 'var(--gw-node-entrypoint-bg)',
         minWidth: 220,
-        paddingRight: 30,
+        paddingRight: 24,
       }}
     >
       <IconBadge color="#6366f1" pulse={data.pulse} error={data.error}>
@@ -289,7 +285,7 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
         ...selectionStyle(selected, color),
         background: 'var(--gw-node-route-bg)',
         minWidth: 250,
-        paddingRight: 30,
+        paddingRight: 24,
       }}
     >
       <IconBadge color="#0ea5e9" pulse={data.pulse} error={data.error}>
@@ -315,7 +311,7 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
         background: data.disabled ? 'var(--gw-node-disabled-bg)' : 'var(--gw-node-binding-bg)',
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 220,
-        paddingRight: 30,
+        paddingRight: 24,
       }}
       title={data.dead ? 'dead' : undefined}
     >
@@ -345,7 +341,7 @@ export function ProviderNode({ data, selected, isConnectable }: NodeProps<GraphN
         background: data.disabled ? 'var(--gw-node-disabled-bg)' : 'var(--gw-node-provider-bg)',
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 230,
-        paddingRight: 30,
+        paddingRight: 24,
       }}
     >
       <IconBadge color="#10b981" pulse={data.pulse} error={data.error}>
