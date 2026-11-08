@@ -252,12 +252,12 @@ Expected: PASS.
 
 **Implementation record**
 
-- Date/status:
-- Repository + commit:
-- Files:
-- Tests:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-08 / done
+- Repository + commit: cuttle / `9bf6d262` (`feat(web): offer the sticky route strategy`)
+- Files: `web/src/pages/Edit.tsx`, `README.md`, `AGENTS.md`
+- Tests: `cd web && npm test` (230 passed), `npx tsc --noEmit`, `npm run build`; `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test -p 1 -count=1 ./...` → PASS.
+- Review findings/fixes: both route strategy selects offer `sticky`; README and AGENTS describe the session headers, weighted split and no-header fallback.
+- Deferred: no browser visual regression test; the route form is covered by TypeScript/Vitest only.
 
 ---
 
