@@ -278,9 +278,9 @@ Expected: PASS.
 
 **Implementation record**
 
-- Date/status:
-- Repository + commit:
-- Files: `/data/cuttle.yaml` (backup path)
-- Tests/commands:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-08 / done
+- Repository + commit: cuttle / `d7d41978` (deployed); x / `v0.30.0`
+- Files: `/data/cuttle.yaml`; backups `/data/cuttle.yaml.bak-20261108-pre-sticky2` and `/data/cuttle.yaml.bak-20261108-pre-maxfails`
+- Tests/commands: GitHub Actions docker run `42508331110` succeeded; `kubectl -n llm rollout restart deploy/llm-gw`; `/api/health` returned `main-d7d4197`; SIGHUP logged `config reloaded`. Probes: 20 distinct sessions split 16 `oc-go-dsf` / 4 `cc-dsf`; the same session sent 6 times stayed on `cc-dsf`; real rows showed 383104/383727 (99.8%) and 98944/100722 (98.2%) cached input tokens.
+- Review findings/fixes: the first SIGHUP reload failed because `internal/config.Validate` still allowed only fifo/round/random; `47f1a0cd` added sticky plus a validation test, and the live config was reverted to `fifo` until the fixed image `d7d4197` was live. Live `maxFails` was already `3` before this deploy (not the plan's interim `2`).
+- Deferred: the session header is not stored in stats, so per-session stickiness was verified with controlled probes; no browser visual test.
