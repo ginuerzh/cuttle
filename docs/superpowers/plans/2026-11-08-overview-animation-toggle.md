@@ -112,7 +112,6 @@ git commit -m "feat(web): rename gateway keys navigation label"
 **Files:**
 - Create: `web/src/animation.ts`
 - Create: `web/src/animation.test.ts`
-- Create: `web/src/components/OverviewToolbar.dom.test.tsx`
 - Modify: `web/src/components/OverviewToolbar.tsx`
 - Modify: `web/src/components/OverviewToolbar.test.tsx`
 - Modify: `web/src/locales/en-US.ts`
@@ -234,12 +233,13 @@ In `web/src/components/OverviewToolbar.tsx`:
 Run: `cd web && npx vitest run src/components/OverviewToolbar.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 9: Add the switch interaction test**
+- [ ] **Step 9: (Ruling) Do not add the Switch click test**
 
-Create `web/src/components/OverviewToolbar.dom.test.tsx` with `// @vitest-environment jsdom`. Render the toolbar with `animate={true}`, `onAnimate={spy}`, click the `.ant-switch` element, and assert `spy` was called with `false`. Follow the `createRoot` + `act` pattern in `web/src/pages/edges.dom.test.tsx`, and set `IS_REACT_ACT_ENVIRONMENT` to `true`.
-
-Run: `cd web && npx vitest run src/components/OverviewToolbar.dom.test.tsx`
-Expected: PASS.
+A minimal Ant Design `Switch` rendered with `createRoot` + `act` in jsdom
+exhausts the Vitest worker (OOM), even without the toolbar around it. The
+SSR assertions from Step 5 cover the rendered state, and the `onChange`
+wiring is a single typed expression; verify the click manually in the
+console instead. Do not add `OverviewToolbar.dom.test.tsx`.
 
 - [ ] **Step 10: Add the English translation and its test**
 
@@ -277,7 +277,7 @@ Run:
 
 ```bash
 cd web
-npx vitest run src/animation.test.ts src/components/OverviewToolbar.test.tsx src/components/OverviewToolbar.dom.test.tsx src/i18n.test.ts
+npx vitest run src/animation.test.ts src/components/OverviewToolbar.test.tsx src/i18n.test.ts
 npx tsc --noEmit
 ```
 
@@ -288,19 +288,17 @@ Expected: all PASS and no type errors.
 ```bash
 git add web/src/animation.ts web/src/animation.test.ts \
   web/src/components/OverviewToolbar.tsx web/src/components/OverviewToolbar.test.tsx \
-  web/src/components/OverviewToolbar.dom.test.tsx \
-  web/src/locales/en-US.ts web/src/i18n.test.ts web/src/App.tsx \
-  docs/superpowers/plans/2026-11-08-overview-animation-toggle.md
+  web/src/locales/en-US.ts web/src/i18n.test.ts web/src/App.tsx
 git commit -m "feat(web): add overview animation preference"
 ```
 
 **Implementation record**
-- Date/status: TODO
-- Repo/commit: TODO
-- Files changed: TODO
-- Tests/commands and results: TODO
-- Review findings/fixes: TODO
-- Deferred items/limitations: TODO
+- Date/status: 2026-11-08 — complete
+- Repo/commit: `llm-gw` @ `e282fff0` (code), implementation record committed separately
+- Files changed: `web/src/animation.ts`, `web/src/animation.test.ts`, `web/src/components/OverviewToolbar.tsx`, `web/src/components/OverviewToolbar.test.tsx`, `web/src/locales/en-US.ts`, `web/src/i18n.test.ts`, `web/src/App.tsx`
+- Tests/commands and results: `npx vitest run src/animation.test.ts src/components/OverviewToolbar.test.tsx src/i18n.test.ts` → 10 passed; `npx tsc --noEmit` → clean. RED first showed the missing module, then the missing switch markup.
+- Review findings/fixes: the planned jsdom Switch click test was dropped because antd `Switch` OOMs the Vitest worker under jsdom; SSR assertions plus typed wiring cover the state, and the click is a manual check.
+- Deferred items/limitations: no automated click coverage for the switch callback; the toggle is per-browser `localStorage`, not shared between admins or devices.
 
 ---
 
