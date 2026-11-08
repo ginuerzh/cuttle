@@ -75,6 +75,17 @@ export function mergeActivity(current: ActivityMap, next: ActivityMap): Activity
   };
 }
 
+/** Gate one activity entry for rendering; off means idle, never a stale pulse. */
+export function visibleActivity(
+  activity: Activity | undefined,
+  animate: boolean,
+): { pulse: number; error: boolean } {
+  return {
+    pulse: animate ? activity?.pulse ?? 0 : 0,
+    error: animate ? !!activity?.error : false,
+  };
+}
+
 /**
  * Advance the activity baseline every snapshot, but only keep an animation
  * when animations are enabled. Clearing while disabled is what prevents an

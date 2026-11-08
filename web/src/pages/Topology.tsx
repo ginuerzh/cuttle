@@ -35,6 +35,7 @@ import { nodeTypes } from '../graph/nodes';
 import {
   accumulateActivity,
   emptyActivity,
+  visibleActivity,
   type Activity,
   type ActivityMap,
 } from '../graph/activity';
@@ -383,9 +384,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
   useEffect(() => {
     setNodes((prev) =>
       prev.map((n) => {
-        const a = activity.nodes[n.id];
-        const pulse = animate ? a?.pulse ?? 0 : 0;
-        const error = animate ? !!a?.error : false;
+        const { pulse, error } = visibleActivity(activity.nodes[n.id], animate);
         const m = metrics?.nodes[n.id];
         if (n.data.metrics === m && (n.data.pulse ?? 0) === pulse && (n.data.error ?? false) === error) {
           return n;

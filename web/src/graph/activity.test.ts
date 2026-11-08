@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphMetrics } from '../api/types';
-import { accumulateActivity, diffActivity, emptyActivity, flowDuration, mergeActivity } from './activity';
+import {
+  accumulateActivity,
+  diffActivity,
+  emptyActivity,
+  flowDuration,
+  mergeActivity,
+  visibleActivity,
+} from './activity';
 
 function metrics(nodes: Record<string, [number, number]>, edges: Record<string, [number, number]> = {}): GraphMetrics {
   const nodeMap = Object.fromEntries(
@@ -96,5 +103,21 @@ describe('accumulateActivity', () => {
 
   it('does not animate the first snapshot', () => {
     expect(accumulateActivity(emptyActivity(), null, after, true, 7)).toEqual(emptyActivity());
+  });
+});
+
+describe('visibleActivity', () => {
+  const activity = { pulse: 7, error: true, duration: 0.6 };
+
+  it('hides node activity when animations are off', () => {
+    expect(visibleActivity(activity, false)).toEqual({ pulse: 0, error: false });
+  });
+
+  it('passes activity through when animations are on', () => {
+    expect(visibleActivity(activity, true)).toEqual({ pulse: 7, error: true });
+  });
+
+  it('returns idle values without activity', () => {
+    expect(visibleActivity(undefined, true)).toEqual({ pulse: 0, error: false });
   });
 });

@@ -1,6 +1,6 @@
 # Overview Animation Switch and Icon Flash Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Rename the left-nav Gateway keys entry to `密钥`, replace the node card ring with a one-shot icon flash, and add a persisted master switch that stops all Overview animations.
 
@@ -55,7 +55,7 @@
 - Consumes: nothing.
 - Produces: `NAV_LABELS['gateway-keys'] === '密钥'`, translating to `Key` in `en-US`.
 
-- [ ] **Step 1: Update the failing navigation test**
+- [x] **Step 1: Update the failing navigation test**
 
 In `web/src/nav.test.ts`, change the gateway-keys assertion to:
 
@@ -66,12 +66,12 @@ expect(translateFor('en-US', NAV_LABELS['gateway-keys'])).toBe('Key');
 
 Keep the existing test name `labels the page in Chinese and English`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd web && npx vitest run src/nav.test.ts`
 Expected: FAIL because the label is still `网关密钥`.
 
-- [ ] **Step 3: Change the label**
+- [x] **Step 3: Change the label**
 
 In `web/src/nav.ts`, set:
 
@@ -81,16 +81,16 @@ In `web/src/nav.ts`, set:
 
 Do not change `web/src/pages/GatewayKeys.tsx`, its dialogs, alerts or the Sessions filter; only the navigation label changes.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd web && npx vitest run src/nav.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Fill the Implementation record**
+- [x] **Step 5: Fill the Implementation record**
 
 Add the record fields below this task with the actual date, commit SHA, files, commands/results and any deferred items.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/nav.ts web/src/nav.test.ts docs/superpowers/plans/2026-11-08-overview-animation-toggle.md
@@ -127,7 +127,7 @@ git commit -m "feat(web): rename gateway keys navigation label"
   - `OverviewToolbarProps.animate: boolean` and `OverviewToolbarProps.onAnimate: (animate: boolean) => void`
 - Consumes: `translate` from `web/src/i18n`.
 
-- [ ] **Step 1: Write the failing preference test**
+- [x] **Step 1: Write the failing preference test**
 
 Create `web/src/animation.test.ts` with `// @vitest-environment jsdom` at the top and these cases:
 
@@ -182,21 +182,21 @@ describe('animation storage', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd web && npx vitest run src/animation.test.ts`
 Expected: FAIL because `./animation` does not exist.
 
-- [ ] **Step 3: Implement the preference module**
+- [x] **Step 3: Implement the preference module**
 
 Create `web/src/animation.ts` with the exact key `llm-gw.animation` and the three functions above. `normalizeAnimationEnabled` returns `raw !== '0'`; `loadAnimationEnabled` and `saveAnimationEnabled` swallow storage exceptions and fall back to `true` / no-op.
 
-- [ ] **Step 4: Run the preference test to verify it passes**
+- [x] **Step 4: Run the preference test to verify it passes**
 
 Run: `cd web && npx vitest run src/animation.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing toolbar markup test**
+- [x] **Step 5: Write the failing toolbar markup test**
 
 In `web/src/components/OverviewToolbar.test.tsx`, add `animate={true}` and `onAnimate={() => undefined}` to both existing renders. Add these assertions to the monitor-mode test:
 
@@ -208,12 +208,12 @@ expect(html).toContain('>动画<');
 
 Add a second render in the same test with `animate={false}` and assert `aria-checked="false"`. In the edit-mode test, assert `html` does not contain `ant-switch`.
 
-- [ ] **Step 6: Run the toolbar test to verify it fails**
+- [x] **Step 6: Run the toolbar test to verify it fails**
 
 Run: `cd web && npx vitest run src/components/OverviewToolbar.test.tsx`
 Expected: FAIL because the props and switch do not exist.
 
-- [ ] **Step 7: Add the props and switch**
+- [x] **Step 7: Add the props and switch**
 
 In `web/src/components/OverviewToolbar.tsx`:
 
@@ -228,12 +228,12 @@ In `web/src/components/OverviewToolbar.tsx`:
 </Space>
 ```
 
-- [ ] **Step 8: Run the toolbar test to verify it passes**
+- [x] **Step 8: Run the toolbar test to verify it passes**
 
 Run: `cd web && npx vitest run src/components/OverviewToolbar.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 9: (Ruling) Do not add the Switch click test**
+- [x] **Step 9: (Ruling) Do not add the Switch click test**
 
 A minimal Ant Design `Switch` rendered with `createRoot` + `act` in jsdom
 exhausts the Vitest worker (OOM), even without the toolbar around it. The
@@ -241,7 +241,7 @@ SSR assertions from Step 5 cover the rendered state, and the `onChange`
 wiring is a single typed expression; verify the click manually in the
 console instead. Do not add `OverviewToolbar.dom.test.tsx`.
 
-- [ ] **Step 10: Add the English translation and its test**
+- [x] **Step 10: Add the English translation and its test**
 
 In `web/src/locales/en-US.ts`, add `'动画': 'Animation'`. In `web/src/i18n.test.ts`, add to the translation test:
 
@@ -252,7 +252,7 @@ expect(translateFor('en-US', '动画')).toBe('Animation');
 Run: `cd web && npx vitest run src/i18n.test.ts`
 Expected: PASS.
 
-- [ ] **Step 11: Wire the state in App**
+- [x] **Step 11: Wire the state in App**
 
 In `web/src/App.tsx`:
 
@@ -271,7 +271,7 @@ const setAnimate = useCallback((next: boolean) => {
 
 Do not pass `animate` to `Topology` yet; Task 3 adds that prop.
 
-- [ ] **Step 12: Run the focused tests and typecheck**
+- [x] **Step 12: Run the focused tests and typecheck**
 
 Run:
 
@@ -283,7 +283,7 @@ npx tsc --noEmit
 
 Expected: all PASS and no type errors.
 
-- [ ] **Step 13: Fill the Implementation record and commit**
+- [x] **Step 13: Fill the Implementation record and commit**
 
 ```bash
 git add web/src/animation.ts web/src/animation.test.ts \
@@ -322,7 +322,7 @@ git commit -m "feat(web): add overview animation preference"
   - `decorateEdge(e: Edge, metrics: GraphMetrics | null, activity?: Activity, animate = true): Edge`
   - `Topology` prop `animate?: boolean` (default `true`).
 
-- [ ] **Step 1: Write the failing activity tests**
+- [x] **Step 1: Write the failing activity tests**
 
 In `web/src/graph/activity.test.ts`, import `accumulateActivity` and add:
 
@@ -356,12 +356,12 @@ describe('accumulateActivity', () => {
 });
 ```
 
-- [ ] **Step 2: Run the activity test to verify it fails**
+- [x] **Step 2: Run the activity test to verify it fails**
 
 Run: `cd web && npx vitest run src/graph/activity.test.ts`
 Expected: FAIL because `accumulateActivity` is not exported.
 
-- [ ] **Step 3: Implement `accumulateActivity`**
+- [x] **Step 3: Implement `accumulateActivity`**
 
 In `web/src/graph/activity.ts`, add:
 
@@ -383,12 +383,12 @@ export function accumulateActivity(
 }
 ```
 
-- [ ] **Step 4: Run the activity test to verify it passes**
+- [x] **Step 4: Run the activity test to verify it passes**
 
 Run: `cd web && npx vitest run src/graph/activity.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing node flash test**
+- [x] **Step 5: Write the failing node flash test**
 
 In `web/src/graph/nodes.test.tsx`, replace the `renders one activity ring...` test with:
 
@@ -429,12 +429,12 @@ it('does not flash while idle', () => {
 });
 ```
 
-- [ ] **Step 6: Run the node test to verify it fails**
+- [x] **Step 6: Run the node test to verify it fails**
 
 Run: `cd web && npx vitest run src/graph/nodes.test.tsx`
 Expected: FAIL because the flash classes do not exist.
 
-- [ ] **Step 7: Implement the icon flash**
+- [x] **Step 7: Implement the icon flash**
 
 In `web/src/graph/nodes.tsx`:
 
@@ -483,12 +483,12 @@ In `web/src/styles.css`, replace the `gw-node-pulse` block with a one-shot flash
 }
 ```
 
-- [ ] **Step 8: Run the node test to verify it passes**
+- [x] **Step 8: Run the node test to verify it passes**
 
 Run: `cd web && npx vitest run src/graph/nodes.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 9: Write the failing edge-gating test**
+- [x] **Step 9: Write the failing edge-gating test**
 
 In `web/src/pages/Topology.test.tsx`, inside `describe('decorateEdge')`, add:
 
@@ -500,12 +500,12 @@ it('suppresses the pulse when animations are off', () => {
 });
 ```
 
-- [ ] **Step 10: Run the topology test to verify it fails**
+- [x] **Step 10: Run the topology test to verify it fails**
 
 Run: `cd web && npx vitest run src/pages/Topology.test.tsx`
 Expected: FAIL because `decorateEdge` ignores the fourth argument.
 
-- [ ] **Step 11: Gate activity and edges in Topology**
+- [x] **Step 11: Gate activity and edges in Topology**
 
 In `web/src/pages/Topology.tsx`:
 
@@ -531,11 +531,11 @@ prevMetricsRef.current = metrics;
 - In the structure effect, pass `animate` to `decorateEdge` and add `animate` to that effect's dependency list.
 - Update the activity imports: `Topology` now uses `accumulateActivity` instead of `diffActivity` and `mergeActivity`.
 
-- [ ] **Step 12: Pass the flag from App**
+- [x] **Step 12: Pass the flag from App**
 
 In `web/src/App.tsx`, wrap the monitor `<Topology ... />` with `animate={animate}`.
 
-- [ ] **Step 13: Run the focused tests and typecheck**
+- [x] **Step 13: Run the focused tests and typecheck**
 
 Run:
 
@@ -547,7 +547,7 @@ npx tsc --noEmit
 
 Expected: all PASS and no type errors.
 
-- [ ] **Step 14: Fill the Implementation record and commit**
+- [x] **Step 14: Fill the Implementation record and commit**
 
 ```bash
 git add web/src/graph/nodes.tsx web/src/graph/nodes.test.tsx \
@@ -563,7 +563,7 @@ git commit -m "feat(web): flash node icons and gate overview animation"
 - Repo/commit: `llm-gw` @ `70e5380f` (code), implementation record committed separately
 - Files changed: `web/src/graph/nodes.tsx`, `web/src/graph/nodes.test.tsx`, `web/src/graph/activity.ts`, `web/src/graph/activity.test.ts`, `web/src/pages/Topology.tsx`, `web/src/pages/Topology.test.tsx`, `web/src/App.tsx`, `web/src/styles.css`
 - Tests/commands and results: focused run `npx vitest run src/graph/activity.test.ts src/graph/nodes.test.tsx src/pages/Topology.test.tsx` → 33 passed; `npx tsc --noEmit` → clean after removing the now-unused `GraphNodeData` import; full `npm test` → 29 files / 207 tests passed.
-- Review findings/fixes: the flash class lives on the badge and is keyed by the pulse so the one-shot animation restarts correctly; `accumulateActivity` clears while disabled, which prevents replay; `Topology` gates node and edge pulses immediately when `animate` flips.
+- Review findings/fixes: the flash class lives on the badge and is keyed by the pulse so the one-shot animation restarts correctly; `accumulateActivity` clears while disabled, which prevents replay; `Topology` gates node and edge pulses immediately when `animate` flips. Final review added `visibleActivity` with unit tests so removing the component-level gate cannot leave the suite green.
 - Deferred items/limitations: CSS animation timing and `prefers-reduced-motion` are not covered by a browser visual test; verify manually in the console.
 
 ---
@@ -579,7 +579,7 @@ git commit -m "feat(web): flash node icons and gate overview animation"
 - Consumes: the finished behavior from Tasks 1-3.
 - Produces: no code interfaces; documentation and a verified build.
 
-- [ ] **Step 1: Update the web invariants in AGENTS.md**
+- [x] **Step 1: Update the web invariants in AGENTS.md**
 
 Replace the sentence saying the navigation has a `网关密钥` page with one that says the navigation labels it `密钥` (`gateway-keys`) and that the page heading, dialogs and Sessions filter keep `网关密钥`. Add one invariant:
 
@@ -590,11 +590,11 @@ Replace the sentence saying the navigation has a `网关密钥` page with one th
   reintroduce the card ring.
 ```
 
-- [ ] **Step 2: Note the switch in the README Overview description**
+- [x] **Step 2: Note the switch in the README Overview description**
 
 In `README.md`, extend the Overview row or the monitor-mode paragraph to say the toolbar animation switch stops node flashes and edge light dots and is remembered per browser.
 
-- [ ] **Step 3: Run the full web gate**
+- [x] **Step 3: Run the full web gate**
 
 Run:
 
@@ -607,7 +607,7 @@ npm run build
 
 Expected: all tests PASS, no type errors, and the Vite build writes to `../internal/admin/dist`.
 
-- [ ] **Step 4: Run the full Go gate**
+- [x] **Step 4: Run the full Go gate**
 
 Run:
 
@@ -619,7 +619,7 @@ GOWORK=off go test ./... -count=1
 
 Expected: build and vet clean; all Go tests PASS.
 
-- [ ] **Step 5: Fill the Implementation record and commit**
+- [x] **Step 5: Fill the Implementation record and commit**
 
 ```bash
 git add AGENTS.md README.md docs/superpowers/plans/2026-11-08-overview-animation-toggle.md
