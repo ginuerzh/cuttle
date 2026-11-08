@@ -23,7 +23,7 @@ import { message } from 'antd';
 import type { ConfigResponse, GraphMetrics, NodeMetrics } from '../api/types';
 import { getTopologyPositions, putTopologyPositions } from '../api/client';
 import { buildGraph, type GraphNode } from '../graph/build';
-import { layoutGraph } from '../graph/layout';
+import { layoutGraph, placeNewNodes } from '../graph/layout';
 import {
   createPositionSaver,
   mergeNodeState,
@@ -346,8 +346,11 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
   const structure = useMemo(() => {
     const raw = buildGraph(config);
     const laid = layoutGraph(raw.nodes, raw.edges);
+    // Nodes added since the saved layout keep the dagre slot only when it is
+    // clear; otherwise they are moved out from under the existing cards.
+    const placed = placeNewNodes(laid, positions);
     return {
-      nodes: laid.map((n) => ({ ...n, position: positions[n.id] ?? n.position })),
+      nodes: laid.map((n) => ({ ...n, position: positions[n.id] ?? placed[n.id] ?? n.position })),
       edges: raw.edges,
     };
   }, [config, positions]);
@@ -420,8 +423,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
   const resetLayout = () => {
     const raw = buildGraph(config);
     const laid = layoutGraph(raw.nodes, raw.edges);
-    const next: PositionMap = {};
-    for (const n of laid) next[n.id] = n.position;
+    const next = placeNewNodes(laid, {});
     setPositions(next);
     persist(next);
   };
