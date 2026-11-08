@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 )
 
 const (
@@ -164,8 +164,8 @@ func TestGatewayAuthRejectsMissingInvalidAndDisabled(t *testing.T) {
 			if got := resp.Header.Get("Content-Type"); got != "application/json" {
 				t.Fatalf("content-type = %q", got)
 			}
-			if got := resp.Header.Get("WWW-Authenticate"); got != `Bearer realm="llm-gw"` {
-				t.Fatalf("www-authenticate = %q, want %q", got, `Bearer realm="llm-gw"`)
+			if got := resp.Header.Get("WWW-Authenticate"); got != `Bearer realm="cuttle"` {
+				t.Fatalf("www-authenticate = %q, want %q", got, `Bearer realm="cuttle"`)
 			}
 			if !resp.Close {
 				t.Fatal("response does not advertise Connection: close")
@@ -561,8 +561,8 @@ func TestGatewayAuthAllDisabledRejectsMissingCredential(t *testing.T) {
 	if body != authTestWant401 {
 		t.Fatalf("body = %q, want %q", body, authTestWant401)
 	}
-	if got := resp.Header.Get("WWW-Authenticate"); got != `Bearer realm="llm-gw"` {
-		t.Fatalf("www-authenticate = %q, want %q", got, `Bearer realm="llm-gw"`)
+	if got := resp.Header.Get("WWW-Authenticate"); got != `Bearer realm="cuttle"` {
+		t.Fatalf("www-authenticate = %q, want %q", got, `Bearer realm="cuttle"`)
 	}
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("upstream hits = %d, want 0", got)

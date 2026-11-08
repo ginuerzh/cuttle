@@ -21,9 +21,9 @@ import (
 	"github.com/go-gost/core/metadata"
 	xlogger "github.com/go-gost/x/logger"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
-	"github.com/go-gost/llm-gw/internal/stats"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 const countTokensBody = `{"model":"claude-opus-4-5","messages":[{"role":"user","content":"hi"}]}`

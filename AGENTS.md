@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Guidance for coding agents working in the `llm-gw` repository.
+Guidance for coding agents working in the `cuttle` repository.
 
 ## Repository
 
-- `llm-gw` is a self-hosted LLM gateway written in Go with an embedded React
+- `cuttle` is a self-hosted LLM gateway written in Go with an embedded React
   admin console (Vite, Ant Design, React Flow).
 - `go.mod` uses published module tags (`core`, `x`,
   `github.com/ginuerzh/llm-api-converter`) and has no local `replace`
@@ -23,10 +23,10 @@ Guidance for coding agents working in the `llm-gw` repository.
 ```bash
 # Build the console, then the binary
 (cd web && npm ci && npm run build)
-GOWORK=off go build -o llm-gw .
+GOWORK=off go build -o cuttle .
 
-# Zero-config first run (no llm-gw.yaml)
-LLM_GW_DATA=./data ./llm-gw serve
+# Zero-config first run (no cuttle.yaml)
+CUTTLE_DATA=./data ./cuttle serve
 
 # Full Go gate
 GOWORK=off go build ./...
@@ -40,7 +40,7 @@ npx tsc --noEmit
 npm run build
 
 # Docker (from this directory; modules are fetched by tag)
-docker build -t llm-gw .
+docker build -t cuttle .
 ```
 
 `web/` builds into `internal/admin/dist`, which is git-ignored and embedded with
@@ -95,7 +95,7 @@ Entrypoint -> Route -> Node -> Provider model
   compile time. If every node is skipped, the request fails; never fall through
   to another route or send the client model upstream.
 - Do not edit the sibling repositories (`../core`, `../x`,
-  `../llm-api-converter`) as part of llm-gw work. Publish a tag in the sibling
+  `../llm-api-converter`) as part of cuttle work. Publish a tag in the sibling
   repository, then bump the tagged dependency here; record that repository's
   commit separately.
 
@@ -115,7 +115,7 @@ Entrypoint -> Route -> Node -> Provider model
   disabled entries; a disabled match only changes the failure reason
   (`missing`, `disabled` or `invalid`).
 - A rejected request gets the fixed JSON 401 with
-  `WWW-Authenticate: Bearer realm="llm-gw"` and `Connection: close`. Never call
+  `WWW-Authenticate: Bearer realm="cuttle"` and `Connection: close`. Never call
   the upstream and never log the credential; log only client IP, method, path
   and the failure reason. A malformed request head returns 400.
 - The auth handler reads only the request head (1 MiB / 15s bound) and replays
@@ -140,22 +140,22 @@ Entrypoint -> Route -> Node -> Provider model
   `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`32768`/`24h`,
   provider health `30s`/`5s`, node weight `1`, node API `auto` (stored as an
   empty string), route strategy `round`.
-- `LLM_GW_LISTEN` (`:8787`), `LLM_GW_ADMIN_LISTEN` (`127.0.0.1:8788`; the
-  Docker image sets `:8788`) and `LLM_GW_ADMIN_PASSWORD` (unset) are first-run
-  defaults: they are used only when a new config is generated. `LLM_GW_DATA`
+- `CUTTLE_LISTEN` (`:8787`), `CUTTLE_ADMIN_LISTEN` (`127.0.0.1:8788`; the
+  Docker image sets `:8788`) and `CUTTLE_ADMIN_PASSWORD` (unset) are first-run
+  defaults: they are used only when a new config is generated. `CUTTLE_DATA`
   (default `/data`) is the data directory used on every start and determines
   where an existing config is looked up or a missing one is generated.
 - Config resolution: explicit `-c` must exist; otherwise
-  `$LLM_GW_DATA/llm-gw.yaml`, `/etc/llm-gw/llm-gw.yaml`, `./llm-gw.yaml`, then
-  generate at `$LLM_GW_DATA/llm-gw.yaml`.
-- A generated config writes an absolute `stats.path` under `LLM_GW_DATA`, the
+  `$CUTTLE_DATA/cuttle.yaml`, `/etc/cuttle/cuttle.yaml`, `./cuttle.yaml`, then
+  generate at `$CUTTLE_DATA/cuttle.yaml`.
+- A generated config writes an absolute `stats.path` under `CUTTLE_DATA`, the
   documented `168h`/`2160h` retention defaults, a bcrypt hash of the env
   password or a 32-character generated password, and empty topology lists. The
   generated password is printed once to stderr after the config write and before
   stats is opened. A trailing `\r\n` is trimmed from the env password.
 - First-run generation uses `config.WriteNew` (`os.Link`, no overwrite). Losing
   a concurrent first-run race loads the winner's config instead of replacing it.
-- A generated config writes `$LLM_GW_DATA/.llm-gw-sessions-reset` before the
+- A generated config writes `$CUTTLE_DATA/.cuttle-sessions-reset` before the
   config. `main` clears persisted sessions and removes the marker only after
   success; a failed or interrupted startup retries on the next start.
 - An existing config with an empty `admin.passwordHash` stays admin-disabled.
@@ -261,7 +261,7 @@ Entrypoint -> Route -> Node -> Provider model
 - The graph emits `entrypoint:<name>`, `route:<name>`, `node:<name>` and
   `provider:<name>` keys; rows without a route use the literal `unrouted` key.
   Keep the web graph and stats tests aligned.
-- Node-forwarded responses carry `X-LLM-GW-Request-ID` equal to the stats
+- Node-forwarded responses carry `X-Cuttle-Request-ID` equal to the stats
   `requestId` (the x `sid`). Gateway-generated 502/503 responses and request-side
   failures without a response are a documented v1 gap.
 - Captures live in `request_captures` beside `requests`. `off` creates nothing;
@@ -319,7 +319,7 @@ Entrypoint -> Route -> Node -> Provider model
   shows the open-data-plane and all-keys-disabled alerts, 24h/7d/30d usage,
   enable switches, rotate and delete.
 - Overview animations share one toolbar switch persisted in `localStorage`
-  (`llm-gw.animation`). Off stops node icon flashes and edge light dots without
+  (`cuttle.animation`). Off stops node icon flashes and edge light dots without
   pausing metrics. The node flash is one-shot; do not reintroduce the card ring.
 - Create and rotate open the one-time secret dialog; the raw key is never kept
   in list state or rendered anywhere else. The dialog must say the value is
@@ -380,8 +380,8 @@ GOWORK=off go test ./internal/stats -count=1
   target API separately, or path, body protocol and stats can diverge.
 - Admin config writes require a writable config file. With a Docker `:ro` mount,
   console edits fail; edit the host file and send `SIGHUP`.
-- First-run config and stats live in `$LLM_GW_DATA` (default `/data`). The
-  Docker image uses `CMD ["serve"]`; its `LLM_GW_ADMIN_LISTEN=:8788` is a
+- First-run config and stats live in `$CUTTLE_DATA` (default `/data`). The
+  Docker image uses `CMD ["serve"]`; its `CUTTLE_ADMIN_LISTEN=:8788` is a
   first-run default, not an override for an existing config.
 - The generated admin password is printed only on the first run. If it is lost,
   replace `admin.passwordHash` with `hash-password` output or delete the config
@@ -393,10 +393,10 @@ GOWORK=off go test ./internal/stats -count=1
   singleflight). Model-only changes must not invalidate the cache.
 - OpenCode catalogs are keyless. Sending an invalid `Authorization` header makes
   them return 401; `x-api-key` is ignored.
-- Docker builds use the `llm-gw` directory as context. Dependencies are
+- Docker builds use the `cuttle` directory as context. Dependencies are
   downloaded from the module proxy at the tags in `go.mod`; the workflow no
   longer checks out sibling repositories.
-- The demo under `/tmp/llm-gw-demo.yaml` is local-only and may contain real
+- The demo under `/tmp/cuttle-demo.yaml` is local-only and may contain real
   keys. Never copy it into the repository.
 - OpenCode Zen has no per-key balance API: its Usage card must link to
   `https://opencode.ai/console` instead of querying. OpenCode Go's windows are

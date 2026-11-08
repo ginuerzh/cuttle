@@ -12,7 +12,7 @@ import (
 	xlogger "github.com/go-gost/x/logger"
 	xrecorder "github.com/go-gost/x/recorder"
 
-	"github.com/go-gost/llm-gw/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
 // Recorder implements core/recorder.Recorder for the forward handler.

@@ -4,7 +4,7 @@ import type { ReactElement, ReactNode } from 'react';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
-export const THEME_STORAGE_KEY = 'llm-gw-theme';
+export const THEME_STORAGE_KEY = 'cuttle-theme';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 

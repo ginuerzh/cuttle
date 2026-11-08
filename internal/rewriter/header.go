@@ -13,10 +13,10 @@ import (
 
 // RequestIDHeaderName is the response header that carries the gateway's
 // per-request correlation ID.
-const RequestIDHeaderName = "X-LLM-GW-Request-ID"
+const RequestIDHeaderName = "X-Cuttle-Request-ID"
 
 // RequestIDRewriterName is the x rewriter-registry name for HeaderRewriter.
-const RequestIDRewriterName = "llm-gw-request-id"
+const RequestIDRewriterName = "cuttle-request-id"
 
 // OpenCodeSessionHeaderName is the header OpenCode Go uses for session
 // affinity. Clients do not reliably send it; the gateway injects a fallback.
@@ -24,7 +24,7 @@ const OpenCodeSessionHeaderName = "x-opencode-session"
 
 // OpenCodeSessionRewriterName is the x rewriter-registry name for
 // OpenCodeSessionRewriter.
-const OpenCodeSessionRewriterName = "llm-gw-opencode-session"
+const OpenCodeSessionRewriterName = "cuttle-opencode-session"
 
 // HeaderRewriter injects the x session ID into an HTTP header block. It is
 // registered as an x header-rewrite plugin and fails open: a parse error

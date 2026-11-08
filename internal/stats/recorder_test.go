@@ -8,7 +8,7 @@ import (
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 
-	"github.com/go-gost/llm-gw/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
 func TestRecorderCopiesRewriteFields(t *testing.T) {

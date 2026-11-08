@@ -1,4 +1,4 @@
-// Package admin exposes the llm-gw management HTTP API.
+// Package admin exposes the cuttle management HTTP API.
 package admin
 
 import (
@@ -11,11 +11,11 @@ import (
 	"github.com/go-gost/core/logger"
 	xlogger "github.com/go-gost/x/logger"
 
-	"github.com/go-gost/llm-gw/internal/capture"
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/health"
-	"github.com/go-gost/llm-gw/internal/stats"
-	"github.com/go-gost/llm-gw/internal/version"
+	"github.com/ginuerzh/cuttle/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/health"
+	"github.com/ginuerzh/cuttle/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/version"
 )
 
 // Reloader applies a new configuration to the data plane.

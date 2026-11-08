@@ -1,4 +1,4 @@
-// Package logging provides the llm-gw logger: a log/slog-backed core logger
+// Package logging provides the cuttle logger: a log/slog-backed core logger
 // whose level can be changed while the process is running.
 package logging
 

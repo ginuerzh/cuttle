@@ -1,4 +1,4 @@
-// Package bootstrap resolves the llm-gw config location and creates a
+// Package bootstrap resolves the cuttle config location and creates a
 // zero-config first-run configuration when none exists.
 package bootstrap
 
@@ -13,26 +13,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 const (
-	// DefaultDataDir is the default LLM_GW_DATA directory.
+	// DefaultDataDir is the default CUTTLE_DATA directory.
 	DefaultDataDir = "/data"
 	// ConfigFileName is the config file name inside the data directory.
-	ConfigFileName = "llm-gw.yaml"
+	ConfigFileName = "cuttle.yaml"
 	// StatsFileName is the stats database name inside the data directory.
 	StatsFileName = "stats.sqlite"
 	// SessionsResetFileName marks a first-run config whose persisted sessions
 	// still need to be cleared. It is removed after a successful clear.
-	SessionsResetFileName = ".llm-gw-sessions-reset"
+	SessionsResetFileName = ".cuttle-sessions-reset"
 )
 
-// DefaultLegacyPaths are checked after the data-directory config and before a
+// DefaultSearchPaths are checked after the data-directory config and before a
 // new config is generated.
-var DefaultLegacyPaths = []string{
-	"/etc/llm-gw/llm-gw.yaml",
-	"llm-gw.yaml",
+var DefaultSearchPaths = []string{
+	"/etc/cuttle/cuttle.yaml",
+	"cuttle.yaml",
 }
 
 // Paths is the resolved config location.
@@ -43,23 +43,23 @@ type Paths struct {
 }
 
 // Resolve determines where the config lives. An explicit path must exist. With
-// no explicit path it checks $LLM_GW_DATA/llm-gw.yaml, then legacyPaths, and
+// no explicit path it checks $CUTTLE_DATA/cuttle.yaml, then searchPaths, and
 // finally returns the path where a new config should be generated.
 //
-// A nil legacyPaths uses DefaultLegacyPaths; an empty non-nil slice disables
-// legacy candidates.
-func Resolve(explicitPath string, getenv func(string) string, legacyPaths []string) (Paths, error) {
+// A nil searchPaths uses DefaultSearchPaths; an empty non-nil slice disables
+// secondary candidates.
+func Resolve(explicitPath string, getenv func(string) string, searchPaths []string) (Paths, error) {
 	if getenv == nil {
 		getenv = os.Getenv
 	}
 
-	dataDir := strings.TrimSpace(getenv("LLM_GW_DATA"))
+	dataDir := strings.TrimSpace(getenv("CUTTLE_DATA"))
 	if dataDir == "" {
 		dataDir = DefaultDataDir
 	}
 	absDataDir, err := filepath.Abs(dataDir)
 	if err != nil {
-		return Paths{}, fmt.Errorf("LLM_GW_DATA %q: %w", dataDir, err)
+		return Paths{}, fmt.Errorf("CUTTLE_DATA %q: %w", dataDir, err)
 	}
 
 	paths := Paths{DataDir: absDataDir}
@@ -80,7 +80,7 @@ func Resolve(explicitPath string, getenv func(string) string, legacyPaths []stri
 	dataConfig := filepath.Join(absDataDir, ConfigFileName)
 	ok, err := fileExists(dataConfig)
 	if err != nil {
-		return Paths{}, fmt.Errorf("LLM_GW_DATA %s: %w", absDataDir, err)
+		return Paths{}, fmt.Errorf("CUTTLE_DATA %s: %w", absDataDir, err)
 	}
 	if ok {
 		paths.ConfigPath = dataConfig
@@ -88,10 +88,10 @@ func Resolve(explicitPath string, getenv func(string) string, legacyPaths []stri
 		return paths, nil
 	}
 
-	if legacyPaths == nil {
-		legacyPaths = DefaultLegacyPaths
+	if searchPaths == nil {
+		searchPaths = DefaultSearchPaths
 	}
-	for _, path := range legacyPaths {
+	for _, path := range searchPaths {
 		if strings.TrimSpace(path) == "" {
 			continue
 		}
@@ -131,9 +131,9 @@ var writeConfig = config.WriteNew
 type Options struct {
 	// ExplicitPath is the -c/--config value. When non-empty it must exist.
 	ExplicitPath string
-	// LegacyPaths overrides DefaultLegacyPaths. A nil slice uses the defaults;
-	// an empty non-nil slice disables legacy candidates.
-	LegacyPaths []string
+	// SearchPaths overrides DefaultSearchPaths. A nil slice uses the defaults;
+	// an empty non-nil slice disables secondary candidates.
+	SearchPaths []string
 	// Getenv overrides os.Getenv in tests. A nil function uses os.Getenv.
 	Getenv func(string) string
 	// Stderr receives the one-time generated password. A nil writer uses
@@ -168,7 +168,7 @@ func Prepare(opts Options) (*Result, error) {
 		stderr = os.Stderr
 	}
 
-	paths, err := Resolve(opts.ExplicitPath, getenv, opts.LegacyPaths)
+	paths, err := Resolve(opts.ExplicitPath, getenv, opts.SearchPaths)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func Prepare(opts Options) (*Result, error) {
 		}
 		reset, err := sessionsResetPending(paths.DataDir)
 		if err != nil {
-			return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
+			return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 		}
 		return &Result{
 			Config:        cfg,
@@ -195,20 +195,20 @@ func Prepare(opts Options) (*Result, error) {
 
 func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Result, error) {
 	if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
-		return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
+		return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 	}
 	warnings := dataDirWarnings(paths.DataDir)
 
 	pending, err := sessionsResetPending(paths.DataDir)
 	if err != nil {
-		return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
+		return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 	}
 	if err := createSessionsResetMarker(paths.DataDir); err != nil {
-		return nil, fmt.Errorf("LLM_GW_DATA %s: %w", paths.DataDir, err)
+		return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 	}
 
-	listen := envOrDefault(getenv, "LLM_GW_LISTEN", ":8787")
-	adminListen := envOrDefault(getenv, "LLM_GW_ADMIN_LISTEN", "127.0.0.1:8788")
+	listen := envOrDefault(getenv, "CUTTLE_LISTEN", ":8787")
+	adminListen := envOrDefault(getenv, "CUTTLE_ADMIN_LISTEN", "127.0.0.1:8788")
 
 	var password string
 	var hash string
@@ -264,7 +264,7 @@ func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Resul
 				Warnings:      append(warnings, ignoredEnvWarnings(loaded, getenv)...),
 			}, nil
 		}
-		return nil, fmt.Errorf("LLM_GW_DATA %s: write config %s: %w", paths.DataDir, paths.ConfigPath, err)
+		return nil, fmt.Errorf("CUTTLE_DATA %s: write config %s: %w", paths.DataDir, paths.ConfigPath, err)
 	}
 
 	if password != "" {
@@ -297,10 +297,10 @@ func GeneratePassword() (string, error) {
 
 func validatePassword(password string) error {
 	if len(password) < 8 {
-		return errors.New("LLM_GW_ADMIN_PASSWORD must be at least 8 characters")
+		return errors.New("CUTTLE_ADMIN_PASSWORD must be at least 8 characters")
 	}
 	if len(password) > 72 {
-		return errors.New("LLM_GW_ADMIN_PASSWORD must be at most 72 bytes")
+		return errors.New("CUTTLE_ADMIN_PASSWORD must be at most 72 bytes")
 	}
 	return nil
 }
@@ -313,32 +313,32 @@ func envOrDefault(getenv func(string) string, key, def string) string {
 }
 
 func printGeneratedPassword(w io.Writer, password, adminListen string) {
-	fmt.Fprintf(w, "llm-gw: generated admin password: %s\n", password)
-	fmt.Fprintf(w, "llm-gw: admin console listening on %s\n", adminListen)
-	fmt.Fprintln(w, "llm-gw: set LLM_GW_ADMIN_PASSWORD to choose your own password")
+	fmt.Fprintf(w, "cuttle: generated admin password: %s\n", password)
+	fmt.Fprintf(w, "cuttle: admin console listening on %s\n", adminListen)
+	fmt.Fprintln(w, "cuttle: set CUTTLE_ADMIN_PASSWORD to choose your own password")
 }
 
 func ignoredEnvWarnings(cfg *config.Config, getenv func(string) string) []string {
 	var warnings []string
-	if v := strings.TrimSpace(getenv("LLM_GW_LISTEN")); v != "" && v != cfg.Gateway.Listen {
-		warnings = append(warnings, fmt.Sprintf("LLM_GW_LISTEN=%q ignored; config already sets gateway.listen=%q", v, cfg.Gateway.Listen))
+	if v := strings.TrimSpace(getenv("CUTTLE_LISTEN")); v != "" && v != cfg.Gateway.Listen {
+		warnings = append(warnings, fmt.Sprintf("CUTTLE_LISTEN=%q ignored; config already sets gateway.listen=%q", v, cfg.Gateway.Listen))
 	}
-	if v := strings.TrimSpace(getenv("LLM_GW_ADMIN_LISTEN")); v != "" && v != cfg.Admin.Listen {
-		warnings = append(warnings, fmt.Sprintf("LLM_GW_ADMIN_LISTEN=%q ignored; config already sets admin.listen=%q", v, cfg.Admin.Listen))
+	if v := strings.TrimSpace(getenv("CUTTLE_ADMIN_LISTEN")); v != "" && v != cfg.Admin.Listen {
+		warnings = append(warnings, fmt.Sprintf("CUTTLE_ADMIN_LISTEN=%q ignored; config already sets admin.listen=%q", v, cfg.Admin.Listen))
 	}
 	if password := adminPasswordFromEnv(getenv); password != "" {
 		switch {
 		case cfg.Admin.PasswordHash == "":
-			warnings = append(warnings, "LLM_GW_ADMIN_PASSWORD is ignored; config has no admin password and the admin console is disabled")
+			warnings = append(warnings, "CUTTLE_ADMIN_PASSWORD is ignored; config has no admin password and the admin console is disabled")
 		case !config.VerifyPassword(cfg.Admin.PasswordHash, password):
-			warnings = append(warnings, "LLM_GW_ADMIN_PASSWORD is ignored; config already has a different admin password")
+			warnings = append(warnings, "CUTTLE_ADMIN_PASSWORD is ignored; config already has a different admin password")
 		}
 	}
 	return warnings
 }
 
 func adminPasswordFromEnv(getenv func(string) string) string {
-	return strings.TrimRight(getenv("LLM_GW_ADMIN_PASSWORD"), "\r\n")
+	return strings.TrimRight(getenv("CUTTLE_ADMIN_PASSWORD"), "\r\n")
 }
 
 func dataDirWarnings(dataDir string) []string {
@@ -349,7 +349,7 @@ func dataDirWarnings(dataDir string) []string {
 	if info.Mode().Perm()&0o077 == 0 {
 		return nil
 	}
-	return []string{fmt.Sprintf("LLM_GW_DATA %s is accessible by group or other; use chmod 700", dataDir)}
+	return []string{fmt.Sprintf("CUTTLE_DATA %s is accessible by group or other; use chmod 700", dataDir)}
 }
 
 func sessionsResetPending(dataDir string) (bool, error) {

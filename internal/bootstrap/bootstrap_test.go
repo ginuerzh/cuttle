@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 func envMap(m map[string]string) func(string) string {
@@ -50,7 +50,7 @@ func TestResolvePrecedence(t *testing.T) {
 		writeFile(t, dataConfig)
 		writeFile(t, legacy)
 
-		paths, err := Resolve(explicit, envMap(map[string]string{"LLM_GW_DATA": dataDir}), []string{legacy})
+		paths, err := Resolve(explicit, envMap(map[string]string{"CUTTLE_DATA": dataDir}), []string{legacy})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +67,7 @@ func TestResolvePrecedence(t *testing.T) {
 		writeFile(t, dataConfig)
 		writeFile(t, legacy)
 
-		paths, err := Resolve("", envMap(map[string]string{"LLM_GW_DATA": dataDir}), []string{legacy})
+		paths, err := Resolve("", envMap(map[string]string{"CUTTLE_DATA": dataDir}), []string{legacy})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,13 +76,13 @@ func TestResolvePrecedence(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy fallback", func(t *testing.T) {
+	t.Run("secondary fallback", func(t *testing.T) {
 		base := t.TempDir()
 		dataDir := filepath.Join(base, "data")
 		legacy := filepath.Join(base, "legacy", ConfigFileName)
 		writeFile(t, legacy)
 
-		paths, err := Resolve("", envMap(map[string]string{"LLM_GW_DATA": dataDir}), []string{legacy})
+		paths, err := Resolve("", envMap(map[string]string{"CUTTLE_DATA": dataDir}), []string{legacy})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestResolvePrecedence(t *testing.T) {
 		legacy := filepath.Join(base, "legacy", ConfigFileName)
 		want := filepath.Join(dataDir, ConfigFileName)
 
-		paths, err := Resolve("", envMap(map[string]string{"LLM_GW_DATA": dataDir}), []string{legacy})
+		paths, err := Resolve("", envMap(map[string]string{"CUTTLE_DATA": dataDir}), []string{legacy})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -112,13 +112,13 @@ func TestResolveDefaultDataDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if paths.DataDir != "/data" || paths.ConfigPath != "/data/llm-gw.yaml" {
+	if paths.DataDir != "/data" || paths.ConfigPath != "/data/cuttle.yaml" {
 		t.Fatalf("paths = %+v", paths)
 	}
 }
 
 func TestResolveRelativeDataDirIsAbsolute(t *testing.T) {
-	paths, err := Resolve("", envMap(map[string]string{"LLM_GW_DATA": "relative/data"}), []string{})
+	paths, err := Resolve("", envMap(map[string]string{"CUTTLE_DATA": "relative/data"}), []string{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +138,12 @@ func TestResolveDataDirErrorNamesEnv(t *testing.T) {
 	}
 	dataDir := filepath.Join(file, "data")
 
-	_, err := Resolve("", envMap(map[string]string{"LLM_GW_DATA": dataDir}), []string{})
+	_, err := Resolve("", envMap(map[string]string{"CUTTLE_DATA": dataDir}), []string{})
 	if err == nil {
 		t.Fatal("want error for data dir under a regular file")
 	}
-	if !strings.Contains(err.Error(), "LLM_GW_DATA") {
-		t.Fatalf("error %q does not name LLM_GW_DATA", err)
+	if !strings.Contains(err.Error(), "CUTTLE_DATA") {
+		t.Fatalf("error %q does not name CUTTLE_DATA", err)
 	}
 }
 
@@ -161,8 +161,8 @@ func TestPrepareGeneratesConfig(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "nested", "data")
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
@@ -231,12 +231,12 @@ func TestPrepareUsesEnvDefaults(t *testing.T) {
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
 		Getenv: envMap(map[string]string{
-			"LLM_GW_DATA":           dataDir,
-			"LLM_GW_LISTEN":         "127.0.0.1:18080",
-			"LLM_GW_ADMIN_LISTEN":   "127.0.0.1:18081",
-			"LLM_GW_ADMIN_PASSWORD": "correct-horse",
+			"CUTTLE_DATA":           dataDir,
+			"CUTTLE_LISTEN":         "127.0.0.1:18080",
+			"CUTTLE_ADMIN_LISTEN":   "127.0.0.1:18081",
+			"CUTTLE_ADMIN_PASSWORD": "correct-horse",
 		}),
-		LegacyPaths: []string{},
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
@@ -246,7 +246,7 @@ func TestPrepareUsesEnvDefaults(t *testing.T) {
 		t.Fatal("Generated = false, want true")
 	}
 	if res.GeneratedPassword != "" {
-		t.Fatal("a password was generated despite LLM_GW_ADMIN_PASSWORD")
+		t.Fatal("a password was generated despite CUTTLE_ADMIN_PASSWORD")
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", buf.String())
@@ -258,7 +258,7 @@ func TestPrepareUsesEnvDefaults(t *testing.T) {
 		t.Fatalf("Admin.Listen = %q", res.Config.Admin.Listen)
 	}
 	if !config.VerifyPassword(res.Config.Admin.PasswordHash, "correct-horse") {
-		t.Fatal("stored hash does not verify LLM_GW_ADMIN_PASSWORD")
+		t.Fatal("stored hash does not verify CUTTLE_ADMIN_PASSWORD")
 	}
 }
 
@@ -267,10 +267,10 @@ func TestPrepareRejectsShortPassword(t *testing.T) {
 	var buf bytes.Buffer
 	_, err := Prepare(Options{
 		Getenv: envMap(map[string]string{
-			"LLM_GW_DATA":           dataDir,
-			"LLM_GW_ADMIN_PASSWORD": "short",
+			"CUTTLE_DATA":           dataDir,
+			"CUTTLE_ADMIN_PASSWORD": "short",
 		}),
-		LegacyPaths: []string{},
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err == nil {
@@ -291,8 +291,8 @@ func TestPrepareRestart(t *testing.T) {
 	dataDir := t.TempDir()
 	var buf bytes.Buffer
 	opts := Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	}
 	first, err := Prepare(opts)
@@ -340,12 +340,12 @@ func TestPrepareExistingConfigWarnings(t *testing.T) {
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
 		Getenv: envMap(map[string]string{
-			"LLM_GW_DATA":           dataDir,
-			"LLM_GW_LISTEN":         "127.0.0.1:3333",
-			"LLM_GW_ADMIN_LISTEN":   "127.0.0.1:4444",
-			"LLM_GW_ADMIN_PASSWORD": "new-password",
+			"CUTTLE_DATA":           dataDir,
+			"CUTTLE_LISTEN":         "127.0.0.1:3333",
+			"CUTTLE_ADMIN_LISTEN":   "127.0.0.1:4444",
+			"CUTTLE_ADMIN_PASSWORD": "new-password",
 		}),
-		LegacyPaths: []string{},
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
@@ -363,7 +363,7 @@ func TestPrepareExistingConfigWarnings(t *testing.T) {
 	if len(res.Warnings) != 3 {
 		t.Fatalf("warnings = %#v, want 3", res.Warnings)
 	}
-	for _, name := range []string{"LLM_GW_LISTEN", "LLM_GW_ADMIN_LISTEN", "LLM_GW_ADMIN_PASSWORD"} {
+	for _, name := range []string{"CUTTLE_LISTEN", "CUTTLE_ADMIN_LISTEN", "CUTTLE_ADMIN_PASSWORD"} {
 		found := false
 		for _, warning := range res.Warnings {
 			if strings.Contains(warning, name) {
@@ -385,12 +385,12 @@ func TestPrepareExistingConfigWarnings(t *testing.T) {
 	buf.Reset()
 	res, err = Prepare(Options{
 		Getenv: envMap(map[string]string{
-			"LLM_GW_DATA":           dataDir,
-			"LLM_GW_LISTEN":         "127.0.0.1:1111",
-			"LLM_GW_ADMIN_LISTEN":   "127.0.0.1:2222",
-			"LLM_GW_ADMIN_PASSWORD": "old-password",
+			"CUTTLE_DATA":           dataDir,
+			"CUTTLE_LISTEN":         "127.0.0.1:1111",
+			"CUTTLE_ADMIN_LISTEN":   "127.0.0.1:2222",
+			"CUTTLE_ADMIN_PASSWORD": "old-password",
 		}),
-		LegacyPaths: []string{},
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
@@ -409,10 +409,10 @@ func TestPrepareExistingEmptyHash(t *testing.T) {
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
 		Getenv: envMap(map[string]string{
-			"LLM_GW_DATA":           dataDir,
-			"LLM_GW_ADMIN_PASSWORD": "some-password",
+			"CUTTLE_DATA":           dataDir,
+			"CUTTLE_ADMIN_PASSWORD": "some-password",
 		}),
-		LegacyPaths: []string{},
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
@@ -443,15 +443,15 @@ func TestPrepareUnwritableDataDir(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	_, err := Prepare(Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": filepath.Join(file, "data")}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": filepath.Join(file, "data")}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err == nil {
 		t.Fatal("want error for unwritable data dir")
 	}
-	if !strings.Contains(err.Error(), "LLM_GW_DATA") {
-		t.Fatalf("error %q does not name LLM_GW_DATA", err)
+	if !strings.Contains(err.Error(), "CUTTLE_DATA") {
+		t.Fatalf("error %q does not name CUTTLE_DATA", err)
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", buf.String())
@@ -470,8 +470,8 @@ func TestPrepareExistingStatsError(t *testing.T) {
 
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
@@ -513,8 +513,8 @@ func TestPreparePrintsPasswordBeforeLoadFailure(t *testing.T) {
 	dataDir := t.TempDir()
 	var buf bytes.Buffer
 	_, err := Prepare(Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err == nil {
@@ -532,8 +532,8 @@ func TestPrepareRetriesPendingSessionReset(t *testing.T) {
 	dataDir := t.TempDir()
 	var buf bytes.Buffer
 	opts := Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	}
 	first, err := Prepare(opts)
@@ -608,8 +608,8 @@ func TestPrepareExclusiveWriteLoadsExisting(t *testing.T) {
 	dataDir := t.TempDir()
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
@@ -642,15 +642,15 @@ func TestPrepareWriteErrorNamesEnv(t *testing.T) {
 	dataDir := t.TempDir()
 	var buf bytes.Buffer
 	_, err := Prepare(Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err == nil {
 		t.Fatal("want a write error")
 	}
-	if !strings.Contains(err.Error(), "LLM_GW_DATA") {
-		t.Fatalf("error %q does not name LLM_GW_DATA", err)
+	if !strings.Contains(err.Error(), "CUTTLE_DATA") {
+		t.Fatalf("error %q does not name CUTTLE_DATA", err)
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", buf.String())
@@ -662,17 +662,17 @@ func TestPrepareTrimsEnvPasswordNewline(t *testing.T) {
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
 		Getenv: envMap(map[string]string{
-			"LLM_GW_DATA":           dataDir,
-			"LLM_GW_ADMIN_PASSWORD": "correct-horse\n",
+			"CUTTLE_DATA":           dataDir,
+			"CUTTLE_ADMIN_PASSWORD": "correct-horse\n",
 		}),
-		LegacyPaths: []string{},
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.GeneratedPassword != "" {
-		t.Fatal("a password was generated despite LLM_GW_ADMIN_PASSWORD")
+		t.Fatal("a password was generated despite CUTTLE_ADMIN_PASSWORD")
 	}
 	if !config.VerifyPassword(res.Config.Admin.PasswordHash, "correct-horse") {
 		t.Fatal("hash does not verify the trimmed password")
@@ -695,8 +695,8 @@ func TestPrepareDataDirPermissionWarning(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	res, err := Prepare(Options{
-		Getenv:      envMap(map[string]string{"LLM_GW_DATA": dataDir}),
-		LegacyPaths: []string{},
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	})
 	if err != nil {

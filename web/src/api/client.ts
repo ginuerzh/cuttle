@@ -15,7 +15,7 @@ export class UnauthorizedError extends ApiError {
 }
 
 function csrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)llm_gw_csrf=([^;]+)/);
+  const match = document.cookie.match(/(?:^|;\s*)cuttle_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : '';
 }
 

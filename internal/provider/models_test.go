@@ -10,7 +10,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 func newModelServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {

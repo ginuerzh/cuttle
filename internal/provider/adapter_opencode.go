@@ -1,6 +1,6 @@
 package provider
 
-import "github.com/go-gost/llm-gw/internal/config"
+import "github.com/ginuerzh/cuttle/internal/config"
 
 // openCodeAdapter covers both OpenCode gateways. Their model catalogs and
 // base URLs are independent; only the per-family API rules are shared.

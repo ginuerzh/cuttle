@@ -16,7 +16,7 @@ import (
 	"github.com/go-gost/core/logger"
 	"github.com/go-gost/core/metadata"
 
-	"github.com/go-gost/llm-gw/internal/tokenest"
+	"github.com/ginuerzh/cuttle/internal/tokenest"
 )
 
 const countTokensPath = "/v1/messages/count_tokens"

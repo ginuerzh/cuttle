@@ -3,7 +3,7 @@ package provider
 import (
 	"strings"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 // commandCodeAdapter serves Claude models on Anthropic Messages and every

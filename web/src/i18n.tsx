@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { enUS } from './locales/en-US';
 
-export const LANG_STORAGE_KEY = 'llm-gw-lang';
+export const LANG_STORAGE_KEY = 'cuttle-lang';
 
 export const LANGUAGES = [
   { id: 'zh-CN', label: '简体中文' },

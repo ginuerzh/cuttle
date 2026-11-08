@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 // NewHTTPClient returns an HTTP client for provider control-plane requests

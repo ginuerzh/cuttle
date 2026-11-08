@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-gost/llm-gw/internal/version"
+	"github.com/ginuerzh/cuttle/internal/version"
 )
 
 func TestHealthReportsBuildIdentity(t *testing.T) {

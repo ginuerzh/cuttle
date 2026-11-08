@@ -12,7 +12,7 @@ var headerExact = map[string]bool{
 	"user-agent":          true,
 	"retry-after":         true,
 	"x-request-id":        true,
-	"x-llm-gw-request-id": true,
+	"x-cuttle-request-id": true,
 	"x-opencode-session":  true,
 	"cf-ray":              true,
 	"anthropic-version":   true,

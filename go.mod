@@ -1,4 +1,4 @@
-module github.com/go-gost/llm-gw
+module github.com/ginuerzh/cuttle
 
 go 1.26.4
 

@@ -34,7 +34,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
       <Card style={{ width: '100%', maxWidth: 360, margin: '0 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            llm-gw
+            Cuttle
           </Typography.Title>
           <Dropdown
             trigger={['click']}

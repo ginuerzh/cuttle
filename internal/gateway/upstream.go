@@ -9,8 +9,8 @@ import (
 
 	xconfig "github.com/go-gost/x/config"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
 // errModelDisabled marks a node whose compiled target model is locally disabled

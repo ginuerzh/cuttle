@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/gateway"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/gateway"
 )
 
 func writeEntrypointConfig(t *testing.T, dir, upstream string, defaultFirst bool) string {
@@ -64,7 +64,7 @@ routes:
   - name: strong
     nodes: [strong-node]
 %s`, filepath.Join(dir, "stats.sqlite"), upstream, entrypoints)
-	path := filepath.Join(dir, "llm-gw.yaml")
+	path := filepath.Join(dir, "cuttle.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

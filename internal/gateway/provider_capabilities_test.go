@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/stats"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 const geminiCapabilityResponse = `{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`

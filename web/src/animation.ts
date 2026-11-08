@@ -1,4 +1,4 @@
-export const ANIMATION_STORAGE_KEY = 'llm-gw.animation';
+export const ANIMATION_STORAGE_KEY = 'cuttle.animation';
 
 /** Only the literal `0` disables animations; missing or corrupt values default on. */
 export function normalizeAnimationEnabled(raw: string | null | undefined): boolean {

@@ -15,7 +15,7 @@ func TestHeaderRewriterAddsRequestID(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(out)
-	if !strings.Contains(s, "X-Llm-Gw-Request-Id: req-123") {
+	if !strings.Contains(s, "X-Cuttle-Request-Id: req-123") {
 		t.Fatalf("header missing: %q", s)
 	}
 	if !strings.Contains(s, "Content-Type: application/json") {

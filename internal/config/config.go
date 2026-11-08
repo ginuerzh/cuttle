@@ -1,4 +1,4 @@
-// Package config defines the llm-gw YAML configuration and its validation.
+// Package config defines the cuttle YAML configuration and its validation.
 package config
 
 import (
@@ -17,10 +17,10 @@ import (
 	"golang.org/x/net/http/httpguts"
 	"gopkg.in/yaml.v3"
 
-	"github.com/go-gost/llm-gw/internal/version"
+	"github.com/ginuerzh/cuttle/internal/version"
 )
 
-// Config is the top-level llm-gw configuration.
+// Config is the top-level cuttle configuration.
 type Config struct {
 	Gateway     Gateway      `yaml:"gateway" json:"gateway"`
 	Admin       Admin        `yaml:"admin" json:"admin"`
@@ -292,7 +292,7 @@ func write(path string, c *Config, exclusive bool) error {
 	}
 
 	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".llm-gw-*.yaml")
+	f, err := os.CreateTemp(dir, ".cuttle-*.yaml")
 	if err != nil {
 		return err
 	}
@@ -448,7 +448,7 @@ func (c *Config) applyDefaults() {
 	}
 	c.Gateway.UserAgent = strings.TrimSpace(c.Gateway.UserAgent)
 	if c.Gateway.UserAgent == "" {
-		c.Gateway.UserAgent = "llm-gw/" + version.Current().Version
+		c.Gateway.UserAgent = "cuttle/" + version.Current().Version
 	}
 	for i := range c.Gateway.Keys {
 		k := &c.Gateway.Keys[i]

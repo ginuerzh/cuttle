@@ -566,7 +566,7 @@ export default function App() {
           aria-expanded={navOpen}
         />
         <Typography.Text strong style={{ fontSize: 16 }}>
-          llm-gw
+          Cuttle
         </Typography.Text>
       </Header>
 

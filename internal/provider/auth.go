@@ -3,7 +3,7 @@ package provider
 import (
 	"net/http"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 // defaultAuth is the conventional auth for an API: Bearer for OpenAI-style

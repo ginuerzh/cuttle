@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 const (
-	sessionCookie = "llm_gw_session"
-	csrfCookie    = "llm_gw_csrf"
+	sessionCookie = "cuttle_session"
+	csrfCookie    = "cuttle_csrf"
 	csrfHeader    = "X-CSRF-Token"
 )
 
@@ -57,7 +57,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	expires := time.Now().Add(ttl)
 	// A non-remembered session is a browser-session cookie (MaxAge 0); a
-	// remembered one survives both browser restarts and llm-gw restarts.
+	// remembered one survives both browser restarts and cuttle restarts.
 	maxAge := 0
 	if in.Remember {
 		maxAge = int(ttl.Seconds())

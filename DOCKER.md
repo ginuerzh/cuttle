@@ -1,10 +1,10 @@
 # Docker
 
-`llm-gw` depends on published module tags, so the Docker build context is this
+`cuttle` depends on published module tags, so the Docker build context is this
 directory. Build with:
 
 ```bash
-docker build -t llm-gw .
+docker build -t cuttle .
 ```
 
 The build stage downloads the `core`, `x` and `llm-api-converter` versions
@@ -18,10 +18,10 @@ docker build \
   --build-arg VERSION=v0.1.0 \
   --build-arg COMMIT="$(git rev-parse HEAD)" \
   --build-arg BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t llm-gw .
+  -t cuttle .
 ```
 
-`VERSION` defaults to `dev`. `llm-gw version`, `/api/health`, and the admin
+`VERSION` defaults to `dev`. `cuttle version`, `/api/health`, and the admin
 sidebar show the injected values.
 
 ## Zero-config first run
@@ -29,55 +29,55 @@ sidebar show the injected values.
 The image starts with no config file:
 
 ```bash
-docker run -d --name llm-gw \
+docker run -d --name cuttle \
   -p 8787:8787 -p 8788:8788 \
-  -v llm-gw-data:/data \
-  ghcr.io/ginuerzh/llm-gw:latest
+  -v cuttle-data:/data \
+  ghcr.io/ginuerzh/cuttle:latest
 
-docker logs llm-gw
+docker logs cuttle
 ```
 
-The first start creates `/data/llm-gw.yaml` and `/data/stats.sqlite`. The log
+The first start creates `/data/cuttle.yaml` and `/data/stats.sqlite`. The log
 contains a one-time admin password. Open `http://localhost:8788/`, log in, and
 create the provider, node, route and entrypoint in the console.
 
-The image sets `LLM_GW_DATA=/data` (the data directory on every start) and
-`LLM_GW_ADMIN_LISTEN=:8788` (a first-run default). The binary default is
+The image sets `CUTTLE_DATA=/data` (the data directory on every start) and
+`CUTTLE_ADMIN_LISTEN=:8788` (a first-run default). The binary default is
 `127.0.0.1:8788`; the image changes it so the published admin port works
 without extra configuration.
 
 To choose the password before the first start:
 
 ```bash
-docker run -d --name llm-gw \
+docker run -d --name cuttle \
   -p 8787:8787 -p 8788:8788 \
-  -e LLM_GW_ADMIN_PASSWORD='choose-a-long-password' \
-  -v llm-gw-data:/data \
-  ghcr.io/ginuerzh/llm-gw:latest
+  -e CUTTLE_ADMIN_PASSWORD='choose-a-long-password' \
+  -v cuttle-data:/data \
+  ghcr.io/ginuerzh/cuttle:latest
 ```
 
 The three config-value variables are first-run defaults. Once a config exists,
 the file and console are authoritative and those variables are ignored (a
-differing value logs a warning). `LLM_GW_DATA` is the data directory used on
+differing value logs a warning). `CUTTLE_DATA` is the data directory used on
 every start. To keep the admin API inside the container network on a fresh
-start, set `LLM_GW_ADMIN_LISTEN=127.0.0.1:8788`.
+start, set `CUTTLE_ADMIN_LISTEN=127.0.0.1:8788`.
 
-`LLM_GW_ADMIN_PASSWORD` is visible in the container environment. Use an env file
+`CUTTLE_ADMIN_PASSWORD` is visible in the container environment. Use an env file
 or an orchestrator secret to inject it. The generated config stores only the
 bcrypt hash.
 
 ## Existing config mount
 
 ```bash
-docker run -d --name llm-gw \
+docker run -d --name cuttle \
   -p 8787:8787 -p 8788:8788 \
-  -v "$PWD/llm-gw.yaml:/etc/llm-gw/llm-gw.yaml:ro" \
-  -v llm-gw-data:/data \
-  ghcr.io/ginuerzh/llm-gw:latest
+  -v "$PWD/cuttle.yaml:/etc/cuttle/cuttle.yaml:ro" \
+  -v cuttle-data:/data \
+  ghcr.io/ginuerzh/cuttle:latest
 ```
 
-`/etc/llm-gw/llm-gw.yaml` is found when `/data/llm-gw.yaml` does not exist. Use
-`serve -c /etc/llm-gw/llm-gw.yaml` as the container command to be explicit.
+`/etc/cuttle/cuttle.yaml` is found when `/data/cuttle.yaml` does not exist. Use
+`serve -c /etc/cuttle/cuttle.yaml` as the container command to be explicit.
 Admin edits write the config file, so use a writable mount if you want to manage
 the gateway from the console; with a read-only mount, edit the host file and send
 `SIGHUP`.
@@ -94,10 +94,10 @@ is accessible by group or other.
 `.github/workflows/docker.yml` builds `linux/amd64` and `linux/arm64` images and
 pushes them to GHCR on pushes to `main` and `v*` tags.
 
-The workflow builds the image from the `llm-gw` context. Dependency versions are
+The workflow builds the image from the `cuttle` context. Dependency versions are
 the tags in `go.mod`; update them with `go get` and `go mod tidy`.
 
 The workflow derives `VERSION` from the git ref: a `vX.Y.Z` tag uses the tag
 name, and a branch build uses `<branch>-<short-sha>`. `COMMIT` and `BUILT_AT`
-are passed alongside it, so `llm-gw version` and `/api/health` identify the
+are passed alongside it, so `cuttle version` and `/api/health` identify the
 exact build.

@@ -1,6 +1,6 @@
 package provider
 
-import "github.com/go-gost/llm-gw/internal/config"
+import "github.com/ginuerzh/cuttle/internal/config"
 
 // genericAdapter has no static knowledge of models. Models are discovered
 // from every configured API base and keep the API that listed them.

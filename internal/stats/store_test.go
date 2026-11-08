@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
 func newStore(t *testing.T) *Store {

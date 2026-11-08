@@ -25,12 +25,12 @@ import (
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 
-	"github.com/go-gost/llm-gw/internal/capture"
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
-	gwrewriter "github.com/go-gost/llm-gw/internal/rewriter"
-	"github.com/go-gost/llm-gw/internal/stats"
-	"github.com/go-gost/llm-gw/internal/version"
+	"github.com/ginuerzh/cuttle/internal/capture"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
+	gwrewriter "github.com/ginuerzh/cuttle/internal/rewriter"
+	"github.com/ginuerzh/cuttle/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/version"
 
 	_ "github.com/go-gost/x/connector/http"
 	_ "github.com/go-gost/x/dialer/tcp"
@@ -314,7 +314,7 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 		// stats. Provider headers can override it, and auth.extra wins last.
 		ua := strings.TrimSpace(p.UserAgent)
 		if ua == "" {
-			ua = "llm-gw/" + version.Current().Version
+			ua = "cuttle/" + version.Current().Version
 		}
 		headers["User-Agent"] = ua
 		for k, v := range p.Headers {

@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/bootstrap"
-	"github.com/go-gost/llm-gw/internal/stats"
-	"github.com/go-gost/llm-gw/internal/version"
+	"github.com/ginuerzh/cuttle/internal/bootstrap"
+	"github.com/ginuerzh/cuttle/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/version"
 )
 
 func TestPrintVersion(t *testing.T) {
 	var buf bytes.Buffer
 	printVersion(&buf)
-	want := "llm-gw " + version.String() + "\n"
+	want := "cuttle " + version.String() + "\n"
 	if got := buf.String(); got != want {
 		t.Fatalf("printVersion() = %q, want %q", got, want)
 	}

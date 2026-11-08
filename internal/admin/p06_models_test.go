@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
 // newModelsUpstream serves an OpenAI-style model list and records how many

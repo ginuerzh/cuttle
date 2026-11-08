@@ -127,8 +127,8 @@ export function decorateEdge(
   } as Edge;
 }
 
-const POSITIONS_KEY = 'llm-gw.positions';
-const PENDING_KEY = 'llm-gw.positions.pending';
+const POSITIONS_KEY = 'cuttle.positions';
+const PENDING_KEY = 'cuttle.positions.pending';
 
 /**
  * Edit mode mounts a second Topology, so the React Flow viewport must survive

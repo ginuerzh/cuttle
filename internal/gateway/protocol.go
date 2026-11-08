@@ -7,7 +7,7 @@ import (
 	corerouting "github.com/go-gost/core/routing"
 	xrouting "github.com/go-gost/x/routing"
 
-	"github.com/go-gost/llm-gw/internal/provider"
+	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
 // inboundGroup binds one client-facing wire protocol to the provider API that

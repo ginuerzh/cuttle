@@ -18,10 +18,10 @@ import (
 
 	xlogger "github.com/go-gost/x/logger"
 
-	"github.com/go-gost/llm-gw/internal/capture"
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/health"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/health"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 type recordingReloader struct {
@@ -53,7 +53,7 @@ func (r *recordingReloader) Reload(c *config.Config) error {
 func newTestAdmin(t *testing.T) (*Server, *recordingReloader, string, *httptest.Server) {
 	t.Helper()
 
-	path := filepath.Join(t.TempDir(), "llm-gw.yaml")
+	path := filepath.Join(t.TempDir(), "cuttle.yaml")
 	hash, err := config.HashPassword("pass")
 	if err != nil {
 		t.Fatal(err)

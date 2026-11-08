@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 // The test-local shapes mirror the documented JSON API without depending on
@@ -253,7 +253,7 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 		t.Fatalf("decode config: %v", err)
 	}
 	roundTrip.Gateway.ReadTimeout = config.Duration(90 * time.Second)
-	roundTrip.Gateway.UserAgent = "llm-gw-test-agent/1.0"
+	roundTrip.Gateway.UserAgent = "cuttle-test-agent/1.0"
 	putBody, err := json.Marshal(&roundTrip)
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +272,7 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 		rel.cfg.Providers[0].Keys[0] != "sk-provider-secret" {
 		t.Fatalf("providers after read-modify-write = %+v, want the provider key preserved", rel.cfg.Providers)
 	}
-	if rel.cfg.Gateway.ReadTimeout != config.Duration(90*time.Second) || rel.cfg.Gateway.UserAgent != "llm-gw-test-agent/1.0" {
+	if rel.cfg.Gateway.ReadTimeout != config.Duration(90*time.Second) || rel.cfg.Gateway.UserAgent != "cuttle-test-agent/1.0" {
 		t.Fatalf("gateway after read-modify-write = %+v, want readTimeout 90s and the custom userAgent", rel.cfg.Gateway)
 	}
 
@@ -282,7 +282,7 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"readTimeout":"1m30s"`, `"userAgent":"llm-gw-test-agent/1.0"`, `"keysSet":1`, `"authRequired":true`} {
+	for _, want := range []string{`"readTimeout":"1m30s"`, `"userAgent":"cuttle-test-agent/1.0"`, `"keysSet":1`, `"authRequired":true`} {
 		if !strings.Contains(string(cfgBody), want) {
 			t.Fatalf("config = %s, want it to contain %s", cfgBody, want)
 		}
@@ -294,7 +294,7 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("second put config status = %d: %s", resp.StatusCode, b)
 	}
-	if rel.cfg.Gateway.ReadTimeout != config.Duration(90*time.Second) || rel.cfg.Gateway.UserAgent != "llm-gw-test-agent/1.0" {
+	if rel.cfg.Gateway.ReadTimeout != config.Duration(90*time.Second) || rel.cfg.Gateway.UserAgent != "cuttle-test-agent/1.0" {
 		t.Fatalf("gateway after second round-trip = %+v", rel.cfg.Gateway)
 	}
 	if len(rel.cfg.Providers) != 1 || len(rel.cfg.Providers[0].Keys) != 1 ||

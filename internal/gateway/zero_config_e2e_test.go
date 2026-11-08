@@ -17,10 +17,10 @@ import (
 
 	xlogger "github.com/go-gost/x/logger"
 
-	"github.com/go-gost/llm-gw/internal/admin"
-	"github.com/go-gost/llm-gw/internal/bootstrap"
-	"github.com/go-gost/llm-gw/internal/gateway"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/admin"
+	"github.com/ginuerzh/cuttle/internal/bootstrap"
+	"github.com/ginuerzh/cuttle/internal/gateway"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 func envMap(m map[string]string) func(string) string {
@@ -56,11 +56,11 @@ func TestZeroConfigOnboarding(t *testing.T) {
 	var buf bytes.Buffer
 	opts := bootstrap.Options{
 		Getenv: envMap(map[string]string{
-			"LLM_GW_DATA":         dataDir,
-			"LLM_GW_LISTEN":       "127.0.0.1:0",
-			"LLM_GW_ADMIN_LISTEN": "127.0.0.1:0",
+			"CUTTLE_DATA":         dataDir,
+			"CUTTLE_LISTEN":       "127.0.0.1:0",
+			"CUTTLE_ADMIN_LISTEN": "127.0.0.1:0",
 		}),
-		LegacyPaths: []string{},
+		SearchPaths: []string{},
 		Stderr:      &buf,
 	}
 	res, err := bootstrap.Prepare(opts)
@@ -113,7 +113,7 @@ func TestZeroConfigOnboarding(t *testing.T) {
 	}()
 
 	staleReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/config", nil)
-	staleReq.AddCookie(&http.Cookie{Name: "llm_gw_session", Value: staleToken})
+	staleReq.AddCookie(&http.Cookie{Name: "cuttle_session", Value: staleToken})
 	staleResp, err := http.DefaultClient.Do(staleReq)
 	if err != nil {
 		ts.Close()
@@ -158,7 +158,7 @@ func TestZeroConfigOnboarding(t *testing.T) {
 	u, _ := url.Parse(ts.URL)
 	var csrf string
 	for _, ck := range jar.Cookies(u) {
-		if ck.Name == "llm_gw_csrf" {
+		if ck.Name == "cuttle_csrf" {
 			csrf = ck.Value
 		}
 	}

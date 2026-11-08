@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
 // modelsCacheTTL bounds how long a provider model catalog is served from

@@ -8,7 +8,7 @@ import (
 	"github.com/go-gost/core/logger"
 	xlogger "github.com/go-gost/x/logger"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 type trackingLogger struct {

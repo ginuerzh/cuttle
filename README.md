@@ -1,8 +1,14 @@
-# llm-gw
+# Cuttle
 
-`llm-gw` is a self-hosted LLM gateway with an embedded admin console. It gives
+**The cuttlefish of LLM gateways.** / **一个入口，所有方言。**
+
+`Cuttle` is a self-hosted LLM gateway with an embedded admin console. It gives
 clients one stable endpoint for several providers, routes each client model to a
 provider model, converts between wire APIs, and records per-request statistics.
+
+The name is short for **cuttlefish**: many arms, rapid mimicry, and near-invisible
+camouflage — the same properties a gateway needs to reach many providers, speak
+each API dialect, and stay out of the client's way.
 
 ## What it does
 
@@ -22,7 +28,7 @@ provider model, converts between wire APIs, and records per-request statistics.
   time range down to one minute.
 - Reloads configuration on `SIGHUP` or immediately after an admin edit.
 - Starts without a config file: a zero-config first run creates the config and
-  a one-time admin password under `$LLM_GW_DATA`, then the console creates the
+  a one-time admin password under `$CUTTLE_DATA`, then the console creates the
   upstream topology.
 
 ## Routing model
@@ -77,9 +83,9 @@ the local workspace directories.
 ### Build
 
 ```bash
-# from the llm-gw directory
+# from the cuttle directory
 (cd web && npm ci && npm run build)
-GOWORK=off go build -o llm-gw .
+GOWORK=off go build -o cuttle .
 ```
 
 The web build writes to `internal/admin/dist`, which is embedded into the Go
@@ -88,7 +94,7 @@ parent `go.work` exists.
 
 ### Versioning
 
-`llm-gw version` (also `--version` and `-v`) prints the build identity. Release
+`cuttle version` (also `--version` and `-v`) prints the build identity. Release
 tags report `vX.Y.Z`, builds from `main` report `main-<short-sha>`, and a plain
 local build reports `dev`. The same value appears at the bottom of the admin
 navigation panel and in `GET /api/health` as `version`, `commit` and `builtAt`.
@@ -98,10 +104,10 @@ it explicitly:
 
 ```bash
 GOWORK=off go build \
-  -ldflags "-X github.com/go-gost/llm-gw/internal/version.Version=dev \
-    -X github.com/go-gost/llm-gw/internal/version.Commit=$(git rev-parse HEAD) \
-    -X github.com/go-gost/llm-gw/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -o llm-gw .
+  -ldflags "-X github.com/ginuerzh/cuttle/internal/version.Version=dev \
+    -X github.com/ginuerzh/cuttle/internal/version.Commit=$(git rev-parse HEAD) \
+    -X github.com/ginuerzh/cuttle/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o cuttle .
 ```
 
 Releases are created by pushing an annotated `vX.Y.Z` tag; CI publishes the
@@ -110,42 +116,42 @@ semver image tags alongside `latest`.
 ### Zero-config first run
 
 No config file is required. Start the binary (or the Docker image) and it
-creates `$LLM_GW_DATA/llm-gw.yaml` and `$LLM_GW_DATA/stats.sqlite`:
+creates `$CUTTLE_DATA/cuttle.yaml` and `$CUTTLE_DATA/stats.sqlite`:
 
 ```bash
-LLM_GW_DATA=./data ./llm-gw serve
+CUTTLE_DATA=./data ./cuttle serve
 ```
 
-If `LLM_GW_ADMIN_PASSWORD` is not set, llm-gw generates a 32-character admin
+If `CUTTLE_ADMIN_PASSWORD` is not set, Cuttle generates a 32-character admin
 password, prints it once to stderr, and stores only its bcrypt hash. Open the
 admin console, log in, and create a provider, node, route and entrypoint. No
 provider, key or model environment variables exist.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LLM_GW_DATA` | `/data` | Directory for the generated config and stats database |
-| `LLM_GW_LISTEN` | `:8787` | First-run `gateway.listen` |
-| `LLM_GW_ADMIN_LISTEN` | `127.0.0.1:8788` (binary); `:8788` (Docker image) | First-run `admin.listen` |
-| `LLM_GW_ADMIN_PASSWORD` | unset | First-run admin password; hashed into the config |
+| `CUTTLE_DATA` | `/data` | Directory for the generated config and stats database |
+| `CUTTLE_LISTEN` | `:8787` | First-run `gateway.listen` |
+| `CUTTLE_ADMIN_LISTEN` | `127.0.0.1:8788` (binary); `:8788` (Docker image) | First-run `admin.listen` |
+| `CUTTLE_ADMIN_PASSWORD` | unset | First-run admin password; hashed into the config |
 
 All four are optional. The three config-value variables are **first-run
 defaults**: once a config exists, the file and the console are authoritative and
-the variables are ignored (a differing value logs a warning). `LLM_GW_DATA` is
+the variables are ignored (a differing value logs a warning). `CUTTLE_DATA` is
 also used to locate an existing config.
 
-`-c` is optional. Without it, llm-gw uses the first existing path from:
+`-c` is optional. Without it, Cuttle uses the first existing path from:
 
-1. `$LLM_GW_DATA/llm-gw.yaml`
-2. `/etc/llm-gw/llm-gw.yaml` (legacy Docker mount)
-3. `./llm-gw.yaml` (legacy working-directory config)
+1. `$CUTTLE_DATA/cuttle.yaml`
+2. `/etc/cuttle/cuttle.yaml` (Docker mount)
+3. `./cuttle.yaml` (working-directory config)
 
-If none exists, it generates a new config in `$LLM_GW_DATA`. An explicitly
+If none exists, it generates a new config in `$CUTTLE_DATA`. An explicitly
 supplied `-c` path must exist.
 
-To choose the password before the first run, set `LLM_GW_ADMIN_PASSWORD` (8–72
-bytes; a trailing newline is trimmed, matching `llm-gw hash-password`). If the
+To choose the password before the first run, set `CUTTLE_ADMIN_PASSWORD` (8–72
+bytes; a trailing newline is trimmed, matching `cuttle hash-password`). If the
 generated password is lost, replace `admin.passwordHash` with the output of
-`llm-gw hash-password`, or delete the config (destructive: it also deletes the
+`cuttle hash-password`, or delete the config (destructive: it also deletes the
 topology; persisted sessions are cleared on regeneration).
 
 The rest of this section describes the full manual YAML configuration, which is
@@ -153,7 +159,7 @@ still supported and is the right choice for multi-provider topologies.
 
 ### Minimal configuration
 
-Create `llm-gw.yaml`:
+Create `cuttle.yaml`:
 
 ```yaml
 gateway:
@@ -196,7 +202,7 @@ Generate the admin password hash:
 
 ```bash
 read -rsp "Admin password: " PASSWORD; echo
-printf '%s' "$PASSWORD" | ./llm-gw hash-password
+printf '%s' "$PASSWORD" | ./cuttle hash-password
 ```
 
 Paste the output into `admin.passwordHash`.
@@ -206,7 +212,7 @@ Paste the output into `admin.passwordHash`.
 Zero-config first run (no YAML file):
 
 ```bash
-LLM_GW_DATA=./data ./llm-gw serve
+CUTTLE_DATA=./data ./cuttle serve
 ```
 
 The log prints a one-time admin password. Open the admin console, log in, and
@@ -216,7 +222,7 @@ Docker image uses.
 Manual configuration:
 
 ```bash
-DEEPSEEK_API_KEY=sk-... ./llm-gw serve -c llm-gw.yaml
+DEEPSEEK_API_KEY=sk-... ./cuttle serve -c cuttle.yaml
 ```
 
 - Gateway: `http://127.0.0.1:8787`
@@ -241,7 +247,7 @@ Because the entrypoint matches `*`, any client model is accepted. The response
 Reload after editing the file:
 
 ```bash
-pkill -HUP -f 'llm-gw serve'
+pkill -HUP -f 'cuttle serve'
 ```
 
 ## Admin console
@@ -321,7 +327,7 @@ routes: [ ... ]
 | --- | --- | --- |
 | `listen` | `:8787` | Data-plane listen address |
 | `readTimeout` | `60s` | Deadline for reading upstream HTTP response headers; 1s–300s |
-| `userAgent` | `llm-gw/<version>` | Upstream User-Agent; provider-level `userAgent` or `headers` can override it |
+| `userAgent` | `cuttle/<version>` | Upstream User-Agent; provider-level `userAgent` or `headers` can override it |
 | `keys` | empty (data plane open) | Named data-plane access keys; see [Gateway keys](#gateway-keys) |
 
 ### Gateway keys
@@ -383,7 +389,7 @@ A rejected request gets:
 ```http
 HTTP/1.1 401 Unauthorized
 Content-Type: application/json
-WWW-Authenticate: Bearer realm="llm-gw"
+WWW-Authenticate: Bearer realm="cuttle"
 Connection: close
 
 {"error":{"message":"invalid gateway key","type":"authentication_error"}}
@@ -434,7 +440,7 @@ be created from the Sessions page or `POST /api/captures`; they are
 time/limit-bounded, in-memory, and lost on restart. `stats.storeBody` is removed.
 
 Captured failures also include an allowlisted header subset: `content-type`,
-`user-agent`, `retry-after`, `x-request-id`, `x-llm-gw-request-id`,
+`user-agent`, `retry-after`, `x-request-id`, `x-cuttle-request-id`,
 `x-opencode-session`, `cf-ray`, `anthropic-version`, and
 `anthropic-ratelimit-*` / `x-ratelimit-*`. Authorization, cookie, set-cookie
 and API-key headers are never stored.
@@ -530,7 +536,7 @@ such as Claude Code sends its own `Authorization` header, because upstreams may
 prefer it over the injected `x-api-key` and reject the provider key.
 
 The gateway also owns the upstream `User-Agent`: it sends
-`gateway.userAgent` (default `llm-gw/<version>`) instead of the client's UA.
+`gateway.userAgent` (default `cuttle/<version>`) instead of the client's UA.
 `provider.userAgent` overrides it, and `provider.headers` can add or replace
 any header except `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`,
 `Proxy-Connection`, `Upgrade`, `Accept-Encoding` and `Proxy-Authorization`.
@@ -732,7 +738,7 @@ available to API clients.
 ## Request correlation and capture
 
 Every response that passes through a node hop carries
-`X-LLM-GW-Request-ID`. The value is the same `sid` stored as the request's
+`X-Cuttle-Request-ID`. The value is the same `sid` stored as the request's
 `requestId` in stats and logs, so a client report can be matched to one row.
 Gateway-generated 502/503 responses (no entrypoint match, upstream unreachable
 before headers) do not pass through the node header rewrite and are a known v1
@@ -823,48 +829,48 @@ The image bundles the gateway and the built admin console and starts with no
 config file:
 
 ```bash
-docker run -d --name llm-gw \
+docker run -d --name cuttle \
   -p 8787:8787 -p 8788:8788 \
-  -v llm-gw-data:/data \
-  ghcr.io/ginuerzh/llm-gw:latest
+  -v cuttle-data:/data \
+  ghcr.io/ginuerzh/cuttle:latest
 
-docker logs llm-gw
+docker logs cuttle
 ```
 
-The first start generates `/data/llm-gw.yaml` and `/data/stats.sqlite`. The log
+The first start generates `/data/cuttle.yaml` and `/data/stats.sqlite`. The log
 contains a one-time admin password; open `http://localhost:8788/`, log in, and
-create the upstream topology. The image sets `LLM_GW_DATA=/data` and
-`LLM_GW_ADMIN_LISTEN=:8788` for the first run. The binary default remains
+create the upstream topology. The image sets `CUTTLE_DATA=/data` and
+`CUTTLE_ADMIN_LISTEN=:8788` for the first run. The binary default remains
 `127.0.0.1:8788`.
 
 To choose the password, set it before the first start:
 
 ```bash
-docker run -d --name llm-gw \
+docker run -d --name cuttle \
   -p 8787:8787 -p 8788:8788 \
-  -e LLM_GW_ADMIN_PASSWORD='choose-a-long-password' \
-  -v llm-gw-data:/data \
-  ghcr.io/ginuerzh/llm-gw:latest
+  -e CUTTLE_ADMIN_PASSWORD='choose-a-long-password' \
+  -v cuttle-data:/data \
+  ghcr.io/ginuerzh/cuttle:latest
 ```
 
-The three config-value variables are first-run defaults; `LLM_GW_DATA` is the
+The three config-value variables are first-run defaults; `CUTTLE_DATA` is the
 data directory used on every start. An existing config is not overridden; edit
 `admin.listen` in the file or use the console. To keep the admin API inside the
-container network on a fresh container, set `LLM_GW_ADMIN_LISTEN=127.0.0.1:8788`
+container network on a fresh container, set `CUTTLE_ADMIN_LISTEN=127.0.0.1:8788`
 before the first start.
 
-Existing configs still work through the legacy mount:
+Existing configs can be mounted at `/etc/cuttle/cuttle.yaml`:
 
 ```bash
-docker run -d --name llm-gw \
+docker run -d --name cuttle \
   -p 8787:8787 -p 8788:8788 \
-  -v "$PWD/llm-gw.yaml:/etc/llm-gw/llm-gw.yaml:ro" \
-  -v llm-gw-data:/data \
-  ghcr.io/ginuerzh/llm-gw:latest
+  -v "$PWD/cuttle.yaml:/etc/cuttle/cuttle.yaml:ro" \
+  -v cuttle-data:/data \
+  ghcr.io/ginuerzh/cuttle:latest
 ```
 
-`/etc/llm-gw/llm-gw.yaml` is found when `/data/llm-gw.yaml` does not exist; use
-`serve -c /etc/llm-gw/llm-gw.yaml` as the container command to be explicit.
+`/etc/cuttle/cuttle.yaml` is found when `/data/cuttle.yaml` does not exist; use
+`serve -c /etc/cuttle/cuttle.yaml` as the container command to be explicit.
 Admin edits write the config file, so mount it writable if you want to manage
 the gateway from the console; with a read-only mount, edit the host file and
 send `SIGHUP` instead.
@@ -879,7 +885,7 @@ Build the image from this directory; Go modules are downloaded from the module
 proxy:
 
 ```bash
-docker build -t llm-gw .
+docker build -t cuttle .
 ```
 
 See [DOCKER.md](DOCKER.md) for build details and the GitHub Actions workflow.
@@ -929,7 +935,7 @@ DOCKER.md               image build and CI notes
   and an admin session never authenticates the data plane.
 - The generated config contains a bcrypt admin hash, not the plaintext
   password. The one-time password is printed to stderr/logs on the first run.
-  In production, set `LLM_GW_ADMIN_PASSWORD` through your orchestrator's secret
+  In production, set `CUTTLE_ADMIN_PASSWORD` through your orchestrator's secret
   mechanism, or capture the first-run logs securely.
 - A newly created data directory is `0700`; a pre-existing or bind-mounted
   directory is not changed, and startup warns if it is accessible by group or
@@ -938,7 +944,7 @@ DOCKER.md               image build and CI notes
   Docker image binds `:8788` for first-run onboarding. Put a TLS reverse proxy
   in front of it before exposing it on a network. The proxy must forward the
   WebSocket Upgrade for `/api/events` and preserve the `Host` header.
-- `LLM_GW_ADMIN_PASSWORD` is visible in the container environment; use an env
+- `CUTTLE_ADMIN_PASSWORD` is visible in the container environment; use an env
   file or an orchestrator secret to inject it.
 - `admin.passwordHash` empty disables the admin server entirely, including the
   management API.

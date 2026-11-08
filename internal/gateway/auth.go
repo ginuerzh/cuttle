@@ -21,8 +21,8 @@ import (
 	"github.com/go-gost/core/logger"
 	"github.com/go-gost/core/metadata"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/stats"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 const (
@@ -510,7 +510,7 @@ func writeGatewayAuthResponse(conn net.Conn, status int, payload []byte, challen
 		"Connection":   {"close"},
 	}
 	if challenge {
-		header.Set("WWW-Authenticate", `Bearer realm="llm-gw"`)
+		header.Set("WWW-Authenticate", `Bearer realm="cuttle"`)
 	}
 	resp := &http.Response{
 		StatusCode:    status,

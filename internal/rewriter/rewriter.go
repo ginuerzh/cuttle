@@ -13,7 +13,7 @@ import (
 	corerewriter "github.com/go-gost/core/rewriter"
 	xlogger "github.com/go-gost/x/logger"
 
-	"github.com/go-gost/llm-gw/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/capture"
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 )

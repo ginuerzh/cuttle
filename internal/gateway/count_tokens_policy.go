@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"regexp"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
 // countTokensPolicy maps the ordered entrypoint model globs to a per-route

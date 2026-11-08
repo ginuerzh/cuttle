@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 )
 
 func slowStreamServer(t *testing.T, tag string) *httptest.Server {

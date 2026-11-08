@@ -11,7 +11,7 @@ func TestCaptureHeadersAllowlist(t *testing.T) {
 		"User-Agent":                             {"claude-code/1.0"},
 		"Retry-After":                            {"30"},
 		"X-Request-Id":                           {"req-1"},
-		"X-LLM-GW-Request-ID":                    {"sid-1"},
+		"X-Cuttle-Request-ID":                    {"sid-1"},
 		"X-Opencode-Session":                     {"ses-1"},
 		"Cf-Ray":                                 {"abc"},
 		"Anthropic-Ratelimit-Requests-Remaining": {"10"},
@@ -27,7 +27,7 @@ func TestCaptureHeadersAllowlist(t *testing.T) {
 	got := captureHeaders(h)
 	for _, want := range []string{
 		"content-type", "user-agent", "retry-after", "x-request-id",
-		"x-llm-gw-request-id", "x-opencode-session", "cf-ray",
+		"x-cuttle-request-id", "x-opencode-session", "cf-ray",
 		"anthropic-ratelimit-requests-remaining", "x-ratelimit-limit",
 	} {
 		if _, ok := got[want]; !ok {

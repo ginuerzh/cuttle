@@ -16,8 +16,8 @@ import (
 
 	corechain "github.com/go-gost/core/chain"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	gwrewriter "github.com/go-gost/llm-gw/internal/rewriter"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	gwrewriter "github.com/ginuerzh/cuttle/internal/rewriter"
 )
 
 func testConfig(upstreamURL string) *gwconfig.Config {

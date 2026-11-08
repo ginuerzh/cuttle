@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 func TestClassify(t *testing.T) {

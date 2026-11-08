@@ -13,9 +13,9 @@ import (
 
 	xlogger "github.com/go-gost/x/logger"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/gateway"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/gateway"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 func statsConfig(t *testing.T, upstreamURL string) *config.Config {

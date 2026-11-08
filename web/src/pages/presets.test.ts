@@ -517,7 +517,7 @@ describe('providerPayload', () => {
 
 describe('provider headers', () => {
   it('round-trips a header map through the form text', () => {
-    const headers = { 'User-Agent': 'llm-gw/1.0', 'X-Custom': 'yes' };
+    const headers = { 'User-Agent': 'cuttle/1.0', 'X-Custom': 'yes' };
     expect(parseHeadersText(headersText(headers))).toEqual(headers);
     expect(headersText({})).toBe('');
     expect(parseHeadersText('')).toEqual({});

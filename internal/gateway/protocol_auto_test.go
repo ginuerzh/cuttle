@@ -15,10 +15,10 @@ import (
 	xlogger "github.com/go-gost/x/logger"
 	mdutil "github.com/go-gost/x/metadata/util"
 
-	"github.com/go-gost/llm-gw/internal/capture"
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/capture"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 func autoProtocolConfig(t *testing.T, upstream string) *gwconfig.Config {

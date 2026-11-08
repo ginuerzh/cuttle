@@ -14,9 +14,9 @@ import (
 
 	xlogger "github.com/go-gost/x/logger"
 
-	"github.com/go-gost/llm-gw/internal/admin"
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/gateway"
+	"github.com/ginuerzh/cuttle/internal/admin"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/gateway"
 )
 
 func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
@@ -28,7 +28,7 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	cfgPath := filepath.Join(t.TempDir(), "llm-gw.yaml")
+	cfgPath := filepath.Join(t.TempDir(), "cuttle.yaml")
 	hash, err := config.HashPassword("pass")
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	u, _ := url.Parse(ts.URL)
 	var csrf string
 	for _, ck := range jar.Cookies(u) {
-		if ck.Name == "llm_gw_csrf" {
+		if ck.Name == "cuttle_csrf" {
 			csrf = ck.Value
 		}
 	}

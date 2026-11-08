@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {

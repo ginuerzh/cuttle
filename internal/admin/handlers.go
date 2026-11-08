@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/health"
-	"github.com/go-gost/llm-gw/internal/logging"
-	"github.com/go-gost/llm-gw/internal/provider"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/health"
+	"github.com/ginuerzh/cuttle/internal/logging"
+	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
 type providerView struct {

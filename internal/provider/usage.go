@@ -254,7 +254,7 @@ func (p *baseProvider) usageBody(ctx context.Context, endpoint, key string) ([]b
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "llm-gw")
+	req.Header.Set("User-Agent", "cuttle")
 	applyAuth(req, p.Auth(Chat), key)
 
 	resp, err := NewHTTPClient(p.cfg.TLS, usageTimeout).Do(req)

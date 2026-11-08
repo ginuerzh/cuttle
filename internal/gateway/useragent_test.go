@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-gost/llm-gw/internal/version"
+	"github.com/ginuerzh/cuttle/internal/version"
 )
 
 func TestUpstreamUserAgentIsGatewayOwned(t *testing.T) {
@@ -32,7 +32,7 @@ func TestUpstreamUserAgentIsGatewayOwned(t *testing.T) {
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
-	want := "llm-gw/" + version.Current().Version
+	want := "cuttle/" + version.Current().Version
 	if got != want {
 		t.Fatalf("upstream User-Agent = %q, want %q", got, want)
 	}

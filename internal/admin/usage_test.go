@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 func setUsageProviders(t *testing.T, srv *Server, providers ...config.Provider) {

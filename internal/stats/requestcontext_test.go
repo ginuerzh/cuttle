@@ -50,7 +50,7 @@ func TestRequestContextPrefersOriginalHeaders(t *testing.T) {
 			URI:    "/v1/messages",
 			Request: xrecorder.HTTPRequestRecorderObject{
 				Header: http.Header{
-					"User-Agent":      {"llm-gw/main-test"},
+					"User-Agent":      {"cuttle/main-test"},
 					"X-Forwarded-For": {"10.0.0.1"},
 				},
 			},

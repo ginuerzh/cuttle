@@ -24,10 +24,10 @@ import (
 	xrecorder "github.com/go-gost/x/recorder"
 	xservice "github.com/go-gost/x/service"
 
-	"github.com/go-gost/llm-gw/internal/capture"
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/health"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/capture"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/health"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 // Gateway owns the data plane: one service, one forward handler and a hop
@@ -78,7 +78,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 
 	opts := []handler.Option{
 		handler.RouterOption(router),
-		handler.ServiceOption("llm-gw"),
+		handler.ServiceOption("cuttle"),
 		handler.LoggerOption(log),
 	}
 	if store != nil {
@@ -151,7 +151,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		return nil, err
 	}
 	g.ln = ln
-	g.svc = xservice.NewService("llm-gw", ln, h, xservice.LoggerOption(log))
+	g.svc = xservice.NewService("cuttle", ln, h, xservice.LoggerOption(log))
 	return g, nil
 }
 

@@ -12,7 +12,7 @@ import (
 
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "llm-gw.yaml")
+	path := filepath.Join(t.TempDir(), "cuttle.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,7 @@ routes:
 }
 
 func TestDurationAndWriteRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "llm-gw.yaml")
+	path := filepath.Join(t.TempDir(), "cuttle.yaml")
 	c, err := Load(writeConfig(t, `
 admin:
   listen: "127.0.0.1:8788"
@@ -1029,7 +1029,7 @@ func TestUserAgentAndHeaderValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(c.Gateway.UserAgent, "llm-gw/") {
+	if !strings.HasPrefix(c.Gateway.UserAgent, "cuttle/") {
 		t.Fatalf("gateway.userAgent = %q", c.Gateway.UserAgent)
 	}
 	for _, body := range []string{
@@ -1234,7 +1234,7 @@ func TestValidateGatewayKeysLengthBoundaries(t *testing.T) {
 
 func TestWriteNewDoesNotOverwrite(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "llm-gw.yaml")
+	path := filepath.Join(dir, "cuttle.yaml")
 
 	first := &Config{Gateway: Gateway{Listen: ":1111"}}
 	ApplyDefaults(first)

@@ -1,6 +1,6 @@
 package provider
 
-import "github.com/go-gost/llm-gw/internal/config"
+import "github.com/ginuerzh/cuttle/internal/config"
 
 // deepSeekAdapter covers the official DeepSeek endpoints. Its models are
 // served on all three text APIs; the configured base URLs decide which one a

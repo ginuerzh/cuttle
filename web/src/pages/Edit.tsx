@@ -483,7 +483,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         label="upstream User-Agent"
         extra={tr('留空使用 gateway.userAgent；headers 中的 User-Agent 会覆盖它。')}
       >
-        <Input placeholder="llm-gw/..." />
+        <Input placeholder="cuttle/..." />
       </Form.Item>
       <Form.Item
         label={tr('upstream headers（JSON）')}

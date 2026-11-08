@@ -12,7 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/go-gost/llm-gw/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
 // Request is one recorded request. It deliberately has no header/body fields.

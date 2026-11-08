@@ -13,18 +13,18 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/go-gost/llm-gw/internal/admin"
-	"github.com/go-gost/llm-gw/internal/bootstrap"
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/gateway"
-	"github.com/go-gost/llm-gw/internal/logging"
-	"github.com/go-gost/llm-gw/internal/stats"
-	"github.com/go-gost/llm-gw/internal/version"
+	"github.com/ginuerzh/cuttle/internal/admin"
+	"github.com/ginuerzh/cuttle/internal/bootstrap"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/gateway"
+	"github.com/ginuerzh/cuttle/internal/logging"
+	"github.com/ginuerzh/cuttle/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/version"
 )
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "llm-gw:", err)
+		fmt.Fprintln(os.Stderr, "cuttle:", err)
 		os.Exit(1)
 	}
 }
@@ -60,7 +60,7 @@ func run(args []string) error {
 		return err
 	}
 	log.SetDefault()
-	log.Infof("llm-gw %s starting", version.String())
+	log.Infof("cuttle %s starting", version.String())
 
 	for _, warning := range res.Warnings {
 		log.Warnf("%s", warning)
@@ -69,7 +69,7 @@ func run(args []string) error {
 		if res.GeneratedPassword != "" {
 			log.Infof("generated config %s; admin password printed to stderr", res.ConfigPath)
 		} else {
-			log.Infof("generated config %s with the password from LLM_GW_ADMIN_PASSWORD", res.ConfigPath)
+			log.Infof("generated config %s with the password from CUTTLE_ADMIN_PASSWORD", res.ConfigPath)
 		}
 	}
 	if len(cfg.Entrypoints) == 0 {
@@ -168,17 +168,17 @@ func runHashPassword() error {
 }
 
 func printVersion(w io.Writer) {
-	fmt.Fprintf(w, "llm-gw %s\n", version.String())
+	fmt.Fprintf(w, "cuttle %s\n", version.String())
 }
 
 func parseServeArgs(args []string) (string, error) {
 	if len(args) == 0 || args[0] != "serve" {
-		return "", errors.New("usage: llm-gw <serve [-c <config>] | version | hash-password>")
+		return "", errors.New("usage: cuttle <serve [-c <config>] | version | hash-password>")
 	}
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	var path string
-	const usage = "config file (default: $LLM_GW_DATA/llm-gw.yaml)"
+	const usage = "config file (default: $CUTTLE_DATA/cuttle.yaml)"
 	fs.StringVar(&path, "c", "", usage)
 	fs.StringVar(&path, "config", "", usage)
 	if err := fs.Parse(args[1:]); err != nil {

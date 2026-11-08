@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
-	"github.com/go-gost/llm-gw/internal/stats"
+	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 // StartProbes runs the periodic provider health probe until ctx is done.

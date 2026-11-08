@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"testing"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
-	"github.com/go-gost/llm-gw/internal/provider"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
 func TestRouteNeedsCountTokensEstimate(t *testing.T) {

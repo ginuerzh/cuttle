@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-gost/llm-gw/internal/config"
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 // API is an upstream wire API.

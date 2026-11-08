@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	gwconfig "github.com/go-gost/llm-gw/internal/config"
+	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 )
 
 // hitCounter is a fake upstream that only counts requests. It returns a valid
