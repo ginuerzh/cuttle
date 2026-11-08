@@ -29,7 +29,7 @@ export const NAV_LABELS: Record<Page, string> = {
   nodes: '节点',
   routes: '路由',
   entrypoints: '入口',
-  'gateway-keys': '网关密钥',
+  'gateway-keys': '密钥',
   requests: '会话',
   settings: '设置',
 };

@@ -20,8 +20,8 @@ describe('NAV_ORDER', () => {
 
 describe('gateway keys navigation', () => {
   it('labels the page in Chinese and English', () => {
-    expect(NAV_LABELS['gateway-keys']).toBe('网关密钥');
-    expect(translateFor('en-US', NAV_LABELS['gateway-keys'])).toBe('Gateway keys');
+    expect(NAV_LABELS['gateway-keys']).toBe('密钥');
+    expect(translateFor('en-US', NAV_LABELS['gateway-keys'])).toBe('Key');
   });
 });
 
