@@ -1,4 +1,4 @@
-import { Badge, Button, Select, Space, Tag } from 'antd';
+import { Badge, Button, Select, Space, Switch, Tag } from 'antd';
 import { EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import { translate as t } from '../i18n';
 
@@ -18,6 +18,8 @@ export interface OverviewToolbarProps {
   sinceAt: string;
   onReset: () => void;
   isMobile: boolean;
+  animate: boolean;
+  onAnimate: (animate: boolean) => void;
 }
 
 /** Overview toolbar: one edit toggle on the left, time range at the right edge. */
@@ -32,6 +34,8 @@ export function OverviewToolbar({
   sinceAt,
   onReset,
   isMobile,
+  animate,
+  onAnimate,
 }: OverviewToolbarProps) {
   const editing = mode === 'edit';
   return (
@@ -75,6 +79,10 @@ export function OverviewToolbar({
                 }
               />
             ) : null}
+            <Space size={4}>
+              <span>{t('动画')}</span>
+              <Switch size="small" checked={animate} onChange={onAnimate} aria-label={t('动画')} />
+            </Space>
             <Select
               size="small"
               value={range}

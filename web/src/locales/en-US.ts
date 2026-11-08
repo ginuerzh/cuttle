@@ -270,6 +270,7 @@ export const enUS: Record<string, string> = {
   '连续失败达到该次数后标记为 dead。默认 1。': 'Mark dead after this many consecutive failures. Default 1.',
   'dead 节点被跳过的时长，例如 10s、30s、1m。默认 10s。': 'How long a dead node is skipped (10s, 30s, 1m). Default 10s.',
   '必填': 'Required',
+  '动画': 'Animation',
   '网关密钥': 'Gateway keys',
   '添加网关密钥': 'Add gateway key',
   '未配置网关密钥，数据面当前不鉴权': 'No gateway keys are configured; the data plane is currently unauthenticated.',

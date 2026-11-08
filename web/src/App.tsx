@@ -51,6 +51,7 @@ import { useLiveGraph } from './useLiveGraph';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
 import { NAV_LABELS, NAV_ORDER, type Page } from './nav';
+import { loadAnimationEnabled, saveAnimationEnabled } from './animation';
 import { formatDateTime, formatDurationMs, formatTokenRate } from './time';
 
 const { Header, Content } = Layout;
@@ -388,6 +389,11 @@ export default function App() {
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
   const [mode, setMode] = useState<Mode>('monitor');
   const [range, setRange] = useState('1h');
+  const [animate, setAnimateState] = useState(loadAnimationEnabled);
+  const setAnimate = useCallback((next: boolean) => {
+    saveAnimationEnabled(next);
+    setAnimateState(next);
+  }, []);
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const { t } = useI18n();
   const screens = Grid.useBreakpoint();
@@ -601,6 +607,8 @@ export default function App() {
                   sinceAt={since ? formatDateTime(since) : ''}
                   onReset={handleReset}
                   isMobile={isMobile}
+                  animate={animate}
+                  onAnimate={setAnimate}
                 />
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                   {mode === 'edit' ? (

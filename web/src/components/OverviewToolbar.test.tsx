@@ -26,6 +26,8 @@ describe('OverviewToolbar', () => {
         sinceAt="2026-11-06 11:00:00"
         onReset={() => undefined}
         isMobile={false}
+        animate={true}
+        onAnimate={() => undefined}
       />,
     );
 
@@ -34,8 +36,30 @@ describe('OverviewToolbar', () => {
     expect(html).not.toContain('>监控<');
     expect(html).toContain('width:96px');
     expect(html).toContain('ant-select');
+    expect(html).toContain('ant-switch');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toContain('>动画<');
     expect(html).toContain('>重置统计<');
     expect(html).toContain('更新 2026-11-06 12:00:00 · 统计自 2026-11-06 11:00:00');
+
+    const animationsOff = renderToStaticMarkup(
+      <OverviewToolbar
+        mode="monitor"
+        onMode={() => undefined}
+        range="1h"
+        onRange={() => undefined}
+        ranges={RANGES}
+        stale={false}
+        updatedAt="2026-11-06 12:00:00"
+        sinceAt="2026-11-06 11:00:00"
+        onReset={() => undefined}
+        isMobile={false}
+        animate={false}
+        onAnimate={() => undefined}
+      />,
+    );
+
+    expect(animationsOff).toContain('aria-checked="false"');
   });
 
   it('turns the toggle off in edit mode and hides the paused range selector', () => {
@@ -51,12 +75,15 @@ describe('OverviewToolbar', () => {
         sinceAt="2026-11-06 11:00:00"
         onReset={() => undefined}
         isMobile={false}
+        animate={true}
+        onAnimate={() => undefined}
       />,
     );
 
     expect(html).toContain('>退出编辑<');
     expect(html).toContain('编辑模式 · 统计已暂停');
     expect(html).not.toContain('ant-select');
+    expect(html).not.toContain('ant-switch');
     expect(html).not.toContain('重置统计');
   });
 });
