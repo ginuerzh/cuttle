@@ -453,12 +453,12 @@ git commit -m "docs: document OpenRouter provider"
 ```
 
 **Implementation record**
-- Date/status: pending
-- Repo/commit: pending
-- Files changed: pending
-- Tests/commands and results: pending
-- Review findings/fixes: pending
-- Deferred items/limitations: pending
+- Date/status: 2026-11-08, complete
+- Repo/commit: `53cecd473fce46aec585a461711e245a4f116780` (`docs: document OpenRouter provider`)
+- Files changed: `README.md`, `example.yaml`; project memory notes at `/root/code/go-gost/.memory/notes/llm-gw-provider-capabilities.md` and `llm-gw-provider-usage.md` were updated but left uncommitted with the workspace's unrelated changes
+- Tests/commands and results: `GOWORK=off go build ./...` → pass; `GOWORK=off go vet ./...` → pass; `GOWORK=off go test ./... -count=1` → all packages pass; `npm test` → 28 files / 197 tests pass; `npm run build` → pass
+- Review findings/fixes: none
+- Deferred items/limitations: account-wide OpenRouter credits via `/credits` remain out of scope (management key); input-cache-read pricing is not exposed
 
 ---
 
