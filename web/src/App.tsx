@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Badge,
   Button,
   Card,
   Descriptions,
@@ -11,7 +10,6 @@ import {
   Menu,
   Space,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -225,9 +223,11 @@ export function NodePanel({
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {id}
         {dead ? (
-          <Tooltip title="dead">
-            <Badge status="error" style={{ marginInlineStart: 8 }} />
-          </Tooltip>
+          <ApiOutlined
+            aria-label="dead"
+            title="dead"
+            style={{ color: 'var(--gw-text-muted)', marginInlineStart: 8, fontSize: 16 }}
+          />
         ) : null}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>

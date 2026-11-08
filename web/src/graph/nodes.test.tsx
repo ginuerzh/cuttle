@@ -61,16 +61,17 @@ describe('BindingNode', () => {
     isConnectable: false,
   } as unknown as NodeProps<GraphNode>;
 
-  it('hides the dead marker for a healthy node', () => {
+  it('hides the dead state for a healthy node', () => {
     const html = renderToStaticMarkup(
       <ReactFlowProvider>
         <BindingNode {...props} />
       </ReactFlowProvider>,
     );
-    expect(html).not.toContain('ant-badge-status-error');
+    expect(html).toContain('background:#0891b2');
+    expect(html).not.toContain('var(--gw-text-muted)');
   });
 
-  it('shows a dead badge icon without text when the node marker is dead', () => {
+  it('greys the node icon instead of showing a red dot when dead', () => {
     const deadProps = {
       ...props,
       data: { ...props.data, dead: true },
@@ -80,7 +81,8 @@ describe('BindingNode', () => {
         <BindingNode {...deadProps} />
       </ReactFlowProvider>,
     );
-    expect(html).toContain('ant-badge-status-error');
+    expect(html).toContain('background:var(--gw-text-muted)');
+    expect(html).not.toContain('ant-badge-status-error');
     expect(html).not.toContain('>dead<');
   });
 });

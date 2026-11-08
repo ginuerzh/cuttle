@@ -6,7 +6,6 @@ import {
   GatewayOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Badge, Tooltip } from 'antd';
 import type { NodeMetrics } from '../api/types';
 import type { GraphNode } from './build';
 import { translate as t } from '../i18n';
@@ -205,27 +204,13 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
         opacity: data.disabled ? 0.55 : 1,
         minWidth: 220,
       }}
+      title={data.dead ? 'dead' : undefined}
     >
-      <IconBadge color="#0891b2">
+      <IconBadge color={data.dead ? 'var(--gw-text-muted)' : '#0891b2'}>
         <ApiOutlined />
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} showRate />
-      {data.dead ? (
-        <Tooltip title="dead">
-          <span
-            style={{
-              position: 'absolute',
-              top: -4,
-              right: 2,
-              lineHeight: 0,
-              pointerEvents: 'none',
-            }}
-          >
-            <Badge status="error" />
-          </span>
-        </Tooltip>
-      ) : null}
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>
