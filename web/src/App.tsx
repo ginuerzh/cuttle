@@ -468,6 +468,13 @@ export default function App() {
     if (session !== 'yes') setNavOpen(false);
   }, [session]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const locked = session === 'yes' && page === 'topology';
+    document.body.classList.toggle('gw-viewport-locked', locked);
+    return () => document.body.classList.remove('gw-viewport-locked');
+  }, [session, page]);
+
   const handleSnapshot = useCallback((msg: SnapshotMessage) => {
     const nextFailures = msg.authFailures;
     if (nextFailures) {
@@ -579,6 +586,9 @@ export default function App() {
           background: 'var(--gw-surface)',
           borderBottom: '1px solid var(--gw-border)',
           paddingInline: isMobile ? 12 : 20,
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
         }}
       >
         <Button
@@ -619,10 +629,10 @@ export default function App() {
               flex: 1,
               minWidth: 0,
               minHeight: 0,
-              height: '100%',
+              height: page === 'topology' ? '100%' : 'auto',
               display: 'flex',
               flexDirection: 'column',
-              overflowY: page === 'topology' ? 'hidden' : 'auto',
+              overflowY: page === 'topology' ? 'hidden' : 'visible',
             }}
           >
             {page === 'topology' ? (

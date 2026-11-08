@@ -45,14 +45,25 @@ body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+/* Only the topology monitor locks the viewport: its canvas fills the window.
+ * Content pages scroll the document so the scrollbar sits at the far right. */
+body.gw-viewport-locked {
   overflow: hidden;
 }
 
 /* Mobile browsers report 100vh larger than the visible area while the
  * address bar is shown; dvh follows the dynamic viewport. */
 .gw-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body.gw-viewport-locked .gw-shell {
   height: 100vh;
   height: 100dvh;
+  min-height: 0;
 }
 
 .gw-login {
