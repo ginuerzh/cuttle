@@ -43,6 +43,15 @@ func (s *Server) authFailureSnapshot() *authfail.Snapshot {
 	return &snap
 }
 
+// handleClearAuthFailures empties the bounded in-memory auth failure record.
+// It is idempotent and does not touch request statistics.
+func (s *Server) handleClearAuthFailures(w http.ResponseWriter, r *http.Request) {
+	if s.authFailures != nil {
+		s.authFailures.Clear()
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) currentRouteHealth() []health.Route {
 	if s.routeHealth == nil {
 		return nil

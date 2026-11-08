@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -156,6 +157,29 @@ func TestEventsCarriesAuthFailures(t *testing.T) {
 	got := snap.AuthFailures.Recent[0]
 	if got.Reason != "invalid" || got.ClientIP != "192.0.2.7" || got.Path != "/v1/messages" {
 		t.Fatalf("auth failure = %+v", got)
+	}
+}
+
+func TestEventsClearAuthFailures(t *testing.T) {
+	s, _, ts := newEventsAdmin(t)
+	tracker := authfail.New(5)
+	tracker.Add(authfail.Failure{TS: time.Now(), Reason: "invalid", ClientIP: "192.0.2.7"})
+	s.SetAuthFailures(tracker)
+
+	client, csrf := login(t, ts.URL)
+	resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/auth-failures", "", csrf)
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("clear status = %d body = %s, want 204", resp.StatusCode, b)
+	}
+
+	conn, _, err := dialEvents(t, ts.URL, client.Jar, "?range=1h", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := readSnapshot(t, conn)
+	if snap.AuthFailures == nil || len(snap.AuthFailures.Recent) != 0 {
+		t.Fatalf("auth failures after clear = %+v", snap.AuthFailures)
 	}
 }
 

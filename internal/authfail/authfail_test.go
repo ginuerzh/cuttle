@@ -75,6 +75,32 @@ func TestNilTrackerIsSafe(t *testing.T) {
 	}
 }
 
+func TestClearDropsEntriesAndTruncation(t *testing.T) {
+	tr := New(2)
+	tr.Add(Failure{Reason: "missing"})
+	tr.Add(Failure{Reason: "invalid"})
+	tr.Add(Failure{Reason: "disabled"})
+	if snap := tr.Snapshot(); !snap.Truncated {
+		t.Fatal("precondition: truncated = false")
+	}
+
+	tr.Clear()
+
+	snap := tr.Snapshot()
+	if len(snap.Recent) != 0 {
+		t.Fatalf("recent = %d, want 0", len(snap.Recent))
+	}
+	if snap.Truncated {
+		t.Fatal("truncated = true after clear")
+	}
+	if snap.Recent == nil {
+		t.Fatal("recent = nil, want an empty slice")
+	}
+
+	var nilTracker *Tracker
+	nilTracker.Clear()
+}
+
 func TestAddDefaultsTimestampToUTC(t *testing.T) {
 	tr := New(1)
 	tr.Add(Failure{})

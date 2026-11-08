@@ -187,6 +187,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/captures/{id}", s.handleDeleteCapture)
 	api.HandleFunc("GET /api/stats/graph", s.handleGraph)
 	api.HandleFunc("GET /api/events", s.handleEvents)
+	api.HandleFunc("DELETE /api/auth-failures", s.handleClearAuthFailures)
 	api.HandleFunc("GET /api/topology/positions", s.handleGetTopologyPositions)
 	api.HandleFunc("PUT /api/topology/positions", s.handlePutTopologyPositions)
 	api.HandleFunc("PUT /api/admin/password", s.handlePassword)

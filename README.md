@@ -264,7 +264,7 @@ when `admin.passwordHash` is set.
 | Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
-| Overview | Entrypoint → route → node → provider graph with live metrics, per-node output token speed, one-shot traffic-flow dots and recent gateway-key auth failures |
+| Overview | Entrypoint → route → node → provider graph with live metrics, per-node output token speed, one-shot traffic-flow dots and a notification bell for recent gateway-key auth failures |
 | Settings | Listen addresses, retention and admin password |
 
 Admin edits validate the new configuration, apply it to the data plane, and
@@ -291,9 +291,10 @@ is remembered per browser. The time selector picks the initial lookback; the end
 is always the current time, so request, error and token totals only increase
 until you start a new session.
 Rejected gateway-key requests are tracked in memory (the last 50 since process
-start; credentials are never kept). When any failure falls inside the selected
-window, Overview shows a warning panel with the reason, client IP, method and
-path. These failures are not written to SQLite.
+start; credentials are never kept). The bell next to the edit toggle shows a
+red dot while any are retained; click it for the newest first list with the
+reason, client IP, method, path and time, and use `清除` to empty the record.
+The bell stays live in edit mode, and these failures are not written to SQLite.
 The selector keeps its labels but now means "look back this far when the
 session starts". **Reset stats** clears the display and reconnects with
 `reset=1`, starting at zero without querying history. A session older than
@@ -402,8 +403,9 @@ Connection: close
 The gateway does not call the upstream. It logs a warning with the client IP,
 method, path and reason (`missing`, `disabled` or `invalid`); the credential is
 never logged. The same failures are kept in a bounded in-memory record and shown
-on Overview with the monitor window filter; they reset when the gateway
-restarts. A malformed request head returns 400. The 401 body and headers are
+in the Overview notification bell; `清除` empties that record and they reset
+when the gateway restarts. A malformed request head returns 400. The 401 body
+and headers are
 the same for every inbound protocol.
 
 Manage keys on the Gateway keys page or through the [Admin API](#admin-api).
@@ -632,8 +634,8 @@ gateway key for the per-key usage view. They use the same
 history only until normal cleanup removes it. Rows and rollups written before
 gateway keys existed have no key attribution and are not backfilled. Rejected
 401 requests and locally answered `count_tokens` requests are not recorded in
-SQLite, so they produce no key usage; rejected 401s are still surfaced in memory
-on Overview.
+SQLite, so they produce no key usage; rejected 401s are still surfaced in the
+Overview notification bell.
 
 `GET /api/routes/health` returns each route's node markers: `failCount`,
 `lastFailure`, `dead` and `deadUntil`. The state is x's in-memory marker,
@@ -741,6 +743,10 @@ Reverse proxies must forward the WebSocket Upgrade for `/api/events` and
 preserve the `Host` header; the server checks `Origin` against it. Vite's dev
 proxy uses `ws: true`. The HTTP `GET /api/stats/graph` endpoint remains
 available to API clients.
+
+`DELETE /api/auth-failures` clears the in-memory gateway-key auth failure record
+that feeds the Overview notification bell. It returns `204` and changes no
+request statistics or configuration.
 
 ## Request correlation and capture
 

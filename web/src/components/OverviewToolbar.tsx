@@ -1,6 +1,8 @@
 import { Badge, Button, Select, Space, Switch, Tag } from 'antd';
 import { EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import { translate as t } from '../i18n';
+import type { AppNotification } from '../notifications';
+import { NotificationBell } from './NotificationBell';
 
 export interface OverviewRange {
   label: string;
@@ -20,6 +22,8 @@ export interface OverviewToolbarProps {
   isMobile: boolean;
   animate: boolean;
   onAnimate: (animate: boolean) => void;
+  notifications: AppNotification[];
+  onClearNotifications: () => void;
 }
 
 /** Overview toolbar: one edit toggle on the left, time range at the right edge. */
@@ -36,6 +40,8 @@ export function OverviewToolbar({
   isMobile,
   animate,
   onAnimate,
+  notifications,
+  onClearNotifications,
 }: OverviewToolbarProps) {
   const editing = mode === 'edit';
   return (
@@ -51,14 +57,17 @@ export function OverviewToolbar({
         borderBottom: '1px solid var(--gw-border)',
       }}
     >
-      <Button
-        type={editing ? 'primary' : 'default'}
-        icon={<EditOutlined />}
-        aria-pressed={editing}
-        onClick={() => onMode(editing ? 'monitor' : 'edit')}
-      >
-        {editing ? t('退出编辑') : t('编辑')}
-      </Button>
+      <Space size={8}>
+        <Button
+          type={editing ? 'primary' : 'default'}
+          icon={<EditOutlined />}
+          aria-pressed={editing}
+          onClick={() => onMode(editing ? 'monitor' : 'edit')}
+        >
+          {editing ? t('退出编辑') : t('编辑')}
+        </Button>
+        <NotificationBell items={notifications} onClear={onClearNotifications} />
+      </Space>
       <Space wrap size={8}>
         {editing ? (
           <Tag color="orange">{t('编辑模式 · 统计已暂停')}</Tag>

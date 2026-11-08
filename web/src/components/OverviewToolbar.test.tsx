@@ -26,6 +26,8 @@ describe('OverviewToolbar', () => {
         sinceAt="2026-11-06 11:00:00"
         onReset={() => undefined}
         isMobile={false}
+        notifications={[]}
+        onClearNotifications={() => undefined}
         animate={true}
         onAnimate={() => undefined}
       />,
@@ -33,6 +35,8 @@ describe('OverviewToolbar', () => {
 
     expect(html).toContain('justify-content:space-between');
     expect(html).toContain('>编辑<');
+    expect(html).toContain('aria-label="通知"');
+    expect(html).not.toContain('ant-badge-dot');
     expect(html).not.toContain('>监控<');
     expect(html).toContain('width:96px');
     expect(html).toContain('ant-select');
@@ -54,6 +58,8 @@ describe('OverviewToolbar', () => {
         sinceAt="2026-11-06 11:00:00"
         onReset={() => undefined}
         isMobile={false}
+        notifications={[]}
+        onClearNotifications={() => undefined}
         animate={false}
         onAnimate={() => undefined}
       />,
@@ -75,6 +81,8 @@ describe('OverviewToolbar', () => {
         sinceAt="2026-11-06 11:00:00"
         onReset={() => undefined}
         isMobile={false}
+        notifications={[]}
+        onClearNotifications={() => undefined}
         animate={true}
         onAnimate={() => undefined}
       />,

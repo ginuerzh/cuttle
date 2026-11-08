@@ -29,9 +29,10 @@ import {
   SettingOutlined,
   SunOutlined,
 } from '@ant-design/icons';
-import { getConfig, getHealth, getRequests, getRouteHealth, logout, UnauthorizedError, type RequestQuery } from './api/client';
+import { clearAuthFailures, getConfig, getHealth, getRequests, getRouteHealth, logout, UnauthorizedError, type RequestQuery } from './api/client';
 import type { AuthFailureSnapshot, ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
 import type { SnapshotMessage } from './api/events';
+import { authFailureNotifications, sameAuthFailures } from './notifications';
 import { Login } from './pages/Login';
 import { EntrypointsPage } from './pages/Entrypoints';
 import { GatewayKeysPage } from './pages/GatewayKeys';
@@ -397,6 +398,7 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
   const [authFailures, setAuthFailures] = useState<AuthFailureSnapshot | null>(null);
+  const notifications = useMemo(() => authFailureNotifications(authFailures), [authFailures]);
   const [mode, setMode] = useState<Mode>('monitor');
   const [range, setRange] = useState('1h');
   const [animate, setAnimateState] = useState(loadAnimationEnabled);
@@ -467,13 +469,19 @@ export default function App() {
   }, [session]);
 
   const handleSnapshot = useCallback((msg: SnapshotMessage) => {
+    const nextFailures = msg.authFailures;
+    if (nextFailures) {
+      setAuthFailures((prev) => (sameAuthFailures(prev, nextFailures) ? prev : nextFailures));
+    }
+    // The bell stays live in edit mode, but the paused monitor must not keep
+    // re-rendering the editor with graph state.
+    if (mode === 'edit') return;
     setMetrics(msg.metrics);
     setSince(msg.since);
     setUpdatedAt(formatDateTime(msg.to));
     setStale(false);
     if (msg.health) setRouteHealth(msg.health);
-    if (msg.authFailures) setAuthFailures(msg.authFailures);
-  }, []);
+  }, [mode]);
 
   const handleStatus = useCallback((connected: boolean) => {
     setStale(!connected);
@@ -497,8 +505,17 @@ export default function App() {
     setResetKey((key) => key + 1);
   }, []);
 
+  const handleClearNotifications = useCallback(async () => {
+    try {
+      await clearAuthFailures();
+      setAuthFailures({ recent: [] });
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : t('清除通知失败'));
+    }
+  }, []);
+
   useLiveGraph({
-    enabled: session === 'yes' && mode === 'monitor' && page === 'topology',
+    enabled: session === 'yes' && page === 'topology',
     range,
     resetKey,
     sessionKey,
@@ -623,6 +640,8 @@ export default function App() {
                   isMobile={isMobile}
                   animate={animate}
                   onAnimate={setAnimate}
+                  notifications={notifications}
+                  onClearNotifications={handleClearNotifications}
                 />
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                   {mode === 'edit' ? (
@@ -636,7 +655,6 @@ export default function App() {
                       onSelect={setSelection}
                       deadNodes={deadNodes}
                       since={since}
-                      authFailures={authFailures}
                       animate={animate}
                     />
                   ) : null}

@@ -70,6 +70,19 @@ func (t *Tracker) Add(f Failure) {
 	t.entries = append(t.entries, f)
 }
 
+// Clear drops every retained failure and resets the truncation flag. It keeps
+// the configured limit for later failures.
+func (t *Tracker) Clear() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.entries = t.entries[:0]
+	t.total = 0
+}
+
 // Snapshot returns a copy of the retained failures.
 func (t *Tracker) Snapshot() Snapshot {
 	if t == nil {

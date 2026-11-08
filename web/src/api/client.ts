@@ -292,6 +292,11 @@ export function deleteCaptureRule(id: string): Promise<void> {
   return request<void>('DELETE', `/api/captures/${encodeURIComponent(id)}`);
 }
 
+/** Clear the in-memory gateway-key auth failure notifications. */
+export function clearAuthFailures(): Promise<void> {
+  return request<void>('DELETE', '/api/auth-failures');
+}
+
 export function changePassword(oldPassword: string, newPassword: string): Promise<void> {
   return request<void>('PUT', '/api/admin/password', { oldPassword, newPassword });
 }
