@@ -165,12 +165,12 @@ Expected: PASS.
 
 **Implementation record**
 
-- Date/status:
-- Repository + commit/tag:
+- Date/status: 2026-11-08 / done
+- Repository + commit/tag: x / `016912a`, annotated tag `v0.30.0`
 - Files: none
-- Tests: `GOWORK=off go test ./... -count=1` before tagging
-- Review findings/fixes:
-- Deferred:
+- Tests: `GOWORK=off go test -p 1 -count=1 ./...` → PASS before tagging
+- Review findings/fixes: used v0.30.0 (minor: new selector strategy and client-ID hook; the HTTP dial-failure stats fix is included).
+- Deferred: none.
 
 ---
 
@@ -219,12 +219,12 @@ Expected: PASS, including the dial-failure stats row.
 
 **Implementation record**
 
-- Date/status:
-- Repository + commit:
-- Files:
-- Tests:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-08 / done
+- Repository + commit: cuttle / `0dc7b57c` (`feat(gateway): keep sticky sessions on one node`)
+- Files: `internal/gateway/session.go`, `internal/gateway/session_test.go`, `internal/gateway/sticky_test.go`, `internal/gateway/gateway.go`, `internal/gateway/stats_test.go`, `go.mod`, `go.sum`
+- Tests: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test -p 1 -count=1 ./...` → PASS. The integration covers same-session stickiness, the 10:3 split, a 503 failover that sticks to the new node, and the dial-failure stats row.
+- Review findings/fixes: session and subagent values are SHA-256 hashed; the subagent has its own stick; the distribution test caught the FNV bias that was fixed in x. The auth handler and open mode are untouched.
+- Deferred: the client session ID is not stored in stats, so production verification uses node distribution and cache-hit rates rather than per-session grouping.
 
 ---
 
