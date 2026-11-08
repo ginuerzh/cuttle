@@ -256,6 +256,7 @@ export const enUS: Record<string, string> = {
   '没有可显示的账户': 'No account to show',
   '加载失败': 'Load failed',
   '正常': 'Healthy',
+  '警告': 'Warning',
   '{count} dead': '{count} dead',
   'dead ({count})': 'dead ({count})',
   '失败 ({count})': 'failed ({count})',

@@ -3,7 +3,18 @@ import { describe, expect, it } from 'vitest';
 import type { NodeProps } from '@xyflow/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { GraphNode } from './build';
-import { BindingNode, EntrypointNode, NodeBody, NodeStats, handleStyle, selectionStyle } from './nodes';
+import { BindingNode, EntrypointNode, NodeBody, NodeStats, handleStyle, nodeMood, selectionStyle } from './nodes';
+
+const stats = (requests: number, errors: number) => ({
+  requests,
+  errors,
+  p50Ms: 0,
+  p95Ms: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedTokens: 0,
+  outputTokensPerSecond: 0,
+});
 
 describe('selectionStyle', () => {
   it('draws selection inside the box without changing its size', () => {
@@ -52,6 +63,17 @@ describe('EntrypointNode', () => {
   });
 });
 
+describe('nodeMood', () => {
+  it('maps traffic health to the four visible states', () => {
+    expect(nodeMood(undefined)).toBe('idle');
+    expect(nodeMood(stats(0, 0))).toBe('idle');
+    expect(nodeMood(stats(10, 0))).toBe('healthy');
+    expect(nodeMood(stats(100, 1))).toBe('warn');
+    expect(nodeMood(stats(10, 2))).toBe('error');
+    expect(nodeMood(stats(10, 0), true)).toBe('dead');
+  });
+});
+
 describe('BindingNode', () => {
   const props = {
     id: 'node:a',
@@ -61,29 +83,49 @@ describe('BindingNode', () => {
     isConnectable: false,
   } as unknown as NodeProps<GraphNode>;
 
-  it('hides the dead state for a healthy node', () => {
-    const html = renderToStaticMarkup(
+  const render = (data: Partial<GraphNode['data']>) => {
+    const nodeProps = { ...props, data: { ...props.data, ...data } } as unknown as NodeProps<GraphNode>;
+    return renderToStaticMarkup(
       <ReactFlowProvider>
-        <BindingNode {...props} />
+        <BindingNode {...nodeProps} />
       </ReactFlowProvider>,
     );
+  };
+
+  it('hides the dead state and the mood badge for an idle node', () => {
+    const html = render({});
     expect(html).toContain('background:#0891b2');
     expect(html).not.toContain('var(--gw-text-muted)');
+    expect(html).not.toContain('data-status');
   });
 
-  it('greys the node icon instead of showing a red dot when dead', () => {
-    const deadProps = {
-      ...props,
-      data: { ...props.data, dead: true },
-    } as unknown as NodeProps<GraphNode>;
-    const html = renderToStaticMarkup(
-      <ReactFlowProvider>
-        <BindingNode {...deadProps} />
-      </ReactFlowProvider>,
-    );
+  it('greys the node icon and shows the dead icon inside the top-right corner', () => {
+    const html = render({ dead: true });
     expect(html).toContain('background:var(--gw-text-muted)');
+    expect(html).toContain('data-status="dead"');
+    expect(html).toContain('aria-label="dead"');
+    expect(html).toContain('title="dead"');
+    expect(html).toContain('viewBox="0 0 64 64"');
+    expect(html).toContain('position:absolute');
+    expect(html).toContain('top:4px');
+    expect(html).toContain('right:4px');
     expect(html).not.toContain('ant-badge-status-error');
     expect(html).not.toContain('>dead<');
+  });
+
+  it('shows a smile for healthy traffic and a meh for elevated errors', () => {
+    expect(render({ metrics: stats(10, 0) })).toContain('anticon-smile');
+    expect(render({ metrics: stats(10, 0) })).toContain('data-status="healthy"');
+    expect(render({ metrics: stats(100, 1) })).toContain('anticon-meh');
+    expect(render({ metrics: stats(100, 1) })).toContain('data-status="warn"');
+  });
+
+  it('shows a frown for a high error rate', () => {
+    const html = render({ metrics: stats(10, 2) });
+    expect(html).toContain('anticon-frown');
+    expect(html).toContain('data-status="error"');
+    expect(html).toContain('#dc2626');
+    expect(html).not.toContain('anticon-meh');
   });
 
   it('flashes the icon for a traffic pulse and turns red for errors', () => {
