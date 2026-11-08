@@ -311,12 +311,12 @@ git commit -m "feat(usage): report OpenRouter key limits"
 ```
 
 **Implementation record**
-- Date/status: pending
-- Repo/commit: pending
-- Files changed: pending
-- Tests/commands and results: pending
-- Review findings/fixes: pending
-- Deferred items/limitations: pending
+- Date/status: 2026-11-08, complete
+- Repo/commit: `3f313d9e9afc0c481ceec3815fa3dc2e7d30ced9` (`feat(usage): report OpenRouter key limits`)
+- Files changed: `internal/provider/usage.go`, `internal/provider/usage_test.go`, `internal/admin/handlers_usage.go`, `internal/admin/usage_test.go`, `web/src/api/types.ts`, `web/src/pages/Usage.tsx`, `web/src/pages/Usage.test.ts`, `web/src/locales/en-US.ts`
+- Tests/commands and results: `GOWORK=off go test ./internal/provider ./internal/admin` → pass; `npm test` → 28 files / 197 tests pass
+- Review findings/fixes: made the admin usage test assert the serialized `note` field before adding it, so the implementation was verified through the public API. The stale-account fallback now preserves the previous note alongside balance/windows.
+- Deferred items/limitations: account-wide `/credits` remains out of scope because it requires a management key
 
 ---
 
