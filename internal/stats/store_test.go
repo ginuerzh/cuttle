@@ -310,6 +310,40 @@ func TestRequestRewriteFieldsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCaptureTruncatedFieldsRoundTrip(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	c := &capture.Capture{
+		RequestOriginal: "abcd",
+		TruncatedFields: []string{"requestOriginal", "sseLastOriginal"},
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := s.PutCapture(ctx, "rid", c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetCapture(ctx, "rid")
+	if err != nil || got == nil {
+		t.Fatalf("capture = %+v err=%v", got, err)
+	}
+	if len(got.TruncatedFields) != 2 ||
+		got.TruncatedFields[0] != "requestOriginal" ||
+		got.TruncatedFields[1] != "sseLastOriginal" {
+		t.Fatalf("truncatedFields = %+v", got.TruncatedFields)
+	}
+
+	if err := s.PutCapture(ctx, "rid2", &capture.Capture{RequestOriginal: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := s.GetCapture(ctx, "rid2")
+	if err != nil || got2 == nil {
+		t.Fatalf("capture2 = %+v err=%v", got2, err)
+	}
+	if len(got2.TruncatedFields) != 0 {
+		t.Fatalf("truncatedFields2 = %+v, want none", got2.TruncatedFields)
+	}
+}
+
 func TestCaptureRoundTripAndCleanup(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

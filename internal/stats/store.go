@@ -202,6 +202,7 @@ func (s *Store) migrate() error {
 			response_sha256 TEXT NOT NULL DEFAULT '',
 			request_headers TEXT NOT NULL DEFAULT '{}',
 			response_headers TEXT NOT NULL DEFAULT '{}',
+			truncated_fields TEXT NOT NULL DEFAULT '',
 			sse_events INTEGER NOT NULL DEFAULT 0,
 			reason TEXT NOT NULL DEFAULT '',
 			created_at INTEGER NOT NULL DEFAULT 0
@@ -268,6 +269,7 @@ func (s *Store) migrate() error {
 	if err := s.ensureColumns("request_captures", map[string]string{
 		"request_headers":  "TEXT NOT NULL DEFAULT '{}'",
 		"response_headers": "TEXT NOT NULL DEFAULT '{}'",
+		"truncated_fields": "TEXT NOT NULL DEFAULT ''",
 	}); err != nil {
 		return err
 	}
@@ -634,9 +636,9 @@ func (s *Store) PutCapture(ctx context.Context, requestID string, c *capture.Cap
 	_, err := s.db.ExecContext(ctx, `INSERT INTO request_captures
 		(request_id, request_original, request_rewritten, response_original, response_rewritten,
 		 sse_first_original, sse_first_rewritten, sse_last_original, sse_last_rewritten,
-		 request_sha256, response_sha256, request_headers, response_headers,
+		 request_sha256, response_sha256, request_headers, response_headers, truncated_fields,
 		 sse_events, reason, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(request_id) DO UPDATE SET
 			request_original=excluded.request_original,
 			request_rewritten=excluded.request_rewritten,
@@ -650,14 +652,27 @@ func (s *Store) PutCapture(ctx context.Context, requestID string, c *capture.Cap
 			response_sha256=excluded.response_sha256,
 			request_headers=excluded.request_headers,
 			response_headers=excluded.response_headers,
+			truncated_fields=excluded.truncated_fields,
 			sse_events=excluded.sse_events,
 			reason=excluded.reason,
 			created_at=excluded.created_at`,
 		requestID, c.RequestOriginal, c.RequestRewritten, c.ResponseOriginal, c.ResponseRewritten,
 		c.SSEFirstOriginal, c.SSEFirstRewritten, c.SSELastOriginal, c.SSELastRewritten,
 		c.RequestSHA256, c.ResponseSHA256, marshalHeaders(c.RequestHeaders), marshalHeaders(c.ResponseHeaders),
+		marshalTruncated(c.TruncatedFields),
 		c.SSIEvents, c.Reason, created.UnixMilli())
 	return err
+}
+
+func marshalTruncated(fields []string) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(fields)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func marshalHeaders(h map[string]string) string {
@@ -675,16 +690,16 @@ func marshalHeaders(h map[string]string) string {
 func (s *Store) GetCapture(ctx context.Context, requestID string) (*capture.Capture, error) {
 	var c capture.Capture
 	var created int64
-	var reqHeaders, respHeaders string
+	var reqHeaders, respHeaders, truncatedFields string
 	err := s.db.QueryRowContext(ctx, `SELECT request_original, request_rewritten,
 		response_original, response_rewritten, sse_first_original, sse_first_rewritten,
 		sse_last_original, sse_last_rewritten, request_sha256, response_sha256,
-		request_headers, response_headers, sse_events, reason, created_at
+		request_headers, response_headers, truncated_fields, sse_events, reason, created_at
 		FROM request_captures WHERE request_id = ?`, requestID).Scan(
 		&c.RequestOriginal, &c.RequestRewritten, &c.ResponseOriginal, &c.ResponseRewritten,
 		&c.SSEFirstOriginal, &c.SSEFirstRewritten, &c.SSELastOriginal, &c.SSELastRewritten,
 		&c.RequestSHA256, &c.ResponseSHA256, &reqHeaders, &respHeaders,
-		&c.SSIEvents, &c.Reason, &created)
+		&truncatedFields, &c.SSIEvents, &c.Reason, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -699,6 +714,11 @@ func (s *Store) GetCapture(ctx context.Context, requestID string) (*capture.Capt
 	if respHeaders != "" {
 		if err := json.Unmarshal([]byte(respHeaders), &c.ResponseHeaders); err != nil {
 			return nil, fmt.Errorf("decode response headers: %w", err)
+		}
+	}
+	if truncatedFields != "" {
+		if err := json.Unmarshal([]byte(truncatedFields), &c.TruncatedFields); err != nil {
+			return nil, fmt.Errorf("decode truncated fields: %w", err)
 		}
 	}
 	c.CreatedAt = time.UnixMilli(created).UTC()
