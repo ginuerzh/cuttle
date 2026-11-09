@@ -85,6 +85,16 @@ The module depends on the published versions of `core`, `x` and
 exists, `GOWORK=off` keeps the build on the tagged module versions instead of
 the local workspace directories.
 
+### Download
+
+Prebuilt binaries for Linux, macOS and Windows are attached to every
+[GitHub release](https://github.com/ginuerzh/cuttle/releases). Archives are
+listed in `checksums.txt`; verify before running a downloaded binary:
+
+```bash
+sha256sum -c checksums.txt --ignore-missing
+```
+
 ### Build
 
 ```bash
@@ -115,8 +125,9 @@ GOWORK=off go build \
   -o cuttle .
 ```
 
-Releases are created by pushing an annotated `vX.Y.Z` tag; CI publishes the
-semver image tags alongside `latest`.
+Releases are created by pushing an annotated `vX.Y.Z` tag. The release workflow
+builds the console and publishes GoReleaser archives plus checksums to GitHub,
+while the Docker workflow publishes the semver image tags alongside `latest`.
 
 ### Zero-config first run
 

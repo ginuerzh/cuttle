@@ -1,0 +1,71 @@
+version: 2
+
+project_name: cuttle
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - id: cuttle
+    main: .
+    binary: cuttle
+    env:
+      - CGO_ENABLED=0
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - linux_arm_7
+      - darwin_amd64
+      - darwin_arm64
+      - windows_amd64
+      - windows_arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/ginuerzh/cuttle/internal/version.Version={{ .Tag }}
+      - -X github.com/ginuerzh/cuttle/internal/version.Commit={{ .Commit }}
+      - -X github.com/ginuerzh/cuttle/internal/version.BuildDate={{ .Date }}
+
+archives:
+  - ids:
+      - cuttle
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    builds_info:
+      group: root
+      owner: root
+    files:
+      - README.md
+      - DOCKER.md
+      - example.yaml
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+
+release:
+  prerelease: auto
+  mode: keep-existing
+
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj

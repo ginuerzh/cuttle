@@ -1,5 +1,6 @@
 /stats.sqlite
 /stats.sqlite-*
 /cuttle
+/dist/
 /internal/admin/dist/*
 !/internal/admin/dist/.gitkeep
