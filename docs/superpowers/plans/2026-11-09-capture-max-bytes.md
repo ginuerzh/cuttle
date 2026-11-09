@@ -186,11 +186,11 @@ git commit -m "feat(stats): persist capture truncation fields"
 **Implementation record**
 
 - Date/status: 2026-11-09 / done
-- Repository + commit: cuttle / <sha>
+- Repository + commit: cuttle / `6d813d49`
 - Files: `internal/stats/store.go`, `internal/stats/store_test.go`
-- Tests: `GOWORK=off go test ./internal/stats -run TestCapture -count=1` -> PASS
-- Review findings/fixes: <fill>
-- Deferred: <fill>
+- Tests: `GOWORK=off go test ./internal/stats -run TestCapture -count=1` -> PASS; `GOWORK=off go test ./internal/stats -count=1` -> PASS; `GOWORK=off go build ./...` -> ok
+- Review findings/fixes: `truncated_fields` added to the `CREATE TABLE` for fresh databases as well as `ensureColumns` for existing ones; old rows read as an empty slice.
+- Deferred: none
 
 ---
 
