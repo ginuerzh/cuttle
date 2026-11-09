@@ -316,11 +316,11 @@ git commit -m "feat(web): add capture settings to the admin console"
 **Implementation record**
 
 - Date/status: 2026-11-09 / done
-- Repository + commit: cuttle / <sha>
+- Repository + commit: cuttle / `d969918b`
 - Files: `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/api/client.test.ts`, `web/src/pages/Settings.tsx`, `web/src/App.tsx`, `web/src/locales/en-US.ts`
-- Tests: `cd web && npx tsc --noEmit && npx vitest run` -> PASS
-- Review findings/fixes: <fill>
-- Deferred: <fill>
+- Tests: `cd web && npx vitest run src/api/client.test.ts` -> PASS (12); `npx tsc --noEmit` -> clean; `npx vitest run` -> PASS (231 tests)
+- Review findings/fixes: reused the existing `仅错误` translation instead of adding a duplicate; the mode option uses `不捕获` to avoid clashing with the existing `关闭` = "Close".
+- Deferred: none
 
 ---
 
