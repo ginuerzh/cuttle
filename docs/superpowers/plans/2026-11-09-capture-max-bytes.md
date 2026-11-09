@@ -407,8 +407,8 @@ git commit -m "chore: verify capture maxBytes rollout"
 **Implementation record**
 
 - Date/status: 2026-11-09 / done
-- Repository + commit: cuttle / <sha>
-- Files: <fill>
-- Tests: full Go and web gates -> PASS
-- Review findings/fixes: <fill>
-- Deferred: live deployment still has `maxBytes: 16384` in `cuttle.yaml`; it must be changed through the new Settings form (or the file) after rollout.
+- Repository + commit: cuttle / `<record commit>`
+- Files: docs only (verification task)
+- Tests: `GOWORK=off go build ./...` + `go vet ./...` -> ok; `GOWORK=off go test ./... -count=1` -> PASS (all packages); `cd web && npm test` -> PASS (234); `npx tsc --noEmit` -> clean; `npm run build` -> ok
+- Review findings/fixes: none
+- Deferred: live rollout. The production `cuttle.yaml` still has `maxBytes: 16384`; change it through the new Settings form (or the file) after deploying the new image, then trigger an upstream error and confirm the request preview contains `tools`.
