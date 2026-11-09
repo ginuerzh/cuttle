@@ -138,11 +138,11 @@ git commit -m "feat(capture): track truncated preview fields"
 **Implementation record**
 
 - Date/status: 2026-11-09 / done
-- Repository + commit: cuttle / <sha>
+- Repository + commit: cuttle / `17073997`
 - Files: `internal/capture/capture.go`, `internal/capture/capture_test.go`
-- Tests: `GOWORK=off go test ./internal/capture -count=1` -> PASS
-- Review findings/fixes: <fill>
-- Deferred: <fill>
+- Tests: `GOWORK=off go test ./internal/capture -count=1` -> PASS; `GOWORK=off go build ./...` -> ok
+- Review findings/fixes: the plan's `TestSecondChunkMarksTruncated` chunk sizes were wrong (`"ij"` fits under the 8-byte limit); corrected to `"efghij"`/`"klmnop"` so the second chunk genuinely overflows.
+- Deferred: none
 
 ---
 
