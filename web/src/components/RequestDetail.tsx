@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Button, Descriptions, Drawer, Space, Typography, message } from 'antd';
+import { Button, Descriptions, Drawer, Space, Tag, Typography, message } from 'antd';
 import { getRequest } from '../api/client';
 import type { RequestRow } from '../api/types';
+import { isTruncated } from '../capture';
 import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { errorClassLabel, statusLabel } from '../requestLabels';
 import { formatDateTime } from '../time';
 import { useIsMobile } from './useIsMobile';
 
-function Preview({ label, text }: { label: string; text?: string }) {
+function Preview({ label, text, truncated }: { label: string; text?: string; truncated?: boolean }) {
   if (!text) return null;
   return (
     <div style={{ marginBottom: 12 }}>
-      <Typography.Text strong>{label}</Typography.Text>
+      <Space size={8}>
+        <Typography.Text strong>{label}</Typography.Text>
+        {truncated ? <Tag color="warning">{t('已截断')}</Tag> : null}
+      </Space>
       <pre
         style={{
           margin: '4px 0 0',
@@ -154,14 +158,14 @@ export function RequestDetail({ request }: { request: RequestRow }) {
           ) : null}
           {hasPreview ? (
             <>
-              <Preview label={t('原始请求')} text={cap.requestOriginal} />
-              <Preview label={t('改写后请求')} text={cap.requestRewritten} />
-              <Preview label={t('原始响应')} text={cap.responseOriginal} />
-              <Preview label={t('改写后响应')} text={cap.responseRewritten} />
-              <Preview label={t('SSE 首事件（原始）')} text={cap.sseFirstOriginal} />
-              <Preview label={t('SSE 首事件（改写后）')} text={cap.sseFirstRewritten} />
-              <Preview label={t('SSE 末事件（原始）')} text={cap.sseLastOriginal} />
-              <Preview label={t('SSE 末事件（改写后）')} text={cap.sseLastRewritten} />
+              <Preview label={t('原始请求')} text={cap.requestOriginal} truncated={isTruncated(cap, 'requestOriginal')} />
+              <Preview label={t('改写后请求')} text={cap.requestRewritten} truncated={isTruncated(cap, 'requestRewritten')} />
+              <Preview label={t('原始响应')} text={cap.responseOriginal} truncated={isTruncated(cap, 'responseOriginal')} />
+              <Preview label={t('改写后响应')} text={cap.responseRewritten} truncated={isTruncated(cap, 'responseRewritten')} />
+              <Preview label={t('SSE 首事件（原始）')} text={cap.sseFirstOriginal} truncated={isTruncated(cap, 'sseFirstOriginal')} />
+              <Preview label={t('SSE 首事件（改写后）')} text={cap.sseFirstRewritten} truncated={isTruncated(cap, 'sseFirstRewritten')} />
+              <Preview label={t('SSE 末事件（原始）')} text={cap.sseLastOriginal} truncated={isTruncated(cap, 'sseLastOriginal')} />
+              <Preview label={t('SSE 末事件（改写后）')} text={cap.sseLastRewritten} truncated={isTruncated(cap, 'sseLastRewritten')} />
             </>
           ) : (
             <Typography.Text type="secondary">{t('预览为空')}</Typography.Text>
