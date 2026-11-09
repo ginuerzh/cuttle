@@ -407,7 +407,7 @@ git commit -m "chore: verify capture maxBytes rollout"
 **Implementation record**
 
 - Date/status: 2026-11-09 / done
-- Repository + commit: cuttle / `<record commit>`
+- Repository + commit: cuttle / `d40c8ad8`
 - Files: docs only (verification task)
 - Tests: `GOWORK=off go build ./...` + `go vet ./...` -> ok; `GOWORK=off go test ./... -count=1` -> PASS (all packages); `cd web && npm test` -> PASS (234); `npx tsc --noEmit` -> clean; `npm run build` -> ok
 - Review findings/fixes: none
