@@ -366,11 +366,11 @@ git commit -m "feat(web): mark truncated capture previews"
 **Implementation record**
 
 - Date/status: 2026-11-09 / done
-- Repository + commit: cuttle / <sha>
+- Repository + commit: cuttle / `6f20455e`
 - Files: `web/src/capture.ts`, `web/src/capture.test.ts`, `web/src/components/RequestDetail.tsx`, `web/src/locales/en-US.ts`
-- Tests: `cd web && npx vitest run src/capture.test.ts && npx tsc --noEmit && npm run build` -> PASS
-- Review findings/fixes: <fill>
-- Deferred: <fill>
+- Tests: `npx vitest run src/capture.test.ts` -> PASS (3); `npx tsc --noEmit` -> clean; `npx vitest run` -> PASS (234); `npm run build` -> ok
+- Review findings/fixes: `已截断` already existed in `en-US.ts` (line 186); removed the duplicate I added that broke `tsc`.
+- Deferred: none
 
 ---
 
