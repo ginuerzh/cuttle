@@ -122,6 +122,41 @@ func TestPreviewsTruncated(t *testing.T) {
 	if cap.RequestSHA256 != hex.EncodeToString(want[:]) {
 		t.Fatalf("hash = %q", cap.RequestSHA256)
 	}
+	if len(cap.TruncatedFields) != 2 ||
+		cap.TruncatedFields[0] != FieldRequestOriginal ||
+		cap.TruncatedFields[1] != FieldRequestRewritten {
+		t.Fatalf("truncatedFields = %+v", cap.TruncatedFields)
+	}
+}
+
+func TestExactLimitNotTruncated(t *testing.T) {
+	m := testManager(Policy{Mode: "errors", MaxBytes: 6})
+	if _, ok := m.Start("s1", "r", "m"); !ok {
+		t.Fatal("not captured")
+	}
+	m.Offer("s1", "request", []byte("abcdef"), []byte("ghijkl"), "", 0)
+	cap, _ := m.Finish("s1")
+	if len(cap.TruncatedFields) != 0 {
+		t.Fatalf("truncatedFields = %+v, want none", cap.TruncatedFields)
+	}
+}
+
+func TestSecondChunkMarksTruncated(t *testing.T) {
+	m := testManager(Policy{Mode: "errors", MaxBytes: 8})
+	if _, ok := m.Start("s1", "r", "m"); !ok {
+		t.Fatal("not captured")
+	}
+	m.Offer("s1", "request", []byte("abcd"), []byte("efgh"), "", 0)
+	m.Offer("s1", "request", []byte("efghij"), []byte("klmnop"), "", 0)
+	cap, _ := m.Finish("s1")
+	if cap.RequestOriginal != "abcdefgh" {
+		t.Fatalf("requestOriginal = %q", cap.RequestOriginal)
+	}
+	if len(cap.TruncatedFields) != 2 ||
+		cap.TruncatedFields[0] != FieldRequestOriginal ||
+		cap.TruncatedFields[1] != FieldRequestRewritten {
+		t.Fatalf("truncatedFields = %+v", cap.TruncatedFields)
+	}
 }
 
 func TestFailedRewriteKeepsOriginal(t *testing.T) {

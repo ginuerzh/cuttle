@@ -9,6 +9,7 @@ import (
 	"hash"
 	"math/rand/v2"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,20 @@ const (
 	MaxRuleTTL    = time.Hour
 	maxSessions   = 1000
 	maxTotalBytes = 64 << 20
+)
+
+// Preview field names recorded in Capture.TruncatedFields. They are the JSON
+// names of the corresponding Capture fields so the admin console can map them
+// without a second translation table.
+const (
+	FieldRequestOriginal   = "requestOriginal"
+	FieldRequestRewritten  = "requestRewritten"
+	FieldResponseOriginal  = "responseOriginal"
+	FieldResponseRewritten = "responseRewritten"
+	FieldSSEFirstOriginal  = "sseFirstOriginal"
+	FieldSSEFirstRewritten = "sseFirstRewritten"
+	FieldSSELastOriginal   = "sseLastOriginal"
+	FieldSSELastRewritten  = "sseLastRewritten"
 )
 
 // Policy is the global capture policy.
@@ -56,10 +71,12 @@ type Capture struct {
 	ResponseSHA256    string            `json:"responseSha256,omitempty"`
 	RequestHeaders    map[string]string `json:"requestHeaders,omitempty"`
 	ResponseHeaders   map[string]string `json:"responseHeaders,omitempty"`
-	SSIEvents         int               `json:"sseEvents,omitempty"`
-	Reason            string            `json:"reason,omitempty"`
-	OnError           bool              `json:"-"`
-	CreatedAt         time.Time         `json:"createdAt,omitempty"`
+	// TruncatedFields lists the preview fields clipped to Policy.MaxBytes.
+	TruncatedFields []string  `json:"truncatedFields,omitempty"`
+	SSIEvents       int       `json:"sseEvents,omitempty"`
+	Reason          string    `json:"reason,omitempty"`
+	OnError         bool      `json:"-"`
+	CreatedAt       time.Time `json:"createdAt,omitempty"`
 }
 
 type session struct {
@@ -70,6 +87,7 @@ type session struct {
 	respHashUsed bool
 	sseSeen      bool
 	bytes        int
+	truncated    map[string]bool
 }
 
 // Manager owns the policy, on-demand rules and per-SID buffers.
@@ -235,8 +253,11 @@ func (m *Manager) Offer(sid, direction string, original, rewritten []byte, ssePh
 	maxBytes := m.policy.MaxBytes
 
 	if strings.EqualFold(strings.TrimSpace(direction), "request") {
-		s.capture.RequestOriginal = appendPreview(s.capture.RequestOriginal, original, maxBytes)
-		s.capture.RequestRewritten = appendPreview(s.capture.RequestRewritten, rewritten, maxBytes)
+		var trunc bool
+		s.capture.RequestOriginal, trunc = appendPreview(s.capture.RequestOriginal, original, maxBytes)
+		s.markTruncated(FieldRequestOriginal, trunc)
+		s.capture.RequestRewritten, trunc = appendPreview(s.capture.RequestRewritten, rewritten, maxBytes)
+		s.markTruncated(FieldRequestRewritten, trunc)
 		if len(rewritten) > 0 {
 			s.reqHashUsed = true
 			s.reqHash.Write(rewritten)
@@ -249,13 +270,18 @@ func (m *Manager) Offer(sid, direction string, original, rewritten []byte, ssePh
 			s.capture.SSIEvents++
 		}
 		if len(original) > 0 {
+			var trunc bool
 			if !s.sseSeen {
-				s.capture.SSEFirstOriginal = clip(original, maxBytes)
-				s.capture.SSEFirstRewritten = clip(rewritten, maxBytes)
+				s.capture.SSEFirstOriginal, trunc = clip(original, maxBytes)
+				s.markTruncated(FieldSSEFirstOriginal, trunc)
+				s.capture.SSEFirstRewritten, trunc = clip(rewritten, maxBytes)
+				s.markTruncated(FieldSSEFirstRewritten, trunc)
 				s.sseSeen = true
 			}
-			s.capture.SSELastOriginal = clip(original, maxBytes)
-			s.capture.SSELastRewritten = clip(rewritten, maxBytes)
+			s.capture.SSELastOriginal, trunc = clip(original, maxBytes)
+			s.markTruncated(FieldSSELastOriginal, trunc)
+			s.capture.SSELastRewritten, trunc = clip(rewritten, maxBytes)
+			s.markTruncated(FieldSSELastRewritten, trunc)
 		}
 		if len(rewritten) > 0 {
 			s.respHashUsed = true
@@ -264,8 +290,11 @@ func (m *Manager) Offer(sid, direction string, original, rewritten []byte, ssePh
 		return
 	}
 
-	s.capture.ResponseOriginal = appendPreview(s.capture.ResponseOriginal, original, maxBytes)
-	s.capture.ResponseRewritten = appendPreview(s.capture.ResponseRewritten, rewritten, maxBytes)
+	var trunc bool
+	s.capture.ResponseOriginal, trunc = appendPreview(s.capture.ResponseOriginal, original, maxBytes)
+	s.markTruncated(FieldResponseOriginal, trunc)
+	s.capture.ResponseRewritten, trunc = appendPreview(s.capture.ResponseRewritten, rewritten, maxBytes)
+	s.markTruncated(FieldResponseRewritten, trunc)
 	if len(rewritten) > 0 {
 		s.respHashUsed = true
 		s.respHash.Write(rewritten)
@@ -284,6 +313,7 @@ func (m *Manager) Finish(sid string) (*Capture, bool) {
 	m.deleteLocked(sid)
 
 	out := s.capture
+	out.TruncatedFields = truncatedFields(s.truncated)
 	if s.reqHashUsed {
 		out.RequestSHA256 = hex.EncodeToString(s.reqHash.Sum(nil))
 	}
@@ -299,6 +329,28 @@ func newSession(reason string, onError bool, now time.Time) *session {
 		reqHash:  sha256.New(),
 		respHash: sha256.New(),
 	}
+}
+
+func (s *session) markTruncated(field string, trunc bool) {
+	if !trunc {
+		return
+	}
+	if s.truncated == nil {
+		s.truncated = make(map[string]bool)
+	}
+	s.truncated[field] = true
+}
+
+func truncatedFields(m map[string]bool) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for field := range m {
+		out = append(out, field)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (m *Manager) deleteLocked(sid string) {
@@ -342,19 +394,22 @@ func globMatch(pattern, value string) bool {
 	return re.MatchString(value)
 }
 
-func clip(b []byte, max int) string {
+func clip(b []byte, max int) (string, bool) {
 	if max <= 0 || len(b) <= max {
-		return string(b)
+		return string(b), false
 	}
-	return string(b[:max])
+	return string(b[:max]), true
 }
 
-func appendPreview(dst string, b []byte, max int) string {
+func appendPreview(dst string, b []byte, max int) (string, bool) {
+	if len(b) == 0 {
+		return dst, false
+	}
 	if len(dst) >= max {
-		return dst
+		return dst, true
 	}
 	if remaining := max - len(dst); len(b) > remaining {
-		b = b[:remaining]
+		return dst + string(b[:remaining]), true
 	}
-	return dst + string(b)
+	return dst + string(b), false
 }
