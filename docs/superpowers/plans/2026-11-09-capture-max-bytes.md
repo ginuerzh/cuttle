@@ -412,3 +412,36 @@ git commit -m "chore: verify capture maxBytes rollout"
 - Tests: `GOWORK=off go build ./...` + `go vet ./...` -> ok; `GOWORK=off go test ./... -count=1` -> PASS (all packages); `cd web && npm test` -> PASS (234); `npx tsc --noEmit` -> clean; `npm run build` -> ok
 - Review findings/fixes: none
 - Deferred: live rollout. The production `cuttle.yaml` still has `maxBytes: 16384`; change it through the new Settings form (or the file) after deploying the new image, then trigger an upstream error and confirm the request preview contains `tools`.
+
+## Final review
+
+Fresh-context reviewer, branch `d840f147..203eaa27` plus the fix pass at `791308a2`.
+
+### Fixed before merge
+
+- **Important: Settings silently reset `sampleRate` to `0.01`** when saved outside
+  `sample` mode, because the conditional `Form.Item` unmounted and `onFinish`
+  omits unmounted fields. Fix: keep the field mounted with `hidden`.
+  Test: `web/src/pages/Settings.dom.test.tsx` -> RED (`0.01`) then GREEN (`0.5`).
+- **Important: `capture.retain` was captured at startup and never reloaded**, so a
+  retention change only applied after a restart. Fix:
+  `stats.Store.SetCaptureRetain` + `captureCutoff`, called from
+  `gateway.apply` on every reload. Tests:
+  `TestCaptureRetainOverridesFallback`, `TestCaptureRetainReloadIsLive`,
+  `TestReloadAppliesCaptureRetain` -> RED (undefined) then GREEN.
+
+Full gates after the fix pass: Go build/vet/test all PASS; web 235 tests PASS,
+`tsc --noEmit` clean, `npm run build` ok.
+
+### Deferred minors
+
+- `SSELast*` truncation marker can be a false positive when a later SSE event fits.
+- `example.yaml` still says `maxBytes: 32768`.
+- No old-DB migration test for `truncated_fields`.
+- Admin `TestPutStatsCapture` does not assert gateway/admin unchanged or
+  `sampleRate`/negative-`retain` 400s.
+- `marshalTruncated` returns `""` instead of the plan's `"[]"` (equivalent).
+- No `maxBytes` range hint in the Settings form.
+- Implementation records live in separate `docs(plan)` commits; plan checkboxes
+  remain unchecked.
+- `clip` and `appendPreview` disagree at `max <= 0` (unreachable today).
