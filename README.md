@@ -10,6 +10,11 @@ The name is short for **cuttlefish**: many arms, rapid mimicry, and near-invisib
 camouflage — the same properties a gateway needs to reach many providers, speak
 each API dialect, and stay out of the client's way.
 
+![Cuttle admin console overview](docs/assets/demo.gif)
+
+*The overview topology: entrypoints, routes, nodes and providers with live
+metrics.*
+
 ## What it does
 
 - Accepts OpenAI Chat Completions, OpenAI Responses, Anthropic Messages and
