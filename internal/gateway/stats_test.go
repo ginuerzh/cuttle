@@ -313,3 +313,25 @@ func TestStatsRecordsDialFailure(t *testing.T) {
 		t.Fatalf("uri/method = %q/%q", row.URI, row.Method)
 	}
 }
+
+func TestReloadAppliesCaptureRetain(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	gw, err := gateway.New(statsConfig(t, upstream.URL), xlogger.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+
+	cfg := statsConfig(t, upstream.URL)
+	cfg.Stats.Capture.Retain = config.Duration(48 * time.Hour)
+	if err := gw.Reload(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := gw.Stats().CaptureRetain(); got != 48*time.Hour {
+		t.Fatalf("CaptureRetain = %v, want 48h", got)
+	}
+}

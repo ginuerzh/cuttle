@@ -102,11 +102,9 @@ export function SettingsPage({
             ]}
           />
         </Form.Item>
-        {captureMode === 'sample' ? (
-          <Form.Item name="sampleRate" label={t('抽样比例')}>
-            <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
-          </Form.Item>
-        ) : null}
+        <Form.Item name="sampleRate" label={t('抽样比例')} hidden={captureMode !== 'sample'}>
+          <InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} />
+        </Form.Item>
         <Form.Item name="maxBytes" label={t('预览上限（字节）')}>
           <InputNumber min={1024} max={1048576} step={1024} style={{ width: '100%' }} />
         </Form.Item>

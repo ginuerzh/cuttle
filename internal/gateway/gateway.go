@@ -368,6 +368,9 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	if g.capture != nil {
 		g.capture.SetPolicy(capturePolicy(cfg.Stats.Capture))
 	}
+	if g.store != nil {
+		g.store.SetCaptureRetain(time.Duration(cfg.Stats.Capture.Retain))
+	}
 
 	// In-flight requests hold the old nodes; give them time to finish before
 	// closing probe goroutines and releasing the old generation's rewriters.

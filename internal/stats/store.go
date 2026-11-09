@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -120,7 +121,8 @@ type KeyUsage struct {
 
 // Store is the SQLite-backed statistics store.
 type Store struct {
-	db *sql.DB
+	db            *sql.DB
+	captureRetain atomic.Int64
 }
 
 // Open opens or creates the store. Use ":memory:" for tests.
@@ -856,6 +858,28 @@ func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore, capt
 	return err
 }
 
+// SetCaptureRetain updates the retention the cleanup loop applies to captures.
+// A non-positive value restores the 24h default. Reloads call this so a
+// capture.retain change takes effect without a restart.
+func (s *Store) SetCaptureRetain(d time.Duration) {
+	if d <= 0 {
+		d = 24 * time.Hour
+	}
+	s.captureRetain.Store(int64(d))
+}
+
+// CaptureRetain reports the retention currently applied by the cleanup loop.
+func (s *Store) CaptureRetain() time.Duration {
+	return time.Duration(s.captureRetain.Load())
+}
+
+func (s *Store) captureCutoff(now time.Time, fallback time.Duration) time.Time {
+	if d := time.Duration(s.captureRetain.Load()); d > 0 {
+		return now.Add(-d)
+	}
+	return now.Add(-fallback)
+}
+
 // StartCleanup runs Cleanup periodically until ctx is done.
 func (s *Store) StartCleanup(ctx context.Context, interval time.Duration, retainRequests, retainRollups, retainCaptures time.Duration) {
 	if interval <= 0 {
@@ -869,7 +893,8 @@ func (s *Store) StartCleanup(ctx context.Context, interval time.Duration, retain
 			case <-ctx.Done():
 				return
 			case now := <-t.C:
-				_ = s.Cleanup(ctx, now.Add(-retainRequests), now.Add(-retainRollups), now.Add(-retainCaptures))
+				_ = s.Cleanup(ctx, now.Add(-retainRequests), now.Add(-retainRollups),
+					s.captureCutoff(now, retainCaptures))
 			}
 		}
 	}()
