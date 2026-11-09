@@ -137,7 +137,7 @@ Entrypoint -> Route -> Node -> Provider model
 - Keep the `Load` order: decode, `expandEnv`, `applyDefaults`, `Validate`.
 - Validation errors must name the offending provider, node, route or entrypoint.
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
-  `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`32768`/`24h`,
+  `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`1048576`/`24h`,
   provider health `30s`/`5s`, node weight `1`, node API `auto` (stored as an
   empty string), route strategy `round`.
 - `CUTTLE_LISTEN` (`:8787`), `CUTTLE_ADMIN_LISTEN` (`127.0.0.1:8788`; the

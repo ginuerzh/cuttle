@@ -455,7 +455,7 @@ as unconfigured rows until normal rollup retention removes it.
 | `retainRollups` | `2160h` | Aggregated rollup retention |
 | `capture.mode` | `off` | `off`, `errors` or `sample` |
 | `capture.sampleRate` | `0.01` | Sample rate when mode is `sample` |
-| `capture.maxBytes` | `32768` | Maximum bytes per preview field |
+| `capture.maxBytes` | `1048576` | Maximum bytes per preview field |
 | `capture.retain` | `24h` | Capture row retention |
 
 `errors` buffers every request but persists only failures (`status >= 400` or a

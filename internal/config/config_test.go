@@ -1017,7 +1017,7 @@ func TestCaptureDefaultsAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Stats.Capture.Mode != "off" || c.Stats.Capture.MaxBytes != 32768 ||
+	if c.Stats.Capture.Mode != "off" || c.Stats.Capture.MaxBytes != 1048576 ||
 		c.Stats.Capture.Retain != Duration(24*time.Hour) {
 		t.Fatalf("capture defaults = %+v", c.Stats.Capture)
 	}
@@ -1025,6 +1025,7 @@ func TestCaptureDefaultsAndValidation(t *testing.T) {
 		"stats:\n  capture:\n    mode: always\n",
 		"stats:\n  capture:\n    mode: sample\n    sampleRate: 2\n",
 		"stats:\n  capture:\n    mode: errors\n    maxBytes: 1\n",
+		"stats:\n  capture:\n    mode: errors\n    maxBytes: 1048577\n",
 	} {
 		if _, err := Load(writeConfig(t, "gateway:\n  listen: \"127.0.0.1:0\"\n"+body)); err == nil {
 			t.Fatalf("expected error for %q", body)

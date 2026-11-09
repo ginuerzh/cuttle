@@ -484,7 +484,7 @@ func (c *Config) applyDefaults() {
 		c.Stats.Capture.SampleRate = &rate
 	}
 	if c.Stats.Capture.MaxBytes == 0 {
-		c.Stats.Capture.MaxBytes = 32768
+		c.Stats.Capture.MaxBytes = 1048576
 	}
 	if c.Stats.Capture.Retain == 0 {
 		c.Stats.Capture.Retain = Duration(24 * time.Hour)

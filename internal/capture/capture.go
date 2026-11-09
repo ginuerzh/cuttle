@@ -87,7 +87,7 @@ type Manager struct {
 // NewManager creates a manager with the given policy.
 func NewManager(p Policy) *Manager {
 	if p.MaxBytes <= 0 {
-		p.MaxBytes = 32768
+		p.MaxBytes = 1048576
 	}
 	return &Manager{
 		policy:   p,
@@ -101,7 +101,7 @@ func NewManager(p Policy) *Manager {
 // settings.
 func (m *Manager) SetPolicy(p Policy) {
 	if p.MaxBytes <= 0 {
-		p.MaxBytes = 32768
+		p.MaxBytes = 1048576
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
