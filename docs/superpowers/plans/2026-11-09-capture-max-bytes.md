@@ -200,6 +200,7 @@ git commit -m "feat(stats): persist capture truncation fields"
 - Modify: `internal/admin/handlers_capture.go`
 - Modify: `internal/admin/server.go:151` (route block)
 - Test: `internal/admin/server_test.go`
+- Test: `internal/gateway/reload_test.go`
 - Modify: `README.md` (API table)
 
 **Interfaces:**
@@ -245,11 +246,11 @@ git commit -m "feat(admin): add PUT /api/stats/capture"
 **Implementation record**
 
 - Date/status: 2026-11-09 / done
-- Repository + commit: cuttle / <sha>
-- Files: `internal/admin/handlers_capture.go`, `internal/admin/server.go`, `internal/admin/server_test.go`, `README.md`
-- Tests: `GOWORK=off go test ./internal/admin -run TestPutStatsCapture -count=1` -> PASS
-- Review findings/fixes: <fill>
-- Deferred: <fill>
+- Repository + commit: cuttle / `2eb76629`
+- Files: `internal/admin/handlers_capture.go`, `internal/admin/server.go`, `internal/admin/server_test.go`, `internal/gateway/reload_test.go`, `README.md`
+- Tests: `GOWORK=off go test ./internal/admin -run TestPutStatsCapture -count=1` -> PASS; `GOWORK=off go test ./internal/admin ./internal/gateway -count=1` -> PASS; `GOWORK=off go build ./...` -> ok
+- Review findings/fixes: `TestReloadAppliesCapturePolicy` passed immediately because `gateway.apply` already calls `capture.SetPolicy`; it is a regression guard for the wiring the endpoint depends on, and the admin 404 -> 204 is the RED that drove the new handler. Also verified that provider keys / userAgent / headers survive the capture PUT.
+- Deferred: none
 
 ---
 
