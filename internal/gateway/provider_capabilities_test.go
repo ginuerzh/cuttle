@@ -216,7 +216,6 @@ func TestProviderCapabilities(t *testing.T) {
 			Name:      "ds",
 			Type:      "deepseek",
 			Responses: up.srv.URL + "/v1",
-			Anthropic: up.srv.URL + "/anthropic",
 			Keys:      []string{"sk-ds"},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
@@ -226,11 +225,11 @@ func TestProviderCapabilities(t *testing.T) {
 		}}
 		gw := startGateway(t, cfg)
 
-		if code := postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[{"role":"user","content":"hi"}]}`); code != http.StatusOK {
+		if code := postModel(t, gw, "/v1/messages", `{"model":"claude-opus-4-5","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`); code != http.StatusOK {
 			t.Fatalf("status = %d", code)
 		}
 		if got := up.last(t).path; got != "/v1/responses" {
-			t.Fatalf("upstream path = %q, want /v1/responses (chat has no base URL)", got)
+			t.Fatalf("upstream path = %q, want /v1/responses (anthropic has no base URL)", got)
 		}
 	})
 
@@ -490,7 +489,7 @@ func TestProviderCapabilities(t *testing.T) {
 		}
 		gw := startGateway(t, cfg)
 
-		if code := postModel(t, gw, "/v1/chat/completions", `{"model":"fast","messages":[{"role":"user","content":"hi"}]}`); code != http.StatusOK {
+		if code := postModel(t, gw, "/v1/messages", `{"model":"fast","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`); code != http.StatusOK {
 			t.Fatalf("status = %d", code)
 		}
 		hit := up.last(t)
