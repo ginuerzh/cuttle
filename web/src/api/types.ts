@@ -218,6 +218,7 @@ export interface RequestCapture {
   responseSha256?: string;
   requestHeaders?: Record<string, string>;
   responseHeaders?: Record<string, string>;
+  truncatedFields?: string[];
   sseEvents?: number;
   reason?: string;
   createdAt?: string;

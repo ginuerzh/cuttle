@@ -75,6 +75,15 @@ export async function getConfig(): Promise<ConfigResponse> {
   };
 }
 
+export function putStatsCapture(input: {
+  mode: string;
+  sampleRate: number;
+  maxBytes: number;
+  retain: string;
+}): Promise<void> {
+  return request<void>('PUT', '/api/stats/capture', input);
+}
+
 export function getGraph(from: Date, to: Date): Promise<GraphMetrics> {
   const q = new URLSearchParams({
     from: from.toISOString(),

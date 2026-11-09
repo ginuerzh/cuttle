@@ -8,6 +8,7 @@ import {
   getRequests,
   getTopologyPositions,
   listCaptureRules,
+  putStatsCapture,
 } from './client';
 
 describe('request', () => {
@@ -176,4 +177,18 @@ it('filters requests by gateway key', async () => {
   await getRequests({ from: new Date(0), to: new Date(), gatewayKey: 'alpha' });
   const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
   expect(url).toContain('key=alpha');
+});
+
+it('updates the capture policy', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+  vi.stubGlobal('fetch', fetchMock);
+  await putStatsCapture({ mode: 'errors', sampleRate: 0.5, maxBytes: 1048576, retain: '24h' });
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/stats/capture',
+    expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ mode: 'errors', sampleRate: 0.5, maxBytes: 1048576, retain: '24h' }),
+    }),
+  );
 });

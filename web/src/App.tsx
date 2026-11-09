@@ -689,6 +689,7 @@ export default function App() {
                 <SettingsPage
                   config={config}
                   onLogout={() => void handleLogout()}
+                  onConfigSaved={() => void loadConfig()}
                 />
               ) : null
             )}

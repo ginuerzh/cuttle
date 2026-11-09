@@ -295,4 +295,12 @@ export const enUS: Record<string, string> = {
   '未提供密钥': 'Missing key',
   '密钥已禁用': 'Key disabled',
   '密钥无效': 'Invalid key',
+  '错误捕获': 'Error capture',
+  '捕获模式': 'Capture mode',
+  '不捕获': 'Off',
+  '抽样': 'Sample',
+  '抽样比例': 'Sample rate',
+  '预览上限（字节）': 'Preview limit (bytes)',
+  '保留时长': 'Retention',
+  '捕获配置已保存': 'Capture settings saved',
 };
