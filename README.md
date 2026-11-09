@@ -713,6 +713,7 @@ POST          /api/gateway-keys/{name}/rotate
 GET           /api/gateway-key-usage
 
 GET  /api/stats/summary
+PUT  /api/stats/capture
 GET  /api/stats/errors
 GET  /api/stats/graph
 GET  /api/events                      (WebSocket)

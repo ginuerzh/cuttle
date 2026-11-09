@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ginuerzh/cuttle/internal/config"
 )
 
 type captureRuleInput struct {
@@ -60,6 +62,22 @@ func (s *Server) handleCreateCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, rule)
+}
+
+func (s *Server) handlePutStatsCapture(w http.ResponseWriter, r *http.Request) {
+	var in config.Capture
+	if err := decode(w, r, &in); err != nil {
+		return
+	}
+	err := s.mutate(func(c *config.Config) error {
+		c.Stats.Capture = in
+		return nil
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteCapture(w http.ResponseWriter, r *http.Request) {

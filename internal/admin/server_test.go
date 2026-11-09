@@ -1027,3 +1027,70 @@ func TestProviderKeyUpdates(t *testing.T) {
 		t.Fatalf("keys changed after rejected update: %v", got)
 	}
 }
+
+func TestPutStatsCapture(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	provider := `{"name":"p","type":"generic","chat":"https://a.example","keys":["sk-keep-me-1234"],"userAgent":"custom/1.0","headers":{"X-Keep":"1"}}`
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", provider, csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create provider status = %d", resp.StatusCode)
+	}
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n","provider":"p","model":"m1"}`, csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create node status = %d", resp.StatusCode)
+	}
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"fast","nodes":["n"]}`, csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create route status = %d", resp.StatusCode)
+	}
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("put entrypoints status = %d", resp.StatusCode)
+	}
+
+	body := `{"mode":"errors","sampleRate":0.5,"maxBytes":65536,"retain":"12h"}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/stats/capture", body, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("put capture status = %d", resp.StatusCode)
+	}
+	c := rel.cfg.Stats.Capture
+	if c.Mode != "errors" || c.SampleRate == nil || *c.SampleRate != 0.5 ||
+		c.MaxBytes != 65536 || c.Retain != config.Duration(12*time.Hour) {
+		t.Fatalf("capture = %+v", c)
+	}
+
+	if len(rel.cfg.Providers) != 1 || len(rel.cfg.Nodes) != 1 ||
+		len(rel.cfg.Routes) != 1 || len(rel.cfg.Entrypoints) != 1 {
+		t.Fatalf("capture PUT changed other sections: %+v", rel.cfg)
+	}
+	p := rel.cfg.Providers[0]
+	if len(p.Keys) != 1 || p.Keys[0] != "sk-keep-me-1234" ||
+		p.UserAgent != "custom/1.0" || p.Headers["X-Keep"] != "1" {
+		t.Fatalf("provider fields changed: %+v", p)
+	}
+
+	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/config", "", "")
+	var view configView
+	if err := json.NewDecoder(resp.Body).Decode(&view); err != nil {
+		t.Fatal(err)
+	}
+	if view.Stats.Capture.Mode != "errors" || view.Stats.Capture.MaxBytes != 65536 {
+		t.Fatalf("view capture = %+v", view.Stats.Capture)
+	}
+
+	for _, bad := range []string{
+		`{"mode":"always","maxBytes":65536,"retain":"12h"}`,
+		`{"mode":"errors","maxBytes":1,"retain":"12h"}`,
+		`{"mode":"errors","maxBytes":1048577,"retain":"12h"}`,
+	} {
+		if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/stats/capture", bad, csrf); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d for %s", resp.StatusCode, bad)
+		}
+	}
+
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/stats/capture", `{"maxBytes":65536}`, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("partial put status = %d", resp.StatusCode)
+	}
+	c = rel.cfg.Stats.Capture
+	if c.Mode != "off" || c.SampleRate == nil || *c.SampleRate != 0.01 ||
+		c.Retain != config.Duration(24*time.Hour) {
+		t.Fatalf("partial capture = %+v", c)
+	}
+}

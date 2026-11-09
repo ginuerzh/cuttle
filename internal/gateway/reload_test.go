@@ -102,3 +102,50 @@ func getBody(t *testing.T, gw *Gateway) string {
 
 // keep gwconfig imported for the package's other files.
 var _ = gwconfig.Config{}
+
+func TestReloadAppliesCapturePolicy(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer up.Close()
+
+	cfg := testConfig(up.URL)
+	cfg.Stats.Capture = gwconfig.Capture{
+		Mode:     "errors",
+		MaxBytes: 1048576,
+		Retain:   gwconfig.Duration(24 * time.Hour),
+	}
+	gw := startGateway(t, cfg)
+	m := gw.Capture()
+	if _, ok := m.Start("s", "r", "m"); !ok {
+		t.Fatal("not captured before reload")
+	}
+	m.Offer("s", "request", []byte("abcdef"), []byte("ghijkl"), "", 0)
+	cap, _ := m.Finish("s")
+	if len(cap.TruncatedFields) != 0 {
+		t.Fatalf("unexpected truncation before reload: %+v", cap.TruncatedFields)
+	}
+
+	cfg = testConfig(up.URL)
+	cfg.Stats.Capture = gwconfig.Capture{
+		Mode:     "errors",
+		MaxBytes: 4,
+		Retain:   gwconfig.Duration(24 * time.Hour),
+	}
+	if err := gw.Reload(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	m = gw.Capture()
+	if _, ok := m.Start("s2", "r", "m"); !ok {
+		t.Fatal("not captured after reload")
+	}
+	m.Offer("s2", "request", []byte("abcdef"), []byte("ghijkl"), "", 0)
+	cap, _ = m.Finish("s2")
+	if cap.RequestOriginal != "abcd" {
+		t.Fatalf("requestOriginal = %q, want abcd", cap.RequestOriginal)
+	}
+	if len(cap.TruncatedFields) != 2 {
+		t.Fatalf("truncatedFields = %+v", cap.TruncatedFields)
+	}
+}

@@ -177,6 +177,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/gateway-keys/{name}", s.handleDeleteGatewayKey)
 	api.HandleFunc("GET /api/gateway-key-usage", s.handleGatewayKeyUsage)
 	api.HandleFunc("GET /api/stats/summary", s.handleSummary)
+	api.HandleFunc("PUT /api/stats/capture", s.handlePutStatsCapture)
 	api.HandleFunc("GET /api/stats/errors", s.handleErrorSummary)
 	api.HandleFunc("GET /api/alerts", s.handleAlerts)
 	api.HandleFunc("GET /api/provider-usage", s.handleProviderUsage)
