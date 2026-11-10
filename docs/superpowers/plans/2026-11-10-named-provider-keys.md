@@ -126,12 +126,12 @@ git commit -m "feat(config): name provider keys and add node key pin"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `0408eb45` — `feat(config): name provider keys and add node key pin`
+- Files changed: `internal/config/config.go` (`ProviderKey`, `Node.Key`, validation, defaults, expandEnv); mechanical call-site updates in `internal/provider/{models,usage}.go`, `internal/admin/{handlers,handlers_usage,probe}.go`, `internal/gateway/build.go`; `example.yaml`; tests (`internal/config/config_test.go` and every `Keys: []string` fixture, plus the JSON `"keys":[...]` payloads in admin/gateway tests).
+- Tests/commands + results: `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./...` PASS; `GOWORK=off go test ./... -count=1` all packages PASS.
+- Review findings + fixes: no reviewer at task level (native execution). Self-review caught an intermediate bad edit that removed `ModelOverride.Disabled`; restored before the gate. Moved `nextProviderKeyName` to `internal/admin` (unexported helper cannot cross packages).
+- Deferred/limitations: the admin view is still `keysSet`/`keyPreviews` and `keyUpdates` still uses indices with auto-generated `key-N` names; Task 4 replaces both. Catalog/usage/probe still use the first key; Task 3 changes that.
 
 ---
 
