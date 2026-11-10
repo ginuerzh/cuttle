@@ -183,7 +183,11 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
                   </Tag>
                 </Tooltip>
               ) : null}
-              <Tag style={{ marginInlineEnd: 0 }}>{p.keysSet} keys</Tag>
+              <Tooltip
+                title={p.keys.map((k) => k.name).join(', ') || undefined}
+              >
+                <Tag style={{ marginInlineEnd: 0 }}>{p.keys?.length ?? 0} keys</Tag>
+              </Tooltip>
               <Switch
                 size="small"
                 checked={p.enabled !== false}

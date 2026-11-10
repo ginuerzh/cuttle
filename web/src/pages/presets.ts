@@ -1,4 +1,4 @@
-import type { NodeAPI, Preset, Provider, ProviderApi, ProviderModel } from '../api/types';
+import type { NodeAPI, Preset, Provider, ProviderApi, ProviderKeyView, ProviderModel } from '../api/types';
 import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 
@@ -12,30 +12,47 @@ export interface PresetFormValues {
   gemini: string;
 }
 
-/** One editable provider-key row. Existing rows keep their masked preview. */
+/** One editable provider-key row. Existing rows keep their name and preview. */
 export interface ProviderKeyRow {
-  index?: number;
+  name: string;
   preview?: string;
   value: string;
+  enabled: boolean;
+  originalEnabled: boolean;
+  existing: boolean;
 }
 
-/** One per-key operation sent to the admin API; no secret is ever returned. */
+/** One name-based key operation sent to the admin API; no secret is returned. */
 export interface ProviderKeyUpdate {
-  index?: number;
+  name: string;
   key?: string;
+  enabled?: boolean;
   delete?: boolean;
 }
 
-export function providerKeyRows(previews: string[]): ProviderKeyRow[] {
-  return previews.map((preview, index) => ({ index, preview, value: '' }));
+export function providerKeyRows(keys: ProviderKeyView[]): ProviderKeyRow[] {
+  return keys.map((k) => ({
+    name: k.name,
+    preview: k.keyPreview,
+    value: '',
+    enabled: k.enabled,
+    originalEnabled: k.enabled,
+    existing: true,
+  }));
 }
 
-export function providerKeyUpdates(rows: ProviderKeyRow[], deleted: number[]): ProviderKeyUpdate[] {
-  const updates: ProviderKeyUpdate[] = deleted.map((index) => ({ index, delete: true }));
+export function providerKeyUpdates(rows: ProviderKeyRow[], deleted: string[]): ProviderKeyUpdate[] {
+  const updates: ProviderKeyUpdate[] = deleted.map((name) => ({ name, delete: true }));
   for (const row of rows) {
-    if (row.index !== undefined) continue;
+    if (row.existing && !deleted.includes(row.name) && row.enabled !== row.originalEnabled) {
+      updates.push({ name: row.name, enabled: row.enabled });
+    }
+  }
+  for (const row of rows) {
+    if (row.existing) continue;
+    const name = row.name.trim();
     const key = row.value.trim();
-    if (key) updates.push({ key });
+    if (name && key) updates.push({ name, key });
   }
   return updates;
 }
@@ -72,9 +89,8 @@ export function enabledModels(models: ProviderModel[]): ProviderModel[] {
 
 /**
  * Build the server-side provider payload from a provider view. Derived fields
- * (`keysSet`, `keyPreviews`, `probe`) are display-only and must never be sent
- * back; `models` defaults to the provider's overrides so a save cannot silently
- * drop them.
+ * (`keys`, `probe`) are display-only and must never be sent back; `models`
+ * defaults to the provider's overrides so a save cannot silently drop them.
  */
 export function providerPayload(
   p: Provider,
@@ -95,7 +111,6 @@ export function providerPayload(
     enabled: p.enabled !== false,
     models: overrides?.models ?? p.models ?? {},
   };
-  if (p.keys && p.keys.length > 0) payload.keys = p.keys;
   return payload;
 }
 

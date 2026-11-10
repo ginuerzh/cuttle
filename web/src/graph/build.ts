@@ -104,7 +104,7 @@ export function buildGraph(
       data: {
         kind: 'provider',
         label: p.name,
-        sub: [p.type, `keys×${p.keysSet}`].filter(Boolean).join(' · '),
+        sub: [p.type, `keys×${p.keys?.length ?? 0}`].filter(Boolean).join(' · '),
         provider: p,
         disabled: p.enabled === false,
       },

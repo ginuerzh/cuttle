@@ -8,7 +8,7 @@ const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'
     { name: 'strong', match: ['claude-opus*'], route: 'strong' },
     { name: 'fast', match: ['gpt-4.5*'], route: 'fast' },
   ],
-  providers: [{ name: 'p1', type: 'deepseek', chat: 'https://a/v1', keysSet: 1, keyPreviews: [] }],
+  providers: [{ name: 'p1', type: 'deepseek', chat: 'https://a/v1', keys: [] }],
   nodes: [{ name: 'p1', provider: 'p1', model: 'm1' }],
   routes: [
     { name: 'strong', nodes: ['p1'] },

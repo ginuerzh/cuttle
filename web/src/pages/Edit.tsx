@@ -76,26 +76,42 @@ function ProviderKeyEditor({
   onAdd,
 }: {
   rows: ProviderKeyRow[];
-  onChange: (index: number, value: string) => void;
+  onChange: (index: number, patch: Partial<ProviderKeyRow>) => void;
   onDelete: (index: number) => void;
   onAdd: () => void;
 }) {
   return (
     <Form.Item
       label="keys"
-      extra={tr('已有 key 只读显示掩码；如需更换请删除后添加新 key。')}
+      extra={tr('已有 key 只读显示名称与掩码；如需更换请删除后添加新 key。一个 node 可以按名称固定使用其中一个。')}
       style={{ marginBottom: 12 }}
     >
       {rows.map((row, i) => (
-        <div key={`${row.index ?? 'new'}-${i}`} style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center' }}>
-          {row.index !== undefined ? (
-            <Tag style={{ flex: 1, marginInlineEnd: 0 }}>{row.preview || '****'}</Tag>
+        <div key={`${row.name || 'new'}-${i}`} style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center' }}>
+          {row.existing ? (
+            <>
+              <Tag color="blue" style={{ marginInlineEnd: 0 }}>{row.name}</Tag>
+              <Tag style={{ flex: 1, marginInlineEnd: 0 }}>{row.preview || '****'}</Tag>
+              <Switch
+                size="small"
+                checked={row.enabled}
+                onChange={(checked) => onChange(i, { enabled: checked })}
+                aria-label={tr('启用 {name}', { name: row.name })}
+              />
+            </>
           ) : (
-            <Input.Password
-              value={row.value}
-              placeholder="sk-..."
-              onChange={(e) => onChange(i, e.target.value)}
-            />
+            <>
+              <Input
+                value={row.name}
+                placeholder={tr('key 名称')}
+                onChange={(e) => onChange(i, { name: e.target.value })}
+              />
+              <Input.Password
+                value={row.value}
+                placeholder="sk-..."
+                onChange={(e) => onChange(i, { value: e.target.value })}
+              />
+            </>
           )}
           <Button
             type="text"
@@ -113,7 +129,7 @@ function ProviderKeyEditor({
   );
 }
 
-/** One input per provider key; blank rows are ignored on save. */
+/** One name + value pair per provider key; blank rows are ignored on save. */
 function KeyField({ label, extra }: { label: string; extra?: string }) {
   return (
     <Form.Item label={label} extra={extra} style={{ marginBottom: 12 }}>
@@ -122,7 +138,10 @@ function KeyField({ label, extra }: { label: string; extra?: string }) {
           <>
             {fields.map((field) => (
               <div key={field.key} style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
-                <Form.Item name={field.name} noStyle>
+                <Form.Item name={[field.name, 'name']} noStyle>
+                  <Input placeholder={tr('key 名称')} />
+                </Form.Item>
+                <Form.Item name={[field.name, 'key']} noStyle>
                   <Input.Password placeholder="sk-..." />
                 </Form.Item>
                 <Button
@@ -140,7 +159,7 @@ function KeyField({ label, extra }: { label: string; extra?: string }) {
               block
               icon={<PlusOutlined />}
               style={{ marginTop: 6 }}
-              onClick={() => add('')}
+              onClick={() => add({ name: '', key: '' })}
             >
               {tr('添加 key')}
             </Button>
@@ -354,21 +373,21 @@ function DerivedTargetAPIHint({
 export function ProviderForm({ provider, onSaved }: { provider: Provider; onSaved: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
-  const [keyRows, setKeyRows] = useState<ProviderKeyRow[]>(() => providerKeyRows(provider.keyPreviews));
-  const [deletedKeys, setDeletedKeys] = useState<number[]>([]);
+  const [keyRows, setKeyRows] = useState<ProviderKeyRow[]>(() => providerKeyRows(provider.keys ?? []));
+  const [deletedKeys, setDeletedKeys] = useState<string[]>([]);
   const [headersJSON, setHeadersJSON] = useState(() => headersText(provider.headers));
 
   useEffect(() => {
-    setKeyRows(providerKeyRows(provider.keyPreviews));
+    setKeyRows(providerKeyRows(provider.keys ?? []));
     setDeletedKeys([]);
     setHeadersJSON(headersText(provider.headers));
-  }, [provider.name, provider.keyPreviews, provider.headers]);
+  }, [provider.name, provider.keys, provider.headers]);
 
   const deleteKey = (i: number) => {
     const row = keyRows[i];
     if (!row) return;
-    if (row.index !== undefined) {
-      setDeletedKeys((current) => (current.includes(row.index!) ? current : [...current, row.index!]));
+    if (row.existing) {
+      setDeletedKeys((current) => (current.includes(row.name) ? current : [...current, row.name]));
     }
     setKeyRows((current) => current.filter((_, index) => index !== i));
   };
@@ -498,9 +517,9 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       </Form.Item>
       <ProviderKeyEditor
         rows={keyRows}
-        onChange={(i, value) => setKeyRows((rows) => rows.map((row, index) => (index === i ? { ...row, value } : row)))}
+        onChange={(i, patch) => setKeyRows((rows) => rows.map((row, index) => (index === i ? { ...row, ...patch } : row)))}
         onDelete={deleteKey}
-        onAdd={() => setKeyRows((rows) => [...rows, { value: '' }])}
+        onAdd={() => setKeyRows((rows) => [...rows, { name: '', value: '', enabled: true, originalEnabled: true, existing: false }])}
       />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
         {tr('至少填写一个 API base URL。模型映射与 backup/weight 在 Node 上配置；同一个 Provider 可以被多个 Node 引用。')}
@@ -1218,9 +1237,13 @@ export function AddProviderModal({
     const v = await form.validateFields();
     setBusy(true);
     try {
-      const keys = ((v.keys ?? []) as string[])
-        .map((s) => String(s ?? '').trim())
-        .filter(Boolean);
+      const rawKeys = (v.keys ?? []) as { name?: string; key?: string }[];
+      const keys = rawKeys
+        .map((k) => ({ name: String(k.name ?? '').trim(), key: String(k.key ?? '').trim(), enabled: true }))
+        .filter((k) => k.name || k.key);
+      if (keys.some((k) => !k.name || !k.key)) {
+        throw new Error(tr('key 名称和值都必须填写'));
+      }
       await createProvider({
         name: v.name,
         type: v.type,
@@ -1242,7 +1265,7 @@ export function AddProviderModal({
 
   return (
     <Modal open={open} title={tr('添加提供商')} onCancel={onClose} onOk={submit} confirmLoading={busy} destroyOnClose>
-      <Form form={form} layout="vertical" size="small" initialValues={{ type: 'generic', keys: [''] }}>
+      <Form form={form} layout="vertical" size="small" initialValues={{ type: 'generic', keys: [{ name: '', key: '' }] }}>
         <Form.Item name="preset" label={tr('预设')}>
           <Select
             allowClear
@@ -1300,7 +1323,7 @@ export function AddProviderModal({
             );
           }}
         </Form.Item>
-        <KeyField label="keys" extra={tr('每个输入框一个 key；留空表示不配置 key。')} />
+        <KeyField label="keys" extra={tr('每行一个 key；名称和值都留空表示不配置 key。')} />
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {tr('创建后在画布上为它建 Node，再在 Node 上配置模型映射。type 与 API base URL 创建后锁定（generic 的 base URL 除外）。')}
         </Typography.Paragraph>

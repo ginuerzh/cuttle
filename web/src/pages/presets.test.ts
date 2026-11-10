@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Preset, Provider, ProviderModel } from '../api/types';
+import type { Preset, Provider, ProviderKeyView, ProviderModel } from '../api/types';
 import { setActiveLang } from '../i18n';
 import {
   configuredAPIs,
@@ -89,8 +89,7 @@ const provider: Provider = {
   responses: '',
   anthropic: 'https://a.example/anthropic',
   gemini: '  ',
-  keysSet: 0,
-  keyPreviews: [],
+  keys: [],
 };
 
 describe('configuredAPIs', () => {
@@ -461,8 +460,7 @@ describe('providerPayload', () => {
     responses: '',
     anthropic: 'https://anthropic.example',
     gemini: '',
-    keysSet: 2,
-    keyPreviews: ['sk-...abcd'],
+    keys: [{ name: 'account-a', keyPreview: 'sk-...abcd', enabled: true }],
     auth: { header: 'Authorization' },
     health: { api: 'chat', path: '/models' },
     tls: { secure: false },
@@ -488,8 +486,7 @@ describe('providerPayload', () => {
       enabled: false,
       models: { m1: { disabled: true } },
     });
-    expect(payload).not.toHaveProperty('keysSet');
-    expect(payload).not.toHaveProperty('keyPreviews');
+    expect(payload).not.toHaveProperty('keys');
     expect(payload).not.toHaveProperty('probe');
   });
 
@@ -500,7 +497,7 @@ describe('providerPayload', () => {
   });
 
   it('includes empty objects for optional server fields and defaults enabled to true', () => {
-    expect(providerPayload({ name: 'bare', type: 'generic', keysSet: 0, keyPreviews: [] })).toMatchObject({
+    expect(providerPayload({ name: 'bare', type: 'generic', keys: [] })).toMatchObject({
       auth: {},
       health: {},
       tls: {},
@@ -509,8 +506,7 @@ describe('providerPayload', () => {
     });
   });
 
-  it('includes keys only when the provider carries them', () => {
-    expect(providerPayload({ ...full, keys: ['sk-1'] })).toMatchObject({ keys: ['sk-1'] });
+  it('omits keys entirely; the create modal sends them, updates use keyUpdates', () => {
     expect(providerPayload(full)).not.toHaveProperty('keys');
   });
 });
@@ -530,27 +526,30 @@ describe('provider headers', () => {
 });
 
 describe('provider keys', () => {
-  it('builds editable rows from masked previews', () => {
-    expect(providerKeyRows(['sk-...a', 'sk-...b'])).toEqual([
-      { index: 0, preview: 'sk-...a', value: '' },
-      { index: 1, preview: 'sk-...b', value: '' },
+  it('builds named editable rows from the view', () => {
+    const keys: ProviderKeyView[] = [
+      { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+      { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+    ];
+    expect(providerKeyRows(keys)).toEqual([
+      { name: 'account-a', preview: 'sk-...a', value: '', enabled: true, originalEnabled: true, existing: true },
+      { name: 'account-b', preview: 'sk-...b', value: '', enabled: false, originalEnabled: false, existing: true },
     ]);
   });
 
-  it('turns deletions and additions into key updates and ignores existing values', () => {
-    expect(
-      providerKeyUpdates(
-        [
-          { index: 0, preview: 'sk-...a', value: ' new-a ' },
-          { index: 1, preview: 'sk-...b', value: '' },
-          { value: 'new-c' },
-          { value: '  ' },
-        ],
-        [2],
-      ),
-    ).toEqual([
-      { index: 2, delete: true },
-      { key: 'new-c' },
+  it('turns deletes, additions and toggles into name-based updates', () => {
+    const rows = providerKeyRows([
+      { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+      { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+    ]);
+    rows[0].enabled = false;
+    rows.push({ name: 'account-c', value: 'sk-new', enabled: true, originalEnabled: true, existing: false });
+    rows.push({ name: '', value: 'ignored', enabled: true, originalEnabled: true, existing: false });
+
+    expect(providerKeyUpdates(rows, ['account-b'])).toEqual([
+      { name: 'account-b', delete: true },
+      { name: 'account-a', enabled: false },
+      { name: 'account-c', key: 'sk-new' },
     ]);
   });
 });
