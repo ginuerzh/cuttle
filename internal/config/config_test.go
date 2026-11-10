@@ -1127,6 +1127,71 @@ routes:
 	}
 }
 
+func routeRetryConfig(extra string) string {
+	return `
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: r
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m
+routes:
+  - name: r
+    nodes: [n]
+` + extra
+}
+
+func TestRouteRetryDefaults(t *testing.T) {
+	c, err := Load(writeConfig(t, routeRetryConfig("")))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := c.Routes[0].Retries; got != 0 {
+		t.Fatalf("retries = %d, want 0", got)
+	}
+	if got := c.Routes[0].RetryCodes; got != "429,5xx" {
+		t.Fatalf("retryCodes = %q, want %q", got, "429,5xx")
+	}
+}
+
+func TestRouteRetryValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"negative retries", "    retries: -1\n", `route "r": retries must be between 0 and 10`},
+		{"too many retries", "    retries: 11\n", `route "r": retries must be between 0 and 10`},
+		{"token not a number", "    retryCodes: \"abc\"\n", `route "r": retryCodes:`},
+		{"short wildcard", "    retryCodes: \"5x\"\n", `route "r": retryCodes:`},
+		{"code below 100", "    retryCodes: \"99\"\n", `route "r": retryCodes:`},
+		{"empty token", "    retryCodes: \"429,,502\"\n", `route "r": retryCodes:`},
+	}
+	for _, tc := range cases {
+		_, err := Load(writeConfig(t, routeRetryConfig(tc.body)))
+		if err == nil {
+			t.Fatalf("%s: want validation error", tc.name)
+		}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: error = %q, want it to contain %q", tc.name, err, tc.want)
+		}
+	}
+
+	c, err := Load(writeConfig(t, routeRetryConfig("    retryCodes: \"429,5xx,502\"\n")))
+	if err != nil {
+		t.Fatalf("valid retryCodes rejected: %v", err)
+	}
+	if got := c.Routes[0].RetryCodes; got != "429,5xx,502" {
+		t.Fatalf("retryCodes = %q, want %q", got, "429,5xx,502")
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "test")
 	c, err := Load("../../example.yaml")

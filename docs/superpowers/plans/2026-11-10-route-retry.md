@@ -504,7 +504,7 @@ git commit -m "chore(deps): bump go-gost/x to v0.31.0"
 - Produces: `config.Route.Retries int` (`yaml:"retries,omitempty" json:"retries,omitempty"`), `config.Route.RetryCodes string` (`yaml:"retryCodes,omitempty" json:"retryCodes,omitempty"`), and `func parseRetryCodes(s string) ([]int, error)` used by validation.
 - Consumes: nothing.
 
-- [ ] **Step 1: Write the failing config tests**
+- [x] **Step 1: Write the failing config tests**
 
 Add to `config_test.go`:
 - `TestRouteRetryDefaults`: load a YAML config with a valid route that omits both fields; assert `Retries == 0` and `RetryCodes == "429,5xx"`.
@@ -512,41 +512,41 @@ Add to `config_test.go`:
 
 Use the existing YAML fixture helpers in `config_test.go`; include an existing provider/node so the route's node reference resolves.
 
-- [ ] **Step 2: Run the config tests to verify they fail**
+- [x] **Step 2: Run the config tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/config -run TestRouteRetry -count=1`
 Expected: FAIL (`Retries`/`RetryCodes` unseen, defaults empty, invalid values accepted).
 
-- [ ] **Step 3: Implement the struct fields, defaults and validation**
+- [x] **Step 3: Implement the struct fields, defaults and validation**
 
 - Add the fields after `FailTimeout`.
 - In `applyDefaults`, set `c.Routes[i].RetryCodes = "429,5xx"` when empty.
 - In `Validate` for each route: reject `Retries < 0 || Retries > 10` with `route %q: retries must be between 0 and 10`; reject a non-empty `RetryCodes` with an invalid token via `parseRetryCodes`, wrapped as `route %q: retryCodes: ...`.
 - `parseRetryCodes` accepts trimmed `N` (>= 100) and `Nxx` (single digit 1–9), rejects empty tokens and anything else.
 
-- [ ] **Step 4: Add the admin round-trip test**
+- [x] **Step 4: Add the admin round-trip test**
 
 In `internal/admin/entrypoint_test.go`, add `TestRouteRetryFieldsRoundTrip`: create a route with `{"name":"retry","nodes":["n"],"retries":2,"retryCodes":"429,502"}`, then `GET /api/routes` and assert both fields are present with those values. Also `PUT /api/routes/retry` with `{"name":"retry","nodes":["n"],"retries":1,"retryCodes":"5xx"}` and assert the updated values.
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `GOWORK=off go test ./internal/config ./internal/admin -run 'TestRouteRetry|TestRouteRetryFieldsRoundTrip' -count=1`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add internal/config/config.go internal/config/config_test.go internal/admin/entrypoint_test.go
+git add internal/config/config.go internal/config/config_test.go internal/admin/entrypoint_test.go docs/superpowers/plans/2026-11-10-route-retry.md
 git commit -m "feat(config): add route retry settings"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `cuttle` `feat(config): add route retry settings` on `feat/route-retry` (this commit; the concrete SHA is added by the follow-up `docs(plan)` commit because a commit cannot contain its own hash)
+- Files changed: `internal/config/config.go`, `internal/config/config_test.go`, `internal/admin/entrypoint_test.go`, `docs/superpowers/plans/2026-11-10-route-retry.md`
+- Tests/commands and results: RED first — `GOWORK=off go test ./internal/config -run TestRouteRetry -count=1` failed to build (`c.Routes[0].Retries undefined`), and `GOWORK=off go test ./internal/admin -run TestRouteRetryFieldsRoundTrip -count=1` failed with `retries = , want 2`; after adding only the struct fields, the config run failed again with `retryCodes = "", want "429,5xx"` and `negative retries: want validation error`, which is the intended RED for defaults and validation. GREEN: `GOWORK=off go test ./internal/config ./internal/admin -run 'TestRouteRetry|TestRouteRetryFieldsRoundTrip' -count=1` → both packages `ok`. Full gate `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS (config 0.255s, admin 14.381s, gateway 14.106s, stats 16.458s; `TestExampleConfigLoads` still loads the unchanged `example.yaml`)
+- Review findings and fixes: (1) `parseRetryCodes` uses an explicit decimal-digits check before `strconv.Atoi` so `+429` and other Atoi-accepted forms are rejected, and a huge all-digit token reports `invalid code` instead of a range error; (2) `applyDefaults` trims the whole `retryCodes` string before the empty check, so `retryCodes: "   "` gets the default instead of failing validation, and inner tokens stay untouched (`x` trims them itself); (3) validation is stricter than `x` for wildcards — `5XX` is rejected here even though `x` accepts it, because the contract allows only `Nxx`, so the user gets an error naming the route instead of a silently skipped token; (4) no admin handler change was needed: `POST`/`PUT /api/routes` already decode `config.Route` wholesale and `GET /api/routes` already returns `s.cfg.Routes`
+- Deferred items/limitations: `retries: 0` is omitted from `GET /api/routes` and from the written config because the field is `omitempty` as specified, so the web client must treat a missing value as 0 (Task 9); nothing stamps the fields onto node metadata yet (Task 6); `README.md`, `AGENTS.md` and `example.yaml` are updated in Task 11
 
 ---
 

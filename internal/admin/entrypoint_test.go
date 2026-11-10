@@ -137,6 +137,55 @@ func TestRouteCreateHasNoMatchField(t *testing.T) {
 	}
 }
 
+func TestRouteRetryFieldsRoundTrip(t *testing.T) {
+	base, client, csrf := setupRouteFixtures(t)
+
+	if resp := doJSON(t, client, http.MethodPost, base+"/api/routes",
+		`{"name":"retry","nodes":["n"],"retries":2,"retryCodes":"429,502"}`, csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create route = %d, want 201", resp.StatusCode)
+	}
+
+	routeRetryFields := func() (json.RawMessage, json.RawMessage) {
+		t.Helper()
+		resp := doJSON(t, client, http.MethodGet, base+"/api/routes", "", "")
+		var list []map[string]json.RawMessage
+		if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+			t.Fatal(err)
+		}
+		for _, route := range list {
+			var name string
+			if err := json.Unmarshal(route["name"], &name); err != nil {
+				t.Fatal(err)
+			}
+			if name == "retry" {
+				return route["retries"], route["retryCodes"]
+			}
+		}
+		t.Fatalf("route retry missing from %+v", list)
+		return nil, nil
+	}
+
+	assertRetry := func(wantRetries, wantCodes string) {
+		t.Helper()
+		retries, codes := routeRetryFields()
+		if got := string(retries); got != wantRetries {
+			t.Fatalf("retries = %s, want %s", got, wantRetries)
+		}
+		if got := string(codes); got != wantCodes {
+			t.Fatalf("retryCodes = %s, want %s", got, wantCodes)
+		}
+	}
+
+	assertRetry("2", `"429,502"`)
+
+	if resp := doJSON(t, client, http.MethodPut, base+"/api/routes/retry",
+		`{"name":"retry","nodes":["n"],"retries":1,"retryCodes":"5xx"}`, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("update route = %d, want 204", resp.StatusCode)
+	}
+
+	assertRetry("1", `"5xx"`)
+}
+
 func TestRouteOrderEndpointRemoved(t *testing.T) {
 	base, client, csrf := setupRouteFixtures(t)
 

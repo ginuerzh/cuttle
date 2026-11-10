@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -209,13 +210,17 @@ type TLS struct {
 
 // Route maps client requests to a set of nodes. The entrypoint selects the
 // route; the route only decides which node serves it. MaxFails and
-// FailTimeout control how long a node is skipped after failures.
+// FailTimeout control how long a node is skipped after failures. Retries and
+// RetryCodes control how many times and for which status codes a retryable
+// response is retried.
 type Route struct {
 	Name        string   `yaml:"name" json:"name"`
 	Nodes       []string `yaml:"nodes" json:"nodes"`
 	Strategy    string   `yaml:"strategy,omitempty" json:"strategy,omitempty"`
 	MaxFails    int      `yaml:"maxFails,omitempty" json:"maxFails,omitempty"`
 	FailTimeout Duration `yaml:"failTimeout,omitempty" json:"failTimeout,omitempty"`
+	Retries     int      `yaml:"retries,omitempty" json:"retries,omitempty"`
+	RetryCodes  string   `yaml:"retryCodes,omitempty" json:"retryCodes,omitempty"`
 }
 
 // Duration is a time.Duration that unmarshals from strings like "12h".
@@ -593,6 +598,10 @@ func (c *Config) applyDefaults() {
 		if c.Routes[i].FailTimeout == 0 {
 			c.Routes[i].FailTimeout = Duration(10 * time.Second)
 		}
+		c.Routes[i].RetryCodes = strings.TrimSpace(c.Routes[i].RetryCodes)
+		if c.Routes[i].RetryCodes == "" {
+			c.Routes[i].RetryCodes = "429,5xx"
+		}
 	}
 }
 
@@ -765,6 +774,50 @@ func validateProviderKeys(providerName string, keys []ProviderKey) error {
 		}
 	}
 	return nil
+}
+
+// parseRetryCodes parses a comma-separated list of retry status codes. Each
+// token is either an exact code of at least 100 or a hundred-level wildcard
+// such as "5xx" (a single digit 1-9 followed by "xx"), which parses as the
+// hundred-level prefix, 500 for "5xx".
+func parseRetryCodes(s string) ([]int, error) {
+	tokens := strings.Split(s, ",")
+	codes := make([]int, 0, len(tokens))
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			return nil, fmt.Errorf("empty code")
+		}
+		if isDecimal(token) {
+			n, err := strconv.Atoi(token)
+			if err != nil {
+				return nil, fmt.Errorf("invalid code %q", token)
+			}
+			if n < 100 {
+				return nil, fmt.Errorf("code %q must be at least 100", token)
+			}
+			codes = append(codes, n)
+			continue
+		}
+		if len(token) == 3 && token[0] >= '1' && token[0] <= '9' && token[1] == 'x' && token[2] == 'x' {
+			codes = append(codes, int(token[0]-'0')*100)
+			continue
+		}
+		return nil, fmt.Errorf("invalid code %q", token)
+	}
+	return codes, nil
+}
+
+func isDecimal(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // Validate checks structural and reference errors.
@@ -948,6 +1001,14 @@ func Validate(c *Config) error {
 		}
 		if r.FailTimeout < 0 {
 			return fmt.Errorf("route %q: failTimeout must be >= 0", name)
+		}
+		if r.Retries < 0 || r.Retries > 10 {
+			return fmt.Errorf("route %q: retries must be between 0 and 10", name)
+		}
+		if r.RetryCodes != "" {
+			if _, err := parseRetryCodes(r.RetryCodes); err != nil {
+				return fmt.Errorf("route %q: retryCodes: %w", name, err)
+			}
 		}
 		used := make(map[string]bool, len(r.Nodes))
 		for _, ref := range r.Nodes {
