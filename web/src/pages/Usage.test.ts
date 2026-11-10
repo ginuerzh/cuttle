@@ -21,4 +21,15 @@ describe('OpenRouter usage labels', () => {
     );
     expect(html).toContain('$25.50');
   });
+
+  it('shows the key name beside the masked preview', () => {
+    const html = renderToStaticMarkup(
+      createElement(AccountRow, {
+        account: { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+        first: true,
+      }),
+    );
+    expect(html).toContain('account-a');
+    expect(html).toContain('sk-...a');
+  });
 });

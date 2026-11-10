@@ -150,6 +150,14 @@ export function nodeAPIOptions(
   return ['auto', ...(provider ? configuredAPIs(provider) : [])];
 }
 
+/** Options for the node key pin select; the empty value means every enabled key. */
+export function nodeKeyOptions(keys: ProviderKeyView[]): { value: string; label: string }[] {
+  return [
+    { value: '', label: t('全部 key（轮询）') },
+    ...keys.map((k) => ({ value: k.name, label: k.enabled ? k.name : `${k.name}${t('（已禁用）')}` })),
+  ];
+}
+
 /** Display label for a model's APIs, e.g. "chat · anthropic". */
 export function modelApiLabel(model: ProviderModel): string {
   return (model.apis ?? []).join(' · ');

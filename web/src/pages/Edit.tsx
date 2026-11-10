@@ -45,6 +45,7 @@ import {
   headersText,
   isBaseURLLocked,
   nodeAPIOptions,
+  nodeKeyOptions,
   parseHeadersText,
   presetFormValues,
   providerKeyRows,
@@ -769,6 +770,7 @@ export function NodeForm({
         enabled: node.enabled,
         model: v.model,
         api: v.api === 'auto' ? '' : v.api,
+        key: String(v.key ?? ''),
       });
       message.success(tr('已保存'));
       await onSaved();
@@ -793,11 +795,12 @@ export function NodeForm({
   };
 
   const providerOptions = config.providers.map((p) => ({ value: p.name, label: p.name }));
-  const providerName = Form.useWatch('provider', form) as string | undefined;
+  const providerName = (Form.useWatch('provider', form) as string | undefined) ?? node.provider;
   const provider = config.providers.find((p) => p.name === providerName);
   const { models, error: modelsError } = useProviderModels(providerName);
   const model = Form.useWatch('model', form) as string | undefined;
   const api = Form.useWatch('api', form) as string | undefined;
+  const keyOptions = nodeKeyOptions(provider?.keys ?? []);
 
   return (
     <Form
@@ -808,6 +811,7 @@ export function NodeForm({
         provider: node.provider,
         model: node.model,
         api: node.api ?? 'auto',
+        key: node.key ?? '',
         backup: node.backup,
         weight: node.weight ?? 1,
       }}
@@ -823,6 +827,13 @@ export function NodeForm({
       <ModelField models={models} modelsError={modelsError} />
       <Form.Item name="api" label={tr('目标 API（协议）')}>
         <Select options={nodeAPIOptions(provider).map((value) => ({ value, label: value }))} />
+      </Form.Item>
+      <Form.Item
+        name="key"
+        label={tr('固定 key')}
+        extra={tr('留空表示在所有启用的 key 之间轮询；选择后该 node 只使用这个 key。')}
+      >
+        <Select options={keyOptions} showSearch optionFilterProp="label" />
       </Form.Item>
       <DerivedTargetAPIHint provider={provider} models={models} model={model} api={api} />
       <ModelCatalogHint models={models} error={modelsError} model={model} />

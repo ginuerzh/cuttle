@@ -101,6 +101,8 @@ export interface Node {
   model: string;
   /** Upstream API; 'auto' or absent matches the client protocol. */
   api?: NodeAPI;
+  /** Optional provider key name this node pins; absent spreads across every enabled key. */
+  key?: string;
   backup?: boolean;
   weight?: number;
   enabled?: boolean;
@@ -344,7 +346,9 @@ export interface QuotaWindow {
 }
 
 export interface AccountUsage {
+  name?: string;
   keyPreview?: string;
+  enabled?: boolean;
   balance?: BalancePart[];
   windows?: QuotaWindow[];
   note?: string;

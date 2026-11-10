@@ -93,7 +93,9 @@ export function AccountRow({ account, first }: { account: AccountUsage; first: b
       }}
     >
       <Space wrap>
+        {account.name ? <Tag color="blue">{account.name}</Tag> : null}
         <Typography.Text code>{account.keyPreview || '—'}</Typography.Text>
+        {account.enabled === false ? <Tag>{t('已禁用')}</Tag> : null}
         {account.stale ? <Tag color="orange">{t('旧数据')}</Tag> : null}
         {account.checkedAt ? (
           <Typography.Text type="secondary">{formatDateTime(account.checkedAt)}</Typography.Text>

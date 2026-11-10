@@ -16,6 +16,7 @@ import {
   modelDirectionRows,
   modelOption,
   nodeAPIOptions,
+  nodeKeyOptions,
   normalizedModalities,
   parseHeadersText,
   presetFormValues,
@@ -550,6 +551,21 @@ describe('provider keys', () => {
       { name: 'account-b', delete: true },
       { name: 'account-a', enabled: false },
       { name: 'account-c', key: 'sk-new' },
+    ]);
+  });
+});
+
+describe('nodeKeyOptions', () => {
+  it('offers the unpinned option plus every named key', () => {
+    expect(
+      nodeKeyOptions([
+        { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+        { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+      ]),
+    ).toEqual([
+      { value: '', label: '全部 key（轮询）' },
+      { value: 'account-a', label: 'account-a' },
+      { value: 'account-b', label: 'account-b（已禁用）' },
     ]);
   });
 });
