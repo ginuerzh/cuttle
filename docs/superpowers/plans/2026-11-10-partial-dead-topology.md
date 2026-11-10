@@ -429,12 +429,12 @@ git commit -m "feat(web): show partially dead nodes on the topology"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / done
+- Repository + commit: cuttle `ea9d4858` — `feat(web): show partially dead nodes on the topology`
+- Files changed: `web/src/graph/build.ts` (`deadRoutes` on `GraphNodeData`, corrected `dead` comment), `web/src/graph/nodes.tsx` (`partial` mood, amber dead face, `NodeMoodBadge` title override, `BindingNode` partial title), `web/src/pages/Topology.tsx` (node effect sets `dead` + `deadRoutes`, `sameRoutes` guard), `web/src/App.tsx` (`NodePanel` `deadRoutes` prop and `dead 路由` row, passed at both call sites), `web/src/graph/nodes.test.tsx`, `web/src/App.test.tsx`, `web/src/locales/en-US.ts` (3 strings), `README.md` (health paragraph).
+- Tests/commands and results: `npx vitest run src/graph/nodes.test.tsx src/App.test.tsx` RED (3 failed: no `partial` mood, no badge title, no `deadRoutes` prop) then GREEN (30 passed); `npx tsc --noEmit` clean; `npm test` 38 files / 252 tests passed.
+- Review findings and fixes: none (native execution, self-review only). The card keeps its traffic-derived border and cyan icon for the partial case; only the badge and tooltip change.
+- Deferred items/limitations: the route-level `dead` flag still collapses protocol variants and provider keys (a route reports dead when any variant/key node is dead), so a dashed edge can coexist with a healthy provider key; the design records this as a follow-up.
 
 ---
 
