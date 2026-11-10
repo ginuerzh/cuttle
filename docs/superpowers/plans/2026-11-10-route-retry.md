@@ -194,12 +194,12 @@ git commit -m "feat(forward): add HTTP retry helpers"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `go-gost/x` `bbb071b` (`feat(forward): add HTTP retry helpers`) followed by fix commit `a532bed` (`fix(forward): keep empty retry bodies unchunked and document snapshot ordering`), branch `feat/route-retry`
+- Files changed: `internal/util/forwarder/retry.go`, `internal/util/forwarder/retry_test.go`
+- Tests/commands and results: focused retry tests RED (undefined helpers) then 7/7 PASS after the fix; `go test ./internal/util/forwarder -count=1` PASS; `go vet ./...`, `go build ./...`, `gofmt -l` clean
+- Review findings and fixes: empty non-nil body was normalized to a chunked body on attempt 1 → `http.NoBody` for a zero-length buffer plus framing tests; snapshot-ordering contract was undocumented → doc comment states the snapshot must be the pristine pre-rewrite client request (ruling: replaying rewritten bytes would break cross-node retry)
+- Deferred items/limitations: test gaps for nil node / `ContentLength` early-exit / nil body / wildcard match / uppercase `5XX`; out-of-range exact codes accepted but never match; all-invalid `retry.codes` pays the buffering cost with no fallback; `retryState.retries` unused until Task 2; buffering delays attempt 1's upstream body
 
 ---
 
