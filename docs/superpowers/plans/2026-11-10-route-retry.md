@@ -435,12 +435,12 @@ Run: `cd ../x && git rev-parse v0.31.0^{commit}`
 Record the SHA in this task's implementation record and in the cuttle spec/plan notes.
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `go-gost/x` tag `v0.31.0` at commit `a22bbba02fe5837b7aead5c93f2e130eec479af2`, pushed to `origin` (user-approved)
+- Files changed: none (tag only)
+- Tests/commands and results: x gate from Task 2 was green (`go build ./...`, `go vet ./...`, `go test ./... -count=1`); `git rev-parse v0.31.0^{commit}` returns `a22bbba`
+- Review findings and fixes: no code diff; the controller executed the approved release and recorded the tag commit (no implementer/reviewer dispatched for a tag-only step)
+- Deferred items/limitations: x `feat/route-retry` branch was not pushed/merged; only the tag is public, so `master` lacks the commit until the user merges
 
 ---
 
