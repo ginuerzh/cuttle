@@ -469,9 +469,9 @@ git commit -m "fix(web): satisfy the full gate"
 If nothing changed, record the gate results in the implementation record instead.
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / done (no code change required)
+- Repository + commit: cuttle `056d307f` — gate ran on the Task 3 head; this record commit follows it.
+- Files changed: none beyond the plan record; `internal/admin/dist` was rebuilt for the Go build and stays git-ignored.
+- Tests/commands and results: `cd web && npm test` 38 files / 252 tests passed; `npx tsc --noEmit` clean; `npm run build` built in 7.48s (only the pre-existing chunk-size warning). `GOWORK=off go build ./...` ok; `GOWORK=off go vet ./...` ok; `GOWORK=off go test ./... -count=1` all packages ok (`internal/health` has no test files).
+- Review findings and fixes: none.
+- Deferred items/limitations: UI behavior was verified by Vitest, SSR markup and the Go gates only; there is no browser visual harness, so the dashed-edge and amber-badge rendering was not screenshot-checked.
