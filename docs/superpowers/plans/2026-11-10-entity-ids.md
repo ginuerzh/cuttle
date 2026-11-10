@@ -136,12 +136,12 @@ git commit -m "feat(config): add entity ids and display-name validation"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 — DONE (code in `517f40c1`).
+- Repository + commit: `github.com/ginuerzh/cuttle` @ `517f40c1` (`feat(config): add entity ids and display-name validation`); this record is added by the follow-up plan commit.
+- Files changed: `internal/identity/identity.go` (new), `internal/identity/identity_test.go` (new), `internal/config/config.go`, `internal/config/config_test.go`.
+- Tests/commands and results: RED `GOWORK=off go test ./internal/identity -run TestNewShape -count=1` (no non-test Go files) and the focused config run (`TestValidateNameRules*`, `TestValidateOptionalIDs`, …: `$`/control/64-rune/id cases failed as expected). GREEN `GOWORK=off go test ./internal/config ./internal/identity -count=1`. Extra verification: `GOWORK=off go build ./...`, `GOWORK=off go vet ./internal/config ./internal/identity`, `GOWORK=off go test ./... -count=1` (all packages ok). Full report: `.superpowers/sdd/2026-11-10-entity-ids/task-1-report.md`.
+- Review findings and fixes: corrected an invalid 9-character test id (`pk_8m2xq7a4k9`); centralised all five entity kinds on `validateEntityName` and removed the duplicated `gatewayKeyNameMax`/`providerKeyNameMax` constants; name errors now quote the offending name via `%q` while key values stay unlogged; removed a dead assignment and an unreachable fixture branch in the new tests.
+- Deferred items/limitations: ids stay optional and are not checked for global uniqueness here (Task 2); `Node.Key` is still name-based (Tasks 2–3); `config.Write` emits `id: ""` for id-less entities until Task 2 migrates before write-back; gateway-key and provider-key name rules relaxed to "no `$`/control characters" — AGENTS.md still documents the old `/` rule and is updated in Task 10; `identity.New` does not retry on collision (admin create paths own that).
 
 ---
 
