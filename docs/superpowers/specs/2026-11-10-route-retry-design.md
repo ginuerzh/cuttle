@@ -196,6 +196,11 @@ selector contract, documented rather than special-cased. When every candidate
 is dead, x's last-resort selection can return the same node; retries are still
 bounded by the budget.
 
+Each attempt carries a zero-based attempt number in the request context
+(`HandleHTTP` sets it before every round trip). `rewriteMeta` exposes it as
+`attempt` (`forwarder.MetaKeyAttempt`) so cuttle's capture can keep only the
+final attempt; x's own behavior does not depend on it.
+
 Reasoning about which failures are retried: a complete retryable *status* means
 the upstream finished answering without producing the requested result, so a
 retry cannot duplicate a started generation. A read error after the request was
@@ -215,14 +220,18 @@ errors are retried because nothing was sent.
   before.
 - Semantics: `retries` is the number of extra upstream attempts performed.
   `0` means the request was served (or failed) on the first attempt.
-- Captures keep only the final attempt. The rewriter offers the request
-  direction once per attempt; when `capture.Manager.Offer` sees a second
-  request-direction offer for an existing session, it resets that session's
+- Captures keep only the final attempt. x tags every rewriter call with a
+  zero-based `attempt` value in the existing rewriter metadata
+  (`forwarder.MetaKeyAttempt = "attempt"`, added to `rewriteMeta` from a
+  per-attempt context value). Cuttle's rewriter passes it to
+  `capture.Manager.Offer`; when the request direction arrives for a different
+  attempt than the session's current one, the manager resets that session's
   previews, SSE fields, truncated flags, both hashes, `sseSeen`/hash-used flags
-  and its byte accounting before buffering the new attempt. `Reason`,
-  `CreatedAt` and `OnError` survive. Discarded attempts never offer a response
-  body because x stops before response rewriting, so the stored capture always
-  describes the row's node/model.
+  and byte accounting before buffering the new attempt. `Reason`, `CreatedAt`
+  and `OnError` survive. Discarded attempts never offer a response body because
+  x stops before response rewriting, so the stored capture always describes the
+  row's node/model. Chunked request bodies inside one attempt (same attempt
+  value) still append, preserving the existing multi-chunk behavior.
 - Sessions (`web/src/pages/Requests.tsx`) shows a `重试 N 次` tag when
   `retries > 0`, and the detail drawer (`web/src/components/RequestDetail.tsx`)
   gets a `retries` row. `web/src/api/types.ts` mirrors the field; add the
@@ -308,9 +317,9 @@ cuttle:
   carries `retry.max`/`retry.codes`; routes with `retries: 0` carry neither.
 - Stats: recorder maps `Retries`, store round-trip of the new column, old DB
   migration, rollups stay one row per request.
-- Capture: a second request-direction offer for the same SID replaces the
-  first attempt's previews/hashes/truncation/byte accounting; the stored hash
-  matches the final rewritten body.
+- Capture: attempt 1 for the same SID replaces attempt 0's previews/hashes/
+  truncation/byte accounting; two offers with the same attempt still append;
+  the stored hash matches the final rewritten body.
 - Admin: create/update/list routes keep both fields; invalid values rejected.
 - Web: types, route form, Sessions tag and detail row; Vitest + `tsc --noEmit`.
 - End-to-end gateway test with two local upstreams: route with `retries: 1`,
