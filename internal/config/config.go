@@ -1071,6 +1071,17 @@ func (p Provider) EnabledValue() bool {
 	return p.Enabled == nil || *p.Enabled
 }
 
+// FirstEnabledKey returns the value of the first enabled key, or false when
+// every key is disabled or none is configured.
+func (p Provider) FirstEnabledKey() (string, bool) {
+	for _, k := range p.Keys {
+		if k.EnabledValue() {
+			return k.Key, true
+		}
+	}
+	return "", false
+}
+
 // ModelDisabled reports whether the provider locally disables the model with
 // the given ID. Surrounding space is ignored; unknown IDs are not disabled.
 func (p Provider) ModelDisabled(id string) bool {

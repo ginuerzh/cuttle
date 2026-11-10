@@ -369,6 +369,24 @@ func TestUsageMultipleKeys(t *testing.T) {
 	}
 }
 
+func TestUsageSetsKeyNames(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":"1"}]}`))
+	}))
+	defer srv.Close()
+
+	accounts, err := usageProvider(t, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1",
+		Keys: []config.ProviderKey{{Name: "account-a", Key: "sk-one"}, {Name: "account-b", Key: "sk-two"}},
+	}).Usage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 2 || accounts[0].Name != "account-a" || accounts[1].Name != "account-b" {
+		t.Fatalf("names = %+v", accounts)
+	}
+}
+
 func TestUsageBaseFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/user/balance" {
