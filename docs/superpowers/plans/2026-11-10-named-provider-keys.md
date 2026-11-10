@@ -618,12 +618,12 @@ git commit -m "docs(memory): record named provider keys deploy"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `4741aed4` (deployed main; feature merge `2c774496`); workspace memory commit recorded separately in `/root/code/go-gost`.
+- Files changed: `/data/cuttle.yaml` (8 provider keys migrated to `{name: default, key: ...}`), backup `/data/cuttle.yaml.bak-20261110-pre-named-keys`.
+- Tests/commands + results: CI docker run `42797922201` success; `kubectl rollout status` success; `/api/health` returned `{"ok":true,"version":"main-4741aed",...}`; live data-plane traffic in the logs.
+- Review findings + fixes: `kubectl exec -i ... sh -c 'cat > /data/cuttle.yaml' < local` truncated the file to 0 bytes; restored from the backup, re-copied with `kubectl cp`, verified the SHA-256, then rolled out.
+- Deferred/limitations: the migration is manual per the spec (no migrate command); the deploy also carries the route-retry and partial-dead topology work that was already on `main`.
 
 ---
 
