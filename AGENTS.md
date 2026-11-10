@@ -52,9 +52,10 @@ docker build -t cuttle .
 | --- | --- |
 | `main.go` | CLI: `serve`, `hash-password`, `SIGHUP` reload; first-run bootstrap wiring and session reset. The admin server starts only when `admin.passwordHash` is set. |
 | `internal/bootstrap` | Zero-config path resolution, first-run config generation, admin password generation, and ignored-env warnings. |
-| `internal/config` | Strict YAML schema, environment expansion, defaults, validation, atomic `0600` writes. |
+| `internal/identity` | Entity id minting and validation (shape, prefixes, derivation). |
+| `internal/config` | Strict YAML schema, environment expansion, defaults, validation, entity-id migration and atomic `0600` writes. |
 | `internal/gateway/auth.go` | Data-plane gateway-key authentication, request-head replay and fixed 401 responses. |
-| `internal/gateway/build.go` | Compiles one hop entry per entrypoint and inbound protocol variant, with route plans cached by route name. |
+| `internal/gateway/build.go` | Compiles one hop entry per entrypoint and inbound protocol variant, with route plans cached by route id. |
 | `internal/gateway/protocol.go` | Inbound protocol path groups and path/model matcher construction. |
 | `internal/gateway/upstream.go` | Resolves default and per-protocol upstream targets per node and rewrites inbound paths/models. |
 | `internal/provider` | Provider adapters, model catalogs, API classification, auth. |
@@ -76,8 +77,8 @@ Entrypoint -> Route -> Node -> Provider model
 
 - Entrypoint declaration order is the only precedence rule. Never make route
   order semantic.
-- An entrypoint has a name, a non-empty list of client-model globs and exactly
-  one route. `*` is an explicit catch-all.
+- An entrypoint has an immutable id, a display name, a non-empty list of
+  client-model globs and exactly one route id. `*` is an explicit catch-all.
 - Only the request body's `model` field is matched for routing. Paths never
   affect entrypoint precedence or route choice; they only select the upstream
   wire API inside a matched entrypoint. There is no host matching and no
@@ -96,10 +97,9 @@ Entrypoint -> Route -> Node -> Provider model
   (`chat`, `responses`, `anthropic`, `gemini`) to a configured provider API and
   falls back to the model's default API. A pinned `api` bypasses default
   resolution and requires the matching base URL.
-- `node.key` is optional. When it names a provider key, the node builds only
+- `node.key` is optional. When it is a provider-key id, the node builds only
   that key; when it is empty the node builds every enabled provider key and the
-  route selector spreads across them. The name must exist on the node's
-  provider.
+  route selector spreads across them. The id must exist on the node's provider.
 - Disabled providers, disabled nodes and provider-disabled models are skipped at
   compile time. If every node is skipped, the request fails; never fall through
   to another route or send the client model upstream.
@@ -134,9 +134,9 @@ Entrypoint -> Route -> Node -> Provider model
 - `Gateway` keeps the compiled policy in an `atomic.Pointer`. SIGHUP and admin
   reloads swap it after the new hop group builds; a failed build keeps the old
   group and policy. Warn at apply time when every configured key is disabled.
-- The authenticated key name travels only in the request context for stats. It
-  is never added as an upstream header, and inbound credentials are stripped
-  as before.
+- The authenticated gateway-key id travels only in the request context for
+  stats. It is never added as an upstream header, and inbound credentials are
+  stripped as before.
 - Route retries are x's loop around `hop.Select`: every retry re-runs selection
   (so the strategy, backup flag and node marker pick the next node), marks the
   failed node, and is decided before any response byte reaches the client.
@@ -148,14 +148,35 @@ Entrypoint -> Route -> Node -> Provider model
 - `config.Load` uses `yaml.KnownFields(true)`. Unknown fields must keep failing
   loudly; old `aliases`, route `match` and node `models` configs are rejected by
   design with no migration.
-- Keep the `Load` order: decode, `expandEnv`, `applyDefaults`, `Validate`.
-- Provider keys are named: `keys` is a list of `{name, key, enabled}`. Names
-  are required, trimmed, at most 64 runes, unique per provider, and must not
-  contain `/`, `$` or control characters; values must be non-empty and contain
-  no `$` or control characters. `enabled` defaults to true.
-- A node's `key` must name a configured key of its own provider; a dangling
-  name is a validation error. A pinned-but-disabled key is valid and the node is
-  skipped at build time.
+- Keep the `Load` order: decode → migrate entity ids and write the file back →
+  `expandEnv` → `applyDefaults` → `Validate`. The write-back runs before
+  expansion, so `${VAR}` placeholders are never persisted as resolved values; it
+  copies the previous file to `<path>.bak-<unix>` first, writes the new file as
+  `0600`, and never aborts the load on failure (warn only). Validation runs after
+  the rewrite, so a config rejected for an unrelated reason has already been
+  rewritten on disk.
+- Identity: every provider, provider key, node, route, entrypoint and gateway
+  key carries an immutable `id` matching `^[a-z]{1,2}_[0-9a-z]{10}$` with the
+  kind's prefix (`p`, `pk`, `n`, `r`, `e`, `gk`). After `MigrateIdentities` an id
+  is required, globally unique across all kinds, and never changes. A name is
+  never an id: `node.provider`, `node.key`, `route.nodes` and
+  `entrypoint.route` hold ids, and the entity lookups accept ids only.
+- `name` is a display label: trimmed, non-empty, at most 64 runes, no `$` and no
+  control characters, unique per kind (provider-key names unique per provider).
+  `/`, spaces and non-ASCII are allowed. Names are editable at any time through
+  the admin API; ids are not.
+- A hand-written config may omit ids: migration derives them from the trimmed
+  name (provider keys from provider id + `\x00` + key name), which is the only
+  place a name determines an identity. A read-only config derives the same ids
+  on every load; a hand-maintained file must keep its `id` lines when renaming,
+  or the new name becomes a new identity and its history splits.
+- Provider keys are identified by id: `keys` is a list of
+  `{id, name, key, enabled}`. Names are display labels with the rules above;
+  values must be non-empty and contain no `$` or control characters. `enabled`
+  defaults to true.
+- A node's `key` must be a configured provider-key id of its own provider; a
+  dangling reference is a validation error. A pinned-but-disabled key is valid
+  and the node is skipped at build time.
 - Validation errors must name the offending provider, node, route or entrypoint.
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
   `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`1048576`/`24h`,
@@ -188,13 +209,17 @@ Entrypoint -> Route -> Node -> Provider model
   startup and changing it at runtime only logs a restart warning.
 - `log.level: trace` enables x header dumps that can contain client
   `Authorization`/`x-api-key` values; do not leave trace enabled in production.
-- `config.Write` must stay atomic (temp file, `fsync`, rename, `0600`).
-- `example.yaml` must always load with the current schema.
+- `config.Write` must stay atomic (temp file, `fsync`, rename, `0600`). Every
+  config write, including an admin save and the loader's migration write-back,
+  normalizes an existing file's permissions to `0600`.
+- `example.yaml` must always load with the current schema: every entity carries
+  an explicit valid id and every reference is an id, so a test load never
+  rewrites the committed fixture.
 - `gateway.keys` empty (absent or `[]`) leaves the data plane open. Any entry
   turns authentication on, including a list where every entry is disabled.
-- Gateway key names are required, trimmed, at most 64 characters, unique, and
-  must not contain `/`, `$` or control characters. Values are required,
-  trimmed, 8–512 characters, unique, must not contain `$` or control
+- Gateway keys carry `gk_` ids. Names are required, trimmed, at most 64
+  characters, unique, and must not contain `$` or control characters. Values are
+  required, trimmed, 8–512 characters, unique, must not contain `$` or control
   characters, and are rejected without echoing the value.
 - `enabled` defaults to true. A disabled entry stays configured but never
   authenticates. An all-disabled list logs a warning at apply time and rejects
@@ -218,6 +243,14 @@ Entrypoint -> Route -> Node -> Provider model
 - Errors are JSON objects with an `error` string.
 - Mutations go through `mutate`/`replaceLocked`: clone, apply, default, validate,
   reload the data plane, then write the config. Do not apply invalid config.
+- Admin routes address entities by id: `/api/providers/{id}`, `/api/nodes/{id}`,
+  `/api/routes/{id}`, `/api/gateway-keys/{id}`, including
+  `/api/providers/{id}/test`, `/api/providers/{id}/models` and
+  `/api/gateway-keys/{id}/rotate`. A create ignores or rejects a body id and
+  mints one; an update rejects a body id that differs from the path; `name` is
+  free to change and the id never does.
+- `PUT /api/entrypoints` replaces the ordered list, keeps the id of an entry that
+  carries one, and mints an id for an entry without one.
 - `GET /api/entrypoints` returns the ordered list; `PUT /api/entrypoints`
   replaces the whole list. Order is precedence.
 - `GET /api/topology/positions` returns the shared layout map; `PUT` replaces it
@@ -232,27 +265,43 @@ Entrypoint -> Route -> Node -> Provider model
   returned, disabled/no-key providers make no upstream call, and `generic` /
   `opencode-zen` return a note instead of querying.
 - Deleting a route still referenced by an entrypoint must fail and list the
-  referencing entrypoints. Deleting a node still referenced by a route must
-  fail.
+  referencing entrypoints by label and id. Deleting a node still referenced by a
+  route must fail.
 - Provider `type` and non-`generic` API base URLs are immutable through the
-  admin API. Delete and recreate, or edit the file offline.
-- Provider keys are write-only: `GET` returns `[{name, keyPreview, enabled}]` and never a value. `keyUpdates` is name-based: `{name,key}` appends, `{name,delete:true}` deletes (a missing name is rejected, and deleting a key pinned by a node of the same provider is rejected), `{name,enabled}` sets the flag; a name may be deleted and re-added in one request. `keys` cannot be combined with `keyUpdates`. A full `keys` replacement preserves stored values when the field is absent, clears on an explicit `[]`, and merges by name (an entry with an empty `key` whose name exists keeps the stored value).
+  admin API; the check compares ids, so a rename cannot bypass it. Delete and
+  recreate, or edit the file offline.
+- Provider keys are write-only: `GET` returns
+  `[{id, name, keyPreview, enabled}]` and never a value. `keyUpdates` is
+  addressed by key id: `{id,key}` replaces the value, `{id,name}` renames,
+  `{id,enabled}` sets the flag, `{id,delete:true}` deletes (a missing id is
+  rejected, and deleting a key pinned by a node of the same provider is
+  rejected); an id-less `{name,key}` appends a key with a generated `pk_` id; a
+  name may be deleted and re-added in one request. `keys` cannot be combined
+  with `keyUpdates`. A full `keys` replacement preserves stored values when the
+  field is absent, clears on an explicit `[]`, and merges by key id (an entry
+  with an empty `key` whose id exists keeps the stored value).
 - Usage accounts carry the key `name` and `enabled` beside the masked preview.
 - Provider model overrides live in `provider.models.<id>.disabled`. They stay
   local, are merged into catalog responses, and must not invalidate the catalog
   cache.
 - Gateway keys are write-only through `GET /api/gateway-keys`: only
   `keyPreview` is returned. The raw secret appears only in the `POST
-  /api/gateway-keys` 201 body and the `POST /api/gateway-keys/{name}/rotate`
-  200 body; `PUT` changes only `enabled`, and `DELETE` returns 204 and keeps
-  usage history.
+  /api/gateway-keys` 201 body and the `POST /api/gateway-keys/{id}/rotate` 200
+  body. `PUT /api/gateway-keys/{id}` changes `enabled` and may rename the label
+  while keeping the id, and `DELETE` returns 204 and keeps usage history.
 - `GET /api/config` exposes `gateway.readTimeout`, `gateway.userAgent`,
   `gateway.keysSet` and `gateway.authRequired`, never key values.
   `PUT /api/config` is a full replacement for the exposed fields. Write-only
-  provider keys (per provider name), `gateway.keys` and the admin password are
+  provider keys (per provider id), `gateway.keys` and the admin password are
   preserved when absent; `gateway.keys` clears only on an explicit `[]`; a
   non-empty list replaces the whole set and is validated without echoing
-  values. Fields the view does not expose (for example provider `userAgent` and
+  values. Every entity follows one adopt-or-mint rule: a sent id is kept, an
+  id-less entry adopts the stored id of the same trimmed name (so a provider
+  deleted and re-added under the same name in one `PUT /api/config` keeps its
+  id and history), and only a genuinely new entry is minted. A rename is not
+  inferred from a name change, so send the id. A provider-key id that is not
+  configured on that provider is rejected (`key id ... is not configured`).
+  Fields the view does not expose (for example provider `userAgent` and
   `headers`) are not round-trippable through GET then PUT.
 - `GET /api/gateway-key-usage` merges `key_rollups` with the current list:
   configured keys stay in order including zero usage, deleted keys are appended
@@ -264,21 +313,36 @@ Entrypoint -> Route -> Node -> Provider model
 ## Stats invariants
 
 - x node names stay `<route>/<provider>/<node>[/<key>]`;
-  `stats.parseNodeName` depends on that shape.
+  `stats.parseNodeName` depends on that shape. Every component is an entity id,
+  so a rename never changes an x node name.
 - Record the route, node, provider, client model, target model, status, duration
-  and token counts for every request.
+  and token counts for every request. `requests.provider/route/node/gateway_key`
+  hold entity ids, never display names.
+- Entity display names live in the never-pruned `entity_labels(kind, id, name)`
+  table, upserted from the config on every apply. A deleted entity keeps its last
+  label. Provider keys are not labelled there.
+- The stats schema is version 2 (`PRAGMA user_version = 2`). `MigrateIdentities`
+  copies an existing database to `<path>.v1.bak-<unix>` with `VACUUM INTO`,
+  rewrites the v1 name values in `requests`, `rollups`, `key_rollups`,
+  `probe_results` and the `topology_positions` prefixes to ids in one
+  transaction, seeds `entity_labels`, then bumps the version. A failed backup
+  aborts the migration. A fresh database is created at version 2 and never runs
+  the rewrite. `migratableRef` treats a value matching `identity.Shape` as
+  already an id, so a v1 name that looks like an id is deliberately left alone.
 - Entrypoint attribution is query-time: resolve each row's `client_model`
   through the current entrypoint list. Never store an entrypoint column.
-- Graph keys use `entrypoint:<name>`; edges use the row's **recorded route**
-  (`entrypoint:<name>->route:<route>` or `->unrouted`), never the entrypoint's
+- Graph keys use `entrypoint:<id>`; edges use the row's **recorded route id**
+  (`entrypoint:<id>->route:<id>` or `->unrouted`), never the entrypoint's
   current route.
 - `TopologyIncludes` keeps unrouted rows but drops rows whose route is gone, is
   not referencing the node, or whose provider does not match. Orphan nodes must
   show zero traffic.
 - Old SQLite databases keep an inert `logical_model` column. Do not read or
-  write it, and do not require a destructive migration.
-- The graph emits `entrypoint:<name>`, `route:<name>`, `node:<name>` and
-  `provider:<name>` keys; rows without a route use the literal `unrouted` key.
+  write it, and do not require a destructive migration for it. The v2 identity
+  rewrite is the one explicit, backed-up exception to "no destructive
+  migration".
+- The graph emits `entrypoint:<id>`, `route:<id>`, `node:<id>` and
+  `provider:<id>` keys; rows without a route use the literal `unrouted` key.
   Keep the web graph and stats tests aligned.
 - Node-forwarded responses carry `X-Cuttle-Request-ID` equal to the stats
   `requestId` (the x `sid`). Gateway-generated 502/503 responses and request-side
@@ -291,22 +355,23 @@ Entrypoint -> Route -> Node -> Provider model
   provider for the Usage page. The column is additive; old rollup rows read 0
   cached tokens and are not backfilled.
 - `requests.gateway_key` and the `idx_requests_gateway_key_ts` index are added
-  by `ensureColumns`; old rows read as empty. `Filter.GatewayKey` maps to
-  `GET /api/requests?key=<name>` (exact name).
+  by `ensureColumns`; old rows read as empty. The column holds the gateway key
+  id, and `Filter.GatewayKey` maps to `GET /api/requests?key=<id>` (exact id).
 - `requests.retries` is additive (`INTEGER NOT NULL DEFAULT 0`) and counts extra
   upstream attempts only: `0` means the first attempt served the request. One
   client request is one row and one set of rollups; never insert a row per
   attempt. Body capture keeps the final attempt only, selected through the
   rewriter's `attempt` metadata.
-- Hourly `key_rollups` (bucket + gateway_key) store per-key requests, errors and
-  token counters. Insert them only for authenticated requests, in the same
+- Hourly `key_rollups` (bucket + gateway_key id) store per-key requests, errors
+  and token counters. Insert them only for authenticated requests, in the same
   transaction as `rollups`. `Cleanup` deletes them with the same
   `retainRollups` cutoff.
 - No backfill: pre-upgrade rows and rollups have no key. Rejected 401 requests
   are not recorded; locally answered `count_tokens` requests produce no usage
   row either.
-- `Store.KeyUsage` aggregates `key_rollups`; the admin layer appends deleted key
-  names with `configured:false` so history survives deletion.
+- `Store.KeyUsage` aggregates `key_rollups`; the admin layer joins labels by key
+  id (config first, then `entity_labels`) and appends deleted key names with
+  `configured:false` so history survives deletion.
 - The live monitor tails `requests` by `seq`, a monotonic counter stored in
   `request_seq`, never by `ts` or `rowid`; a long request can complete after
   its start time, and retention can reuse rowids. `GraphAggregate` seeds the
@@ -320,11 +385,22 @@ Entrypoint -> Route -> Node -> Provider model
 ## Web invariants
 
 - Types in `web/src/api/types.ts` mirror the Go JSON shapes. Use `entrypoints`,
-  not `aliases`; a node has `model: string`, not `models`.
-- `Provider.keys` is a masked `[{name, keyPreview, enabled}]` view; create and
-  update payloads use the separate `ProviderKeyInput`. The provider form edits
-  named key rows and the node form has a pinned-key select; the create modal
-  takes one name and value per key.
+  not `aliases`; a node has `model: string`, not `models`. Every entity type
+  carries its immutable `id`, and every association field (`Node.provider`,
+  `Node.key`, `Route.nodes`, `Entrypoint.route`, `RouteNodeHealth.providerId`)
+  holds an id, with the field's doc comment saying so.
+- Ids are what the console sends and keys by: graph and edge ids are
+  `provider:<id>`, `node:<id>`, `route:<id>`, `entrypoint:<id>`; selects store
+  ids and show names; filters, detail links and the Sessions `?key=` query carry
+  ids; React keys and lookups use ids. Display labels come from config names or
+  the backend `providerName`/`nodeName`/`routeName`/`gatewayKeyName` fields,
+  never from a name-keyed lookup.
+- Every entity form has an editable `name` field with a "display only, safe to
+  change" hint; ids are never editable. A rename keeps the id.
+- `Provider.keys` is a masked `[{id, name, keyPreview, enabled}]` view; create
+  and update payloads use the separate `ProviderKeyInput` (optional `id`). The
+  provider form edits named key rows and the node form has a pinned-key select
+  holding key ids; the create modal takes one name and value per key.
 - Admin UI source strings are Chinese and translated through
   `web/src/locales/en-US.ts`. Add both sides for new text.
 - List pages use the shared `ListPage`/`ListCard` single-column layout. The
@@ -352,15 +428,16 @@ Entrypoint -> Route -> Node -> Provider model
 - Create and rotate open the one-time secret dialog; the raw key is never kept
   in list state or rendered anywhere else. The dialog must say the value is
   shown only once.
-- Sessions (the Requests page) has a `网关密钥` exact-name filter, labels rows
-  with `key:<name>` and shows `gatewayKey` in the detail.
+- Sessions (the Requests page) has a `网关密钥` exact-id filter that shows key
+  names, labels rows with `key:<gatewayKeyName>` and shows the key label in the
+  detail.
 
 ## Testing
 
 - Add or update tests with every behavior change. Do not weaken assertions to
   make a change pass.
-- Config fixtures must use the current schema. Gateway tests use local
-  `httptest` upstreams and need no real API keys.
+- Config fixtures must use the current schema and carry ids and id references.
+  Gateway tests use local `httptest` upstreams and need no real API keys.
 - Useful focused commands:
 
 ```bash
@@ -416,7 +493,13 @@ GOWORK=off go test ./internal/stats -count=1
   `GOWORK=off` inside the parent workspace, so the tagged module is what gets
   built and tested.
 - Admin config writes require a writable config file. With a Docker `:ro` mount,
-  console edits fail; edit the host file and send `SIGHUP`.
+  console edits fail; edit the host file and send `SIGHUP`. Such a hand-written
+  file must keep its `id` lines when renaming: dropping one changes the derived
+  identity, so history and topology positions no longer follow the entity.
+- The loader migrates a config that is missing ids and writes it back, keeping
+  `<path>.bak-<unix>`. The rewrite drops YAML comments and formatting, runs
+  before validation, and is skipped (warn only) when the file or its directory is
+  not writable.
 - First-run config and stats live in `$CUTTLE_DATA` (default `/data`). The
   Docker image uses `CMD ["serve"]`; its `CUTTLE_ADMIN_LISTEN=:8788` is a
   first-run default, not an override for an existing config.

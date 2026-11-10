@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ginuerzh/cuttle/internal/identity"
 )
@@ -1336,21 +1339,102 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 	// Load migrates a legacy config and writes it back, so never point it at
 	// the repository file.
-	c, err := Load(writeConfig(t, string(body)))
+	path := writeConfig(t, string(body))
+
+	// Decode the raw copy without migration: the committed example must carry
+	// ids and id references on its own, so a first load never rewrites it.
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec := yaml.NewDecoder(f)
+	dec.KnownFields(true)
+	var raw Config
+	decodeErr := dec.Decode(&raw)
+	f.Close()
+	if decodeErr != nil {
+		t.Fatalf("decode example: %v", decodeErr)
+	}
+
+	providerIDs := make(map[string]bool, len(raw.Providers))
+	keyIDs := make(map[string]bool)
+	for _, p := range raw.Providers {
+		if !identity.Valid(identity.Provider, p.ID) {
+			t.Fatalf("provider %q: id = %q, want a provider id", p.Name, p.ID)
+		}
+		providerIDs[p.ID] = true
+		for _, k := range p.Keys {
+			if !identity.Valid(identity.ProviderKey, k.ID) {
+				t.Fatalf("provider %q: key %q: id = %q, want a provider key id", p.Name, k.Name, k.ID)
+			}
+			keyIDs[p.ID+"\x00"+k.ID] = true
+		}
+	}
+
+	nodeIDs := make(map[string]bool, len(raw.Nodes))
+	for _, n := range raw.Nodes {
+		if !identity.Valid(identity.Node, n.ID) {
+			t.Fatalf("node %q: id = %q, want a node id", n.Name, n.ID)
+		}
+		nodeIDs[n.ID] = true
+		if !providerIDs[n.Provider] {
+			t.Fatalf("node %q: provider = %q, want a provider id", n.Name, n.Provider)
+		}
+		if n.Key != "" && !keyIDs[n.Provider+"\x00"+n.Key] {
+			t.Fatalf("node %q: key = %q, want a provider key id of that provider", n.Name, n.Key)
+		}
+	}
+
+	routeIDs := make(map[string]bool, len(raw.Routes))
+	for _, r := range raw.Routes {
+		if !identity.Valid(identity.Route, r.ID) {
+			t.Fatalf("route %q: id = %q, want a route id", r.Name, r.ID)
+		}
+		routeIDs[r.ID] = true
+		for _, ref := range r.Nodes {
+			if !nodeIDs[ref] {
+				t.Fatalf("route %q: node reference = %q, want a node id", r.Name, ref)
+			}
+		}
+	}
+
+	for _, e := range raw.Entrypoints {
+		if !identity.Valid(identity.Entrypoint, e.ID) {
+			t.Fatalf("entrypoint %q: id = %q, want an entrypoint id", e.Name, e.ID)
+		}
+		if !routeIDs[e.Route] {
+			t.Fatalf("entrypoint %q: route = %q, want a route id", e.Name, e.Route)
+		}
+	}
+
+	for _, k := range raw.Gateway.Keys {
+		if !identity.Valid(identity.GatewayKey, k.ID) {
+			t.Fatalf("gateway key %q: id = %q, want a gateway key id", k.Name, k.ID)
+		}
+	}
+
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
 	if err != nil {
 		t.Fatalf("load example: %v", err)
 	}
 	if len(c.Entrypoints) == 0 {
 		t.Fatal("example has no entrypoints")
 	}
-	routes := make(map[string]bool, len(c.Routes))
-	for _, r := range c.Routes {
-		routes[r.ID] = true
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, e := range c.Entrypoints {
-		if !routes[e.Route] {
-			t.Fatalf("entrypoint %q references unknown route %q", e.Name, e.Route)
-		}
+	if !bytes.Equal(before, after) {
+		t.Fatal("load rewrote the example config; it must already carry ids")
+	}
+	if backups, err := filepath.Glob(path + ".bak-*"); err != nil {
+		t.Fatal(err)
+	} else if len(backups) != 0 {
+		t.Fatalf("load created backup %v; it must not migrate the example", backups)
 	}
 }
 

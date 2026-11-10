@@ -1,13 +1,22 @@
 # Optional with the zero-config flow: `cuttle serve` with no `-c` generates
 # $CUTTLE_DATA/cuttle.yaml and uses the admin console for first-run setup.
 # This file is the full manual configuration for multi-provider topologies.
+#
+# Every entity carries an immutable `id`; the `name` is a display label you may
+# edit at any time. The console generates ids for the entities it creates. A
+# hand-written file may omit them: the loader derives ids, rewrites the file and
+# keeps the previous version as `<path>.bak-<unix>`. Keep the `id` lines when
+# renaming an entity in a hand-maintained (for example read-only) config, or a
+# reload will treat the new name as a new identity.
 gateway:
   listen: ":8787"
   # Data-plane access keys. Empty or absent keeps the gateway open.
   # keys:
-  #   - name: claude-code
+  #   - id: gk_5x2m4q7a9k
+  #     name: claude-code
   #     key: ${CLAUDE_GATEWAY_KEY}
-  #   - name: disabled-example
+  #   - id: gk_1c7f3b8n2v
+  #     name: disabled-example
   #     key: sk-gw-example
   #     enabled: false
 
@@ -36,32 +45,38 @@ log:
 
 # An entrypoint is the client-facing ingress. Its match globs are checked in
 # declaration order; the first entrypoint with a matching client model wins.
+# `route` is the id of the route it selects.
 entrypoints:
-  - name: strong
+  - id: e_q7a4m2xk9d
+    name: strong
     match:
       - "claude-opus*"
       - "gpt-5.5*"
-    route: strong
-  - name: fast
+    route: r_f3k9x2m4qa
+  - id: e_2v8n5b1c7f
+    name: fast
     match:
       - "claude-sonnet*"
       - "gpt-4.5*"
       - "claude-haiku*"
-    route: fast
-  - name: default
+    route: r_7d2n5v8b1e
+  - id: e_9m3k7a1x5q
+    name: default
     match: ["*"]
-    route: fast
+    route: r_7d2n5v8b1e
 
 # A provider declares which wire APIs it serves and where; type selects the
 # adapter. An empty API field means the provider does not serve that API.
 providers:
-  - name: deepseek
+  - id: p_3k9x2m4q7a
+    name: deepseek
     type: deepseek
     chat: https://api.deepseek.com/v1
     responses: https://api.deepseek.com/v1
     anthropic: https://api.deepseek.com/anthropic
     keys:
-      - name: default
+      - id: pk_8m2xq7a4k9
+        name: default
         key: "${DEEPSEEK_API_KEY}"
     health:
       api: chat
@@ -74,32 +89,38 @@ providers:
     #     disabled: true
 
   # OpenRouter exposes Chat, Responses and Anthropic Messages with one key.
-  # - name: openrouter
+  # - id: p_9q3k7a1x5m
+  #   name: openrouter
   #   type: openrouter
   #   chat: https://openrouter.ai/api/v1
   #   responses: https://openrouter.ai/api/v1
   #   anthropic: https://openrouter.ai/api
   #   keys:
-  #     - name: default
+  #     - id: pk_2x5m7a9q3k
+  #       name: default
   #       key: "${OPENROUTER_API_KEY}"
 
-# A node binds one provider model plus routing policy. backup: true makes it a
-# fallback; weight controls the round-robin share.
+# A node binds one provider model plus routing policy. `provider` and the
+# optional `key` pin are ids, not names. backup: true makes it a fallback;
+# weight controls the round-robin share.
 nodes:
-  - name: deepseek-fast
-    provider: deepseek
+  - id: n_4q7a9x2m3k
+    name: deepseek-fast
+    provider: p_3k9x2m4q7a
     model: deepseek-v4-flash
-    # key: default   # pin this node to one named provider key; omit to spread across all enabled keys
+    key: pk_8m2xq7a4k9   # pin this node to one provider key; omit to spread across all enabled keys
     # api: auto   # auto matches the client protocol; pin chat/responses/anthropic/gemini to force one
-  - name: deepseek-strong
-    provider: deepseek
+  - id: n_6b1w8z3p5c
+    name: deepseek-strong
+    provider: p_3k9x2m4q7a
     model: deepseek-v4-pro
 
-# A route holds an ordered node list, a selection strategy and an optional retry
-# budget. The entrypoint decides which route handles a request.
+# A route holds an ordered node list of node ids, a selection strategy and an
+# optional retry budget. The entrypoint decides which route handles a request.
 routes:
-  - name: strong
-    nodes: [deepseek-strong]
+  - id: r_f3k9x2m4qa
+    name: strong
+    nodes: [n_6b1w8z3p5c]
     strategy: round
     maxFails: 2
     failTimeout: 30s
@@ -109,6 +130,7 @@ routes:
     # retries on a multi-node route to fail over to a different node.
     retries: 1
     retryCodes: "429,5xx"
-  - name: fast
-    nodes: [deepseek-fast]
+  - id: r_7d2n5v8b1e
+    name: fast
+    nodes: [n_4q7a9x2m3k]
     strategy: round

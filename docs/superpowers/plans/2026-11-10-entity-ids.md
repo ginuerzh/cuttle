@@ -52,7 +52,7 @@
   - `func Valid(k Kind, id string) bool`, `func Shape(id string) bool`.
   - `ID string \`yaml:"id" json:"id"\`` on all six structs; name validation stays inline in `Validate` (no new exported helper).
 
-- [ ] **Step 1: Write the failing identity tests**
+- [x] **Step 1: Write the failing identity tests**
 
 ```go
 func TestNewShapeAndPrefix(t *testing.T) {
@@ -77,25 +77,25 @@ func TestValidRejectsWrongPrefixAndShape(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the identity test to verify it fails**
+- [x] **Step 2: Run the identity test to verify it fails**
 
 Run: `GOWORK=off go test ./internal/identity -run TestNewShape -count=1`
 Expected: build failure (`no required module provides package .../internal/identity`).
 
-- [ ] **Step 3: Implement `internal/identity/identity.go`**
+- [x] **Step 3: Implement `internal/identity/identity.go`**
 
 10 base32 chars from 6 random bytes (`crypto/rand`, lowercase the standard no-padding encoding), `Derive` from `sha256(seed)[:6]`, `Shape` rejecting anything but `^[a-z]{1,2}_[0-9a-z]{10}$`, `Valid` additionally matching the kind's prefix. `New` returns an error from `rand.Read`.
 
-- [ ] **Step 4: Run the identity tests**
+- [x] **Step 4: Run the identity tests**
 
 Run: `GOWORK=off go test ./internal/identity -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Add `ID` to the six config structs and cover it in `expandEnv`**
+- [x] **Step 5: Add `ID` to the six config structs and cover it in `expandEnv`**
 
 Add `ID string \`yaml:"id" json:"id"\`` to `Entrypoint`, `Provider`, `ProviderKey`, `Node`, `Route`, `GatewayKey`; expand it in `expandEnv` next to each `Name`. Update the `ProviderKey` comment: the name is now a display label, the id is the stable handle.
 
-- [ ] **Step 6: Write the failing validation tests**
+- [x] **Step 6: Write the failing validation tests**
 
 ```go
 func TestValidateNameRules(t *testing.T) {
@@ -114,21 +114,21 @@ func TestValidateDuplicateNamesAcrossKinds(t *testing.T) {
 
 Assertions: name failures return an error naming the offending entity; `/`, spaces and non-ASCII pass; `$` and control characters fail; 65 runes fail, 64 pass; duplicate provider names still fail; duplicate names across kinds pass.
 
-- [ ] **Step 7: Run the validation tests to verify they fail**
+- [x] **Step 7: Run the validation tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/config -run 'TestValidateNameRules|TestValidateDuplicateNames' -count=1`
 Expected: FAIL (`$`/control-character names currently accepted; 64-rune rule missing).
 
-- [ ] **Step 8: Implement name validation and optional id validation**
+- [x] **Step 8: Implement name validation and optional id validation**
 
 In `Validate`, next to each per-kind loop call a shared helper that enforces: trimmed non-empty, ≤64 runes, no control characters, no `$`, duplicate check (existing `seen` maps stay). Add `if id := strings.TrimSpace(p.ID); id != "" && !identity.Valid(identity.Provider, id)` → error for every kind; ids stay optional in this task. Provider-key names keep their per-provider duplicate rule and drop the `/` restriction, keeping `$`/control rejection.
 
-- [ ] **Step 9: Run the config package tests**
+- [x] **Step 9: Run the config package tests**
 
 Run: `GOWORK=off go test ./internal/config -count=1`
 Expected: PASS (fix any fixture that used `/` in names or relied on the old message text).
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add internal/identity internal/config
@@ -167,7 +167,7 @@ git commit -m "feat(config): add entity ids and display-name validation"
   - `func (c *Config) TopologyIncludes(routeID, nodeID, providerID string) bool`.
   - `config.Load` writes the migrated raw config back with a `<path>.bak-<unix>` copy and logs the outcome through the optional logger.
 
-- [ ] **Step 1: Write the failing migration tests**
+- [x] **Step 1: Write the failing migration tests**
 
 ```go
 func TestMigrateIdentitiesDerivesAndTracksChanges(t *testing.T) { /* id-less YAML with name refs -> ids everywhere, changed=true, second run changed=false */ }
@@ -189,25 +189,25 @@ func TestLoadWritesBackMigratedConfigAndBackup(t *testing.T) {
 func TestLoadRenameWithoutIDChangesIdentity(t *testing.T) { /* documents the split: id differs after a name-only edit */ }
 ```
 
-- [ ] **Step 2: Run the migration tests to verify they fail**
+- [x] **Step 2: Run the migration tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/config -run 'TestMigrate|TestLoadReadOnly|TestLoadWritesBack|TestLoadRenameWithoutID' -count=1`
 Expected: FAIL (`MigrateIdentities` undefined).
 
-- [ ] **Step 3: Implement `MigrateIdentities` and the new lookups**
+- [x] **Step 3: Implement `MigrateIdentities` and the new lookups**
 
 `MigrateIdentities` mutates in place: assign ids, then resolve references in declaration order with a clear error (`node "x": provider reference "y" is neither an id nor a unique provider name`). `Node(ref)` uses the node's own provider for key resolution before rewriting. Lookups compare `ID` first, then `Name` (case-sensitive `==` for ids, existing `EqualFold` for legacy names only if it was that way before). Change `TopologyIncludes` to compare ids; add `ResolveEntrypointID`.
 
-- [ ] **Step 4: Run the migration tests until green**
+- [x] **Step 4: Run the migration tests until green**
 
 Run: `GOWORK=off go test ./internal/config -run 'TestMigrate|TestLoadReadOnly|TestLoadWritesBack|TestLoadRenameWithoutID' -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Change `Load` to migrate and write back before expansion**
+- [x] **Step 5: Change `Load` to migrate and write back before expansion**
 
 New order: decode (strict) → `MigrateIdentities` → when `changed`, copy to `<path>.bak-<unix>` then `Write(path, &c)`, logging success at info and failure at warn through `LoadOption`'s logger (no logger: stay silent, never abort) → `expandEnv` → `applyDefaults` → `Validate`. Callers stay source-compatible via the variadic option.
 
-- [ ] **Step 6: Write the failing required-id test**
+- [x] **Step 6: Write the failing required-id test**
 
 ```go
 func TestValidateRequiresIDs(t *testing.T) {
@@ -221,17 +221,17 @@ func TestValidateNameReferencesRejected(t *testing.T) {
 
 Implement ids as required in `Validate`: `identity.Valid` per kind, non-empty, globally unique across kinds. Reference checks accept an existing id **or, until Task 7, a unique name** (the transition that keeps other packages green); `TestValidateNameReferencesRejected` is written now and stays red until Task 7 turns strictness on — mark it `t.Skip("enabled in Task 7")` with that exact reason.
 
-- [ ] **Step 7: Update the config package tests and call sites**
+- [x] **Step 7: Update the config package tests and call sites**
 
 Add `ID` to every `Config` literal in `internal/config/*_test.go` or call `MigrateIdentities` in the fixture helper; replace `ResolveEntrypointName` with `ResolveEntrypointID` in `internal/config/config_test.go` and in the two admin call sites; pass `config.WithLogger(log)` in `main.go`'s reload.
 
-- [ ] **Step 8: Run the config package, the build and the admin package**
+- [x] **Step 8: Run the config package, the build and the admin package**
 
 Run: `GOWORK=off go test ./internal/config -count=1`
 Run: `GOWORK=off go build ./... && GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS (any admin failure caused by name-based fixtures is fixed by adding ids, not by weakening validation).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add internal/config
@@ -263,7 +263,7 @@ git commit -m "feat(config): migrate legacy configs to entity ids"
 - Consumes: `config.Provider/Node/Route` lookups, `identity`, all struct ids.
 - Produces: `health.Route{ID, Name string; MaxFails int; FailTimeout string; Nodes []health.Node}`, `health.Node{ID, Name, ProviderID string; ...}`; x node names `<routeID>/<providerID>/<nodeID>[/<keyID>]`; node metadata `configNode`/`configRoute` (ids); `stats.WithGatewayKeyID(ctx, id)` / `stats.GatewayKeyIDFromContext(ctx)`.
 
-- [ ] **Step 1: Write the failing gateway id tests**
+- [x] **Step 1: Write the failing gateway id tests**
 
 ```go
 func TestBuildUsesEntityIDs(t *testing.T) { /* build a config with ids and a rename-able name; assert the x node name contains ids and not names */ }
@@ -273,25 +273,25 @@ func TestRouteHealthReportsIDs(t *testing.T) { /* health.Route.ID == route id, h
 func TestAuthAttributesKeyID(t *testing.T) { /* authenticated request records the gateway key id in the recorder row */ }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'TestBuildUsesEntityIDs|TestRouteHealthReportsIDs|TestAuthAttributesKeyID' -count=1`
 Expected: FAIL (names in x node names / health payload / context).
 
-- [ ] **Step 3: Implement id-based compilation and health**
+- [x] **Step 3: Implement id-based compilation and health**
 
 `buildHopGroup` maps routes by `r.ID` and entrypoints by `e.Route`; `buildRoutePlan` maps providers by `p.ID`, nodes by `n.ID`, keys by `k.ID`; `resolveNodeKeys` compares `n.Key` to `k.ID`; `buildNodes` names x nodes with ids and sets `metadata["configNode"] = n.ID`, `metadata["configRoute"] = routeID`; `registerRewriter` receives `p.ID`, `n.ID`, `routeID` for facts. `RouteHealth` keys markers by id and fills ids. `authEntry` stores `id`; `WithGatewayKeyID` carries it.
 
-- [ ] **Step 4: Update gateway and health tests**
+- [x] **Step 4: Update gateway and health tests**
 
 Every config literal gains ids and id references (or the file's fixture calls `config.MigrateIdentities` once); assertions on x node names and health payloads switch to ids; `stats.WithGatewayKey` call sites become `WithGatewayKeyID`.
 
-- [ ] **Step 5: Run the gateway, health and stats package tests**
+- [x] **Step 5: Run the gateway, health and stats package tests**
 
 Run: `GOWORK=off go test ./internal/gateway ./internal/health ./internal/stats -count=1`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/gateway internal/health internal/stats
@@ -325,7 +325,7 @@ git commit -m "feat(gateway): compile and record by entity id"
   - `func (s *Store) Labels(ctx context.Context) (map[string]map[string]string, error)`.
   - `entity_labels(kind TEXT, id TEXT, name TEXT, PRIMARY KEY(kind, id))`.
 
-- [ ] **Step 1: Write the failing label and migration tests**
+- [x] **Step 1: Write the failing label and migration tests**
 
 ```go
 func TestSyncLabelsUpsertsAndKeepsDeleted(t *testing.T) { /* rename updates, removal keeps the last name */ }
@@ -337,21 +337,21 @@ func TestMigrateIdentitiesUnknownNames(t *testing.T) { /* name absent from confi
 func TestFreshDatabaseIsVersion2(t *testing.T) { /* Open(":memory:") -> user_version == 2 and entity_labels exists */ }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `GOWORK=off go test ./internal/stats -run 'TestSyncLabels|TestMigrateIdentities|TestFreshDatabase' -count=1`
 Expected: FAIL (methods and table missing).
 
-- [ ] **Step 3: Implement schema detection, labels and migration**
+- [x] **Step 3: Implement schema detection, labels and migration**
 
 `Open` records `path`, checks for an existing `requests` table before creating anything, and sets `user_version = 2` only for a fresh database. `MigrateIdentities` reads `user_version`, runs the backup, then the rewrite inside one transaction, deriving unknown ids via `identity.Derive(kind, name)` and seeding labels. Empty values and `unrouted` stay as they are.
 
-- [ ] **Step 4: Run the stats tests**
+- [x] **Step 4: Run the stats tests**
 
 Run: `GOWORK=off go test ./internal/stats -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Wire migration and label sync in the gateway**
+- [x] **Step 5: Wire migration and label sync in the gateway**
 
 In `Gateway.apply` (which `New` and `Reload` both call), after the new hop group is built and swapped successfully:
 
@@ -375,7 +375,7 @@ if g.store != nil {
 
 Migration is idempotent, so calling it on reload is safe; label sync is what makes a rename visible to history.
 
-- [ ] **Step 6: Write the failing rename-continuity test**
+- [x] **Step 6: Write the failing rename-continuity test**
 
 ```go
 func TestRenameKeepsRollupsAndLabelsFollow(t *testing.T) {
@@ -386,13 +386,13 @@ func TestRenameKeepsRollupsAndLabelsFollow(t *testing.T) {
 
 Run it, then make it pass (it should once Steps 3 and 5 exist; if it exposes the gateway wiring, drive it through `gateway.apply`).
 
-- [ ] **Step 7: Run the gateway and stats packages plus the full build**
+- [x] **Step 7: Run the gateway and stats packages plus the full build**
 
 Run: `GOWORK=off go test ./internal/stats ./internal/gateway -count=1`
 Run: `GOWORK=off go build ./...`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/stats internal/gateway
@@ -428,7 +428,7 @@ git commit -m "feat(stats): migrate persisted ids and track entity labels"
   - `providerKeyUpdate{ID, Name, Key string; Enabled *bool; Delete bool}`; `keyUpdates` addressed by key id, new keys (empty id) appended with a generated `pk_` id.
   - `providerModels(ctx, providerID string, refresh bool)`, `providerLocked(providerID)`, `invalidateModelsLocked` keyed by id.
 
-- [ ] **Step 1: Write the failing admin provider tests**
+- [x] **Step 1: Write the failing admin provider tests**
 
 ```go
 func TestProviderCRUDByID(t *testing.T) { /* create -> list has id+name -> GET/PUT by id -> rename keeps id, DELETE by id */ }
@@ -442,26 +442,26 @@ func TestProviderImmutabilityByID(t *testing.T) { /* type/base-URL changes rejec
 func TestProviderModelsAndProbeUseID(t *testing.T) { /* catalog and probe endpoints work after rename, keyed by id */ }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestProvider' -count=1`
 Expected: FAIL (path value read as name).
 
-- [ ] **Step 3: Implement id addressing and id-assigned creates**
+- [x] **Step 3: Implement id addressing and id-assigned creates**
 
 Path value is the id everywhere; body `id` must match the path or be empty; creates generate ids; `handlePutConfig` adopts the stored provider and key ids for an id-less payload matched by name (minting `identity.New` only for a genuinely new entity) and preserves provider keys by provider id; immutability compares by id; `viewProvider` emits `id`; caches and `probes` key by id; `buildProviderUsage` copies the id into the view.
 
-- [ ] **Step 4: Update the admin fixtures**
+- [x] **Step 4: Update the admin fixtures**
 
 Seed ids in the config literals (or `config.MigrateIdentities` in `newTestAdmin`); paths switch from names to ids; assertions on rename verify the id is unchanged and the name updated.
 
-- [ ] **Step 5: Run the admin provider tests and the package**
+- [x] **Step 5: Run the admin provider tests and the package**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestProvider' -count=1`
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/admin
@@ -492,7 +492,7 @@ git commit -m "feat(admin): address providers and provider keys by id"
 - Consumes: `identity`, `config.Node/Route/Entrypoint` lookups, `health.Route.ID`/`Node.ID`/`Node.ProviderID`.
 - Produces: node/route CRUD by id; `PUT /api/entrypoints` keeps existing ids and assigns `identity.New(identity.Entrypoint)` for entries without one; in-use errors list ids and names; `GET /api/routes/health` returns the id-bearing payload from Task 3.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestNodeCRUDByIDAndRename(t *testing.T) { /* rename keeps id; provider is an id; delete referenced node -> 400 naming the route */ }
@@ -506,21 +506,21 @@ func TestRouteHealthIDsExposed(t *testing.T) { /* payload carries route/node/pro
 func TestCaptureRuleUsesRouteID(t *testing.T) { /* unknown route id -> 400; configured id accepted */ }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestNode|TestRoute|TestPutEntrypoints|TestCaptureRule' -count=1`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement id addressing for nodes, routes and entrypoints**
+- [x] **Step 3: Implement id addressing for nodes, routes and entrypoints**
 
 Same shape as Task 5: path value is the id, body id must match or be empty, creates generate ids, `PUT /api/entrypoints` assigns ids to entries without one, delete/in-use checks compare ids, capture rules resolve the route by id.
 
-- [ ] **Step 4: Update the admin fixtures and run the package**
+- [x] **Step 4: Update the admin fixtures and run the package**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/admin
@@ -557,7 +557,7 @@ git commit -m "feat(admin): address nodes, routes and entrypoints by id"
   - `type labelSet struct { Provider, Node, Route, Entrypoint, GatewayKey map[string]string }`; `func (s *Server) newLabelSet(ctx context.Context) labelSet` merges `stats.Labels` with `config.LabelsByID` (current config wins); `func (l labelSet) provider(id) string` etc. fall back to the raw id.
   - `config.Provider/Node/Route/Entrypoint/GatewayKey(ref)` accept ids only.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestGatewayKeyCRUDByID(t *testing.T) { /* create returns id+name+secret, rename keeps id, rotate by id, delete keeps usage history */ }
@@ -569,25 +569,25 @@ func TestRequestViewsCarryLabels(t *testing.T) { /* rows store ids; response add
 func TestAdminNodeRejectsNameReference(t *testing.T) { /* PUT /api/nodes/<id> with provider = provider name -> 400 mentioning the id */ }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestGatewayKey|TestRequestViews|TestAdminNodeRejects' -count=1`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement gateway-key ids, the labeler and id-only lookups**
+- [x] **Step 3: Implement gateway-key ids, the labeler and id-only lookups**
 
 Gateway key create assigns `identity.New(identity.GatewayKey)`; update/rotate/delete take the id; usage rows join `KeyUsage` by id and take names from config then labels. Add `labelSet` in `internal/admin/labels.go` and use it in the request handlers. Delete the legacy name branch from the config lookups and remove the `t.Skip` from `TestValidateNameReferencesRejected`; it must pass unchanged.
 
-- [ ] **Step 4: Update remaining fixtures that still reference names**
+- [x] **Step 4: Update remaining fixtures that still reference names**
 
 Run `GOWORK=off go test ./... -count=1` and fix every failure by adding ids/replacing name references; do not weaken assertions.
 
-- [ ] **Step 5: Run the full Go gate**
+- [x] **Step 5: Run the full Go gate**
 
 Run: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal
@@ -618,7 +618,7 @@ git commit -m "feat(admin): address gateway keys by id and label stats rows"
 - Consumes: the id-bearing HTTP payloads from Tasks 5–7.
 - Produces: `id` on `Provider`, `Node`, `Route`, `Entrypoint`, `GatewayKey`, `ProviderKeyView`; `requestView` fields `providerName`, `nodeName`, `routeName`, `gatewayKeyName`; `client.ts` functions take ids (`updateProvider(id, …)`, `deleteProvider(id)`, `testProvider(id)`, `getProviderModels(id)`, `updateNode(id, …)`, `updateRoute(id, …)`, gateway-key functions); graph ids `provider:<id>`, `node:<id>`, `route:<id>`, `entrypoint:<id>`; `nodeRouteHealth` keyed by node id with edges `route:<id>|node:<id>`.
 
-- [ ] **Step 1: Write the failing graph test**
+- [x] **Step 1: Write the failing graph test**
 
 ```ts
 it('keys graph nodes and edges by entity id', () => {
@@ -627,27 +627,27 @@ it('keys graph nodes and edges by entity id', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd web && npx vitest run src/graph/build.test.ts`
 Expected: FAIL (graph ids use names).
 
-- [ ] **Step 3: Update types and the client signatures**
+- [x] **Step 3: Update types and the client signatures**
 
 Add ids to the interfaces; rename the id-taking parameters; keep `ProviderInput` as the write payload; `ProviderKeyInput` gains optional `id`; `RouteNodeHealth` gains `id` and `providerId`; `RouteHealth` gains `id`.
 
-- [ ] **Step 4: Switch graph and route-health ids to entity ids**
+- [x] **Step 4: Switch graph and route-health ids to entity ids**
 
 `buildGraph` indexes by id (provider lookup for a node uses `n.provider` id), edges and entrypoint/route references use ids; `routeHealth` folds `node.id`/`route.id` and builds `route:<id>|node:<id>` edges.
 
-- [ ] **Step 5: Update the mechanical call sites and run the web gate**
+- [x] **Step 5: Update the mechanical call sites and run the web gate**
 
 Update every page/component the type change touches (id arguments, `id` as React key, `*.id` lookups) so the console keeps building; the rename UI itself stays in Task 9.
 
 Run: `cd web && npm test && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web
@@ -732,7 +732,7 @@ git commit -m "feat(web): edit entity names and submit ids"
 - Consumes: everything above.
 - Produces: docs and fixtures consistent with the shipped schema.
 
-- [ ] **Step 1: Write the failing example-config test**
+- [x] **Step 1: Write the failing example-config test**
 
 ```go
 func TestExampleConfigLoads(t *testing.T) {
@@ -743,27 +743,27 @@ func TestExampleConfigLoads(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1`
 Expected: FAIL (the example still lists name references and no ids at step 2 of the assertion).
 
-- [ ] **Step 3: Update `example.yaml`, README and AGENTS.md**
+- [x] **Step 3: Update `example.yaml`, README and AGENTS.md**
 
 Add ids and id references to the example; document that ids are immutable, names are display labels, the loader migrates old files with a `.bak` copy, a read-only/hand-maintained config must keep its `id` lines when renaming, and stats migrate once with a `.bak`. Amend the AGENTS.md invariants exactly as listed in the spec §8 (load order, name rules, `node.key` by id, id-based admin paths and key updates, stats graph ids and `?key=`, web ids). Record that this is a breaking change shipped as `v0.2.0`; the version string itself comes from release ldflags, so no code change is needed.
 
-- [ ] **Step 4: Run the example test and the whole gate**
+- [x] **Step 4: Run the example test and the whole gate**
 
 Run: `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1`
 Run: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Run the web gate**
+- [x] **Step 5: Run the web gate**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md example.yaml AGENTS.md internal/config
