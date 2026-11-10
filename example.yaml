@@ -89,6 +89,7 @@ nodes:
   - name: deepseek-fast
     provider: deepseek
     model: deepseek-v4-flash
+    # key: default   # pin this node to one named provider key; omit to spread across all enabled keys
     # api: auto   # auto matches the client protocol; pin chat/responses/anthropic/gemini to force one
   - name: deepseek-strong
     provider: deepseek

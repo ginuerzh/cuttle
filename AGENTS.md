@@ -91,6 +91,10 @@ Entrypoint -> Route -> Node -> Provider model
   (`chat`, `responses`, `anthropic`, `gemini`) to a configured provider API and
   falls back to the model's default API. A pinned `api` bypasses default
   resolution and requires the matching base URL.
+- `node.key` is optional. When it names a provider key, the node builds only
+  that key; when it is empty the node builds every enabled provider key and the
+  route selector spreads across them. The name must exist on the node's
+  provider.
 - Disabled providers, disabled nodes and provider-disabled models are skipped at
   compile time. If every node is skipped, the request fails; never fall through
   to another route or send the client model upstream.
@@ -135,6 +139,13 @@ Entrypoint -> Route -> Node -> Provider model
   loudly; old `aliases`, route `match` and node `models` configs are rejected by
   design with no migration.
 - Keep the `Load` order: decode, `expandEnv`, `applyDefaults`, `Validate`.
+- Provider keys are named: `keys` is a list of `{name, key, enabled}`. Names
+  are required, trimmed, at most 64 runes, unique per provider, and must not
+  contain `/`, `$` or control characters; values must be non-empty and contain
+  no `$` or control characters. `enabled` defaults to true.
+- A node's `key` must name a configured key of its own provider; a dangling
+  name is a validation error. A pinned-but-disabled key is valid and the node is
+  skipped at build time.
 - Validation errors must name the offending provider, node, route or entrypoint.
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
   `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`1048576`/`24h`,
@@ -215,10 +226,8 @@ Entrypoint -> Route -> Node -> Provider model
   fail.
 - Provider `type` and non-`generic` API base URLs are immutable through the
   admin API. Delete and recreate, or edit the file offline.
-- Provider keys are write-only: `GET` exposes only `keysSet` and masked
-  `keyPreviews`. `keyUpdates` supports only `{index, delete: true}` and
-  `{key}` append; replacing an existing index is rejected, and `keys` cannot be
-  combined with `keyUpdates`.
+- Provider keys are write-only: `GET` returns `[{name, keyPreview, enabled}]` and never a value. `keyUpdates` is name-based: `{name,key}` appends, `{name,delete:true}` deletes (a missing name is rejected, and deleting a key pinned by a node of the same provider is rejected), `{name,enabled}` sets the flag; a name may be deleted and re-added in one request. `keys` cannot be combined with `keyUpdates`. A full `keys` replacement preserves stored values when the field is absent, clears on an explicit `[]`, and merges by name (an entry with an empty `key` whose name exists keeps the stored value).
+- Usage accounts carry the key `name` and `enabled` beside the masked preview.
 - Provider model overrides live in `provider.models.<id>.disabled`. They stay
   local, are merged into catalog responses, and must not invalidate the catalog
   cache.
@@ -297,6 +306,10 @@ Entrypoint -> Route -> Node -> Provider model
 
 - Types in `web/src/api/types.ts` mirror the Go JSON shapes. Use `entrypoints`,
   not `aliases`; a node has `model: string`, not `models`.
+- `Provider.keys` is a masked `[{name, keyPreview, enabled}]` view; create and
+  update payloads use the separate `ProviderKeyInput`. The provider form edits
+  named key rows and the node form has a pinned-key select; the create modal
+  takes one name and value per key.
 - Admin UI source strings are Chinese and translated through
   `web/src/locales/en-US.ts`. Add both sides for new text.
 - List pages use the shared `ListPage`/`ListCard` single-column layout. The
