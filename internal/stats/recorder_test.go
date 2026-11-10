@@ -62,7 +62,7 @@ func TestRecorderRecordsGatewayKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := NewRecorder(s, facts, nil, nil).Record(WithGatewayKey(context.Background(), "alpha"), body); err != nil {
+	if err := NewRecorder(s, facts, nil, nil).Record(WithGatewayKeyID(context.Background(), "gk_0000000001"), body); err != nil {
 		t.Fatal(err)
 	}
 
@@ -70,8 +70,8 @@ func TestRecorderRecordsGatewayKey(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("get = %+v err=%v", got, err)
 	}
-	if got.GatewayKey != "alpha" {
-		t.Fatalf("gateway key = %q, want alpha", got.GatewayKey)
+	if got.GatewayKey != "gk_0000000001" {
+		t.Fatalf("gateway key = %q, want the key id", got.GatewayKey)
 	}
 }
 

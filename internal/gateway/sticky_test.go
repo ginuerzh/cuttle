@@ -67,7 +67,7 @@ func TestStickyRouteKeepsOneSessionOnOneNode(t *testing.T) {
 	cc := stickyUpstream("cc")
 	defer cc.Close()
 
-	gw, err := gateway.New(stickyConfig(oc.URL, cc.URL), xlogger.Nop())
+	gw, err := gateway.New(withIDs(t, stickyConfig(oc.URL, cc.URL)), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestStickyRouteWeightedDistribution(t *testing.T) {
 	cc := stickyUpstream("cc")
 	defer cc.Close()
 
-	gw, err := gateway.New(stickyConfig(oc.URL, cc.URL), xlogger.Nop())
+	gw, err := gateway.New(withIDs(t, stickyConfig(oc.URL, cc.URL)), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestStickyRouteMovesAfterFailureAndStays(t *testing.T) {
 	cc := stickyUpstream("cc")
 	defer cc.Close()
 
-	gw, err := gateway.New(stickyConfig(oc.URL, cc.URL), xlogger.Nop())
+	gw, err := gateway.New(withIDs(t, stickyConfig(oc.URL, cc.URL)), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

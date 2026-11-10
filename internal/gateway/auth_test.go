@@ -208,9 +208,9 @@ func TestGatewayAuthRejectsMissingInvalidAndDisabled(t *testing.T) {
 
 func TestAuthPolicyReasons(t *testing.T) {
 	policy := newAuthPolicy([]gwconfig.GatewayKey{
-		{Name: "first", Key: "first-secret"},
-		{Name: "second", Key: "second-secret"},
-		{Name: "disabled", Key: "disabled-secret", Enabled: boolPtr(false)},
+		{ID: "gk_0000000001", Name: "first", Key: "first-secret"},
+		{ID: "gk_0000000002", Name: "second", Key: "second-secret"},
+		{ID: "gk_0000000003", Name: "disabled", Key: "disabled-secret", Enabled: boolPtr(false)},
 	})
 	if !policy.required {
 		t.Fatal("policy should be required")
@@ -219,22 +219,22 @@ func TestAuthPolicyReasons(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		candidates []string
-		wantName   string
+		wantID     string
 		wantReason string
 		wantOK     bool
 	}{
 		{"no candidates", nil, "", "missing", false},
 		{"wrong candidate", []string{"wrong-secret"}, "", "invalid", false},
 		{"disabled candidate", []string{"disabled-secret"}, "", "disabled", false},
-		{"second candidate", []string{"second-secret"}, "second", "", true},
-		{"both first and second", []string{"first-secret", "second-secret"}, "first", "", true},
-		{"wrong plus second", []string{"wrong-secret", "second-secret"}, "second", "", true},
+		{"second candidate", []string{"second-secret"}, "gk_0000000002", "", true},
+		{"both first and second", []string{"first-secret", "second-secret"}, "gk_0000000001", "", true},
+		{"wrong plus second", []string{"wrong-secret", "second-secret"}, "gk_0000000002", "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			name, reason, ok := policy.authenticate(tc.candidates)
-			if name != tc.wantName || reason != tc.wantReason || ok != tc.wantOK {
+			id, reason, ok := policy.authenticate(tc.candidates)
+			if id != tc.wantID || reason != tc.wantReason || ok != tc.wantOK {
 				t.Fatalf("authenticate(%v) = (%q, %q, %v), want (%q, %q, %v)",
-					tc.candidates, name, reason, ok, tc.wantName, tc.wantReason, tc.wantOK)
+					tc.candidates, id, reason, ok, tc.wantID, tc.wantReason, tc.wantOK)
 			}
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,9 +18,24 @@ import (
 
 	corechain "github.com/go-gost/core/chain"
 
+	"github.com/ginuerzh/cuttle/internal/capture"
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 	gwrewriter "github.com/ginuerzh/cuttle/internal/rewriter"
+	"github.com/ginuerzh/cuttle/internal/stats"
 )
+
+// withIDs runs the same identity migration config.Load performs, so a fixture
+// that names its entities exercises the id-based build path with the derived
+// ids it would get in production. Fixtures stay readable: only the migration
+// spells out the ids.
+func withIDs(t *testing.T, cfg *gwconfig.Config) *gwconfig.Config {
+	t.Helper()
+
+	if _, err := gwconfig.MigrateIdentities(cfg); err != nil {
+		t.Fatalf("migrate identities: %v", err)
+	}
+	return cfg
+}
 
 func testConfig(upstreamURL string) *gwconfig.Config {
 	return &gwconfig.Config{
@@ -48,6 +64,7 @@ func testConfig(upstreamURL string) *gwconfig.Config {
 func startGateway(t *testing.T, cfg *gwconfig.Config) *Gateway {
 	t.Helper()
 
+	cfg = withIDs(t, cfg)
 	gw, err := New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
@@ -77,19 +94,20 @@ func TestRouteHealthUsesRouteFailSettings(t *testing.T) {
 	cfg.Routes[0].FailTimeout = gwconfig.Duration(30 * time.Second)
 
 	gw := startGateway(t, cfg)
+	firstID, secondID := cfg.Nodes[0].ID, cfg.Nodes[1].ID
 	nl, ok := gw.hop.(corehop.NodeList)
 	if !ok {
 		t.Fatal("hop does not expose nodes")
 	}
 	var first *corechain.Node
 	for _, n := range nl.Nodes() {
-		if configNodeName(n) == "up" {
+		if configNodeID(n) == firstID {
 			first = n
 			break
 		}
 	}
 	if first == nil {
-		t.Fatal("node up not found")
+		t.Fatalf("node %s not found", firstID)
 	}
 
 	first.Marker().Mark()
@@ -103,8 +121,8 @@ func TestRouteHealthUsesRouteFailSettings(t *testing.T) {
 	if hr[0].Nodes[0].Dead || hr[0].Nodes[0].FailCount != 1 {
 		t.Fatalf("one failure should not be dead with maxFails=2: %+v", hr[0].Nodes[0])
 	}
-	if got := gw.hop.Select(context.Background()); got == nil || configNodeName(got) != "up" {
-		t.Fatalf("selected = %+v, want up before maxFails", got)
+	if got := gw.hop.Select(context.Background()); got == nil || configNodeID(got) != firstID {
+		t.Fatalf("selected = %+v, want %s before maxFails", got, firstID)
 	}
 
 	first.Marker().Mark()
@@ -112,8 +130,139 @@ func TestRouteHealthUsesRouteFailSettings(t *testing.T) {
 	if !hr[0].Nodes[0].Dead || hr[0].Nodes[0].DeadUntil == nil {
 		t.Fatalf("two failures should be dead: %+v", hr[0].Nodes[0])
 	}
-	if got := gw.hop.Select(context.Background()); got == nil || configNodeName(got) != "up2" {
-		t.Fatalf("selected = %+v, want up2 after maxFails", got)
+	if got := gw.hop.Select(context.Background()); got == nil || configNodeID(got) != secondID {
+		t.Fatalf("selected = %+v, want %s after maxFails", got, secondID)
+	}
+}
+
+// TestBuildUsesEntityIDs proves the compiled hop group is named by entity id.
+// A name is a display label an operator can change, so it may not reach x: the
+// node name is what stats parses back into route, provider and node ids, and
+// the metadata is what route health reads.
+func TestBuildUsesEntityIDs(t *testing.T) {
+	const (
+		routeID    = "r_0000000001"
+		providerID = "p_0000000001"
+		nodeID     = "n_0000000001"
+		keyAID     = "pk_0000000001"
+		keyBID     = "pk_0000000002"
+	)
+	cfg := &gwconfig.Config{
+		Entrypoints: []gwconfig.Entrypoint{{
+			ID: "e_0000000001", Name: "entry-display", Match: []string{"*"}, Route: routeID,
+		}},
+		Providers: []gwconfig.Provider{{
+			ID: providerID, Name: "provider-display", Type: "generic",
+			Chat: "https://upstream.test/v1",
+			Keys: []gwconfig.ProviderKey{
+				{ID: keyAID, Name: "key-a", Key: "sk-a"},
+				{ID: keyBID, Name: "key-b", Key: "sk-b"},
+			},
+		}},
+		Nodes: []gwconfig.Node{{
+			ID: nodeID, Name: "node-display", Provider: providerID, Model: "m",
+		}},
+		Routes: []gwconfig.Route{{
+			ID: routeID, Name: "route-display", Nodes: []string{nodeID},
+		}},
+	}
+
+	h, rewriters, _, err := buildHopGroup(cfg, "ids-build", xlogger.Nop(), stats.NewFacts(),
+		capture.NewManager(capture.Policy{Mode: "off"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { unregisterRewriters(rewriters) })
+
+	nl, ok := h.(corehop.NodeList)
+	if !ok {
+		t.Fatal("hop group does not expose its nodes")
+	}
+	var names []string
+	for _, n := range nl.Nodes() {
+		names = append(names, n.Name)
+		for _, display := range []string{"route-display", "provider-display", "node-display", "key-a", "key-b"} {
+			if strings.Contains(n.Name, display) {
+				t.Fatalf("x node name %q contains the display name %q", n.Name, display)
+			}
+		}
+		md := n.Metadata()
+		if got, _ := md.Get("configNode").(string); got != nodeID {
+			t.Fatalf("configNode = %q, want %q", got, nodeID)
+		}
+		if got, _ := md.Get("configRoute").(string); got != routeID {
+			t.Fatalf("configRoute = %q, want %q", got, routeID)
+		}
+	}
+	sort.Strings(names)
+	want := []string{
+		routeID + "/" + providerID + "/" + nodeID + "/" + keyAID,
+		routeID + "/" + providerID + "/" + nodeID + "/" + keyBID,
+	}
+	if len(names) != len(want) || names[0] != want[0] || names[1] != want[1] {
+		t.Fatalf("x node names = %v, want %v", names, want)
+	}
+}
+
+// TestRouteHealthReportsIDs proves the health payload carries ids while the
+// display names stay available for the console.
+func TestRouteHealthReportsIDs(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	const (
+		routeID    = "r_0000000001"
+		providerID = "p_0000000001"
+		nodeID     = "n_0000000001"
+	)
+	cfg := &gwconfig.Config{
+		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Entrypoints: []gwconfig.Entrypoint{{
+			ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: routeID,
+		}},
+		Providers: []gwconfig.Provider{{
+			ID: providerID, Name: "provider-display", Type: "generic", Chat: upstream.URL,
+			Keys: []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-test"}},
+		}},
+		Nodes: []gwconfig.Node{{
+			ID: nodeID, Name: "node-display", Provider: providerID, Model: "deepseek-chat",
+		}},
+		Routes: []gwconfig.Route{{
+			ID: routeID, Name: "route-display", Nodes: []string{nodeID}, MaxFails: 2,
+		}},
+	}
+	gw := startGateway(t, cfg)
+
+	nl, ok := gw.hop.(corehop.NodeList)
+	if !ok {
+		t.Fatal("hop does not expose nodes")
+	}
+	marked := false
+	for _, n := range nl.Nodes() {
+		if configNodeID(n) == nodeID {
+			n.Marker().Mark()
+			marked = true
+		}
+	}
+	if !marked {
+		t.Fatalf("node %s not found in the hop group", nodeID)
+	}
+
+	hr := gw.RouteHealth()
+	if len(hr) != 1 || len(hr[0].Nodes) != 1 {
+		t.Fatalf("route health = %+v", hr)
+	}
+	if hr[0].ID != routeID || hr[0].Name != "route-display" {
+		t.Fatalf("route health = %+v, want id %q and name %q", hr[0], routeID, "route-display")
+	}
+	node := hr[0].Nodes[0]
+	if node.ID != nodeID || node.Name != "node-display" || node.ProviderID != providerID {
+		t.Fatalf("node health = %+v, want id %q, name %q and provider id %q", node, nodeID, "node-display", providerID)
+	}
+	if node.FailCount != 1 || node.Dead {
+		t.Fatalf("node health = %+v, want one recorded failure", node)
 	}
 }
 

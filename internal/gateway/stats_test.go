@@ -41,7 +41,7 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 		Model:    "deepseek-v4-flash",
 	}}
 	cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"p"}}}
-	return cfg
+	return withIDs(t, cfg)
 }
 
 func waitRow(t *testing.T, gw *gateway.Gateway) stats.Request {
@@ -70,7 +70,8 @@ func TestStatsRecordsNonStreaming(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	gw, err := gateway.New(statsConfig(t, upstream.URL), xlogger.Nop())
+	cfg := statsConfig(t, upstream.URL)
+	gw, err := gateway.New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +92,10 @@ func TestStatsRecordsNonStreaming(t *testing.T) {
 	resp.Body.Close()
 
 	row := waitRow(t, gw)
-	if row.Provider != "p" || row.Model != "deepseek-v4-flash" || row.Effort != "high" {
+	if row.Provider != cfg.Providers[0].ID || row.Model != "deepseek-v4-flash" || row.Effort != "high" {
 		t.Fatalf("row = %+v", row)
 	}
-	if row.Route != "r" || row.ClientModel != "gpt-4.5" {
+	if row.Route != cfg.Routes[0].ID || row.ClientModel != "gpt-4.5" {
 		t.Fatalf("row = %+v", row)
 	}
 	if row.InputTokens != 10 || row.OutputTokens != 5 {
@@ -185,7 +186,7 @@ func TestStatsRecordsStreamingUsage(t *testing.T) {
 	}
 }
 
-func TestGatewayAuthRecordsGatewayKey(t *testing.T) {
+func TestAuthAttributesKeyID(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
@@ -193,7 +194,7 @@ func TestGatewayAuthRecordsGatewayKey(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := statsConfig(t, upstream.URL)
-	cfg.Gateway.Keys = []config.GatewayKey{{Name: "alpha", Key: "secret-key"}}
+	cfg.Gateway.Keys = []config.GatewayKey{{ID: "gk_0000000001", Name: "alpha", Key: "secret-key"}}
 	gw, err := gateway.New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
@@ -215,8 +216,8 @@ func TestGatewayAuthRecordsGatewayKey(t *testing.T) {
 	resp.Body.Close()
 
 	row := waitRow(t, gw)
-	if row.GatewayKey != "alpha" {
-		t.Fatalf("gateway key = %q, want alpha (row %+v)", row.GatewayKey, row)
+	if row.GatewayKey != "gk_0000000001" {
+		t.Fatalf("gateway key = %q, want the key id gk_0000000001 (row %+v)", row.GatewayKey, row)
 	}
 }
 
@@ -274,7 +275,8 @@ func TestStatsRecordsDialFailure(t *testing.T) {
 	addr := ln.Addr().String()
 	ln.Close()
 
-	gw, err := gateway.New(statsConfig(t, "http://"+addr), xlogger.Nop())
+	cfg := statsConfig(t, "http://"+addr)
+	gw, err := gateway.New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,8 +299,9 @@ func TestStatsRecordsDialFailure(t *testing.T) {
 	}
 
 	row := waitRow(t, gw)
-	if row.Route != "r" || row.Provider != "p" || row.Node != "p" {
-		t.Fatalf("route/provider/node = %q/%q/%q, want r/p/p", row.Route, row.Provider, row.Node)
+	if row.Route != cfg.Routes[0].ID || row.Provider != cfg.Providers[0].ID || row.Node != cfg.Nodes[0].ID {
+		t.Fatalf("route/provider/node = %q/%q/%q, want %q/%q/%q",
+			row.Route, row.Provider, row.Node, cfg.Routes[0].ID, cfg.Providers[0].ID, cfg.Nodes[0].ID)
 	}
 	if row.Status != http.StatusServiceUnavailable || row.ClientStatus != http.StatusServiceUnavailable {
 		t.Fatalf("status/clientStatus = %d/%d, want 503/503", row.Status, row.ClientStatus)

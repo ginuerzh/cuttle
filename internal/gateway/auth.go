@@ -58,7 +58,7 @@ type authPolicy struct {
 }
 
 type authEntry struct {
-	name    string
+	id      string
 	digest  [32]byte
 	enabled bool
 }
@@ -72,7 +72,7 @@ func newAuthPolicy(keys []gwconfig.GatewayKey) *authPolicy {
 			continue
 		}
 		p.entries = append(p.entries, authEntry{
-			name:    key.Name,
+			id:      key.ID,
 			digest:  sha256.Sum256([]byte(key.Key)),
 			enabled: key.Enabled == nil || *key.Enabled,
 		})
@@ -94,9 +94,9 @@ func (p *authPolicy) hasEnabled() bool {
 
 // authenticate compares every candidate with every entry. It never exits on
 // the first match so timing does not reveal the matching position. Attribution
-// goes to the first enabled matching entry in configuration order; a disabled
-// match only changes the failure reason.
-func (p *authPolicy) authenticate(candidates []string) (name, reason string, ok bool) {
+// goes to the id of the first enabled matching entry in configuration order; a
+// disabled match only changes the failure reason.
+func (p *authPolicy) authenticate(candidates []string) (id, reason string, ok bool) {
 	if len(candidates) == 0 {
 		return "", "missing", false
 	}
@@ -107,7 +107,7 @@ func (p *authPolicy) authenticate(candidates []string) (name, reason string, ok 
 	}
 
 	var (
-		matchedName string
+		matchedID   string
 		matched     bool
 		disabledHit bool
 	)
@@ -121,7 +121,7 @@ func (p *authPolicy) authenticate(candidates []string) (name, reason string, ok 
 		}
 		if entry.enabled {
 			if !matched {
-				matchedName = entry.name
+				matchedID = entry.id
 				matched = true
 			}
 			continue
@@ -130,7 +130,7 @@ func (p *authPolicy) authenticate(candidates []string) (name, reason string, ok 
 	}
 
 	if matched {
-		return matchedName, "", true
+		return matchedID, "", true
 	}
 	if disabledHit {
 		return "", "disabled", false
@@ -192,7 +192,7 @@ func (h *gatewayAuthHandler) Handle(ctx context.Context, conn net.Conn, opts ...
 		return writeGatewayAuthResponse(conn, http.StatusBadRequest, gatewayMalformedHeadBody, false)
 	}
 
-	name, reason, authenticated := policy.authenticate(gatewayAuthCandidates(header))
+	id, reason, authenticated := policy.authenticate(gatewayAuthCandidates(header))
 	if !authenticated {
 		h.recordFailure(conn, header, logMethod, logTarget, reason)
 		h.log.Warnf("gateway auth: %s %s from %s: %s", logMethod, logTarget, gatewayAuthRemoteAddr(conn), reason)
@@ -204,7 +204,7 @@ func (h *gatewayAuthHandler) Handle(ctx context.Context, conn net.Conn, opts ...
 	// without re-entering this handler, even though responses advertise
 	// Connection: close.
 	nextConn := &replayConn{Conn: conn, r: io.MultiReader(bytes.NewReader(head), body)}
-	return h.next.Handle(stats.WithGatewayKey(ctx, name), nextConn, opts...)
+	return h.next.Handle(stats.WithGatewayKeyID(ctx, id), nextConn, opts...)
 }
 
 // gatewayAuthBodyReader returns a reader that reproduces the framed request

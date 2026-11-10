@@ -56,29 +56,26 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 		return nil, nil, nil, err
 	}
 
-	routes := make(map[string]gwconfig.Route, len(cfg.Routes))
-	for _, r := range cfg.Routes {
-		routes[r.Name] = r
-	}
 	routePlans := make(map[string]*routePlan, len(cfg.Routes))
 	var rewriters []string
 	entries := make([]*xhop.HopEntry, 0, len(cfg.Entrypoints)*(len(inboundGroups)+1))
 	for _, e := range cfg.Entrypoints {
-		r, ok := routes[e.Route]
+		r, ok := cfg.Route(e.Route)
 		if !ok {
 			return nil, rewriters, nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
 		}
-		plan, ok := routePlans[r.Name]
+		key := routePlanKey(*r)
+		plan, ok := routePlans[key]
 		if !ok {
 			var err error
-			plan, err = buildRoutePlan(cfg, build, r, log, facts, captureMgr)
+			plan, err = buildRoutePlan(cfg, build, *r, log, facts, captureMgr)
 			if plan != nil {
 				rewriters = append(rewriters, plan.rewriters...)
 			}
 			if err != nil {
 				return nil, rewriters, nil, fmt.Errorf("route %q: %w", r.Name, err)
 			}
-			routePlans[r.Name] = plan
+			routePlans[key] = plan
 		}
 
 		for _, group := range inboundGroups {
@@ -131,36 +128,39 @@ type nodePlan struct {
 	keys     []gwconfig.ProviderKey
 }
 
-func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
-	providers := make(map[string]gwconfig.Provider, len(cfg.Providers))
-	for _, p := range cfg.Providers {
-		providers[p.Name] = p
+// routePlanKey returns the cache key for a compiled route. A migrated config
+// always carries route ids; a route that has no id yet (a config written by the
+// admin API before it mints ids) falls back to its name, which cannot collide
+// with an id because of the "name:" prefix.
+func routePlanKey(r gwconfig.Route) string {
+	if r.ID != "" {
+		return r.ID
 	}
-	bindings := make(map[string]gwconfig.Node, len(cfg.Nodes))
-	for _, n := range cfg.Nodes {
-		bindings[n.Name] = n
-	}
+	return "name:" + r.Name
+}
 
+func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
 	var plans []nodePlan
 	for _, ref := range r.Nodes {
-		n, ok := bindings[ref]
+		n, ok := cfg.Node(ref)
 		if !ok {
 			return nil, fmt.Errorf("unknown node %q", ref)
 		}
 		if !n.EnabledValue() {
 			continue
 		}
-		p, ok := providers[n.Provider]
+		p, ok := cfg.Provider(n.Provider)
 		if !ok {
 			return nil, fmt.Errorf("node %q: unknown provider %q", n.Name, n.Provider)
 		}
 		if !p.EnabledValue() {
 			continue
 		}
-		if strings.TrimSpace(p.UserAgent) == "" {
-			p.UserAgent = cfg.Gateway.UserAgent
+		provider := *p
+		if strings.TrimSpace(provider.UserAgent) == "" {
+			provider.UserAgent = cfg.Gateway.UserAgent
 		}
-		targets, err := compileNodeTargets(p, n)
+		targets, err := compileNodeTargets(provider, *n)
 		if err != nil {
 			if errors.Is(err, errModelDisabled) {
 				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
@@ -168,7 +168,7 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 			}
 			return nil, fmt.Errorf("node %q: %w", n.Name, err)
 		}
-		keys, err := resolveNodeKeys(p, n)
+		keys, err := resolveNodeKeys(provider, *n)
 		if err != nil {
 			if errors.Is(err, errNodeKeyDisabled) {
 				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
@@ -176,7 +176,7 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 			}
 			return nil, fmt.Errorf("node %q: %w", n.Name, err)
 		}
-		plans = append(plans, nodePlan{provider: p, node: n, targets: targets, keys: keys})
+		plans = append(plans, nodePlan{provider: provider, node: *n, targets: targets, keys: keys})
 	}
 
 	plan := &routePlan{
@@ -220,12 +220,12 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 				target = t
 			}
 		}
-		name := buildRewriterName(build, r.Name, variant, np.node.Name)
-		if err := registerRewriter(name, np.provider, np.node, target, r.Name, facts, captureMgr, log); err != nil {
+		name := buildRewriterName(build, r.ID, variant, np.node.ID)
+		if err := registerRewriter(name, np.provider, np.node, target, r.ID, facts, captureMgr, log); err != nil {
 			return nil, err
 		}
 		*names = append(*names, name)
-		ns, err := buildNodes(np.provider, np.node, np.keys, r.Name, target, name)
+		ns, err := buildNodes(np.provider, np.node, np.keys, r.ID, target, name)
 		if err != nil {
 			return nil, fmt.Errorf("node %q: %w", np.node.Name, err)
 		}
@@ -263,7 +263,7 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 		failTimeout = 10 * time.Second
 	}
 	return hop_parser.ParseHop(&xconfig.HopConfig{
-		Name: "route/" + r.Name + "/" + variant,
+		Name: "route/" + r.ID + "/" + variant,
 		Selector: &xconfig.SelectorConfig{
 			Strategy:    strategy,
 			MaxFails:    maxFails,
@@ -278,13 +278,14 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 var errNodeKeyDisabled = errors.New("node has no enabled key")
 
 // resolveNodeKeys returns the provider keys a node should build. A pinned node
-// uses exactly the named key; an unpinned node uses every enabled key. A
-// provider with no keys yields one keyless entry. A pinned name that does not
-// exist is a regular error; an empty usable set is errNodeKeyDisabled.
+// names its key by id and uses exactly that key; an unpinned node uses every
+// enabled key. A provider with no keys yields one keyless entry. A pinned id
+// that does not exist is a regular error; an empty usable set is
+// errNodeKeyDisabled.
 func resolveNodeKeys(p gwconfig.Provider, n gwconfig.Node) ([]gwconfig.ProviderKey, error) {
 	if pin := strings.TrimSpace(n.Key); pin != "" {
 		for _, k := range p.Keys {
-			if strings.TrimSpace(k.Name) != pin {
+			if k.ID != pin {
 				continue
 			}
 			if !k.EnabledValue() {
@@ -310,7 +311,10 @@ func resolveNodeKeys(p gwconfig.Provider, n gwconfig.Node) ([]gwconfig.ProviderK
 	return keys, nil
 }
 
-func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKey, route string, target upstreamTarget, rewriter string) ([]*xconfig.NodeConfig, error) {
+// buildNodes compiles the x nodes for one provider node. routeID, the provider
+// id and the node id (plus the key id when the node spreads across several
+// keys) form the x node name that stats parses back into entity ids.
+func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKey, routeID string, target upstreamTarget, rewriter string) ([]*xconfig.NodeConfig, error) {
 	auth := target.auth
 
 	u, err := url.Parse(strings.TrimSpace(target.baseURL))
@@ -392,9 +396,9 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKe
 		// over auth.Extra as well.
 		headers["Accept-Encoding"] = ""
 
-		name := fmt.Sprintf("%s/%s/%s", route, p.Name, n.Name)
+		name := fmt.Sprintf("%s/%s/%s", routeID, p.ID, n.ID)
 		if len(keys) > 1 {
-			name = fmt.Sprintf("%s/%s", name, k.Name)
+			name = fmt.Sprintf("%s/%s", name, k.ID)
 		}
 
 		bodyRewrites := []xconfig.HTTPBodyRewriteConfig{{
@@ -409,10 +413,10 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKe
 		if metadata == nil {
 			metadata = make(map[string]any)
 		}
-		// Keep the operator-facing node name separate from the internal
+		// Keep the operator-facing node id and route id beside the internal
 		// route/provider/node name used by x.
-		metadata["configName"] = n.Name
-		metadata["configRoute"] = route
+		metadata["configNode"] = n.ID
+		metadata["configRoute"] = routeID
 		if n.Weight > 0 {
 			metadata["weight"] = n.Weight
 		}
@@ -486,8 +490,8 @@ func variantKey(api provider.API) string {
 
 // rewriterName returns the registry key for a route-scoped node engine. The
 // same node can select different target APIs in different routes and protocol
-// variants, so engines cannot be shared. Route and node names forbid '/', and
-// the variant is one of a fixed set, so the key cannot collide.
+// variants, so engines cannot be shared. Ids forbid '/', and the variant is one
+// of a fixed set, so the key cannot collide.
 func rewriterName(route, variant, node string) string {
 	return "r/" + route + "/" + variant + "/" + node
 }
@@ -525,14 +529,15 @@ func unregisterRewriters(names []string) {
 
 // registerRewriter installs the in-process body rewriter for one route variant
 // and node. It must run before ParseHop because node parsing resolves rewriters
-// from the registry.
-func registerRewriter(name string, p gwconfig.Provider, n gwconfig.Node, target upstreamTarget, route string, facts *stats.Facts, captureMgr *capture.Manager, log logger.Logger) error {
+// from the registry. The engine reports ids, so facts and captures are
+// attributed by id.
+func registerRewriter(name string, p gwconfig.Provider, n gwconfig.Node, target upstreamTarget, routeID string, facts *stats.Facts, captureMgr *capture.Manager, log logger.Logger) error {
 	registry.RewriterRegistry().Unregister(name)
 	if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(target), gwrewriter.Options{
-		Provider:    p.Name,
+		Provider:    p.ID,
 		Protocol:    string(target.api),
-		Route:       route,
-		Node:        n.Name,
+		Route:       routeID,
+		Node:        n.ID,
 		TargetModel: target.targetModel,
 		Sink:        facts,
 		Capture:     captureMgr,

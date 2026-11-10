@@ -257,7 +257,12 @@ func TestRouteVariantKeepsBackupMetadata(t *testing.T) {
 			{Name: "off", Provider: "ds", Model: "deepseek-v4-flash", Enabled: &disabled},
 		},
 	}
-	route := gwconfig.Route{Name: "plan-test", Nodes: []string{"n", "backup", "off"}}
+	withIDs(t, cfg)
+	route := gwconfig.Route{
+		ID:    "r_0000000001",
+		Name:  "plan-test",
+		Nodes: []string{cfg.Nodes[0].ID, cfg.Nodes[1].ID, cfg.Nodes[2].ID},
+	}
 
 	plan, err := buildRoutePlan(cfg, "test-build", route, xlogger.Nop(), stats.NewFacts(), capture.NewManager(capture.Policy{Mode: "off"}))
 	if err != nil {
@@ -271,16 +276,18 @@ func TestRouteVariantKeepsBackupMetadata(t *testing.T) {
 	if !ok {
 		t.Fatal("anthropic hop does not expose its nodes")
 	}
+	backupName := route.ID + "/" + cfg.Providers[0].ID + "/" + cfg.Nodes[1].ID
 	var names []string
 	backup := false
 	for _, n := range nl.Nodes() {
 		names = append(names, n.Name)
-		if n.Name == "plan-test/ds/backup" {
+		if n.Name == backupName {
 			backup = mdutil.GetBool(n.Options().Metadata, "backup")
 		}
 	}
 	sort.Strings(names)
-	want := []string{"plan-test/ds/backup", "plan-test/ds/n"}
+	want := []string{backupName, route.ID + "/" + cfg.Providers[0].ID + "/" + cfg.Nodes[0].ID}
+	sort.Strings(want)
 	if len(names) != len(want) || names[0] != want[0] || names[1] != want[1] {
 		t.Fatalf("variant nodes = %v, want %v", names, want)
 	}

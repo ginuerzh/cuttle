@@ -188,6 +188,8 @@ func (g *Gateway) AuthFailures() *authfail.Tracker {
 
 // RouteHealth returns the current node marker state for each configured
 // route. Markers are in-memory x state and reset when the hop is rebuilt.
+// Routes are identified by id; the display names stay in the payload for the
+// console.
 func (g *Gateway) RouteHealth() []health.Route {
 	g.mu.Lock()
 	h := g.hop
@@ -202,29 +204,24 @@ func (g *Gateway) RouteHealth() []health.Route {
 		return nil
 	}
 	type routeNodeKey struct {
-		route string
-		name  string
+		routeID string
+		nodeID  string
 	}
 	nodes := make(map[routeNodeKey]*corechain.Node)
 	for _, n := range nl.Nodes() {
 		if n == nil {
 			continue
 		}
-		name := configNodeName(n)
-		if name == "" {
+		nodeID := configNodeID(n)
+		if nodeID == "" {
 			continue
 		}
-		key := routeNodeKey{configRouteName(n), name}
+		key := routeNodeKey{configRouteID(n), nodeID}
 		prev := nodes[key]
 		if prev == nil || markerCount(n) > markerCount(prev) ||
 			(markerCount(n) == markerCount(prev) && markerTime(n).After(markerTime(prev))) {
 			nodes[key] = n
 		}
-	}
-
-	providerByNode := make(map[string]string, len(cfg.Nodes))
-	for _, n := range cfg.Nodes {
-		providerByNode[n.Name] = n.Provider
 	}
 
 	out := make([]health.Route, 0, len(cfg.Routes))
@@ -238,15 +235,20 @@ func (g *Gateway) RouteHealth() []health.Route {
 			failTimeout = 10 * time.Second
 		}
 		hr := health.Route{
+			ID:          r.ID,
 			Name:        r.Name,
 			MaxFails:    maxFails,
 			FailTimeout: failTimeout.String(),
 			Nodes:       make([]health.Node, 0, len(r.Nodes)),
 		}
-		for _, name := range r.Nodes {
-			n := nodes[routeNodeKey{r.Name, name}]
+		for _, ref := range r.Nodes {
+			configured, ok := cfg.Node(ref)
+			if !ok {
+				continue
+			}
+			n := nodes[routeNodeKey{r.ID, configured.ID}]
 			if n == nil {
-				n = nodes[routeNodeKey{"", name}]
+				n = nodes[routeNodeKey{"", configured.ID}]
 			}
 			if n == nil {
 				continue
@@ -259,10 +261,13 @@ func (g *Gateway) RouteHealth() []health.Route {
 			last := m.Time()
 			dead := count >= int64(maxFails) && !last.IsZero() && time.Since(last) < failTimeout
 			hn := health.Node{
-				Name:      name,
-				Provider:  providerByNode[name],
+				ID:        configured.ID,
+				Name:      configured.Name,
 				FailCount: count,
 				Dead:      dead,
+			}
+			if p, ok := cfg.Provider(configured.Provider); ok {
+				hn.ProviderID = p.ID
 			}
 			if !last.IsZero() {
 				lastCopy := last
@@ -279,19 +284,19 @@ func (g *Gateway) RouteHealth() []health.Route {
 	return out
 }
 
-func configNodeName(n *corechain.Node) string {
+func configNodeID(n *corechain.Node) string {
 	if n == nil {
 		return ""
 	}
 	if md := n.Metadata(); md != nil {
-		if v, ok := md.Get("configName").(string); ok && v != "" {
+		if v, ok := md.Get("configNode").(string); ok && v != "" {
 			return v
 		}
 	}
 	return n.Name
 }
 
-func configRouteName(n *corechain.Node) string {
+func configRouteID(n *corechain.Node) string {
 	if n == nil {
 		return ""
 	}

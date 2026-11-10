@@ -100,10 +100,11 @@ func insertRequest(t *testing.T, rel *recordingReloader, id string, ts time.Time
 func TestEventsCarriesRouteHealth(t *testing.T) {
 	_, rel, ts := newEventsAdmin(t)
 	rel.health = []health.Route{{
+		ID:          "r_0000000001",
 		Name:        "r",
 		MaxFails:    1,
 		FailTimeout: "10s",
-		Nodes:       []health.Node{{Name: "n", FailCount: 1, Dead: true}},
+		Nodes:       []health.Node{{ID: "n_0000000001", Name: "n", ProviderID: "p_0000000001", FailCount: 1, Dead: true}},
 	}}
 	client, _ := login(t, ts.URL)
 	conn, _, err := dialEvents(t, ts.URL, client.Jar, "?range=1h", "")

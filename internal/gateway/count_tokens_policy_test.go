@@ -71,13 +71,19 @@ func TestCountTokensPolicyPrecedence(t *testing.T) {
 }
 
 func TestBuildCountTokensPolicyFromConfig(t *testing.T) {
-	cfg := &gwconfig.Config{Entrypoints: []gwconfig.Entrypoint{
-		{Name: "anthropic", Match: []string{"claude-*"}, Route: "a"},
-		{Name: "rest", Match: []string{"*"}, Route: "r"},
-	}}
+	cfg := &gwconfig.Config{
+		Entrypoints: []gwconfig.Entrypoint{
+			{ID: "e_0000000001", Name: "anthropic", Match: []string{"claude-*"}, Route: "r_0000000001"},
+			{ID: "e_0000000002", Name: "rest", Match: []string{"*"}, Route: "r_0000000002"},
+		},
+		Routes: []gwconfig.Route{
+			{ID: "r_0000000001", Name: "a"},
+			{ID: "r_0000000002", Name: "r"},
+		},
+	}
 	plans := map[string]*routePlan{
-		"a": {countTokensEstimate: false},
-		"r": {countTokensEstimate: true},
+		"r_0000000001": {countTokensEstimate: false},
+		"r_0000000002": {countTokensEstimate: true},
 	}
 	p, err := buildCountTokensPolicy(cfg, plans)
 	if err != nil {

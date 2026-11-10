@@ -69,7 +69,7 @@ func TestGatewayRetriesRetryableUpstream(t *testing.T) {
 		RetryCodes: "429,5xx",
 	}}
 
-	gw, err := gateway.New(cfg, xlogger.Nop())
+	gw, err := gateway.New(withIDs(t, cfg), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,8 +105,8 @@ func TestGatewayRetriesRetryableUpstream(t *testing.T) {
 	if row.Status != http.StatusOK {
 		t.Fatalf("status = %d, want %d (row %+v)", row.Status, http.StatusOK, row)
 	}
-	if row.Node != "nb" {
-		t.Fatalf("node = %q, want nb (row %+v)", row.Node, row)
+	if row.Node != cfg.Nodes[1].ID {
+		t.Fatalf("node = %q, want the second node id %q (row %+v)", row.Node, cfg.Nodes[1].ID, row)
 	}
 
 	// One identity across attempts: the header the client sees is the stats row.
@@ -173,7 +173,7 @@ func TestGatewayRetryUsesProviderCredentials(t *testing.T) {
 		RetryCodes: "429,5xx",
 	}}
 
-	gw, err := gateway.New(cfg, xlogger.Nop())
+	gw, err := gateway.New(withIDs(t, cfg), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

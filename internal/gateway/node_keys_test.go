@@ -22,15 +22,18 @@ func keyDisabled(name, value string) gwconfig.ProviderKey {
 }
 
 func TestResolveNodeKeysPinned(t *testing.T) {
-	p := gwconfig.Provider{Name: "p", Keys: []gwconfig.ProviderKey{keyNamed("account-a", "sk-a"), keyNamed("account-b", "sk-b")}}
-	n := gwconfig.Node{Name: "n", Provider: "p", Key: "account-a"}
+	p := gwconfig.Provider{ID: "p_0000000001", Name: "p", Keys: []gwconfig.ProviderKey{
+		{ID: "pk_0000000001", Name: "account-a", Key: "sk-a"},
+		{ID: "pk_0000000002", Name: "account-b", Key: "sk-b"},
+	}}
+	n := gwconfig.Node{Name: "n", Provider: p.ID, Key: "pk_0000000002"}
 
 	keys, err := resolveNodeKeys(p, n)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(keys) != 1 || keys[0].Name != "account-a" {
-		t.Fatalf("keys = %+v, want [account-a]", keys)
+	if len(keys) != 1 || keys[0].ID != "pk_0000000002" {
+		t.Fatalf("keys = %+v, want [pk_0000000002]", keys)
 	}
 }
 
@@ -64,11 +67,11 @@ func TestResolveNodeKeysAllDisabled(t *testing.T) {
 }
 
 func TestResolveNodeKeysPinnedDisabled(t *testing.T) {
-	p := gwconfig.Provider{Name: "p", Keys: []gwconfig.ProviderKey{
-		keyNamed("a", "sk-a"),
-		keyDisabled("b", "sk-b"),
+	p := gwconfig.Provider{ID: "p_0000000001", Name: "p", Keys: []gwconfig.ProviderKey{
+		{ID: "pk_0000000001", Name: "a", Key: "sk-a"},
+		{ID: "pk_0000000002", Name: "b", Key: "sk-b", Enabled: boolPtr(false)},
 	}}
-	n := gwconfig.Node{Name: "n", Provider: "p", Key: "b"}
+	n := gwconfig.Node{Name: "n", Provider: p.ID, Key: "pk_0000000002"}
 
 	if _, err := resolveNodeKeys(p, n); !errors.Is(err, errNodeKeyDisabled) {
 		t.Fatalf("err = %v, want errNodeKeyDisabled", err)
@@ -76,14 +79,16 @@ func TestResolveNodeKeysPinnedDisabled(t *testing.T) {
 }
 
 func TestResolveNodeKeysPinnedMissing(t *testing.T) {
-	p := gwconfig.Provider{Name: "p", Keys: []gwconfig.ProviderKey{keyNamed("a", "sk-a")}}
-	n := gwconfig.Node{Name: "n", Provider: "p", Key: "nope"}
+	p := gwconfig.Provider{ID: "p_0000000001", Name: "p", Keys: []gwconfig.ProviderKey{
+		{ID: "pk_0000000001", Name: "a", Key: "sk-a"},
+	}}
+	n := gwconfig.Node{Name: "n", Provider: p.ID, Key: "pk_0000000009"}
 
 	_, err := resolveNodeKeys(p, n)
 	if err == nil || errors.Is(err, errNodeKeyDisabled) {
 		t.Fatalf("err = %v, want a regular error naming the key", err)
 	}
-	if !strings.Contains(err.Error(), "nope") {
+	if !strings.Contains(err.Error(), "pk_0000000009") {
 		t.Fatalf("err = %v, want it to name the missing key", err)
 	}
 }
@@ -121,29 +126,36 @@ func nodeKeyBuildConfig(upstreamURL string) *gwconfig.Config {
 	}
 }
 
-func TestBuildNodesSuffixUsesKeyName(t *testing.T) {
-	p := gwconfig.Provider{Name: "p", Type: "generic", Chat: "https://example.com/v1"}
-	n := gwconfig.Node{Name: "n", Provider: "p", Model: "m"}
+func TestBuildNodesSuffixUsesKeyID(t *testing.T) {
+	p := gwconfig.Provider{ID: "p_0000000001", Name: "provider-display", Type: "generic", Chat: "https://example.com/v1"}
+	n := gwconfig.Node{ID: "n_0000000001", Name: "node-display", Provider: p.ID, Model: "m"}
 	target := upstreamTarget{
 		baseURL:     "https://example.com/v1",
 		api:         "chat",
 		targetModel: "m",
 		auth:        gwconfig.Auth{Header: "Authorization", Prefix: "Bearer "},
 	}
-	keys := []gwconfig.ProviderKey{keyNamed("account-a", "sk-a"), keyNamed("account-b", "sk-b")}
+	keys := []gwconfig.ProviderKey{
+		{ID: "pk_0000000001", Name: "account-a", Key: "sk-a"},
+		{ID: "pk_0000000002", Name: "account-b", Key: "sk-b"},
+	}
 
-	nodes, err := buildNodes(p, n, keys, "route", target, "r/route/default/n")
+	nodes, err := buildNodes(p, n, keys, "r_0000000001", target, "r/r_0000000001/default/n_0000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 2 || nodes[0].Name != "route/p/n/account-a" || nodes[1].Name != "route/p/n/account-b" {
-		t.Fatalf("node names = %q/%q, want route/p/n/account-a and route/p/n/account-b", nodes[0].Name, nodes[1].Name)
+	want := []string{
+		"r_0000000001/p_0000000001/n_0000000001/pk_0000000001",
+		"r_0000000001/p_0000000001/n_0000000001/pk_0000000002",
+	}
+	if len(nodes) != len(want) || nodes[0].Name != want[0] || nodes[1].Name != want[1] {
+		t.Fatalf("node names = %q/%q, want %v", nodes[0].Name, nodes[1].Name, want)
 	}
 }
 
 func TestBuildNodesSingleKeyHasNoSuffix(t *testing.T) {
-	p := gwconfig.Provider{Name: "p", Type: "generic", Chat: "https://example.com/v1"}
-	n := gwconfig.Node{Name: "n", Provider: "p", Model: "m", Key: "account-a"}
+	p := gwconfig.Provider{ID: "p_0000000001", Name: "provider-display", Type: "generic", Chat: "https://example.com/v1"}
+	n := gwconfig.Node{ID: "n_0000000001", Name: "node-display", Provider: p.ID, Model: "m", Key: "pk_0000000001"}
 	target := upstreamTarget{
 		baseURL:     "https://example.com/v1",
 		api:         "chat",
@@ -151,12 +163,18 @@ func TestBuildNodesSingleKeyHasNoSuffix(t *testing.T) {
 		auth:        gwconfig.Auth{Header: "Authorization", Prefix: "Bearer "},
 	}
 
-	nodes, err := buildNodes(p, n, []gwconfig.ProviderKey{keyNamed("account-a", "sk-a")}, "route", target, "r/route/default/n")
+	nodes, err := buildNodes(p, n, []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "account-a", Key: "sk-a"}}, "r_0000000001", target, "r/r_0000000001/default/n_0000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 1 || nodes[0].Name != "route/p/n" {
-		t.Fatalf("node name = %q, want route/p/n", nodes[0].Name)
+	if len(nodes) != 1 || nodes[0].Name != "r_0000000001/p_0000000001/n_0000000001" {
+		t.Fatalf("node name = %q, want the route, provider and node ids", nodes[0].Name)
+	}
+	if got, _ := nodes[0].Metadata["configNode"].(string); got != n.ID {
+		t.Fatalf("configNode = %q, want %q", got, n.ID)
+	}
+	if got, _ := nodes[0].Metadata["configRoute"].(string); got != "r_0000000001" {
+		t.Fatalf("configRoute = %q, want the route id", got)
 	}
 }
 
