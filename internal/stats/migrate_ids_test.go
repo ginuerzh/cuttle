@@ -437,3 +437,77 @@ func TestRenameKeepsRollupsAndLabelsFollow(t *testing.T) {
 		t.Fatalf("route label = %q, want fast", got)
 	}
 }
+
+// TestMigratePaddedRefUsesTrimmedLookup pins the lookup trim: a v1 row can
+// record a padded display name while the config holds the trimmed label.
+// Without the trim the padded name derives its own id and splits the entity's
+// history in two.
+func TestMigratePaddedRefUsesTrimmedLookup(t *testing.T) {
+	ctx := context.Background()
+	base := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	providerID := identity.Derive(identity.Provider, "alpha")
+	lookup := func(kind, name string) string {
+		if kind == string(identity.Provider) && name == "alpha" {
+			return providerID
+		}
+		return ""
+	}
+
+	t.Run("padded only", func(t *testing.T) {
+		s, _ := openStoreAt(t)
+		if err := s.Insert(ctx, Request{ID: "p1", TS: base, Provider: " alpha ", Model: "m"}); err != nil {
+			t.Fatal(err)
+		}
+		forceVersion(t, s, 1)
+		if err := s.MigrateIdentities(ctx, lookup); err != nil {
+			t.Fatal(err)
+		}
+		row, err := s.Get(ctx, "p1")
+		if err != nil || row == nil {
+			t.Fatalf("get p1 = %+v err=%v", row, err)
+		}
+		if row.Provider != providerID {
+			t.Fatalf("provider = %q, want the trimmed config id %q", row.Provider, providerID)
+		}
+		labels, err := s.Labels(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The label keeps the text the row recorded.
+		if got := labels[string(identity.Provider)][providerID]; got != " alpha " {
+			t.Fatalf("provider label = %q, want the recorded padded name", got)
+		}
+	})
+
+	t.Run("padded and trimmed", func(t *testing.T) {
+		s, _ := openStoreAt(t)
+		for _, row := range []Request{
+			{ID: "p1", TS: base, Provider: " alpha ", Model: "m"},
+			{ID: "p2", TS: base.Add(time.Minute), Provider: "alpha", Model: "m"},
+		} {
+			if err := s.Insert(ctx, row); err != nil {
+				t.Fatal(err)
+			}
+		}
+		forceVersion(t, s, 1)
+		if err := s.MigrateIdentities(ctx, lookup); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []string{"p1", "p2"} {
+			row, err := s.Get(ctx, id)
+			if err != nil || row == nil {
+				t.Fatalf("get %s = %+v err=%v", id, row, err)
+			}
+			if row.Provider != providerID {
+				t.Fatalf("row %s provider = %q, want one series at %q", id, row.Provider, providerID)
+			}
+		}
+		usage, err := s.ProviderUsage(ctx, base, base.Add(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(usage) != 1 || usage[0].Provider != providerID || usage[0].Requests != 2 {
+			t.Fatalf("provider usage = %+v, want one series at %q with 2 requests", usage, providerID)
+		}
+	})
+}

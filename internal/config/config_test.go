@@ -8,7 +8,28 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ginuerzh/cuttle/internal/identity"
 )
+
+// fixtureID derives the id a migration assigns to a fixture name, so a
+// hand-built config carries ids without hardcoding them.
+func fixtureID(kind identity.Kind, name string) string {
+	return identity.Derive(kind, name)
+}
+
+// withGatewayKeyIDs fills a distinct id into every fixture key that has none,
+// so a validation test reaches the field it exercises.
+func withGatewayKeyIDs(keys []GatewayKey) []GatewayKey {
+	out := make([]GatewayKey, len(keys))
+	copy(out, keys)
+	for i := range out {
+		if out[i].ID == "" {
+			out[i].ID = fmt.Sprintf("gk_%010d", i+1)
+		}
+	}
+	return out
+}
 
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
@@ -115,21 +136,21 @@ func TestProviderKeyNameValidation(t *testing.T) {
 	base := func(keys []ProviderKey) *Config {
 		return &Config{
 			Gateway:   Gateway{Listen: ":8787"},
-			Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1", Keys: keys}},
-			Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
-			Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
+			Providers: []Provider{{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "generic", Chat: "https://a.example/v1", Keys: keys}},
+			Nodes:     []Node{{ID: fixtureID(identity.Node, "n"), Name: "n", Provider: fixtureID(identity.Provider, "p"), Model: "m1"}},
+			Routes:    []Route{{ID: fixtureID(identity.Route, "r"), Name: "r", Nodes: []string{fixtureID(identity.Node, "n")}}},
 		}
 	}
 	cases := []struct {
 		name string
 		keys []ProviderKey
 	}{
-		{"empty name", []ProviderKey{{Name: "", Key: "sk-a"}}},
-		{"blank name", []ProviderKey{{Name: "   ", Key: "sk-a"}}},
-		{"too long", []ProviderKey{{Name: strings.Repeat("a", 65), Key: "sk-a"}}},
-		{"duplicate name", []ProviderKey{{Name: "a", Key: "sk-a"}, {Name: "a", Key: "sk-b"}}},
-		{"dollar name", []ProviderKey{{Name: "a$b", Key: "sk-a"}}},
-		{"control name", []ProviderKey{{Name: "a\nb", Key: "sk-a"}}},
+		{"empty name", []ProviderKey{{ID: "pk_0000000001", Name: "", Key: "sk-a"}}},
+		{"blank name", []ProviderKey{{ID: "pk_0000000001", Name: "   ", Key: "sk-a"}}},
+		{"too long", []ProviderKey{{ID: "pk_0000000001", Name: strings.Repeat("a", 65), Key: "sk-a"}}},
+		{"duplicate name", []ProviderKey{{ID: "pk_0000000001", Name: "a", Key: "sk-a"}, {ID: "pk_0000000002", Name: "a", Key: "sk-b"}}},
+		{"dollar name", []ProviderKey{{ID: "pk_0000000001", Name: "a$b", Key: "sk-a"}}},
+		{"control name", []ProviderKey{{ID: "pk_0000000001", Name: "a\nb", Key: "sk-a"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,7 +165,7 @@ func TestProviderKeyNameValidation(t *testing.T) {
 	}
 
 	// A display name is free-form; "/" feeds nothing structural any more.
-	if err := Validate(base([]ProviderKey{{Name: "a/b", Key: "sk-a"}})); err != nil {
+	if err := Validate(base([]ProviderKey{{ID: "pk_0000000001", Name: "a/b", Key: "sk-a"}})); err != nil {
 		t.Fatalf("slash name should validate: %v", err)
 	}
 }
@@ -153,9 +174,9 @@ func TestProviderKeyValueValidation(t *testing.T) {
 	base := func(key string) *Config {
 		return &Config{
 			Gateway:   Gateway{Listen: ":8787"},
-			Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1", Keys: []ProviderKey{{Name: "a", Key: key}}}},
-			Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
-			Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
+			Providers: []Provider{{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "generic", Chat: "https://a.example/v1", Keys: []ProviderKey{{ID: "pk_0000000001", Name: "a", Key: key}}}},
+			Nodes:     []Node{{ID: fixtureID(identity.Node, "n"), Name: "n", Provider: fixtureID(identity.Provider, "p"), Model: "m1"}},
+			Routes:    []Route{{ID: fixtureID(identity.Route, "r"), Name: "r", Nodes: []string{fixtureID(identity.Node, "n")}}},
 		}
 	}
 	cases := []struct {
@@ -187,14 +208,16 @@ func TestProviderKeyEnabledValue(t *testing.T) {
 }
 
 func TestNodeKeyPinResolves(t *testing.T) {
+	providerID := fixtureID(identity.Provider, "p")
+	keyID := fixtureID(identity.ProviderKey, "account-a")
 	c := &Config{
 		Gateway: Gateway{Listen: ":8787"},
 		Providers: []Provider{{
-			Name: "p", Type: "generic", Chat: "https://a.example/v1",
-			Keys: []ProviderKey{{Name: "account-a", Key: "sk-a"}},
+			ID: providerID, Name: "p", Type: "generic", Chat: "https://a.example/v1",
+			Keys: []ProviderKey{{ID: keyID, Name: "account-a", Key: "sk-a"}},
 		}},
-		Nodes:  []Node{{Name: "n", Provider: "p", Model: "m1", Key: "account-a"}},
-		Routes: []Route{{Name: "r", Nodes: []string{"n"}}},
+		Nodes:  []Node{{ID: fixtureID(identity.Node, "n"), Name: "n", Provider: providerID, Model: "m1", Key: keyID}},
+		Routes: []Route{{ID: fixtureID(identity.Route, "r"), Name: "r", Nodes: []string{fixtureID(identity.Node, "n")}}},
 	}
 	if err := Validate(c); err != nil {
 		t.Fatalf("validate: %v", err)
@@ -202,34 +225,42 @@ func TestNodeKeyPinResolves(t *testing.T) {
 }
 
 func TestNodeKeyPinUnknownFails(t *testing.T) {
+	providerID := fixtureID(identity.Provider, "p")
 	c := &Config{
 		Gateway: Gateway{Listen: ":8787"},
 		Providers: []Provider{{
-			Name: "p", Type: "generic", Chat: "https://a.example/v1",
-			Keys: []ProviderKey{{Name: "account-a", Key: "sk-a"}},
+			ID: providerID, Name: "p", Type: "generic", Chat: "https://a.example/v1",
+			Keys: []ProviderKey{{ID: fixtureID(identity.ProviderKey, "account-a"), Name: "account-a", Key: "sk-a"}},
 		}},
-		Nodes:  []Node{{Name: "n", Provider: "p", Model: "m1", Key: "nope"}},
-		Routes: []Route{{Name: "r", Nodes: []string{"n"}}},
+		Nodes:  []Node{{ID: fixtureID(identity.Node, "n"), Name: "n", Provider: providerID, Model: "m1", Key: "nope"}},
+		Routes: []Route{{ID: fixtureID(identity.Route, "r"), Name: "r", Nodes: []string{fixtureID(identity.Node, "n")}}},
 	}
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("err = %v, want it to name the unknown key", err)
 	}
+	if !strings.Contains(err.Error(), "key id") {
+		t.Fatalf("err = %v, want it to name the expected key id", err)
+	}
 }
 
 func TestNodeKeyPinOtherProviderFails(t *testing.T) {
+	providerA := fixtureID(identity.Provider, "a")
+	providerB := fixtureID(identity.Provider, "b")
 	c := &Config{
 		Gateway: Gateway{Listen: ":8787"},
 		Providers: []Provider{
-			{Name: "a", Type: "generic", Chat: "https://a.example/v1", Keys: []ProviderKey{{Name: "account-a", Key: "sk-a"}}},
-			{Name: "b", Type: "generic", Chat: "https://b.example/v1", Keys: []ProviderKey{{Name: "account-b", Key: "sk-b"}}},
+			{ID: providerA, Name: "a", Type: "generic", Chat: "https://a.example/v1",
+				Keys: []ProviderKey{{ID: fixtureID(identity.ProviderKey, "account-a"), Name: "account-a", Key: "sk-a"}}},
+			{ID: providerB, Name: "b", Type: "generic", Chat: "https://b.example/v1",
+				Keys: []ProviderKey{{ID: fixtureID(identity.ProviderKey, "account-b"), Name: "account-b", Key: "sk-b"}}},
 		},
-		Nodes:  []Node{{Name: "n", Provider: "b", Model: "m1", Key: "account-a"}},
-		Routes: []Route{{Name: "r", Nodes: []string{"n"}}},
+		Nodes:  []Node{{ID: fixtureID(identity.Node, "n"), Name: "n", Provider: providerB, Model: "m1", Key: fixtureID(identity.ProviderKey, "account-a")}},
+		Routes: []Route{{ID: fixtureID(identity.Route, "r"), Name: "r", Nodes: []string{fixtureID(identity.Node, "n")}}},
 	}
 	err := Validate(c)
-	if err == nil || !strings.Contains(err.Error(), "account-a") {
-		t.Fatalf("err = %v, want it to reject a pin from another provider", err)
+	if err == nil || !strings.Contains(err.Error(), "key id") {
+		t.Fatalf("err = %v, want the other provider's key id rejected", err)
 	}
 }
 
@@ -410,23 +441,43 @@ func TestResolveEntrypointMultipleGlobsAndCase(t *testing.T) {
 	}
 }
 
+// topologyFixture is the smallest valid topology: one provider with one key,
+// one node, one route and one entrypoint, all addressed by id.
+func topologyFixture() *Config {
+	return &Config{
+		Gateway: Gateway{Listen: ":8787"},
+		Entrypoints: []Entrypoint{{
+			ID: fixtureID(identity.Entrypoint, "entry"), Name: "entry", Match: []string{"*"}, Route: fixtureID(identity.Route, "route"),
+		}},
+		Providers: []Provider{{
+			ID: fixtureID(identity.Provider, "provider"), Name: "provider", Type: "generic", Chat: "https://a.example/v1",
+			Keys: []ProviderKey{{ID: fixtureID(identity.ProviderKey, "key"), Name: "key", Key: "sk-a"}},
+		}},
+		Nodes: []Node{{
+			ID: fixtureID(identity.Node, "node"), Name: "node", Provider: fixtureID(identity.Provider, "provider"), Model: "m1",
+		}},
+		Routes: []Route{{
+			ID: fixtureID(identity.Route, "route"), Name: "route", Nodes: []string{fixtureID(identity.Node, "node")},
+		}},
+	}
+}
+
 func TestValidateEntrypoints(t *testing.T) {
+	routeID := fixtureID(identity.Route, "route")
 	base := func() *Config {
-		return &Config{
-			Gateway:   Gateway{Listen: ":8787"},
-			Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1"}},
-			Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
-			Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
-		}
+		c := topologyFixture()
+		c.Entrypoints = nil
+		return c
 	}
 	cases := []struct {
 		name string
 		ep   Entrypoint
 	}{
-		{"empty name", Entrypoint{Match: []string{"*"}, Route: "r"}},
-		{"empty match", Entrypoint{Name: "e", Route: "r"}},
-		{"empty match entries", Entrypoint{Name: "e", Match: []string{"", "  "}, Route: "r"}},
-		{"unknown route", Entrypoint{Name: "e", Match: []string{"*"}, Route: "missing"}},
+		{"missing id", Entrypoint{Name: "e", Match: []string{"*"}, Route: routeID}},
+		{"empty name", Entrypoint{ID: "e_0000000001", Match: []string{"*"}, Route: routeID}},
+		{"empty match", Entrypoint{ID: "e_0000000001", Name: "e", Route: routeID}},
+		{"empty match entries", Entrypoint{ID: "e_0000000001", Name: "e", Match: []string{"", "  "}, Route: routeID}},
+		{"unknown route", Entrypoint{ID: "e_0000000001", Name: "e", Match: []string{"*"}, Route: "missing"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -441,17 +492,26 @@ func TestValidateEntrypoints(t *testing.T) {
 	t.Run("duplicate name", func(t *testing.T) {
 		c := base()
 		c.Entrypoints = []Entrypoint{
-			{Name: "e", Match: []string{"a*"}, Route: "r"},
-			{Name: "e", Match: []string{"b*"}, Route: "r"},
+			{ID: "e_0000000001", Name: "e", Match: []string{"a*"}, Route: routeID},
+			{ID: "e_0000000002", Name: "e", Match: []string{"b*"}, Route: routeID},
 		}
 		if err := Validate(c); err == nil {
 			t.Fatal("duplicate entrypoint names should not validate")
 		}
 	})
 
+	t.Run("unknown route by name", func(t *testing.T) {
+		c := base()
+		c.Entrypoints = []Entrypoint{{ID: "e_0000000001", Name: "e", Match: []string{"*"}, Route: "route"}}
+		err := Validate(c)
+		if err == nil || !strings.Contains(err.Error(), `use the route id "`+routeID+`"`) {
+			t.Fatalf("err = %v, want the display name rejected with the expected route id", err)
+		}
+	})
+
 	t.Run("slash name accepted", func(t *testing.T) {
 		c := base()
-		c.Entrypoints = []Entrypoint{{Name: "cli/desktop", Match: []string{"*"}, Route: "r"}}
+		c.Entrypoints = []Entrypoint{{ID: "e_0000000001", Name: "cli/desktop", Match: []string{"*"}, Route: routeID}}
 		if err := Validate(c); err != nil {
 			t.Fatalf("slash in an entrypoint name should validate: %v", err)
 		}
@@ -459,12 +519,8 @@ func TestValidateEntrypoints(t *testing.T) {
 }
 
 func TestValidateNodeRequiresModel(t *testing.T) {
-	c := &Config{
-		Gateway:   Gateway{Listen: ":8787"},
-		Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1"}},
-		Nodes:     []Node{{Name: "n", Provider: "p"}},
-		Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
-	}
+	c := topologyFixture()
+	c.Nodes[0].Model = ""
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "model") {
 		t.Fatalf("err = %v, want missing model error", err)
@@ -472,26 +528,19 @@ func TestValidateNodeRequiresModel(t *testing.T) {
 }
 
 func TestValidateRejectsDuplicateRouteNode(t *testing.T) {
-	c := &Config{
-		Gateway:   Gateway{Listen: ":8787"},
-		Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1"}},
-		Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
-		Routes:    []Route{{Name: "r", Nodes: []string{"n", "n"}}},
-	}
+	c := topologyFixture()
+	c.Routes[0].Nodes = []string{c.Nodes[0].ID, c.Nodes[0].ID}
 	if err := Validate(c); err == nil {
 		t.Fatal("duplicate route node references should not validate")
 	}
 }
 
 func TestValidateRejectsUnknownProvider(t *testing.T) {
-	c := &Config{
-		Gateway:   Gateway{Listen: ":8787"},
-		Providers: []Provider{{Name: "a", Type: "generic", Chat: "https://a.example/v1"}},
-		Nodes:     []Node{{Name: "n", Provider: "missing", Model: "m1"}},
-		Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
-	}
-	if err := Validate(c); err == nil {
-		t.Fatal("want error for unknown provider")
+	c := topologyFixture()
+	c.Nodes[0].Provider = "p_0000000001"
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "provider id") {
+		t.Fatalf("err = %v, want an unknown provider id rejected", err)
 	}
 }
 
@@ -739,7 +788,7 @@ func TestHashAndVerifyPassword(t *testing.T) {
 func TestProviderAPIRequiresType(t *testing.T) {
 	c := &Config{
 		Gateway:   Gateway{Listen: ":8787"},
-		Providers: []Provider{{Name: "new", Chat: "https://chat.example/v1"}},
+		Providers: []Provider{{ID: fixtureID(identity.Provider, "new"), Name: "new", Chat: "https://chat.example/v1"}},
 	}
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "type") {
@@ -752,6 +801,7 @@ func TestProviderAPIHealthAPI(t *testing.T) {
 		c := &Config{
 			Gateway: Gateway{Listen: ":8787"},
 			Providers: []Provider{{
+				ID:        fixtureID(identity.Provider, "p"),
 				Name:      "p",
 				Type:      "deepseek",
 				Chat:      "https://api.deepseek.com/v1",
@@ -767,7 +817,7 @@ func TestProviderAPIHealthAPI(t *testing.T) {
 	t.Run("unknown api", func(t *testing.T) {
 		c := &Config{
 			Gateway:   Gateway{Listen: ":8787"},
-			Providers: []Provider{{Name: "p", Type: "deepseek", Chat: "https://api.deepseek.com/v1", Health: Health{API: "grpc"}}},
+			Providers: []Provider{{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "deepseek", Chat: "https://api.deepseek.com/v1", Health: Health{API: "grpc"}}},
 		}
 		err := Validate(c)
 		if err == nil || !strings.Contains(err.Error(), "health.api") {
@@ -778,7 +828,7 @@ func TestProviderAPIHealthAPI(t *testing.T) {
 	t.Run("missing base", func(t *testing.T) {
 		c := &Config{
 			Gateway:   Gateway{Listen: ":8787"},
-			Providers: []Provider{{Name: "p", Type: "deepseek", Chat: "https://api.deepseek.com/v1", Health: Health{API: "anthropic"}}},
+			Providers: []Provider{{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "deepseek", Chat: "https://api.deepseek.com/v1", Health: Health{API: "anthropic"}}},
 		}
 		err := Validate(c)
 		if err == nil || !strings.Contains(err.Error(), "health.api") {
@@ -790,7 +840,7 @@ func TestProviderAPIHealthAPI(t *testing.T) {
 func TestProviderAPIRequiresBaseURL(t *testing.T) {
 	c := &Config{
 		Gateway:   Gateway{Listen: ":8787"},
-		Providers: []Provider{{Name: "p", Type: "generic"}},
+		Providers: []Provider{{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "generic"}},
 	}
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "API base") {
@@ -803,8 +853,8 @@ func TestProviderAPIRejectsBadBaseURLs(t *testing.T) {
 		name string
 		p    Provider
 	}{
-		{"chat scheme", Provider{Name: "p", Type: "generic", Chat: "ftp://chat.example"}},
-		{"anthropic url", Provider{Name: "p", Type: "generic", Anthropic: "://bad"}},
+		{"chat scheme", Provider{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "generic", Chat: "ftp://chat.example"}},
+		{"anthropic url", Provider{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "generic", Anthropic: "://bad"}},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -890,7 +940,7 @@ providers:
 func TestProviderAPIRejectsUnknownType(t *testing.T) {
 	c := &Config{
 		Gateway:   Gateway{Listen: ":8787"},
-		Providers: []Provider{{Name: "p", Type: "bogus", Chat: "https://chat.example/v1"}},
+		Providers: []Provider{{ID: fixtureID(identity.Provider, "p"), Name: "p", Type: "bogus", Chat: "https://chat.example/v1"}},
 	}
 	err := Validate(c)
 	if err == nil || !strings.Contains(err.Error(), "bogus") {
@@ -1030,10 +1080,10 @@ func TestTopologyIncludes(t *testing.T) {
 	}
 }
 
-// TestTopologyIncludesNameKeyedRowsAfterMigration pins the Task 2 -> Task 3
-// bridge: a migrated config references nodes by id, while the gateway still
-// records stats rows by name, so both spellings must select the same row.
-func TestTopologyIncludesNameKeyedRowsAfterMigration(t *testing.T) {
+// TestTopologyIncludesIDKeyedRows pins the filter to ids: a migrated config
+// references nodes by id, and a stats row that still spelled a display name is
+// dropped instead of being reattributed.
+func TestTopologyIncludesIDKeyedRows(t *testing.T) {
 	c, err := Load(writeConfig(t, `
 providers:
   - name: p
@@ -1073,9 +1123,9 @@ entrypoints:
 		route, node, prov string
 	}{
 		{"ids", routeID, nodeID, providerID},
-		{"names recorded before Task 3", "r", "n", "p"},
-		{"route id with name refs", routeID, "n", "p"},
-		{"name route with ids", "r", nodeID, providerID},
+		{"route id only", routeID, nodeID, ""},
+		{"node id only", routeID, nodeID, providerID},
+		{"orphan node", "", nodeID, providerID},
 	}
 	for _, tc := range kept {
 		if !c.TopologyIncludes(tc.route, tc.node, tc.prov) {
@@ -1088,12 +1138,14 @@ entrypoints:
 		name              string
 		route, node, prov string
 	}{
-		{"unknown node name", "r", "ghost", "p"},
+		{"route name", "r", nodeID, providerID},
+		{"node name", routeID, "n", providerID},
+		{"provider name", routeID, nodeID, "p"},
+		{"unknown node name", routeID, "ghost", providerID},
 		{"unknown node id", routeID, "n_4q7a9x2m3k", providerID},
-		{"node of another route", "r", "n2", "p2"},
-		{"provider mismatch by name", "r", "n", "p2"},
-		{"provider mismatch by id", routeID, nodeID, c.Providers[1].ID},
-		{"unknown route", "r_4q7a9x2m3k", "n", "p"},
+		{"node of another route", routeID, c.Nodes[1].ID, c.Providers[1].ID},
+		{"provider mismatch", routeID, nodeID, c.Providers[1].ID},
+		{"unknown route", "r_4q7a9x2m3k", nodeID, providerID},
 	}
 	for _, tc := range dropped {
 		if c.TopologyIncludes(tc.route, tc.node, tc.prov) {
@@ -1542,7 +1594,7 @@ func TestValidateGatewayKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{Gateway: Gateway{Keys: tt.keys}}
+			cfg := &Config{Gateway: Gateway{Keys: withGatewayKeyIDs(tt.keys)}}
 			ApplyDefaults(cfg)
 			err := Validate(cfg)
 			if err == nil {
@@ -1574,7 +1626,7 @@ func TestValidateGatewayKeysLengthBoundaries(t *testing.T) {
 		{"too long", strings.Repeat("k", 513), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &Config{Gateway: Gateway{Keys: []GatewayKey{{Name: "a", Key: tc.key}}}}
+			cfg := &Config{Gateway: Gateway{Keys: withGatewayKeyIDs([]GatewayKey{{Name: "a", Key: tc.key}})}}
 			ApplyDefaults(cfg)
 			err := Validate(cfg)
 			if (err != nil) != tc.wantErr {
@@ -1630,24 +1682,16 @@ func TestWriteNewDoesNotOverwrite(t *testing.T) {
 	}
 }
 
+// validEntityConfig is the shared valid fixture: every entity carries an id
+// and every reference is one.
 func validEntityConfig() *Config {
-	return &Config{
-		Gateway:     Gateway{Listen: ":8787"},
-		Entrypoints: []Entrypoint{{Name: "entry", Match: []string{"*"}, Route: "route"}},
-		Providers: []Provider{{
-			Name: "provider", Type: "generic", Chat: "https://a.example/v1",
-			Keys: []ProviderKey{{Name: "key", Key: "sk-a"}},
-		}},
-		Nodes:  []Node{{Name: "node", Provider: "provider", Model: "m1"}},
-		Routes: []Route{{Name: "route", Nodes: []string{"node"}}},
-	}
+	return topologyFixture()
 }
 
 func TestValidateNameRules(t *testing.T) {
 	for _, name := range []string{"", "  ", "a$b", "ctl\x01", strings.Repeat("x", 65)} {
 		c := validEntityConfig()
 		c.Providers[0].Name = name
-		c.Nodes[0].Provider = name
 		err := Validate(c)
 		if err == nil {
 			t.Fatalf("provider name %q should not validate", name)
@@ -1659,7 +1703,6 @@ func TestValidateNameRules(t *testing.T) {
 	for _, name := range []string{"DeepSeek 官方", "a/b", "x y", strings.Repeat("x", 64)} {
 		c := validEntityConfig()
 		c.Providers[0].Name = name
-		c.Nodes[0].Provider = name
 		if err := Validate(c); err != nil {
 			t.Fatalf("provider name %q should validate: %v", name, err)
 		}
@@ -1678,7 +1721,7 @@ func TestValidateNameRulesPerKind(t *testing.T) {
 		{"route", func(c *Config) { c.Routes[0].Name = "a$b" }, "routes[0]"},
 		{"entrypoint", func(c *Config) { c.Entrypoints[0].Name = "a\x01b" }, "entrypoints[0]"},
 		{"gateway key", func(c *Config) {
-			c.Gateway.Keys = []GatewayKey{{Name: "a\x01b", Key: "sk-gateway-key"}}
+			c.Gateway.Keys = []GatewayKey{{ID: "gk_0000000001", Name: "a\x01b", Key: "sk-gateway-key"}}
 		}, "gateway.keys[0]"},
 	}
 	for _, tc := range cases {
@@ -1699,8 +1742,8 @@ func TestValidateNameRulesPerKind(t *testing.T) {
 func TestValidateSlashInKeyNamesAllowed(t *testing.T) {
 	c := validEntityConfig()
 	c.Providers[0].Keys[0].Name = "team/primary"
-	c.Gateway.Keys = []GatewayKey{{Name: "laptop/home", Key: "sk-gateway-key"}}
-	c.Nodes[0].Key = "team/primary"
+	c.Gateway.Keys = []GatewayKey{{ID: "gk_0000000001", Name: "laptop/home", Key: "sk-gateway-key"}}
+	c.Nodes[0].Key = c.Providers[0].Keys[0].ID
 	if err := Validate(c); err != nil {
 		t.Fatalf("slash in key names should validate: %v", err)
 	}
@@ -1710,17 +1753,16 @@ func TestValidateDuplicateNamesAcrossKinds(t *testing.T) {
 	c := validEntityConfig()
 	c.Providers[0].Name = "shared"
 	c.Nodes[0].Name = "shared"
-	c.Nodes[0].Provider = "shared"
 	c.Routes[0].Name = "shared"
-	c.Routes[0].Nodes = []string{"shared"}
 	c.Entrypoints[0].Name = "shared"
-	c.Entrypoints[0].Route = "shared"
 	if err := Validate(c); err != nil {
 		t.Fatalf("duplicate names across kinds should validate: %v", err)
 	}
 
 	c2 := validEntityConfig()
-	c2.Providers = append(c2.Providers, Provider{Name: "provider", Type: "generic", Chat: "https://b.example/v1"})
+	c2.Providers = append(c2.Providers, Provider{
+		ID: "p_0000000002", Name: "provider", Type: "generic", Chat: "https://b.example/v1",
+	})
 	if err := Validate(c2); err == nil {
 		t.Fatal("duplicate provider names should not validate")
 	}
@@ -1811,20 +1853,12 @@ routes:
 	}
 }
 
-func TestValidateOptionalIDs(t *testing.T) {
-	c := validEntityConfig()
-	c.Gateway.Keys = []GatewayKey{{Name: "laptop", Key: "sk-gateway-key"}}
-	if err := Validate(c); err != nil {
-		t.Fatalf("ids are optional in this task: %v", err)
-	}
-
+// TestValidateRequiresIDs pins the mandatory id: only a migrated or
+// admin-written config validates, and every kind names the entity that lost its
+// id.
+func TestValidateRequiresIDs(t *testing.T) {
 	withIDs := validEntityConfig()
 	withIDs.Gateway.Keys = []GatewayKey{{ID: "gk_9x2m4q7a3k", Name: "laptop", Key: "sk-gateway-key"}}
-	withIDs.Providers[0].ID = "p_3k9x2m4q7a"
-	withIDs.Providers[0].Keys[0].ID = "pk_8m2xq7a4k9"
-	withIDs.Nodes[0].ID = "n_4q7a9x2m3k"
-	withIDs.Routes[0].ID = "r_f3k9x2m4qa"
-	withIDs.Entrypoints[0].ID = "e_q7a4m2xk9d"
 	if err := Validate(withIDs); err != nil {
 		t.Fatalf("valid ids should validate: %v", err)
 	}
@@ -1834,6 +1868,24 @@ func TestValidateOptionalIDs(t *testing.T) {
 		mutate func(*Config)
 		want   string
 	}{
+		{"provider missing id", func(c *Config) {
+			c.Providers[0].ID = ""
+		}, `provider "provider": id is required`},
+		{"provider key missing id", func(c *Config) {
+			c.Providers[0].Keys[0].ID = ""
+		}, `provider "provider": keys[0]: id is required`},
+		{"node missing id", func(c *Config) {
+			c.Nodes[0].ID = ""
+		}, `node "node": id is required`},
+		{"route missing id", func(c *Config) {
+			c.Routes[0].ID = ""
+		}, `route "route": id is required`},
+		{"entrypoint missing id", func(c *Config) {
+			c.Entrypoints[0].ID = ""
+		}, `entrypoint "entry": id is required`},
+		{"gateway key missing id", func(c *Config) {
+			c.Gateway.Keys = []GatewayKey{{Name: "laptop", Key: "sk-gateway-key"}}
+		}, "gateway.keys[0]: id is required"},
 		{"provider wrong shape", func(c *Config) { c.Providers[0].ID = "p_short" }, `provider "provider"`},
 		{"provider padded id", func(c *Config) { c.Providers[0].ID = " p_3k9x2m4q7a" }, "surrounding whitespace"},
 		{"provider wrong prefix", func(c *Config) { c.Providers[0].ID = "n_4q7a9x2m3k" }, `provider "provider"`},
@@ -1895,8 +1947,11 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 		c.Providers[0].ID = "p_3k9x2m4q7a"
 		c.Providers[0].Keys[0].ID = "pk_8m2xq7a4k9"
 		c.Nodes[0].ID = "n_4q7a9x2m3k"
+		c.Nodes[0].Provider = "p_3k9x2m4q7a"
 		c.Routes[0].ID = "r_f3k9x2m4qa"
+		c.Routes[0].Nodes = []string{"n_4q7a9x2m3k"}
 		c.Entrypoints[0].ID = "e_q7a4m2xk9d"
+		c.Entrypoints[0].Route = "r_f3k9x2m4qa"
 		c.Gateway.Keys = []GatewayKey{{ID: "gk_9x2m4q7a3k", Name: "laptop", Key: "sk-gateway-key"}}
 		return c
 	}
@@ -1914,7 +1969,7 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 			func(c *Config) {
 				c.Providers = append(c.Providers, Provider{
 					ID: "p_3k9x2m4q7a", Name: "provider2", Type: "generic",
-					Chat: "https://b.example/v1", Keys: []ProviderKey{{Name: "key", Key: "sk-b"}},
+					Chat: "https://b.example/v1", Keys: []ProviderKey{{ID: "pk_0000000002", Name: "key", Key: "sk-b"}},
 				})
 			},
 			[]string{"duplicate id", "p_3k9x2m4q7a", `provider "provider2"`, `provider "provider"`},
@@ -1931,7 +1986,7 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 			"nodes",
 			func(c *Config) {
 				c.Nodes = append(c.Nodes, Node{
-					ID: "n_4q7a9x2m3k", Name: "node2", Provider: "provider", Model: "m2",
+					ID: "n_4q7a9x2m3k", Name: "node2", Provider: "p_3k9x2m4q7a", Model: "m2",
 				})
 			},
 			[]string{"duplicate id", "n_4q7a9x2m3k", `node "node2"`, `node "node"`},
@@ -1940,7 +1995,7 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 			"routes",
 			func(c *Config) {
 				c.Routes = append(c.Routes, Route{
-					ID: "r_f3k9x2m4qa", Name: "route2", Nodes: []string{"node"},
+					ID: "r_f3k9x2m4qa", Name: "route2", Nodes: []string{"n_4q7a9x2m3k"},
 				})
 			},
 			[]string{"duplicate id", "r_f3k9x2m4qa", `route "route2"`, `route "route"`},
@@ -1949,7 +2004,7 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 			"entrypoints",
 			func(c *Config) {
 				c.Entrypoints = append(c.Entrypoints, Entrypoint{
-					ID: "e_q7a4m2xk9d", Name: "entry2", Match: []string{"*"}, Route: "route",
+					ID: "e_q7a4m2xk9d", Name: "entry2", Match: []string{"*"}, Route: "r_f3k9x2m4qa",
 				})
 			},
 			[]string{"duplicate id", "e_q7a4m2xk9d", `entrypoint "entry2"`, `entrypoint "entry"`},

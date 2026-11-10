@@ -43,9 +43,10 @@ func captureUpstream(t *testing.T) (*httptest.Server, *capturedRequest) {
 
 func matrixConfig(upstreamURL string, api provider.API) *gwconfig.Config {
 	p := gwconfig.Provider{
+		ID:   "p_0000000001",
 		Name: "up",
 		Type: "generic",
-		Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}},
+		Keys: []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-test"}},
 	}
 	switch api {
 	case provider.Anthropic:
@@ -56,16 +57,17 @@ func matrixConfig(upstreamURL string, api provider.API) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{
-			{Name: "strong", Match: []string{"claude-opus*", "gpt-5.5*"}, Route: "r"},
-			{Name: "fast", Match: []string{"gpt-4.5*", "*"}, Route: "r"},
+			{ID: "e_0000000001", Name: "strong", Match: []string{"claude-opus*", "gpt-5.5*"}, Route: "r_0000000001"},
+			{ID: "e_0000000002", Name: "fast", Match: []string{"gpt-4.5*", "*"}, Route: "r_0000000001"},
 		},
 		Providers: []gwconfig.Provider{p},
 		Nodes: []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "up",
-			Provider: "up",
+			Provider: "p_0000000001",
 			Model:    "deepseek-v4-flash",
 		}},
-		Routes: []gwconfig.Route{{Name: "r", Nodes: []string{"up"}}},
+		Routes: []gwconfig.Route{{ID: "r_0000000001", Name: "r", Nodes: []string{"n_0000000001"}}},
 	}
 }
 

@@ -58,9 +58,7 @@ type authPolicy struct {
 }
 
 type authEntry struct {
-	// id is the attribution value stats records: the key id, or its display
-	// name while a config written before Tasks 4-6 still has no id. Task 7
-	// removes the fallback and requires ids.
+	// id is the gateway key id, the attribution value stats records.
 	id      string
 	digest  [32]byte
 	enabled bool
@@ -75,7 +73,7 @@ func newAuthPolicy(keys []gwconfig.GatewayKey) *authPolicy {
 			continue
 		}
 		p.entries = append(p.entries, authEntry{
-			id:      entityRef(key.ID, key.Name),
+			id:      key.ID,
 			digest:  sha256.Sum256([]byte(key.Key)),
 			enabled: key.Enabled == nil || *key.Enabled,
 		})
@@ -97,9 +95,8 @@ func (p *authPolicy) hasEnabled() bool {
 
 // authenticate compares every candidate with every entry. It never exits on
 // the first match so timing does not reveal the matching position. Attribution
-// goes to the id (or, until Task 7, the name) of the first enabled matching
-// entry in configuration order; a disabled match only changes the failure
-// reason.
+// goes to the id of the first enabled matching entry in configuration order; a
+// disabled match only changes the failure reason.
 func (p *authPolicy) authenticate(candidates []string) (id, reason string, ok bool) {
 	if len(candidates) == 0 {
 		return "", "missing", false

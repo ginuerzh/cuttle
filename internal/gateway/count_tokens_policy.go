@@ -60,7 +60,7 @@ func buildCountTokensPolicy(cfg *gwconfig.Config, plans map[string]*routePlan) (
 		if !ok {
 			return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
 		}
-		plan, ok := plans[routePlanKey(*r)]
+		plan, ok := plans[r.ID]
 		if !ok {
 			return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
 		}

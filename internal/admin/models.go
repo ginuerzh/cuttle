@@ -47,8 +47,7 @@ type modelsFlight struct {
 }
 
 // providerModels returns the model catalog for the provider a path value refers
-// to: its id, or its display name until Task 7 removes the transition fallback.
-// A fresh cache entry is served without touching the network; refresh forces a
+// to by id. A fresh cache entry is served without touching the network; refresh forces a
 // fetch. Concurrent fetches for the same provider share one upstream call. When
 // a refresh fails after an earlier success, the last-good catalog is returned
 // without a fatal error. Without a last-good catalog the fetch error is
@@ -145,9 +144,8 @@ func (s *Server) loadModels(ctx context.Context, p config.Provider, id string, f
 	return resultModels, resultAt, resultErr
 }
 
-// providerLocked returns the provider a read path value refers to. Reads still
-// accept the display name until Task 7 removes the transition fallback. Callers
-// must hold s.mu.
+// providerLocked returns the provider a read path value refers to by id.
+// Callers must hold s.mu.
 func (s *Server) providerLocked(ref string) (config.Provider, bool) {
 	if p, ok := s.cfg.Provider(ref); ok {
 		return *p, true
@@ -162,9 +160,7 @@ func (s *Server) providerLocked(ref string) (config.Provider, bool) {
 func (s *Server) invalidateModelsLocked(next *config.Config) {
 	nextByID := make(map[string]config.Provider, len(next.Providers))
 	for _, p := range next.Providers {
-		if p.ID != "" {
-			nextByID[p.ID] = p
-		}
+		nextByID[p.ID] = p
 	}
 	for _, p := range s.cfg.Providers {
 		updated, ok := nextByID[p.ID]

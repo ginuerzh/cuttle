@@ -15,24 +15,26 @@ func TestEntrypointOrderWins(t *testing.T) {
 	cfg := matrixConfig(fastSrv.URL, provider.Chat)
 	cfg.Nodes[0].Model = "fast-model"
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
+		ID:   "p_0000000002",
 		Name: "strong",
 		Type: "generic",
 		Chat: strongSrv.URL,
 	})
 	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
+		ID:       "n_0000000002",
 		Name:     "strong",
-		Provider: "strong",
+		Provider: "p_0000000002",
 		Model:    "strong-model",
 	})
 	// The catch-all route is declared first on purpose: entrypoint order, not
 	// route order, must decide which one wins.
 	cfg.Routes = []gwconfig.Route{
-		{Name: "default", Nodes: []string{"up"}},
-		{Name: "specific", Nodes: []string{"strong"}},
+		{ID: "r_0000000002", Name: "default", Nodes: []string{"n_0000000001"}},
+		{ID: "r_0000000003", Name: "specific", Nodes: []string{"n_0000000002"}},
 	}
 	cfg.Entrypoints = []gwconfig.Entrypoint{
-		{Name: "specific", Match: []string{"gpt-5.5"}, Route: "specific"},
-		{Name: "default", Match: []string{"*"}, Route: "default"},
+		{ID: "e_0000000003", Name: "specific", Match: []string{"gpt-5.5"}, Route: "r_0000000003"},
+		{ID: "e_0000000004", Name: "default", Match: []string{"*"}, Route: "r_0000000002"},
 	}
 	gw := startGateway(t, cfg)
 
@@ -59,9 +61,10 @@ func TestEntrypointMultipleGlobs(t *testing.T) {
 	cfg := matrixConfig(up.URL, provider.Chat)
 	cfg.Nodes[0].Model = "mapped-model"
 	cfg.Entrypoints = []gwconfig.Entrypoint{{
+		ID:    "e_0000000003",
 		Name:  "claude",
 		Match: []string{"claude-*", "gpt-5*"},
-		Route: "r",
+		Route: "r_0000000001",
 	}}
 	gw := startGateway(t, cfg)
 
@@ -83,9 +86,10 @@ func TestUnmatchedModelIsUnrouted(t *testing.T) {
 	up, hit := captureUpstream(t)
 	cfg := matrixConfig(up.URL, provider.Chat)
 	cfg.Entrypoints = []gwconfig.Entrypoint{{
+		ID:    "e_0000000003",
 		Name:  "only-gpt",
 		Match: []string{"gpt-4.5*"},
-		Route: "r",
+		Route: "r_0000000001",
 	}}
 	gw := startGateway(t, cfg)
 
@@ -142,22 +146,24 @@ func TestEntrypointGlobIsCaseInsensitive(t *testing.T) {
 	cfg := testConfig(fastSrv.URL)
 	cfg.Nodes[0].Model = "fast-model"
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
+		ID:   "p_0000000002",
 		Name: "strong",
 		Type: "generic",
 		Chat: strongSrv.URL,
 	})
 	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
+		ID:       "n_0000000002",
 		Name:     "strong",
-		Provider: "strong",
+		Provider: "p_0000000002",
 		Model:    "strong-model",
 	})
 	cfg.Routes = []gwconfig.Route{
-		{Name: "default", Nodes: []string{"up"}},
-		{Name: "specific", Nodes: []string{"strong"}},
+		{ID: "r_0000000002", Name: "default", Nodes: []string{"n_0000000001"}},
+		{ID: "r_0000000003", Name: "specific", Nodes: []string{"n_0000000002"}},
 	}
 	cfg.Entrypoints = []gwconfig.Entrypoint{
-		{Name: "specific", Match: []string{"gpt-5.5*"}, Route: "specific"},
-		{Name: "default", Match: []string{"*"}, Route: "default"},
+		{ID: "e_0000000003", Name: "specific", Match: []string{"gpt-5.5*"}, Route: "r_0000000003"},
+		{ID: "e_0000000004", Name: "default", Match: []string{"*"}, Route: "r_0000000002"},
 	}
 	gw := startGateway(t, cfg)
 

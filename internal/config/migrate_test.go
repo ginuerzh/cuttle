@@ -409,8 +409,6 @@ func TestLoadRenameWithoutIDChangesIdentity(t *testing.T) {
 }
 
 func TestValidateNameReferencesRejected(t *testing.T) {
-	t.Skip("enabled in Task 7")
-
 	c := &Config{
 		Gateway: Gateway{Listen: ":8787"},
 		Providers: []Provider{{
@@ -426,7 +424,9 @@ func TestValidateNameReferencesRejected(t *testing.T) {
 	}
 }
 
-func TestEntityLookupsPreferIDThenName(t *testing.T) {
+// TestEntityLookupsUseIDsOnly pins the handles: every lookup resolves an id,
+// and a display name never matches even when it is unique.
+func TestEntityLookupsUseIDsOnly(t *testing.T) {
 	c := decodeConfig(t, legacyConfig)
 	if _, err := MigrateIdentities(c); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -435,42 +435,40 @@ func TestEntityLookupsPreferIDThenName(t *testing.T) {
 	if provider, ok := c.Provider(c.Providers[0].ID); !ok || provider != &c.Providers[0] {
 		t.Fatalf("Provider(id) = %+v, %v", provider, ok)
 	}
-	if provider, ok := c.Provider(" deepseek "); !ok || provider != &c.Providers[0] {
-		t.Fatalf("Provider(legacy name) = %+v, %v", provider, ok)
-	}
-	if _, ok := c.Provider("missing"); ok {
-		t.Fatal("Provider(missing) reported a match")
-	}
-	if _, ok := c.Provider(""); ok {
-		t.Fatal("Provider(empty) reported a match")
+	for _, ref := range []string{" deepseek ", "deepseek", "missing", ""} {
+		if _, ok := c.Provider(ref); ok {
+			t.Fatalf("Provider(%q) reported a match, want id-only lookups", ref)
+		}
 	}
 
 	if node, ok := c.Node(c.Nodes[0].ID); !ok || node != &c.Nodes[0] {
 		t.Fatalf("Node(id) = %+v, %v", node, ok)
 	}
-	if node, ok := c.Node("deepseek-chat"); !ok || node != &c.Nodes[0] {
-		t.Fatalf("Node(legacy name) = %+v, %v", node, ok)
+	for _, ref := range []string{"deepseek-chat", "missing"} {
+		if _, ok := c.Node(ref); ok {
+			t.Fatalf("Node(%q) reported a match, want id-only lookups", ref)
+		}
 	}
+
 	if route, ok := c.Route(c.Routes[0].ID); !ok || route != &c.Routes[0] {
 		t.Fatalf("Route(id) = %+v, %v", route, ok)
 	}
-	if route, ok := c.Route("default"); !ok || route != &c.Routes[0] {
-		t.Fatalf("Route(legacy name) = %+v, %v", route, ok)
+	if _, ok := c.Route("default"); ok {
+		t.Fatal("Route(name) reported a match, want id-only lookups")
 	}
+
 	if ep, ok := c.Entrypoint(c.Entrypoints[0].ID); !ok || ep != &c.Entrypoints[0] {
 		t.Fatalf("Entrypoint(id) = %+v, %v", ep, ok)
 	}
-	if ep, ok := c.Entrypoint("default"); !ok || ep != &c.Entrypoints[0] {
-		t.Fatalf("Entrypoint(legacy name) = %+v, %v", ep, ok)
+	if _, ok := c.Entrypoint("default"); ok {
+		t.Fatal("Entrypoint(name) reported a match, want id-only lookups")
 	}
+
 	if key, ok := c.GatewayKey(c.Gateway.Keys[0].ID); !ok || key != &c.Gateway.Keys[0] {
 		t.Fatalf("GatewayKey(id) = %+v, %v", key, ok)
 	}
-	if key, ok := c.GatewayKey("client"); !ok || key != &c.Gateway.Keys[0] {
-		t.Fatalf("GatewayKey(legacy name) = %+v, %v", key, ok)
-	}
-	if _, ok := c.Node("missing"); ok {
-		t.Fatal("Node(missing) reported a match")
+	if _, ok := c.GatewayKey("client"); ok {
+		t.Fatal("GatewayKey(name) reported a match, want id-only lookups")
 	}
 }
 

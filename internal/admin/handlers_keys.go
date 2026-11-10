@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/identity"
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
@@ -24,8 +25,10 @@ const (
 var errGatewayKeyGeneration = errors.New("could not generate a unique gateway key")
 
 // gatewayKeyView is one configured key as the browser sees it. The raw value is
-// never included; KeyPreview is the existing admin mask.
+// never included; KeyPreview is the existing admin mask. The id is the handle,
+// the name is a display label.
 type gatewayKeyView struct {
+	ID         string `json:"id"`
 	Name       string `json:"name"`
 	KeyPreview string `json:"keyPreview"`
 	Enabled    bool   `json:"enabled"`
@@ -34,6 +37,7 @@ type gatewayKeyView struct {
 // gatewayKeySecret is the one-time create/rotate response. It is the only
 // admin response that carries a raw gateway key.
 type gatewayKeySecret struct {
+	ID   string `json:"id"`
 	Name string `json:"name"`
 	Key  string `json:"key"`
 }
@@ -52,8 +56,9 @@ func generateGatewayKey() (string, error) {
 }
 
 // newGatewayKey generates a key that does not collide with any configured key.
-// The entry named skip is ignored so rotation can exclude its current value.
-func newGatewayKey(existing []config.GatewayKey, skip string) (string, error) {
+// The entry with the skipID is ignored so rotation can exclude its current
+// value.
+func newGatewayKey(existing []config.GatewayKey, skipID string) (string, error) {
 	for range gatewayKeyAttempts {
 		key, err := generateGatewayKey()
 		if err != nil {
@@ -61,7 +66,7 @@ func newGatewayKey(existing []config.GatewayKey, skip string) (string, error) {
 		}
 		collision := false
 		for _, k := range existing {
-			if k.Name == skip {
+			if k.ID == skipID {
 				continue
 			}
 			if k.Key == key {
@@ -83,6 +88,7 @@ func (s *Server) handleListGatewayKeys(w http.ResponseWriter, r *http.Request) {
 	out := make([]gatewayKeyView, 0, len(s.cfg.Gateway.Keys))
 	for _, k := range s.cfg.Gateway.Keys {
 		out = append(out, gatewayKeyView{
+			ID:         k.ID,
 			Name:       k.Name,
 			KeyPreview: preview(k.Key),
 			Enabled:    gwKeyEnabled(k),
@@ -105,8 +111,15 @@ func (s *Server) handleCreateGatewayKey(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The server owns the id: a client-supplied one is ignored.
+	id, err := identity.New(identity.GatewayKey)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	var secret string
-	err := s.mutate(func(c *config.Config) error {
+	err = s.mutate(func(c *config.Config) error {
 		for _, existing := range c.Gateway.Keys {
 			if existing.Name == name {
 				return fmt.Errorf("gateway key %q already exists", name)
@@ -118,6 +131,7 @@ func (s *Server) handleCreateGatewayKey(w http.ResponseWriter, r *http.Request) 
 		}
 		secret = key
 		c.Gateway.Keys = append(c.Gateway.Keys, config.GatewayKey{
+			ID:      id,
 			Name:    name,
 			Key:     key,
 			Enabled: in.Enabled,
@@ -132,36 +146,45 @@ func (s *Server) handleCreateGatewayKey(w http.ResponseWriter, r *http.Request) 
 		writeError(w, status, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, gatewayKeySecret{Name: name, Key: secret})
+	writeJSON(w, http.StatusCreated, gatewayKeySecret{ID: id, Name: name, Key: secret})
 }
 
 func (s *Server) handleUpdateGatewayKey(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 	var in struct {
+		ID      string `json:"id"`
 		Name    string `json:"name"`
 		Enabled *bool  `json:"enabled"`
 	}
 	if err := decode(w, r, &in); err != nil {
 		return
 	}
-	if in.Name != "" && in.Name != name {
-		writeError(w, http.StatusBadRequest, "name in body does not match the path")
+	if in.ID != "" && in.ID != id {
+		writeError(w, http.StatusBadRequest, "id in body does not match the path")
 		return
 	}
-	if in.Enabled == nil {
-		writeError(w, http.StatusBadRequest, "enabled is required")
+	name := strings.TrimSpace(in.Name)
+	if name == "" && in.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "name or enabled is required")
 		return
 	}
 
 	err := s.mutate(func(c *config.Config) error {
 		for i := range c.Gateway.Keys {
-			if c.Gateway.Keys[i].Name != name {
+			if c.Gateway.Keys[i].ID != id {
 				continue
 			}
-			c.Gateway.Keys[i].Enabled = in.Enabled
+			// The name is a display label: an omitted one keeps the stored
+			// label instead of blanking it.
+			if name != "" {
+				c.Gateway.Keys[i].Name = name
+			}
+			if in.Enabled != nil {
+				c.Gateway.Keys[i].Enabled = in.Enabled
+			}
 			return nil
 		}
-		return fmt.Errorf("gateway key %q not found", name)
+		return fmt.Errorf("gateway key %q not found", id)
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -171,23 +194,24 @@ func (s *Server) handleUpdateGatewayKey(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleRotateGatewayKey(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 
-	var secret string
+	var secret, name string
 	err := s.mutate(func(c *config.Config) error {
 		for i := range c.Gateway.Keys {
-			if c.Gateway.Keys[i].Name != name {
+			if c.Gateway.Keys[i].ID != id {
 				continue
 			}
-			key, err := newGatewayKey(c.Gateway.Keys, name)
+			key, err := newGatewayKey(c.Gateway.Keys, id)
 			if err != nil {
 				return err
 			}
 			secret = key
+			name = c.Gateway.Keys[i].Name
 			c.Gateway.Keys[i].Key = key
 			return nil
 		}
-		return fmt.Errorf("gateway key %q not found", name)
+		return fmt.Errorf("gateway key %q not found", id)
 	})
 	if err != nil {
 		status := http.StatusBadRequest
@@ -197,24 +221,24 @@ func (s *Server) handleRotateGatewayKey(w http.ResponseWriter, r *http.Request) 
 		writeError(w, status, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, gatewayKeySecret{Name: name, Key: secret})
+	writeJSON(w, http.StatusOK, gatewayKeySecret{ID: id, Name: name, Key: secret})
 }
 
 func (s *Server) handleDeleteGatewayKey(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 
 	err := s.mutate(func(c *config.Config) error {
 		out := c.Gateway.Keys[:0]
 		found := false
 		for _, k := range c.Gateway.Keys {
-			if k.Name == name {
+			if k.ID == id {
 				found = true
 				continue
 			}
 			out = append(out, k)
 		}
 		if !found {
-			return fmt.Errorf("gateway key %q not found", name)
+			return fmt.Errorf("gateway key %q not found", id)
 		}
 		c.Gateway.Keys = out
 		return nil
@@ -235,6 +259,7 @@ type gatewayKeyUsageCounts struct {
 }
 
 type gatewayKeyUsageRow struct {
+	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Configured   bool   `json:"configured"`
 	Enabled      bool   `json:"enabled"`
@@ -255,7 +280,9 @@ type gatewayKeyUsageResponse struct {
 }
 
 // handleGatewayKeyUsage merges per-key rollups with the current config: keys
-// deleted from the config still report their history as unconfigured rows.
+// deleted from the config still report their history as unconfigured rows. The
+// rollups and the rows are joined by gateway key id; a deleted key is labelled
+// with the last name the store kept for it.
 func (s *Server) handleGatewayKeyUsage(w http.ResponseWriter, r *http.Request) {
 	if s.stats == nil {
 		writeError(w, http.StatusServiceUnavailable, "stats disabled")
@@ -276,13 +303,15 @@ func (s *Server) handleGatewayKeyUsage(w http.ResponseWriter, r *http.Request) {
 	for _, u := range usage {
 		byKey[u.Key] = u
 	}
+	labels := s.newLabelSet(r.Context())
 
 	rows := make([]gatewayKeyUsageRow, 0, len(keys)+len(byKey))
 	totals := gatewayKeyUsageCounts{}
-	add := func(name string, configured, enabled bool, key string) {
-		u := byKey[name]
+	add := func(id string, configured, enabled bool, key string) {
+		u := byKey[id]
 		row := gatewayKeyUsageRow{
-			Name:         name,
+			ID:           id,
+			Name:         labels.gatewayKey(id),
 			Configured:   configured,
 			Enabled:      enabled,
 			Requests:     u.Requests,
@@ -304,18 +333,26 @@ func (s *Server) handleGatewayKeyUsage(w http.ResponseWriter, r *http.Request) {
 
 	seen := make(map[string]struct{}, len(keys))
 	for _, k := range keys {
-		seen[k.Name] = struct{}{}
-		add(k.Name, true, gwKeyEnabled(k), k.Key)
+		seen[k.ID] = struct{}{}
+		add(k.ID, true, gwKeyEnabled(k), k.Key)
 	}
 	historical := make([]string, 0, len(byKey))
-	for name := range byKey {
-		if _, ok := seen[name]; !ok {
-			historical = append(historical, name)
+	for id := range byKey {
+		if _, ok := seen[id]; !ok {
+			historical = append(historical, id)
 		}
 	}
-	sort.Strings(historical)
-	for _, name := range historical {
-		add(name, false, false, "")
+	// Deleted keys follow the configured ones, alphabetically by the label
+	// they last carried.
+	sort.Slice(historical, func(i, j int) bool {
+		a, b := labels.gatewayKey(historical[i]), labels.gatewayKey(historical[j])
+		if a != b {
+			return a < b
+		}
+		return historical[i] < historical[j]
+	})
+	for _, id := range historical {
+		add(id, false, false, "")
 	}
 
 	writeJSON(w, http.StatusOK, gatewayKeyUsageResponse{

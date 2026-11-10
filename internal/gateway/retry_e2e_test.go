@@ -41,35 +41,38 @@ func TestGatewayRetriesRetryableUpstream(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
-	cfg.Entrypoints = []config.Entrypoint{{Name: "all", Match: []string{"*"}, Route: "r"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"}}
 	cfg.Providers = []config.Provider{
 		{
+			ID:   "p_0000000001",
 			Name: "a",
 			Type: "generic",
 			Chat: first.URL,
-			Keys: []config.ProviderKey{{Name: "ka", Key: "sk-a"}},
+			Keys: []config.ProviderKey{{ID: "pk_0000000001", Name: "ka", Key: "sk-a"}},
 		},
 		{
+			ID:   "p_0000000002",
 			Name: "b",
 			Type: "generic",
 			Chat: second.URL,
-			Keys: []config.ProviderKey{{Name: "kb", Key: "sk-b"}},
+			Keys: []config.ProviderKey{{ID: "pk_0000000002", Name: "kb", Key: "sk-b"}},
 		},
 	}
 	cfg.Nodes = []config.Node{
-		{Name: "na", Provider: "a", Model: "deepseek-chat"},
-		{Name: "nb", Provider: "b", Model: "deepseek-chat"},
+		{ID: "n_0000000001", Name: "na", Provider: "p_0000000001", Model: "deepseek-chat"},
+		{ID: "n_0000000002", Name: "nb", Provider: "p_0000000002", Model: "deepseek-chat"},
 	}
 	cfg.Routes = []config.Route{{
+		ID:       "r_0000000001",
 		Name:     "r",
-		Nodes:    []string{"na", "nb"},
+		Nodes:    []string{"n_0000000001", "n_0000000002"},
 		Strategy: "fifo",
 		Retries:  1,
 		// gateway.New does not apply config.Load defaults, so pin the codes.
 		RetryCodes: "429,5xx",
 	}}
 
-	gw, err := gateway.New(withIDs(t, cfg), xlogger.Nop())
+	gw, err := gateway.New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,34 +149,37 @@ func TestGatewayRetryUsesProviderCredentials(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
-	cfg.Entrypoints = []config.Entrypoint{{Name: "all", Match: []string{"*"}, Route: "r"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"}}
 	cfg.Providers = []config.Provider{
 		{
+			ID:   "p_0000000001",
 			Name: "a",
 			Type: "generic",
 			Chat: first.URL,
-			Keys: []config.ProviderKey{{Name: "ka", Key: "sk-a"}},
+			Keys: []config.ProviderKey{{ID: "pk_0000000001", Name: "ka", Key: "sk-a"}},
 		},
 		{
+			ID:   "p_0000000002",
 			Name: "b",
 			Type: "generic",
 			Chat: second.URL,
-			Keys: []config.ProviderKey{{Name: "kb", Key: "sk-b"}},
+			Keys: []config.ProviderKey{{ID: "pk_0000000002", Name: "kb", Key: "sk-b"}},
 		},
 	}
 	cfg.Nodes = []config.Node{
-		{Name: "na", Provider: "a", Model: "deepseek-chat"},
-		{Name: "nb", Provider: "b", Model: "deepseek-chat"},
+		{ID: "n_0000000001", Name: "na", Provider: "p_0000000001", Model: "deepseek-chat"},
+		{ID: "n_0000000002", Name: "nb", Provider: "p_0000000002", Model: "deepseek-chat"},
 	}
 	cfg.Routes = []config.Route{{
+		ID:         "r_0000000001",
 		Name:       "r",
-		Nodes:      []string{"na", "nb"},
+		Nodes:      []string{"n_0000000001", "n_0000000002"},
 		Strategy:   "fifo",
 		Retries:    1,
 		RetryCodes: "429,5xx",
 	}}
 
-	gw, err := gateway.New(withIDs(t, cfg), xlogger.Nop())
+	gw, err := gateway.New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

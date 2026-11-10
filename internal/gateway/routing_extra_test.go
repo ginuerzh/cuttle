@@ -91,12 +91,13 @@ func TestBackupProviderUsedOnlyAfterPrimaryFails(t *testing.T) {
 
 	cfg := matrixConfig(primary.URL, provider.Chat)
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
+		ID:   "p_0000000002",
 		Name: "backup",
 		Type: "generic",
 		Chat: backup.URL,
 	})
-	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "backup", Provider: "backup", Model: "backup-model", Backup: true})
-	cfg.Routes[0].Nodes = []string{"up", "backup"}
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{ID: "n_0000000002", Name: "backup", Provider: "p_0000000002", Model: "backup-model", Backup: true})
+	cfg.Routes[0].Nodes = []string{"n_0000000001", "n_0000000002"}
 	gw := startGateway(t, cfg)
 
 	first := postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[]}`)

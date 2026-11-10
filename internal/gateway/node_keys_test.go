@@ -10,15 +10,22 @@ import (
 	"testing"
 
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/identity"
 )
 
+// keyFixtureID is the id a fixture key is addressed by: keys are ids, names are
+// labels.
+func keyFixtureID(name string) string {
+	return identity.Derive(identity.ProviderKey, name)
+}
+
 func keyNamed(name, value string) gwconfig.ProviderKey {
-	return gwconfig.ProviderKey{Name: name, Key: value}
+	return gwconfig.ProviderKey{ID: keyFixtureID(name), Name: name, Key: value}
 }
 
 func keyDisabled(name, value string) gwconfig.ProviderKey {
 	disabled := false
-	return gwconfig.ProviderKey{Name: name, Key: value, Enabled: &disabled}
+	return gwconfig.ProviderKey{ID: keyFixtureID(name), Name: name, Key: value, Enabled: &disabled}
 }
 
 func TestResolveNodeKeysPinned(t *testing.T) {
@@ -109,8 +116,9 @@ func TestResolveNodeKeysKeyless(t *testing.T) {
 func nodeKeyBuildConfig(upstreamURL string) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway:     gwconfig.Gateway{Listen: "127.0.0.1:0"},
-		Entrypoints: []gwconfig.Entrypoint{{Name: "default", Match: []string{"*"}, Route: "default"}},
+		Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: "r_0000000001"}},
 		Providers: []gwconfig.Provider{{
+			ID:   "p_0000000001",
 			Name: "up",
 			Type: "generic",
 			Chat: upstreamURL,
@@ -118,11 +126,12 @@ func nodeKeyBuildConfig(upstreamURL string) *gwconfig.Config {
 			Auth: gwconfig.Auth{Header: "Authorization", Prefix: "Bearer "},
 		}},
 		Nodes: []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "n",
-			Provider: "up",
+			Provider: "p_0000000001",
 			Model:    "m",
 		}},
-		Routes: []gwconfig.Route{{Name: "default", Nodes: []string{"n"}}},
+		Routes: []gwconfig.Route{{ID: "r_0000000001", Name: "default", Nodes: []string{"n_0000000001"}}},
 	}
 }
 
@@ -210,7 +219,7 @@ func namedKeyUpstream(t *testing.T) (*httptest.Server, *authLog) {
 func TestPinnedNodeUsesOnlyPinnedKey(t *testing.T) {
 	up, log := namedKeyUpstream(t)
 	cfg := nodeKeyBuildConfig(up.URL)
-	cfg.Nodes[0].Key = "account-b"
+	cfg.Nodes[0].Key = keyFixtureID("account-b")
 	gw := startGateway(t, cfg)
 
 	if code := postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[]}`); code != http.StatusOK {
@@ -248,7 +257,7 @@ func TestDisabledPinnedKeySkipsNode(t *testing.T) {
 	up, hits := countingUpstream(t)
 	cfg := nodeKeyBuildConfig(up.URL)
 	cfg.Providers[0].Keys[0] = keyDisabled("account-a", "sk-a")
-	cfg.Nodes[0].Key = "account-a"
+	cfg.Nodes[0].Key = keyFixtureID("account-a")
 	gw := startGateway(t, cfg)
 
 	if code := postModel(t, gw, "/v1/chat/completions", `{"model":"gpt-4.5","messages":[]}`); code < 500 {

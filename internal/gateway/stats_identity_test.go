@@ -23,16 +23,16 @@ func TestApplyMigratesStatsAndSyncsLabels(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = path
-	cfg.Entrypoints = []config.Entrypoint{{Name: "edge", Match: []string{"*"}, Route: "fast"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "edge", Match: []string{"*"}, Route: "r_0000000001"}}
 	cfg.Providers = []config.Provider{{
+		ID:   "p_0000000001",
 		Name: "alpha",
 		Type: "generic",
 		Chat: "http://127.0.0.1:1",
-		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret"}},
+		Keys: []config.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-secret"}},
 	}}
-	cfg.Nodes = []config.Node{{Name: "n1", Provider: "alpha", Model: "m"}}
-	cfg.Routes = []config.Route{{Name: "fast", Nodes: []string{"n1"}}}
-	withIDs(t, cfg)
+	cfg.Nodes = []config.Node{{ID: "n_0000000001", Name: "n1", Provider: "p_0000000001", Model: "m"}}
+	cfg.Routes = []config.Route{{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}}}
 
 	// A database written by the previous release: rows hold display names.
 	seed, err := stats.Open(path)

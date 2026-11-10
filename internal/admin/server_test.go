@@ -730,7 +730,7 @@ func jsonDecode(r io.Reader, v any) error {
 func TestStatsAPI(t *testing.T) {
 	s, rel, _, ts := newTestAdmin(t)
 	s.mu.Lock()
-	s.cfg.Entrypoints = []config.Entrypoint{{Name: "claude", Match: []string{"claude-*"}, Route: "r"}}
+	s.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude-*"}, Route: "r"}}
 	s.mu.Unlock()
 	client, _ := login(t, ts.URL)
 
@@ -771,7 +771,7 @@ func TestStatsAPI(t *testing.T) {
 		t.Fatalf("node rows = %+v", nodeRows)
 	}
 
-	epResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/requests?entrypoint=claude", "", "")
+	epResp := doJSON(t, client, http.MethodGet, ts.URL+"/api/requests?entrypoint=e_3k9x2m4q7a", "", "")
 	var epRows []stats.Request
 	if err := jsonDecode(epResp.Body, &epRows); err != nil {
 		t.Fatal(err)

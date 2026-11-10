@@ -26,22 +26,24 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
 	cfg.Entrypoints = []config.Entrypoint{
-		{Name: "fast", Match: []string{"gpt-4.5*"}, Route: "r"},
-		{Name: "claude", Match: []string{"claude-*"}, Route: "r"},
+		{ID: "e_0000000001", Name: "fast", Match: []string{"gpt-4.5*"}, Route: "r_0000000001"},
+		{ID: "e_0000000002", Name: "claude", Match: []string{"claude-*"}, Route: "r_0000000001"},
 	}
 	cfg.Providers = []config.Provider{{
+		ID:   "p_0000000001",
 		Name: "p",
 		Type: "generic",
 		Chat: upstreamURL,
-		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret"}},
+		Keys: []config.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-secret"}},
 	}}
 	cfg.Nodes = []config.Node{{
+		ID:       "n_0000000001",
 		Name:     "p",
-		Provider: "p",
+		Provider: "p_0000000001",
 		Model:    "deepseek-v4-flash",
 	}}
-	cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"p"}}}
-	return withIDs(t, cfg)
+	cfg.Routes = []config.Route{{ID: "r_0000000001", Name: "r", Nodes: []string{"n_0000000001"}}}
+	return cfg
 }
 
 func waitRow(t *testing.T, gw *gateway.Gateway) stats.Request {
@@ -230,17 +232,6 @@ func TestAuthAttributesKeyID(t *testing.T) {
 	row := authenticatedRow(t, config.GatewayKey{ID: "gk_0000000001", Name: "alpha", Key: "secret-key"})
 	if row.GatewayKey != "gk_0000000001" {
 		t.Fatalf("gateway key = %q, want the key id gk_0000000001 (row %+v)", row.GatewayKey, row)
-	}
-}
-
-// TestAuthAttributesKeyNameWithoutID covers the transition name fallback: a key
-// written by the admin API has no id until Tasks 4-6 mint one, and an
-// authenticated request must stay distinguishable from an unauthenticated one
-// in requests.gateway_key. Task 7 removes the fallback with mandatory ids.
-func TestAuthAttributesKeyNameWithoutID(t *testing.T) {
-	row := authenticatedRow(t, config.GatewayKey{Name: "alpha", Key: "secret-key"})
-	if row.GatewayKey != "alpha" {
-		t.Fatalf("gateway key = %q, want the key name alpha while the key has no id (row %+v)", row.GatewayKey, row)
 	}
 }
 

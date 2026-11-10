@@ -84,15 +84,20 @@ func TestGraphAPI(t *testing.T) {
 	srv, rel, _, ts := newTestAdmin(t)
 	client, _ := login(t, ts.URL)
 
+	const (
+		providerID = "p_3k9x2m4q7a"
+		nodeID     = "n_4q7a9x2m3k"
+		routeID    = "r_f3k9x2m4qa"
+	)
 	srv.mu.Lock()
-	srv.cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"n"}}}
-	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p", Model: "m1"}}
+	srv.cfg.Routes = []config.Route{{ID: routeID, Name: "r", Nodes: []string{nodeID}}}
+	srv.cfg.Nodes = []config.Node{{ID: nodeID, Name: "n", Provider: providerID, Model: "m1"}}
 	srv.mu.Unlock()
 
 	base := time.Now().Add(-time.Hour)
 	for _, row := range []stats.Request{
-		{ID: "g1", TS: base, Route: "r", Node: "n", Provider: "p", Status: 200, DurationMS: 10, InputTokens: 4},
-		{ID: "g2", TS: base.Add(time.Minute), Route: "r", Node: "n", Provider: "p", Status: 500, Error: "boom", DurationMS: 20},
+		{ID: "g1", TS: base, Route: routeID, Node: nodeID, Provider: providerID, Status: 200, DurationMS: 10, InputTokens: 4},
+		{ID: "g2", TS: base.Add(time.Minute), Route: routeID, Node: nodeID, Provider: providerID, Status: 500, Error: "boom", DurationMS: 20},
 	} {
 		if err := rel.store.Insert(context.Background(), row); err != nil {
 			t.Fatal(err)
@@ -104,13 +109,15 @@ func TestGraphAPI(t *testing.T) {
 	if err := jsonDecode(resp.Body, &g); err != nil {
 		t.Fatal(err)
 	}
-	if g.Nodes["provider:p"].Requests != 2 || g.Nodes["route:r"].Errors != 1 || g.Nodes["node:n"].Requests != 2 {
+	if g.Nodes["provider:"+providerID].Requests != 2 || g.Nodes["route:"+routeID].Errors != 1 ||
+		g.Nodes["node:"+nodeID].Requests != 2 {
 		t.Fatalf("graph = %+v", g)
 	}
-	if g.Edges["route:r|node:n"].Requests != 2 || g.Edges["route:r|node:n"].Errors != 1 {
+	routeEdge := "route:" + routeID + "|node:" + nodeID
+	if g.Edges[routeEdge].Requests != 2 || g.Edges[routeEdge].Errors != 1 {
 		t.Fatalf("route edge = %+v", g.Edges)
 	}
-	if g.Edges["node:n|provider:p"].Requests != 2 {
+	if g.Edges["node:"+nodeID+"|provider:"+providerID].Requests != 2 {
 		t.Fatalf("provider edge = %+v", g.Edges)
 	}
 	if len(g.Errors) != 1 {
@@ -140,15 +147,20 @@ func TestGraphEntrypointAPI(t *testing.T) {
 	srv, rel, _, ts := newTestAdmin(t)
 	client, _ := login(t, ts.URL)
 
+	const (
+		providerID = "p_3k9x2m4q7a"
+		nodeID     = "n_4q7a9x2m3k"
+		routeID    = "r_f3k9x2m4qa"
+	)
 	srv.mu.Lock()
-	srv.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude*"}, Route: "r"}}
-	srv.cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"n"}}}
-	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p", Model: "m1"}}
+	srv.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude*"}, Route: routeID}}
+	srv.cfg.Routes = []config.Route{{ID: routeID, Name: "r", Nodes: []string{nodeID}}}
+	srv.cfg.Nodes = []config.Node{{ID: nodeID, Name: "n", Provider: providerID, Model: "m1"}}
 	srv.mu.Unlock()
 
 	base := time.Now().Add(-time.Hour)
 	if err := rel.store.Insert(context.Background(), stats.Request{
-		ID: "a1", TS: base, ClientModel: "claude-sonnet-4-5", Route: "r", Node: "n", Provider: "p", Status: 200, DurationMS: 10,
+		ID: "a1", TS: base, ClientModel: "claude-sonnet-4-5", Route: routeID, Node: nodeID, Provider: providerID, Status: 200, DurationMS: 10,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +173,7 @@ func TestGraphEntrypointAPI(t *testing.T) {
 	if got := g.Nodes["entrypoint:e_3k9x2m4q7a"]; got.Requests != 1 {
 		t.Fatalf("alias node = %+v", got)
 	}
-	if got := g.Edges["entrypoint:e_3k9x2m4q7a->route:r"]; got.Requests != 1 {
+	if got := g.Edges["entrypoint:e_3k9x2m4q7a->route:"+routeID]; got.Requests != 1 {
 		t.Fatalf("alias edge = %+v", got)
 	}
 }

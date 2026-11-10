@@ -45,17 +45,19 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		Limit:       atoi(q.Get("limit")),
 		Offset:      atoi(q.Get("offset")),
 	}
-	if name := q.Get("entrypoint"); name != "" {
+	// The entrypoint filter is a client-model match, so it resolves the id
+	// against the current entrypoint list instead of a stored column.
+	if id := q.Get("entrypoint"); id != "" {
 		found := false
 		for _, ep := range s.monitorConfig().Entrypoints {
-			if ep.Name == name {
+			if ep.ID == id {
 				f.ClientModelPatterns = ep.Match
 				found = true
 				break
 			}
 		}
 		if !found {
-			writeJSON(w, http.StatusOK, []stats.Request{})
+			writeJSON(w, http.StatusOK, []requestView{})
 			return
 		}
 	}
@@ -67,7 +69,12 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, nonNilSlice(rows))
+	labels := s.newLabelSet(r.Context())
+	views := make([]requestView, 0, len(rows))
+	for _, row := range rows {
+		views = append(views, labels.requestView(row))
+	}
+	writeJSON(w, http.StatusOK, nonNilSlice(views))
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +91,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "request not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, row)
+	writeJSON(w, http.StatusOK, s.newLabelSet(r.Context()).requestView(*row))
 }
 
 func (s *Server) handleErrorSummary(w http.ResponseWriter, r *http.Request) {

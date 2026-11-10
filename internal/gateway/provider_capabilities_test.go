@@ -81,19 +81,20 @@ func TestProviderCapabilities(t *testing.T) {
 		cfg := capabilityConfig()
 		cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
 		cfg.Providers = []gwconfig.Provider{{
+			ID:        "p_0000000001",
 			Name:      "oc",
 			Type:      "opencode-go",
 			Chat:      up.srv.URL + "/v1",
 			Anthropic: up.srv.URL,
-			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
+			Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-oc"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{
-			{Name: "n-fast", Provider: "oc", Model: "deepseek-v4-flash"},
-			{Name: "n-strong", Provider: "oc", Model: "glm-4.8"},
+			{ID: "n_0000000002", Name: "n-fast", Provider: "p_0000000001", Model: "deepseek-v4-flash"},
+			{ID: "n_0000000003", Name: "n-strong", Provider: "p_0000000001", Model: "glm-4.8"},
 		}
 		cfg.Routes = []gwconfig.Route{
-			{Name: "fast", Nodes: []string{"n-fast"}},
-			{Name: "strong", Nodes: []string{"n-strong"}},
+			{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000002"}},
+			{ID: "r_0000000002", Name: "strong", Nodes: []string{"n_0000000003"}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -152,14 +153,16 @@ func TestProviderCapabilities(t *testing.T) {
 		up := newCapabilityUpstream(t)
 		cfg := capabilityConfig()
 		cfg.Providers = []gwconfig.Provider{{
+			ID:   "p_0000000001",
 			Name: "ds",
 			Type: "deepseek",
 			Chat: up.srv.URL + "/v1",
-			Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
+			Keys: []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-ds"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "n",
-			Provider: "ds",
+			Provider: "p_0000000001",
 			Model:    "deepseek-v4-flash",
 		}}
 		gw := startGateway(t, cfg)
@@ -187,16 +190,18 @@ func TestProviderCapabilities(t *testing.T) {
 		up := newCapabilityUpstream(t)
 		cfg := capabilityConfig()
 		cfg.Providers = []gwconfig.Provider{{
+			ID:        "p_0000000001",
 			Name:      "ds",
 			Type:      "deepseek",
 			Chat:      up.srv.URL + "/v1",
 			Responses: up.srv.URL + "/v1",
 			Anthropic: up.srv.URL + "/anthropic",
-			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
+			Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-ds"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "n",
-			Provider: "ds",
+			Provider: "p_0000000001",
 			Model:    "deepseek-v4-flash",
 		}}
 		gw := startGateway(t, cfg)
@@ -213,14 +218,16 @@ func TestProviderCapabilities(t *testing.T) {
 		up := newCapabilityUpstream(t)
 		cfg := capabilityConfig()
 		cfg.Providers = []gwconfig.Provider{{
+			ID:        "p_0000000001",
 			Name:      "ds",
 			Type:      "deepseek",
 			Responses: up.srv.URL + "/v1",
-			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
+			Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-ds"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "n",
-			Provider: "ds",
+			Provider: "p_0000000001",
 			Model:    "deepseek-v4-flash",
 		}}
 		gw := startGateway(t, cfg)
@@ -237,15 +244,17 @@ func TestProviderCapabilities(t *testing.T) {
 		up := newCapabilityUpstream(t)
 		cfg := capabilityConfig()
 		cfg.Providers = []gwconfig.Provider{{
+			ID:        "p_0000000001",
 			Name:      "cc",
 			Type:      "commandcode",
 			Chat:      up.srv.URL + "/provider/v1",
 			Anthropic: up.srv.URL + "/provider",
-			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-cc"}},
+			Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-cc"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "n",
-			Provider: "cc",
+			Provider: "p_0000000001",
 			Model:    "claude-sonnet-4",
 		}}
 		gw := startGateway(t, cfg)
@@ -269,14 +278,16 @@ func TestProviderCapabilities(t *testing.T) {
 		up := newCapabilityUpstream(t)
 		cfg := capabilityConfig()
 		cfg.Providers = []gwconfig.Provider{{
+			ID:     "p_0000000001",
 			Name:   "gm",
 			Type:   "generic",
 			Gemini: up.srv.URL + "/v1beta",
-			Keys:   []gwconfig.ProviderKey{{Name: "key-1", Key: "gk"}},
+			Keys:   []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "gk"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "n",
-			Provider: "gm",
+			Provider: "p_0000000001",
 			Model:    "gemini-2.5-pro",
 		}}
 		gw := startGateway(t, cfg)
@@ -297,15 +308,17 @@ func TestProviderCapabilities(t *testing.T) {
 		up := newCapabilityUpstream(t)
 		cfg := capabilityConfig()
 		cfg.Providers = []gwconfig.Provider{{
+			ID:        "p_0000000001",
 			Name:      "oc",
 			Type:      "opencode-go",
 			Chat:      up.srv.URL + "/v1",
 			Anthropic: up.srv.URL,
-			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
+			Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-oc"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
+			ID:       "n_0000000001",
 			Name:     "n",
-			Provider: "oc",
+			Provider: "p_0000000001",
 			Model:    "model-not-in-the-catalog",
 		}}
 		gw := startGateway(t, cfg)
@@ -328,18 +341,20 @@ func TestProviderCapabilities(t *testing.T) {
 			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 			Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 			Providers: []gwconfig.Provider{{
+				ID:   "p_0000000001",
 				Name: "gm",
 				Type: "generic",
 				Chat: up.srv.URL + "/v1",
 				Auth: gwconfig.Auth{Extra: map[string]string{"X-Org": "acme"}},
 			}},
 			Nodes: []gwconfig.Node{{
+				ID:       "n_0000000001",
 				Name:     "n",
-				Provider: "gm",
+				Provider: "p_0000000001",
 				Model:    "chat-model",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{Name: "fast", Match: []string{"fast"}, Route: "fast"}},
-			Routes:      []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Route: "r_0000000001"}},
+			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -361,19 +376,21 @@ func TestProviderCapabilities(t *testing.T) {
 			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 			Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 			Providers: []gwconfig.Provider{{
+				ID:        "p_0000000001",
 				Name:      "gm",
 				Type:      "generic",
 				Responses: up.srv.URL + "/v1",
 				Chat:      up.srv.URL + "/v1",
-				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-gm"}},
+				Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-gm"}},
 			}},
 			Nodes: []gwconfig.Node{{
+				ID:       "n_0000000001",
 				Name:     "n",
-				Provider: "gm",
+				Provider: "p_0000000001",
 				Model:    "unknown-model",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{Name: "fast", Match: []string{"fast"}, Route: "fast"}},
-			Routes:      []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Route: "r_0000000001"}},
+			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -391,18 +408,20 @@ func TestProviderCapabilities(t *testing.T) {
 			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 			Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 			Providers: []gwconfig.Provider{{
+				ID:   "p_0000000001",
 				Name: "gm",
 				Type: "generic",
 				Chat: up.srv.URL + "/v1",
-				Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-gm"}},
+				Keys: []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-gm"}},
 			}},
 			Nodes: []gwconfig.Node{{
+				ID:       "n_0000000001",
 				Name:     "n",
-				Provider: "gm",
+				Provider: "p_0000000001",
 				Model:    "deepseek-v4-flash",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{Name: "all", Match: []string{"*"}, Route: "all"}},
-			Routes:      []gwconfig.Route{{Name: "all", Nodes: []string{"n"}}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"}},
+			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "all", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -432,19 +451,21 @@ func TestProviderCapabilities(t *testing.T) {
 			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 			Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 			Providers: []gwconfig.Provider{{
+				ID:        "p_0000000001",
 				Name:      "oc",
 				Type:      "opencode-go",
 				Chat:      up.srv.URL + "/v1",
 				Anthropic: up.srv.URL,
-				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
+				Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-oc"}},
 			}},
 			Nodes: []gwconfig.Node{{
+				ID:       "n_0000000001",
 				Name:     "n",
-				Provider: "oc",
+				Provider: "p_0000000001",
 				Model:    "glm-4.8",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{Name: "claude", Match: []string{"claude-*"}, Route: "claude"}},
-			Routes:      []gwconfig.Route{{Name: "claude", Nodes: []string{"n"}}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Route: "r_0000000001"}},
+			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "claude", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -474,18 +495,20 @@ func TestProviderCapabilities(t *testing.T) {
 			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 			Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 			Providers: []gwconfig.Provider{{
+				ID:        "p_0000000001",
 				Name:      "ds",
 				Type:      "deepseek",
 				Responses: up.srv.URL + "/v1",
-				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
+				Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-ds"}},
 			}},
 			Nodes: []gwconfig.Node{{
+				ID:       "n_0000000001",
 				Name:     "n",
-				Provider: "ds",
+				Provider: "p_0000000001",
 				Model:    "deepseek-v4-flash",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{Name: "fast", Match: []string{"fast"}, Route: "fast"}},
-			Routes:      []gwconfig.Route{{Name: "fast", Nodes: []string{"n"}}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Route: "r_0000000001"}},
+			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -512,19 +535,21 @@ func TestProviderCapabilities(t *testing.T) {
 			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 			Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 			Providers: []gwconfig.Provider{{
+				ID:        "p_0000000001",
 				Name:      "oc",
 				Type:      "opencode-go",
 				Chat:      up.srv.URL + "/v1",
 				Anthropic: up.srv.URL,
-				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
+				Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-oc"}},
 			}},
 			Nodes: []gwconfig.Node{{
+				ID:       "n_0000000001",
 				Name:     "n",
-				Provider: "oc",
+				Provider: "p_0000000001",
 				Model:    "glm-4.8",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{Name: "claude", Match: []string{"claude-*"}, Route: "claude"}},
-			Routes:      []gwconfig.Route{{Name: "claude", Nodes: []string{"n"}}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Route: "r_0000000001"}},
+			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "claude", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
 
@@ -577,7 +602,7 @@ func TestBuildNodesSkipsEmptyHeaderWhenKeyless(t *testing.T) {
 }
 
 func TestBuildNodesExtraWinsOverKeyHeaders(t *testing.T) {
-	p := gwconfig.Provider{Name: "p", Type: "generic", Chat: "https://example.com/v1", Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}}}
+	p := gwconfig.Provider{Name: "p", Type: "generic", Chat: "https://example.com/v1", Keys: []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-test"}}}
 	n := gwconfig.Node{Name: "n", Provider: "p"}
 	target := upstreamTarget{
 		baseURL:     "https://example.com/v1",
@@ -628,12 +653,12 @@ func capabilityConfig() *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{
-			{Name: "fast", Match: []string{"gpt-4.5*"}, Route: "fast"},
-			{Name: "strong", Match: []string{"claude-*"}, Route: "strong"},
+			{ID: "e_0000000001", Name: "fast", Match: []string{"gpt-4.5*"}, Route: "r_0000000001"},
+			{ID: "e_0000000002", Name: "strong", Match: []string{"claude-*"}, Route: "r_0000000002"},
 		},
 		Routes: []gwconfig.Route{
-			{Name: "fast", Nodes: []string{"n"}},
-			{Name: "strong", Nodes: []string{"n"}},
+			{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}},
+			{ID: "r_0000000002", Name: "strong", Nodes: []string{"n_0000000001"}},
 		},
 	}
 }

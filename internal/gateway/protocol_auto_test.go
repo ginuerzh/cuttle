@@ -27,18 +27,19 @@ func autoProtocolConfig(t *testing.T, upstream string) *gwconfig.Config {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{Name: "all", Match: []string{"*"}, Route: "r"},
+			{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"},
 		},
 		Providers: []gwconfig.Provider{{
+			ID:        "p_0000000001",
 			Name:      "ds",
 			Type:      "deepseek",
 			Chat:      upstream + "/chat",
 			Responses: upstream + "/responses",
 			Anthropic: upstream + "/anthropic",
-			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}},
+			Keys:      []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-test"}},
 		}},
-		Nodes:  []gwconfig.Node{{Name: "n", Provider: "ds", Model: "deepseek-v4-flash"}},
-		Routes: []gwconfig.Route{{Name: "r", Nodes: []string{"n"}}},
+		Nodes:  []gwconfig.Node{{ID: "n_0000000001", Name: "n", Provider: "p_0000000001", Model: "deepseek-v4-flash"}},
+		Routes: []gwconfig.Route{{ID: "r_0000000001", Name: "r", Nodes: []string{"n_0000000001"}}},
 	}
 }
 
@@ -217,20 +218,20 @@ func TestEntrypointOrderWithProtocolVariants(t *testing.T) {
 	cfg := &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{
-			{Name: "first", Match: []string{"*"}, Route: "a"},
-			{Name: "second", Match: []string{"*"}, Route: "b"},
+			{ID: "e_0000000001", Name: "first", Match: []string{"*"}, Route: "r_0000000001"},
+			{ID: "e_0000000002", Name: "second", Match: []string{"*"}, Route: "r_0000000002"},
 		},
 		Providers: []gwconfig.Provider{
-			{Name: "pa", Type: "deepseek", Chat: up.srv.URL + "/a/chat", Anthropic: up.srv.URL + "/a/anthropic"},
-			{Name: "pb", Type: "deepseek", Chat: up.srv.URL + "/b/chat", Anthropic: up.srv.URL + "/b/anthropic"},
+			{ID: "p_0000000001", Name: "pa", Type: "deepseek", Chat: up.srv.URL + "/a/chat", Anthropic: up.srv.URL + "/a/anthropic"},
+			{ID: "p_0000000002", Name: "pb", Type: "deepseek", Chat: up.srv.URL + "/b/chat", Anthropic: up.srv.URL + "/b/anthropic"},
 		},
 		Nodes: []gwconfig.Node{
-			{Name: "na", Provider: "pa", Model: "deepseek-v4-flash"},
-			{Name: "nb", Provider: "pb", Model: "deepseek-v4-flash"},
+			{ID: "n_0000000001", Name: "na", Provider: "p_0000000001", Model: "deepseek-v4-flash"},
+			{ID: "n_0000000002", Name: "nb", Provider: "p_0000000002", Model: "deepseek-v4-flash"},
 		},
 		Routes: []gwconfig.Route{
-			{Name: "a", Nodes: []string{"na"}},
-			{Name: "b", Nodes: []string{"nb"}},
+			{ID: "r_0000000001", Name: "a", Nodes: []string{"n_0000000001"}},
+			{ID: "r_0000000002", Name: "b", Nodes: []string{"n_0000000002"}},
 		},
 	}
 	gw := startGateway(t, cfg)
@@ -248,16 +249,15 @@ func TestRouteVariantKeepsBackupMetadata(t *testing.T) {
 	disabled := false
 	cfg := &gwconfig.Config{
 		Providers: []gwconfig.Provider{{
-			Name: "ds", Type: "deepseek",
+			ID: "p_0000000001", Name: "ds", Type: "deepseek",
 			Chat: up.srv.URL + "/chat", Anthropic: up.srv.URL + "/anthropic",
 		}},
 		Nodes: []gwconfig.Node{
-			{Name: "n", Provider: "ds", Model: "deepseek-v4-flash"},
-			{Name: "backup", Provider: "ds", Model: "deepseek-v4-flash", Backup: true},
-			{Name: "off", Provider: "ds", Model: "deepseek-v4-flash", Enabled: &disabled},
+			{ID: "n_0000000001", Name: "n", Provider: "p_0000000001", Model: "deepseek-v4-flash"},
+			{ID: "n_0000000002", Name: "backup", Provider: "p_0000000001", Model: "deepseek-v4-flash", Backup: true},
+			{ID: "n_0000000003", Name: "off", Provider: "p_0000000001", Model: "deepseek-v4-flash", Enabled: &disabled},
 		},
 	}
-	withIDs(t, cfg)
 	route := gwconfig.Route{
 		ID:    "r_0000000001",
 		Name:  "plan-test",
@@ -302,16 +302,17 @@ func TestGeminiAutoProtocol(t *testing.T) {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{Name: "all", Match: []string{"*"}, Route: "r"},
+			{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"},
 		},
 		Providers: []gwconfig.Provider{{
+			ID:     "p_0000000001",
 			Name:   "gm",
 			Type:   "generic",
 			Chat:   up.srv.URL + "/chat",
 			Gemini: up.srv.URL + "/gemini",
 		}},
-		Nodes:  []gwconfig.Node{{Name: "n", Provider: "gm", Model: "gemini-2.5-pro"}},
-		Routes: []gwconfig.Route{{Name: "r", Nodes: []string{"n"}}},
+		Nodes:  []gwconfig.Node{{ID: "n_0000000001", Name: "n", Provider: "p_0000000001", Model: "gemini-2.5-pro"}},
+		Routes: []gwconfig.Route{{ID: "r_0000000001", Name: "r", Nodes: []string{"n_0000000001"}}},
 	}
 	gw := startGateway(t, cfg)
 
@@ -333,20 +334,20 @@ func TestFailedReloadKeepsOldRewriters(t *testing.T) {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{Name: "a", Match: []string{"a-model"}, Route: "ra"},
-			{Name: "b", Match: []string{"b-model"}, Route: "rb"},
+			{ID: "e_0000000001", Name: "a", Match: []string{"a-model"}, Route: "r_0000000001"},
+			{ID: "e_0000000002", Name: "b", Match: []string{"b-model"}, Route: "r_0000000002"},
 		},
 		Providers: []gwconfig.Provider{
-			{Name: "pa", Type: "generic", Chat: up.srv.URL + "/a/chat"},
-			{Name: "pb", Type: "generic", Chat: up.srv.URL + "/b/chat"},
+			{ID: "p_0000000001", Name: "pa", Type: "generic", Chat: up.srv.URL + "/a/chat"},
+			{ID: "p_0000000002", Name: "pb", Type: "generic", Chat: up.srv.URL + "/b/chat"},
 		},
 		Nodes: []gwconfig.Node{
-			{Name: "na", Provider: "pa", Model: "deepseek-chat"},
-			{Name: "nb", Provider: "pb", Model: "deepseek-chat"},
+			{ID: "n_0000000001", Name: "na", Provider: "p_0000000001", Model: "deepseek-chat"},
+			{ID: "n_0000000002", Name: "nb", Provider: "p_0000000002", Model: "deepseek-chat"},
 		},
 		Routes: []gwconfig.Route{
-			{Name: "ra", Nodes: []string{"na"}},
-			{Name: "rb", Nodes: []string{"nb"}},
+			{ID: "r_0000000001", Name: "ra", Nodes: []string{"n_0000000001"}},
+			{ID: "r_0000000002", Name: "rb", Nodes: []string{"n_0000000002"}},
 		},
 	}
 	gw := startGateway(t, cfg)
@@ -420,13 +421,13 @@ func TestSuccessfulReloadKeepsInFlightResponseRewriter(t *testing.T) {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{Name: "a", Match: []string{"a-model"}, Route: "ra"},
+			{ID: "e_0000000001", Name: "a", Match: []string{"a-model"}, Route: "r_0000000001"},
 		},
 		Providers: []gwconfig.Provider{{
-			Name: "pa", Type: "generic", Chat: upstream.URL + "/a/chat",
+			ID: "p_0000000001", Name: "pa", Type: "generic", Chat: upstream.URL + "/a/chat",
 		}},
-		Nodes:  []gwconfig.Node{{Name: "na", Provider: "pa", Model: "deepseek-chat"}},
-		Routes: []gwconfig.Route{{Name: "ra", Nodes: []string{"na"}}},
+		Nodes:  []gwconfig.Node{{ID: "n_0000000001", Name: "na", Provider: "p_0000000001", Model: "deepseek-chat"}},
+		Routes: []gwconfig.Route{{ID: "r_0000000001", Name: "ra", Nodes: []string{"n_0000000001"}}},
 	}
 	gw := startGateway(t, cfg)
 

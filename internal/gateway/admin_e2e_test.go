@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -18,6 +19,34 @@ import (
 	"github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/gateway"
 )
+
+// entityID returns the id the management API lists for a display name.
+func entityID(t *testing.T, client *http.Client, url, name string) string {
+	t.Helper()
+
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d", url, resp.StatusCode)
+	}
+	var items []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.Name == name {
+			return item.ID
+		}
+	}
+	t.Fatalf("%s: no entity named %q", url, name)
+	return ""
+}
 
 func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	var hitPath, hitAuth string
@@ -87,13 +116,16 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	if code := do(http.MethodPost, "/api/providers", provider); code != http.StatusCreated {
 		t.Fatalf("create provider = %d", code)
 	}
-	if code := do(http.MethodPost, "/api/nodes", `{"name":"p","provider":"p","model":"m1"}`); code != http.StatusCreated {
+	providerID := entityID(t, client, ts.URL+"/api/providers", "p")
+	if code := do(http.MethodPost, "/api/nodes", `{"name":"p","provider":"`+providerID+`","model":"m1"}`); code != http.StatusCreated {
 		t.Fatalf("create node = %d", code)
 	}
-	if code := do(http.MethodPost, "/api/routes", `{"name":"r","nodes":["p"]}`); code != http.StatusCreated {
+	nodeID := entityID(t, client, ts.URL+"/api/nodes", "p")
+	if code := do(http.MethodPost, "/api/routes", `{"name":"r","nodes":["`+nodeID+`"]}`); code != http.StatusCreated {
 		t.Fatalf("create route = %d", code)
 	}
-	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"route":"r"}]`); code != http.StatusNoContent {
+	routeID := entityID(t, client, ts.URL+"/api/routes", "r")
+	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"route":"`+routeID+`"}]`); code != http.StatusNoContent {
 		t.Fatalf("put entrypoints = %d", code)
 	}
 

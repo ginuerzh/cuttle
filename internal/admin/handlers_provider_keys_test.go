@@ -172,8 +172,9 @@ func TestKeyUpdatesDeletePinnedKeyOtherProviderAllowed(t *testing.T) {
 	keys := providerKeyIDs(t, client, ts.URL, pid)
 	qid := createNamedProvider(t, client, ts.URL, csrf,
 		`{"name":"q","type":"generic","chat":"https://b.example","keys":[{"name":"a","key":"sk-q"}]}`)
+	qkeys := providerKeyIDs(t, client, ts.URL, qid)
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes",
-		`{"name":"nq","provider":"`+qid+`","model":"m1","key":"a"}`, csrf); resp.StatusCode != http.StatusCreated {
+		`{"name":"nq","provider":"`+qid+`","model":"m1","key":"`+qkeys["a"]+`"}`, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create node = %d: %s", resp.StatusCode, b)
 	}

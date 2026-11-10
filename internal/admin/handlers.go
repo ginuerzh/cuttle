@@ -164,27 +164,19 @@ func (s *Server) mutate(fn func(*config.Config) error) error {
 // management API. A provider's type is fixed after creation, and so are the
 // API base URLs of non-generic providers; operators must delete and recreate
 // the provider instead. Providers are matched by id, so a rename keeps every
-// rule intact. New and deleted providers are always allowed. An id-less entry
-// (a config written without ids) still matches by name.
+// rule intact. New and deleted providers are always allowed.
 func validateProviderImmutability(old, next *config.Config) error {
 	if old == nil || next == nil {
 		return nil
 	}
 
 	nextByID := make(map[string]config.Provider, len(next.Providers))
-	nextByName := make(map[string]config.Provider, len(next.Providers))
 	for _, p := range next.Providers {
-		if p.ID != "" {
-			nextByID[p.ID] = p
-		}
-		nextByName[strings.TrimSpace(p.Name)] = p
+		nextByID[p.ID] = p
 	}
 
 	for _, prev := range old.Providers {
 		updated, ok := nextByID[prev.ID]
-		if !ok {
-			updated, ok = nextByName[strings.TrimSpace(prev.Name)]
-		}
 		if !ok {
 			continue
 		}
@@ -275,6 +267,22 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		// preserve them; only an explicit [] clears the set.
 		if c.Gateway.Keys == nil {
 			c.Gateway.Keys = dst.Gateway.Keys
+		}
+		// Gateway keys follow the same identity rule as every other entity:
+		// an id-less entry keeps the stored id of the same name, and a
+		// genuinely new key is minted.
+		keyIDs := make(map[string]string, len(dst.Gateway.Keys))
+		for _, k := range dst.Gateway.Keys {
+			if k.ID != "" {
+				keyIDs[strings.TrimSpace(k.Name)] = k.ID
+			}
+		}
+		for i := range c.Gateway.Keys {
+			id, err := adoptEntityID(identity.GatewayKey, c.Gateway.Keys[i].ID, c.Gateway.Keys[i].Name, keyIDs)
+			if err != nil {
+				return err
+			}
+			c.Gateway.Keys[i].ID = id
 		}
 		// Provider keys are write-only too. Preserve them per existing
 		// provider id when the decoded field is absent; an explicit []
@@ -394,8 +402,6 @@ func (s *Server) handleGetProvider(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Reads still accept the display name until Task 7 removes the
-	// transition fallback.
 	if p, ok := s.providerLocked(ref); ok {
 		writeJSON(w, http.StatusOK, s.viewProvider(p))
 		return
@@ -628,29 +634,24 @@ func mergeProviderKeys(old, incoming []config.ProviderKey) ([]config.ProviderKey
 
 // sameProviderRef reports whether a node's provider reference points at one of
 // the given snapshots of the same provider: the stored one and, after a rename,
-// the incoming one. A node may still name its provider until Task 7 makes
-// references id-only.
+// the incoming one. The reference is the provider id.
 func sameProviderRef(ref string, providers ...config.Provider) bool {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return false
 	}
 	for _, p := range providers {
-		if ref == p.ID || ref == strings.TrimSpace(p.Name) {
+		if ref == p.ID {
 			return true
 		}
 	}
 	return false
 }
 
-// sameKeyRef reports whether a node's key pin points at k. A pin may still use
-// the key name until Task 7 makes references id-only.
+// sameKeyRef reports whether a node's key pin points at k. The pin is the key
+// id.
 func sameKeyRef(ref string, k config.ProviderKey) bool {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return false
-	}
-	return ref == k.ID || ref == strings.TrimSpace(k.Name)
+	return strings.TrimSpace(ref) == k.ID
 }
 
 // ensureKeysNotPinned rejects a key change that would leave a node of the same
@@ -820,14 +821,10 @@ func routeIndexByID(c *config.Config, id string) int {
 	return -1
 }
 
-// sameRouteRef reports whether an entrypoint's route reference points at rt:
-// the route id, or until Task 7 the display name for an id-less config.
+// sameRouteRef reports whether an entrypoint's route reference points at rt.
+// The reference is the route id.
 func sameRouteRef(ref string, rt config.Route) bool {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return false
-	}
-	return ref == rt.ID || ref == strings.TrimSpace(rt.Name)
+	return strings.TrimSpace(ref) == rt.ID
 }
 
 func (s *Server) handleRouteHealth(w http.ResponseWriter, r *http.Request) {

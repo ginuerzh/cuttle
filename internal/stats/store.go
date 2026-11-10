@@ -61,7 +61,8 @@ type Request struct {
 	Capture         *capture.Capture `json:"capture,omitempty"`
 }
 
-// Filter selects requests.
+// Filter selects requests. Provider, Route, Node and GatewayKey are entity ids:
+// a row stores ids, never display names.
 type Filter struct {
 	From                time.Time
 	To                  time.Time
@@ -114,6 +115,7 @@ type ProviderUsage struct {
 
 // KeyUsage aggregates one gateway key's hourly rollups for a time window.
 type KeyUsage struct {
+	// Key is the gateway key id recorded in key_rollups.gateway_key.
 	Key          string `json:"key"`
 	Requests     int64  `json:"requests"`
 	Errors       int64  `json:"errors"`
@@ -488,12 +490,16 @@ func (r *idResolver) id(kind, name string) string {
 	if id, ok := r.ids[key]; ok {
 		return id
 	}
+	// A v1 row can carry a padded name while the config holds the trimmed
+	// label, so the lookup and the derivation both use the trimmed value. The
+	// stored label keeps the text the row recorded.
+	trimmed := strings.TrimSpace(name)
 	id := ""
 	if r.lookup != nil {
-		id = r.lookup(kind, name)
+		id = r.lookup(kind, trimmed)
 	}
 	if id == "" {
-		id = identity.Derive(identity.Kind(kind), name)
+		id = identity.Derive(identity.Kind(kind), trimmed)
 	}
 	r.ids[key] = id
 	return id

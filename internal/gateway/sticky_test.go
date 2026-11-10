@@ -29,16 +29,16 @@ func stickyUpstream(name string) *httptest.Server {
 func stickyConfig(ocURL, ccURL string) *config.Config {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
-	cfg.Entrypoints = []config.Entrypoint{{Name: "default", Match: []string{"*"}, Route: "r"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: "r_0000000001"}}
 	cfg.Providers = []config.Provider{
-		{Name: "oc", Type: "generic", Chat: ocURL, Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-oc"}}},
-		{Name: "cc", Type: "generic", Chat: ccURL, Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-cc"}}},
+		{ID: "p_0000000001", Name: "oc", Type: "generic", Chat: ocURL, Keys: []config.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-oc"}}},
+		{ID: "p_0000000002", Name: "cc", Type: "generic", Chat: ccURL, Keys: []config.ProviderKey{{ID: "pk_0000000002", Name: "key-1", Key: "sk-cc"}}},
 	}
 	cfg.Nodes = []config.Node{
-		{Name: "oc", Provider: "oc", Model: "m", Weight: 10},
-		{Name: "cc", Provider: "cc", Model: "m", Weight: 3},
+		{ID: "n_0000000001", Name: "oc", Provider: "p_0000000001", Model: "m", Weight: 10},
+		{ID: "n_0000000002", Name: "cc", Provider: "p_0000000002", Model: "m", Weight: 3},
 	}
-	cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"oc", "cc"}, Strategy: "sticky"}}
+	cfg.Routes = []config.Route{{ID: "r_0000000001", Name: "r", Nodes: []string{"n_0000000001", "n_0000000002"}, Strategy: "sticky"}}
 	return cfg
 }
 
@@ -67,7 +67,7 @@ func TestStickyRouteKeepsOneSessionOnOneNode(t *testing.T) {
 	cc := stickyUpstream("cc")
 	defer cc.Close()
 
-	gw, err := gateway.New(withIDs(t, stickyConfig(oc.URL, cc.URL)), xlogger.Nop())
+	gw, err := gateway.New(stickyConfig(oc.URL, cc.URL), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestStickyRouteWeightedDistribution(t *testing.T) {
 	cc := stickyUpstream("cc")
 	defer cc.Close()
 
-	gw, err := gateway.New(withIDs(t, stickyConfig(oc.URL, cc.URL)), xlogger.Nop())
+	gw, err := gateway.New(stickyConfig(oc.URL, cc.URL), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestStickyRouteMovesAfterFailureAndStays(t *testing.T) {
 	cc := stickyUpstream("cc")
 	defer cc.Close()
 
-	gw, err := gateway.New(withIDs(t, stickyConfig(oc.URL, cc.URL)), xlogger.Nop())
+	gw, err := gateway.New(stickyConfig(oc.URL, cc.URL), xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

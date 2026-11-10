@@ -6,9 +6,9 @@ import "context"
 // identifier. It is unexported so other packages use the helpers below.
 type gatewayKeyIDContextKey struct{}
 
-// WithGatewayKeyID returns a context carrying the identifier of the gateway key
-// that authenticated the request: the key id, or the display name while a
-// config written without ids is still possible. Task 7 makes it id-only.
+// WithGatewayKeyID returns a context carrying the id of the gateway key that
+// authenticated the request. The id is what requests.gateway_key and
+// key_rollups.gateway_key record; the display name is looked up separately.
 func WithGatewayKeyID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, gatewayKeyIDContextKey{}, id)
 }

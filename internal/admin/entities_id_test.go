@@ -201,6 +201,30 @@ func TestNodeCRUDByIDAndRename(t *testing.T) {
 	}
 }
 
+// TestAdminNodeRejectsNameReference proves the admin API no longer accepts a
+// display name where an entity id belongs: the payload is rejected and the
+// error names the id the request should carry.
+func TestAdminNodeRejectsNameReference(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	base := ts.URL
+	client, csrf := login(t, base)
+	pid := createProviderTest(t, client, base, csrf, providerBody("p", "https://a.example"), "p")
+	nid := createNodeTest(t, client, base, csrf, pid, "n")
+
+	resp := doJSON(t, client, http.MethodPut, base+"/api/nodes/"+nid,
+		`{"name":"n","provider":"p","model":"m1"}`, csrf)
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("update with a provider name = %d: %s, want 400", resp.StatusCode, raw)
+	}
+	if !jsonErrorContains(raw, "provider id") || !jsonErrorContains(raw, pid) {
+		t.Fatalf("error = %s, want it to name the expected provider id %q", raw, pid)
+	}
+	if got := rel.cfg.Nodes; len(got) != 1 || got[0].Provider != pid || got[0].Name != "n" {
+		t.Fatalf("nodes after a rejected update = %+v, want the stored provider id kept", got)
+	}
+}
+
 // createNodeBackedRoute creates a route that references the node id.
 func createNodeBackedRoute(t *testing.T, client *http.Client, base, csrf, name, nodeID string) string {
 	t.Helper()
@@ -522,35 +546,50 @@ func TestPutConfigAdoptsStoredEntityIDs(t *testing.T) {
 		t.Fatalf("node after the rename = %+v, want the same id renamed to n2", got)
 	}
 
-	// A genuinely new entity receives a minted id.
-	// A genuinely new entity receives a minted id. The payload is fully
-	// id-less again, so every reference is a display name.
-	cfg = `{"providers":[` + provider + `],"nodes":[` +
-		`{"name":"fresh","provider":"p","model":"m1"}],` +
-		`"routes":[{"name":"fresh","nodes":["fresh"]}],` +
-		`"entrypoints":[{"name":"fresh","match":["*"],"route":"fresh"}]}`
+	// A genuinely new entity receives a minted id. Names are labels, so the
+	// payload keeps every reference an id: each new entity is added beside
+	// the stored topology it references.
+	cfg = `{"providers":[` + provider + `,` +
+		`{"name":"fresh","type":"generic","chat":"https://b.example"}],` +
+		`"nodes":[{"name":"n2","provider":"` + pid + `","model":"m1"},` +
+		`{"name":"fresh","provider":"` + pid + `","model":"m2"}],` +
+		`"routes":[{"name":"fast","nodes":["` + nid + `"]},` +
+		`{"name":"fresh","nodes":["` + nid + `"]}],` +
+		`"entrypoints":[{"name":"default","match":["*"],"route":"` + rid + `"},` +
+		`{"name":"fresh","match":["fresh-*"],"route":"` + rid + `"}]}`
 	putConfig(t, client, base, csrf, cfg)
-	for _, got := range []string{"node", "route", "entrypoint"} {
-		var id string
-		switch got {
-		case "node":
-			id = rel.cfg.Nodes[0].ID
-		case "route":
-			id = rel.cfg.Routes[0].ID
-		default:
-			id = rel.cfg.Entrypoints[0].ID
-		}
-		if id == "" || !identity.Shape(id) {
-			t.Fatalf("%s id = %q, want a minted id", got, id)
-		}
-		if id == nid || id == rid || id == eid {
-			t.Fatalf("%s reused a stored id %q for a new entity", got, id)
-		}
+
+	if got := rel.cfg.Providers; len(got) != 2 || got[0].ID != pid {
+		t.Fatalf("providers after the second PUT = %+v, want the stored id %q kept", got, pid)
 	}
-	if !identity.Valid(identity.Node, rel.cfg.Nodes[0].ID) ||
-		!identity.Valid(identity.Route, rel.cfg.Routes[0].ID) ||
-		!identity.Valid(identity.Entrypoint, rel.cfg.Entrypoints[0].ID) {
-		t.Fatalf("minted ids = %q/%q/%q, want node/route/entrypoint ids",
-			rel.cfg.Nodes[0].ID, rel.cfg.Routes[0].ID, rel.cfg.Entrypoints[0].ID)
+	if got := rel.cfg.Nodes; len(got) != 2 || got[0].ID != nid {
+		t.Fatalf("nodes after the second PUT = %+v, want the stored id %q kept", got, nid)
+	}
+	if got := rel.cfg.Routes; len(got) != 2 || got[0].ID != rid {
+		t.Fatalf("routes after the second PUT = %+v, want the stored id %q kept", got, rid)
+	}
+	if got := rel.cfg.Entrypoints; len(got) != 2 || got[0].ID != eid {
+		t.Fatalf("entrypoints after the second PUT = %+v, want the stored id %q kept", got, eid)
+	}
+
+	fresh := []struct {
+		kind string
+		want identity.Kind
+		id   string
+	}{
+		{"provider", identity.Provider, rel.cfg.Providers[1].ID},
+		{"node", identity.Node, rel.cfg.Nodes[1].ID},
+		{"route", identity.Route, rel.cfg.Routes[1].ID},
+		{"entrypoint", identity.Entrypoint, rel.cfg.Entrypoints[1].ID},
+	}
+	for _, got := range fresh {
+		if got.id == "" || !identity.Valid(got.want, got.id) {
+			t.Fatalf("%s id = %q, want a minted %s id", got.kind, got.id, got.kind)
+		}
+		for _, stored := range []string{pid, nid, rid, eid} {
+			if got.id == stored {
+				t.Fatalf("%s reused a stored id %q for a new entity", got.kind, got.id)
+			}
+		}
 	}
 }

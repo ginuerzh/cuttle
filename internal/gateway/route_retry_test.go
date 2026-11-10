@@ -19,17 +19,18 @@ func buildRetryRouteHop(t *testing.T, route gwconfig.Route) hop.NodeList {
 	t.Helper()
 	cfg := &gwconfig.Config{
 		Providers: []gwconfig.Provider{{
+			ID:   "p_0000000001",
 			Name: "p",
 			Type: "generic",
 			Chat: "https://upstream.test/v1",
 			Keys: []gwconfig.ProviderKey{
-				{Name: "k1", Key: "sk-1"},
-				{Name: "k2", Key: "sk-2"},
+				{ID: "pk_0000000001", Name: "k1", Key: "sk-1"},
+				{ID: "pk_0000000002", Name: "k2", Key: "sk-2"},
 			},
 		}},
 		Nodes: []gwconfig.Node{
-			{Name: "n1", Provider: "p", Model: "model", API: "chat"},
-			{Name: "n2", Provider: "p", Model: "model", API: "chat", Backup: true},
+			{ID: "n_0000000001", Name: "n1", Provider: "p_0000000001", Model: "model", API: "chat"},
+			{ID: "n_0000000002", Name: "n2", Provider: "p_0000000001", Model: "model", API: "chat", Backup: true},
 		},
 	}
 
@@ -55,8 +56,9 @@ func buildRetryRouteHop(t *testing.T, route gwconfig.Route) hop.NodeList {
 func TestRouteRetryMetadata(t *testing.T) {
 	t.Run("stamps every per-key and backup node", func(t *testing.T) {
 		nl := buildRetryRouteHop(t, gwconfig.Route{
+			ID:         "r_0000000001",
 			Name:       "r",
-			Nodes:      []string{"n1", "n2"},
+			Nodes:      []string{"n_0000000001", "n_0000000002"},
 			Retries:    2,
 			RetryCodes: "429,502",
 		})
@@ -74,8 +76,9 @@ func TestRouteRetryMetadata(t *testing.T) {
 
 	t.Run("retries disabled leaves both keys absent", func(t *testing.T) {
 		nl := buildRetryRouteHop(t, gwconfig.Route{
+			ID:         "r_0000000001",
 			Name:       "r",
-			Nodes:      []string{"n1", "n2"},
+			Nodes:      []string{"n_0000000001", "n_0000000002"},
 			Retries:    0,
 			RetryCodes: "429,502",
 		})
@@ -96,8 +99,9 @@ func TestRouteRetryMetadata(t *testing.T) {
 
 	t.Run("empty retryCodes gets the build default", func(t *testing.T) {
 		nl := buildRetryRouteHop(t, gwconfig.Route{
+			ID:      "r_0000000001",
 			Name:    "r",
-			Nodes:   []string{"n1", "n2"},
+			Nodes:   []string{"n_0000000001", "n_0000000002"},
 			Retries: 1,
 		})
 

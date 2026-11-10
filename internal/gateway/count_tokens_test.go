@@ -107,10 +107,11 @@ func TestCountTokensMixedRouteEstimates(t *testing.T) {
 
 	cfg := matrixConfig(chatUp.URL, provider.Chat)
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name: "anth", Type: "generic", Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "k"}}, Anthropic: anthUp.URL,
+		ID: "p_0000000002", Name: "anth", Type: "generic",
+		Keys: []gwconfig.ProviderKey{{ID: "pk_0000000002", Name: "key-1", Key: "k"}}, Anthropic: anthUp.URL,
 	})
-	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "anth", Provider: "anth", Model: "deepseek-v4-flash"})
-	cfg.Routes[0].Nodes = append(cfg.Routes[0].Nodes, "anth")
+	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{ID: "n_0000000002", Name: "anth", Provider: "p_0000000002", Model: "deepseek-v4-flash"})
+	cfg.Routes[0].Nodes = append(cfg.Routes[0].Nodes, "n_0000000002")
 
 	gw := startGateway(t, cfg)
 	status, body := postGateway(t, gw, "/v1/messages/count_tokens", countTokensBody)

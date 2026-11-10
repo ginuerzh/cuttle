@@ -183,17 +183,20 @@ func TestZeroConfigOnboarding(t *testing.T) {
 		gw.Close()
 		t.Fatalf("create provider = %d, want 201", code)
 	}
-	if code := do(http.MethodPost, "/api/nodes", `{"name":"p","provider":"p","model":"m1"}`); code != http.StatusCreated {
+	providerID := entityID(t, client, ts.URL+"/api/providers", "p")
+	if code := do(http.MethodPost, "/api/nodes", `{"name":"p","provider":"`+providerID+`","model":"m1"}`); code != http.StatusCreated {
 		ts.Close()
 		gw.Close()
 		t.Fatalf("create node = %d, want 201", code)
 	}
-	if code := do(http.MethodPost, "/api/routes", `{"name":"r","nodes":["p"]}`); code != http.StatusCreated {
+	nodeID := entityID(t, client, ts.URL+"/api/nodes", "p")
+	if code := do(http.MethodPost, "/api/routes", `{"name":"r","nodes":["`+nodeID+`"]}`); code != http.StatusCreated {
 		ts.Close()
 		gw.Close()
 		t.Fatalf("create route = %d, want 201", code)
 	}
-	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"route":"r"}]`); code != http.StatusNoContent {
+	routeID := entityID(t, client, ts.URL+"/api/routes", "r")
+	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"route":"`+routeID+`"}]`); code != http.StatusNoContent {
 		ts.Close()
 		gw.Close()
 		t.Fatalf("put entrypoints = %d, want 204", code)

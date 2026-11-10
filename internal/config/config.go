@@ -759,12 +759,14 @@ func validateEntityName(scope, name string) error {
 	return nil
 }
 
-// validateEntityID checks an optional entity id against its kind. An empty id
-// is accepted until migration makes ids mandatory. Ids are structural, so
-// surrounding whitespace is rejected instead of trimmed.
+// validateEntityID checks an entity id against its kind. Every entity carries
+// one: migration assigns an id to a legacy file, and the admin API mints one on
+// create, so an empty id means a hand-built or hand-edited config that lost an
+// identity. Ids are structural, so surrounding whitespace is rejected instead
+// of trimmed.
 func validateEntityID(scope string, kind identity.Kind, id string) error {
 	if id == "" {
-		return nil
+		return fmt.Errorf("%s: id is required", scope)
 	}
 	if strings.TrimSpace(id) != id {
 		return fmt.Errorf("%s: id %q has surrounding whitespace", scope, id)
@@ -775,6 +777,16 @@ func validateEntityID(scope string, kind identity.Kind, id string) error {
 	return nil
 }
 
+// nameRefError reports a reference that is not a configured id. When ref
+// matches a display name, the error names the id it stands for so the fix is
+// obvious; the reference itself never resolves.
+func nameRefError(scope, field, ref string, nameToID map[string]string) error {
+	if id := nameToID[strings.TrimSpace(ref)]; id != "" {
+		return fmt.Errorf("%s: %s %q is a display name; use the %s id %q", scope, field, ref, field, id)
+	}
+	return fmt.Errorf("%s: unknown %s id %q", scope, field, ref)
+}
+
 // idRegistry collects the ids assigned while a config is validated. Ids are
 // globally unique across the six entity kinds: a merged or hand-edited config
 // that reuses one would resolve to different entities depending on the lookup,
@@ -783,8 +795,9 @@ func validateEntityID(scope string, kind identity.Kind, id string) error {
 // name even though migration derives the same id for both entries.
 type idRegistry map[string]string
 
-// claim records scope as the owner of id. Empty ids are optional until
-// migration assigns them, so they are ignored.
+// claim records scope as the owner of id. Validation has already rejected an
+// empty id, so an empty value here only belongs to a kind that is not an entity
+// owner.
 func (r idRegistry) claim(scope, id string) error {
 	if id == "" {
 		return nil
@@ -972,9 +985,9 @@ func Validate(c *Config) error {
 	}
 
 	seen := make(map[string]bool, len(c.Providers))
-	// References accept an id or, until Task 7, the legacy display name.
+	// Every reference is an id: names are display labels and never resolve.
 	providerIDs := make(map[string]*Provider, len(c.Providers))
-	providerNames := make(map[string]*Provider, len(c.Providers))
+	providerIDByName := make(map[string]string, len(c.Providers))
 	for i := range c.Providers {
 		p := &c.Providers[i]
 		name := strings.TrimSpace(p.Name)
@@ -991,10 +1004,8 @@ func Validate(c *Config) error {
 		if err := seenIDs.claim(fmt.Sprintf("provider %q", name), p.ID); err != nil {
 			return err
 		}
-		if p.ID != "" {
-			providerIDs[p.ID] = p
-		}
-		providerNames[name] = p
+		providerIDs[p.ID] = p
+		providerIDByName[name] = p.ID
 
 		if typ := strings.TrimSpace(p.Type); typ == "" {
 			return fmt.Errorf("provider %q: type is required", name)
@@ -1040,6 +1051,7 @@ func Validate(c *Config) error {
 
 	nodeNames := make(map[string]bool, len(c.Nodes))
 	nodeIDs := make(map[string]bool, len(c.Nodes))
+	nodeIDByName := make(map[string]string, len(c.Nodes))
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
 		name := strings.TrimSpace(n.Name)
@@ -1056,9 +1068,8 @@ func Validate(c *Config) error {
 		if err := seenIDs.claim(fmt.Sprintf("node %q", name), n.ID); err != nil {
 			return err
 		}
-		if n.ID != "" {
-			nodeIDs[n.ID] = true
-		}
+		nodeIDs[n.ID] = true
+		nodeIDByName[name] = n.ID
 
 		provider := strings.TrimSpace(n.Provider)
 		if provider == "" {
@@ -1066,21 +1077,17 @@ func Validate(c *Config) error {
 		}
 		owner := providerIDs[provider]
 		if owner == nil {
-			owner = providerNames[provider]
-		}
-		if owner == nil {
-			return fmt.Errorf("node %q: unknown provider %q", name, provider)
+			return nameRefError(fmt.Sprintf("node %q", name), "provider", provider, providerIDByName)
 		}
 		if key := strings.TrimSpace(n.Key); key != "" {
-			found := false
+			keyIDs := make(map[string]bool, len(owner.Keys))
+			keyIDByName := make(map[string]string, len(owner.Keys))
 			for _, pk := range owner.Keys {
-				if (pk.ID != "" && pk.ID == key) || strings.TrimSpace(pk.Name) == key {
-					found = true
-					break
-				}
+				keyIDs[pk.ID] = true
+				keyIDByName[strings.TrimSpace(pk.Name)] = pk.ID
 			}
-			if !found {
-				return fmt.Errorf("node %q: key %q is not configured on provider %q", name, key, provider)
+			if !keyIDs[key] {
+				return nameRefError(fmt.Sprintf("node %q", name), "key", key, keyIDByName)
 			}
 		}
 		if strings.TrimSpace(n.Model) == "" {
@@ -1098,6 +1105,7 @@ func Validate(c *Config) error {
 
 	routes := make(map[string]bool, len(c.Routes))
 	routeIDs := make(map[string]bool, len(c.Routes))
+	routeIDByName := make(map[string]string, len(c.Routes))
 	for i := range c.Routes {
 		r := &c.Routes[i]
 		name := strings.TrimSpace(r.Name)
@@ -1114,9 +1122,8 @@ func Validate(c *Config) error {
 		if err := seenIDs.claim(fmt.Sprintf("route %q", name), r.ID); err != nil {
 			return err
 		}
-		if r.ID != "" {
-			routeIDs[r.ID] = true
-		}
+		routeIDs[r.ID] = true
+		routeIDByName[name] = r.ID
 		if len(r.Nodes) == 0 {
 			return fmt.Errorf("route %q: nodes is required", name)
 		}
@@ -1142,11 +1149,11 @@ func Validate(c *Config) error {
 		used := make(map[string]bool, len(r.Nodes))
 		for _, ref := range r.Nodes {
 			ref = strings.TrimSpace(ref)
-			if !nodeNames[ref] && !nodeIDs[ref] {
-				return fmt.Errorf("route %q: unknown node %q", name, ref)
+			if !nodeIDs[ref] {
+				return nameRefError(fmt.Sprintf("route %q", name), "node", ref, nodeIDByName)
 			}
 			if used[ref] {
-				return fmt.Errorf("route %q: duplicate node %q", name, ref)
+				return fmt.Errorf("route %q: duplicate node id %q", name, ref)
 			}
 			used[ref] = true
 		}
@@ -1184,8 +1191,8 @@ func Validate(c *Config) error {
 		if route == "" {
 			return fmt.Errorf("entrypoint %q: route is required", name)
 		}
-		if !routes[route] && !routeIDs[route] {
-			return fmt.Errorf("entrypoint %q: unknown route %q", name, route)
+		if !routeIDs[route] {
+			return nameRefError(fmt.Sprintf("entrypoint %q", name), "route", route, routeIDByName)
 		}
 	}
 	return nil
@@ -1213,8 +1220,8 @@ func (c *Config) ResolveEntrypointID(clientModel string) string {
 	return ""
 }
 
-// Provider returns the provider with the given id. Until Task 7 drops the
-// legacy fallback it also accepts the provider's display name.
+// Provider returns the provider with the given id. A display name is not a
+// handle: names are editable labels.
 func (c *Config) Provider(ref string) (*Provider, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -1225,15 +1232,10 @@ func (c *Config) Provider(ref string) (*Provider, bool) {
 			return &c.Providers[i], true
 		}
 	}
-	for i := range c.Providers {
-		if strings.TrimSpace(c.Providers[i].Name) == ref {
-			return &c.Providers[i], true
-		}
-	}
 	return nil, false
 }
 
-// Node returns the node with the given id, or until Task 7 its display name.
+// Node returns the node with the given id.
 func (c *Config) Node(ref string) (*Node, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -1244,15 +1246,10 @@ func (c *Config) Node(ref string) (*Node, bool) {
 			return &c.Nodes[i], true
 		}
 	}
-	for i := range c.Nodes {
-		if strings.TrimSpace(c.Nodes[i].Name) == ref {
-			return &c.Nodes[i], true
-		}
-	}
 	return nil, false
 }
 
-// Route returns the route with the given id, or until Task 7 its display name.
+// Route returns the route with the given id.
 func (c *Config) Route(ref string) (*Route, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -1263,16 +1260,10 @@ func (c *Config) Route(ref string) (*Route, bool) {
 			return &c.Routes[i], true
 		}
 	}
-	for i := range c.Routes {
-		if strings.TrimSpace(c.Routes[i].Name) == ref {
-			return &c.Routes[i], true
-		}
-	}
 	return nil, false
 }
 
-// Entrypoint returns the entrypoint with the given id, or until Task 7 its
-// display name.
+// Entrypoint returns the entrypoint with the given id.
 func (c *Config) Entrypoint(ref string) (*Entrypoint, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -1283,16 +1274,10 @@ func (c *Config) Entrypoint(ref string) (*Entrypoint, bool) {
 			return &c.Entrypoints[i], true
 		}
 	}
-	for i := range c.Entrypoints {
-		if strings.TrimSpace(c.Entrypoints[i].Name) == ref {
-			return &c.Entrypoints[i], true
-		}
-	}
 	return nil, false
 }
 
-// GatewayKey returns the gateway key with the given id, or until Task 7 its
-// display name.
+// GatewayKey returns the gateway key with the given id.
 func (c *Config) GatewayKey(ref string) (*GatewayKey, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -1300,11 +1285,6 @@ func (c *Config) GatewayKey(ref string) (*GatewayKey, bool) {
 	}
 	for i := range c.Gateway.Keys {
 		if c.Gateway.Keys[i].ID == ref {
-			return &c.Gateway.Keys[i], true
-		}
-	}
-	for i := range c.Gateway.Keys {
-		if strings.TrimSpace(c.Gateway.Keys[i].Name) == ref {
 			return &c.Gateway.Keys[i], true
 		}
 	}
@@ -1395,9 +1375,8 @@ func (c *Config) LabelsByID() map[string]map[string]string {
 
 // TopologyIncludes reports whether a stats row belongs to the current route
 // topology: the route must exist, reference the node, and the node's provider
-// must match. Rows, routes and nodes are identified by id, but a row may still
-// record the legacy display names until Task 3 switches the gateway to ids, so
-// the recorded references are resolved first. Unrouted rows are always kept.
+// must match. Rows, routes and nodes are identified by id. Unrouted rows are
+// always kept.
 func (c *Config) TopologyIncludes(routeID, nodeID, providerID string) bool {
 	routeID = strings.TrimSpace(routeID)
 	if routeID == "" {
@@ -1417,7 +1396,7 @@ func (c *Config) TopologyIncludes(routeID, nodeID, providerID string) bool {
 	}
 	referenced := false
 	for _, ref := range target.Nodes {
-		if sameNodeReference(c, ref, node) {
+		if strings.TrimSpace(ref) == node.ID {
 			referenced = true
 			break
 		}
@@ -1429,43 +1408,7 @@ func (c *Config) TopologyIncludes(routeID, nodeID, providerID string) bool {
 	if providerID == "" {
 		return true
 	}
-	nodeProvider := strings.TrimSpace(node.Provider)
-	if nodeProvider == providerID {
-		return true
-	}
-	configured, ok := c.Provider(nodeProvider)
-	if !ok {
-		return false
-	}
-	recorded, ok := c.Provider(providerID)
-	if !ok {
-		return false
-	}
-	if configured.ID != "" && recorded.ID != "" {
-		return configured.ID == recorded.ID
-	}
-	return strings.TrimSpace(configured.Name) == strings.TrimSpace(recorded.Name)
-}
-
-// sameNodeReference reports whether ref, an id or until Task 7 a node display
-// name, refers to node. Ids decide when both sides carry one; an id-less config
-// still compares display names.
-func sameNodeReference(c *Config, ref string, node *Node) bool {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return false
-	}
-	if node.ID != "" && ref == node.ID {
-		return true
-	}
-	other, ok := c.Node(ref)
-	if !ok {
-		return false
-	}
-	if node.ID != "" && other.ID != "" {
-		return node.ID == other.ID
-	}
-	return strings.TrimSpace(other.Name) == strings.TrimSpace(node.Name)
+	return strings.TrimSpace(node.Provider) == providerID
 }
 
 // EnabledValue reports whether the node is enabled (default true).

@@ -23,14 +23,10 @@ func nodeIndexByID(c *config.Config, id string) int {
 	return -1
 }
 
-// sameNodeRef reports whether a route's node reference points at n: the node
-// id, or until Task 7 the display name for an id-less config.
+// sameNodeRef reports whether a route's node reference points at n. The
+// reference is the node id: names are display labels.
 func sameNodeRef(ref string, n config.Node) bool {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return false
-	}
-	return ref == n.ID || ref == strings.TrimSpace(n.Name)
+	return strings.TrimSpace(ref) == n.ID
 }
 
 func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
@@ -45,8 +41,6 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Reads still accept the display name until Task 7 removes the
-	// transition fallback.
 	if n, ok := s.cfg.Node(ref); ok {
 		writeJSON(w, http.StatusOK, n)
 		return

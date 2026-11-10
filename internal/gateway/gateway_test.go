@@ -24,39 +24,40 @@ import (
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
-// withIDs runs the same identity migration config.Load performs, so a fixture
-// that names its entities exercises the id-based build path with the derived
-// ids it would get in production. Fixtures stay readable: only the migration
-// spells out the ids.
-func withIDs(t *testing.T, cfg *gwconfig.Config) *gwconfig.Config {
-	t.Helper()
-
-	if _, err := gwconfig.MigrateIdentities(cfg); err != nil {
-		t.Fatalf("migrate identities: %v", err)
-	}
-	return cfg
-}
+// Fixture ids for the shared gateway config. Names are display labels, so every
+// reference in a fixture config is one of these ids.
+const (
+	testProviderID    = "p_0000000001"
+	testProviderKeyID = "pk_0000000001"
+	testNodeID        = "n_0000000001"
+	testRouteID       = "r_0000000001"
+	testEntrypointID  = "e_0000000001"
+	testGatewayKeyID  = "gk_0000000001"
+)
 
 func testConfig(upstreamURL string) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{{
-			Name: "default", Match: []string{"*"}, Route: "default",
+			ID: testEntrypointID, Name: "default", Match: []string{"*"}, Route: testRouteID,
 		}},
 		Providers: []gwconfig.Provider{{
+			ID:   testProviderID,
 			Name: "up",
 			Type: "generic",
 			Chat: upstreamURL,
-			Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}},
+			Keys: []gwconfig.ProviderKey{{ID: testProviderKeyID, Name: "key-1", Key: "sk-test"}},
 		}},
 		Nodes: []gwconfig.Node{{
+			ID:       testNodeID,
 			Name:     "up",
-			Provider: "up",
+			Provider: testProviderID,
 			Model:    "deepseek-chat",
 		}},
 		Routes: []gwconfig.Route{{
+			ID:    testRouteID,
 			Name:  "default",
-			Nodes: []string{"up"},
+			Nodes: []string{testNodeID},
 		}},
 	}
 }
@@ -64,7 +65,6 @@ func testConfig(upstreamURL string) *gwconfig.Config {
 func startGateway(t *testing.T, cfg *gwconfig.Config) *Gateway {
 	t.Helper()
 
-	cfg = withIDs(t, cfg)
 	gw, err := New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
@@ -84,11 +84,12 @@ func TestRouteHealthUsesRouteFailSettings(t *testing.T) {
 
 	cfg := testConfig(upstream.URL)
 	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
+		ID:       "n_0000000002",
 		Name:     "up2",
-		Provider: "up",
+		Provider: testProviderID,
 		Model:    "deepseek-chat",
 	})
-	cfg.Routes[0].Nodes = []string{"up", "up2"}
+	cfg.Routes[0].Nodes = []string{testNodeID, "n_0000000002"}
 	cfg.Routes[0].Strategy = "fifo"
 	cfg.Routes[0].MaxFails = 2
 	cfg.Routes[0].FailTimeout = gwconfig.Duration(30 * time.Second)
