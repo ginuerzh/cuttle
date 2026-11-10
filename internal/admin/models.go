@@ -17,7 +17,7 @@ import (
 const modelsCacheTTL = 10 * time.Minute
 
 // errProviderNotFound is returned when a model catalog is requested for an
-// unknown provider name.
+// unknown provider.
 var errProviderNotFound = errors.New("provider not found")
 
 // providerModel is the JSON view of one provider catalog entry. The alias lets
@@ -26,7 +26,8 @@ type providerModel = provider.Model
 
 // modelsCacheEntry is the per-provider model catalog cache. fetchedAt records
 // the last successful fetch so a failed refresh can keep returning the
-// last-good catalog with its original timestamp.
+// last-good catalog with its original timestamp. The cache is keyed by
+// provider id.
 type modelsCacheEntry struct {
 	models    []providerModel
 	fetchedAt time.Time
@@ -36,6 +37,7 @@ type modelsCacheEntry struct {
 // modelsFlight coalesces concurrent catalog fetches for one provider. The
 // caller that registers the flight performs the fetch; later callers wait for
 // done and share its result. waiters counts the callers sharing the flight.
+// Flights are keyed by provider id.
 type modelsFlight struct {
 	done      chan struct{}
 	waiters   int
@@ -44,26 +46,30 @@ type modelsFlight struct {
 	err       error
 }
 
-// providerModels returns the model catalog for the named provider. A fresh
-// cache entry is served without touching the network; refresh forces a fetch.
-// Concurrent fetches for the same provider share one upstream call. When a
-// refresh fails after an earlier success, the last-good catalog is returned
+// providerModels returns the model catalog for the provider a path value refers
+// to: its id, or its display name until Task 7 removes the transition fallback.
+// A fresh cache entry is served without touching the network; refresh forces a
+// fetch. Concurrent fetches for the same provider share one upstream call. When
+// a refresh fails after an earlier success, the last-good catalog is returned
 // without a fatal error. Without a last-good catalog the fetch error is
 // returned.
-func (s *Server) providerModels(ctx context.Context, name string, refresh bool) ([]providerModel, time.Time, error) {
+//
+// The cache is keyed by the provider id, so a rename keeps the catalog.
+func (s *Server) providerModels(ctx context.Context, ref string, refresh bool) ([]providerModel, time.Time, error) {
 	s.mu.Lock()
-	p, ok := s.providerLocked(name)
+	p, ok := s.providerLocked(ref)
 	if !ok {
 		s.mu.Unlock()
 		return nil, time.Time{}, errProviderNotFound
 	}
+	id := p.ID
 	if !refresh {
-		if entry, ok := s.freshModelsLocked(name); ok {
+		if entry, ok := s.freshModelsLocked(id); ok {
 			s.mu.Unlock()
 			return entry.models, entry.fetchedAt, nil
 		}
 	}
-	if flight, ok := s.modelsInflight[name]; ok {
+	if flight, ok := s.modelsInflight[id]; ok {
 		flight.waiters++
 		s.mu.Unlock()
 
@@ -75,15 +81,15 @@ func (s *Server) providerModels(ctx context.Context, name string, refresh bool) 
 		}
 	}
 	flight := &modelsFlight{done: make(chan struct{})}
-	s.modelsInflight[name] = flight
+	s.modelsInflight[id] = flight
 	s.mu.Unlock()
 
-	return s.loadModels(ctx, p, name, flight)
+	return s.loadModels(ctx, p, id, flight)
 }
 
 // freshModelsLocked returns a non-expired cache entry. Callers must hold s.mu.
-func (s *Server) freshModelsLocked(name string) (modelsCacheEntry, bool) {
-	entry, ok := s.modelsCache[name]
+func (s *Server) freshModelsLocked(id string) (modelsCacheEntry, bool) {
+	entry, ok := s.modelsCache[id]
 	if !ok || entry.models == nil || time.Since(entry.fetchedAt) >= modelsCacheTTL {
 		return modelsCacheEntry{}, false
 	}
@@ -93,7 +99,7 @@ func (s *Server) freshModelsLocked(name string) (modelsCacheEntry, bool) {
 // loadModels performs the upstream fetch for flight and publishes its result
 // to waiters. The result is cached only while the provider configuration still
 // matches the snapshot used for the fetch.
-func (s *Server) loadModels(ctx context.Context, p config.Provider, name string, flight *modelsFlight) ([]providerModel, time.Time, error) {
+func (s *Server) loadModels(ctx context.Context, p config.Provider, id string, flight *modelsFlight) ([]providerModel, time.Time, error) {
 	models, err := fetchModels(ctx, p)
 	now := time.Now()
 
@@ -106,27 +112,27 @@ func (s *Server) loadModels(ctx context.Context, p config.Provider, name string,
 		resultErr    error
 	)
 
-	if current, ok := s.providerLocked(name); !ok || !sameProviderFetch(current, p) {
+	if current, ok := s.providerLocked(id); !ok || !sameProviderFetch(current, p) {
 		if err == nil {
 			resultModels, resultAt = models, now
 		} else {
 			resultErr = err
 		}
 	} else {
-		prev, hadPrev := s.modelsCache[name]
+		prev, hadPrev := s.modelsCache[id]
 		switch {
 		case err != nil && hadPrev && prev.models != nil:
 			prev.err = err.Error()
-			s.modelsCache[name] = prev
+			s.modelsCache[id] = prev
 			resultModels, resultAt = prev.models, prev.fetchedAt
 		case err != nil:
-			s.modelsCache[name] = modelsCacheEntry{err: err.Error()}
+			s.modelsCache[id] = modelsCacheEntry{err: err.Error()}
 			resultErr = err
 		default:
 			if models == nil {
 				models = []providerModel{}
 			}
-			s.modelsCache[name] = modelsCacheEntry{models: models, fetchedAt: now}
+			s.modelsCache[id] = modelsCacheEntry{models: models, fetchedAt: now}
 			resultModels, resultAt = models, now
 		}
 	}
@@ -134,43 +140,49 @@ func (s *Server) loadModels(ctx context.Context, p config.Provider, name string,
 	flight.models = resultModels
 	flight.fetchedAt = resultAt
 	flight.err = resultErr
-	delete(s.modelsInflight, name)
+	delete(s.modelsInflight, id)
 	close(flight.done)
 	return resultModels, resultAt, resultErr
 }
 
-func (s *Server) providerLocked(name string) (config.Provider, bool) {
-	for _, p := range s.cfg.Providers {
-		if p.Name == name {
-			return p, true
-		}
+// providerLocked returns the provider a read path value refers to. Reads still
+// accept the display name until Task 7 removes the transition fallback. Callers
+// must hold s.mu.
+func (s *Server) providerLocked(ref string) (config.Provider, bool) {
+	if p, ok := s.cfg.Provider(ref); ok {
+		return *p, true
 	}
 	return config.Provider{}, false
 }
 
 // invalidateModelsLocked drops cache entries whose provider was removed or
 // whose upstream configuration changed. A change to Models alone keeps the
-// cache: overrides are local policy and never affect the catalog. Callers must
-// hold s.mu.
+// cache: overrides are local policy and never affect the catalog. Entries are
+// keyed by provider id. Callers must hold s.mu.
 func (s *Server) invalidateModelsLocked(next *config.Config) {
-	nextByName := make(map[string]config.Provider, len(next.Providers))
+	nextByID := make(map[string]config.Provider, len(next.Providers))
 	for _, p := range next.Providers {
-		nextByName[p.Name] = p
+		if p.ID != "" {
+			nextByID[p.ID] = p
+		}
 	}
 	for _, p := range s.cfg.Providers {
-		updated, ok := nextByName[p.Name]
+		updated, ok := nextByID[p.ID]
 		if !ok || !sameProviderFetch(p, updated) {
-			delete(s.modelsCache, p.Name)
+			delete(s.modelsCache, p.ID)
 		}
 	}
 }
 
-// sameProviderFetch reports whether two provider snapshots would fetch the
-// same upstream catalog. Local model overrides are ignored so toggling a
-// model's disabled flag reuses the cached catalog.
+// sameProviderFetch reports whether two snapshots of the same provider would
+// fetch the same upstream catalog. Local model overrides are ignored so
+// toggling a model's disabled flag reuses the cached catalog, and the name is
+// ignored because it is a display label: a rename keeps the catalog.
 func sameProviderFetch(a, b config.Provider) bool {
 	a.Models = nil
 	b.Models = nil
+	a.Name = ""
+	b.Name = ""
 	return reflect.DeepEqual(a, b)
 }
 

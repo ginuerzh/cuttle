@@ -56,10 +56,12 @@ type Server struct {
 	wsPctInterval time.Duration
 	wsMaxAge      time.Duration
 
+	// usageCache is keyed by provider id.
 	usageMu         sync.Mutex
 	usageCache      map[string]usageCacheEntry
 	usageGeneration uint64
 
+	// modelsCache and modelsInflight are keyed by provider id.
 	modelsCache    map[string]modelsCacheEntry
 	modelsInflight map[string]*modelsFlight
 }
@@ -153,11 +155,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/presets", s.handlePresets)
 	api.HandleFunc("GET /api/providers", s.handleListProviders)
 	api.HandleFunc("POST /api/providers", s.handleCreateProvider)
-	api.HandleFunc("GET /api/providers/{name}", s.handleGetProvider)
-	api.HandleFunc("PUT /api/providers/{name}", s.handleUpdateProvider)
-	api.HandleFunc("DELETE /api/providers/{name}", s.handleDeleteProvider)
-	api.HandleFunc("POST /api/providers/{name}/test", s.handleTestProvider)
-	api.HandleFunc("GET /api/providers/{name}/models", s.handleProviderModels)
+	api.HandleFunc("GET /api/providers/{id}", s.handleGetProvider)
+	api.HandleFunc("PUT /api/providers/{id}", s.handleUpdateProvider)
+	api.HandleFunc("DELETE /api/providers/{id}", s.handleDeleteProvider)
+	api.HandleFunc("POST /api/providers/{id}/test", s.handleTestProvider)
+	api.HandleFunc("GET /api/providers/{id}/models", s.handleProviderModels)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
 	api.HandleFunc("GET /api/nodes/{name}", s.handleGetNode)

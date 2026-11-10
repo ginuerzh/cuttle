@@ -127,6 +127,70 @@ func login(t *testing.T, tsURL string) (*http.Client, string) {
 	return c, csrf
 }
 
+// providerJSON is one provider as the HTTP API writes it. The tests decode it
+// instead of the Go view type so they assert the wire shape: ids are the
+// handles, names are labels.
+type providerJSON struct {
+	ID   string            `json:"id"`
+	Name string            `json:"name"`
+	Type string            `json:"type"`
+	Chat string            `json:"chat,omitempty"`
+	Keys []providerKeyJSON `json:"keys"`
+}
+
+// providerKeyJSON is one masked provider key in the provider payload.
+type providerKeyJSON struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	KeyPreview string `json:"keyPreview"`
+	Enabled    bool   `json:"enabled"`
+}
+
+// listProviders returns every provider the API lists.
+func listProviders(t *testing.T, client *http.Client, base string) []providerJSON {
+	t.Helper()
+
+	resp := doJSON(t, client, http.MethodGet, base+"/api/providers", "", "")
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("list providers = %d: %s", resp.StatusCode, b)
+	}
+	var out []providerJSON
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// getProvider returns one provider addressed by id.
+func getProvider(t *testing.T, client *http.Client, base, id string) providerJSON {
+	t.Helper()
+
+	resp := doJSON(t, client, http.MethodGet, base+"/api/providers/"+id, "", "")
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("get provider %q = %d: %s", id, resp.StatusCode, b)
+	}
+	var out providerJSON
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// providerID returns the id of the provider with the display name.
+func providerID(t *testing.T, client *http.Client, base, name string) string {
+	t.Helper()
+
+	for _, p := range listProviders(t, client, base) {
+		if p.Name == name {
+			return p.ID
+		}
+	}
+	t.Fatalf("provider %q is not listed", name)
+	return ""
+}
+
 func TestRouteHealthEndpoint(t *testing.T) {
 	_, rel, _, ts := newTestAdmin(t)
 	now := time.Now().UTC()
@@ -243,12 +307,13 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 	if !strings.Contains(string(b), `"name":"key-1"`) || !strings.Contains(string(b), "sk-...alue") {
 		t.Fatalf("missing key metadata: %s", b)
 	}
+	pid := listProviders(t, client, ts.URL)[0].ID
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("config file: %v mode=%v", err, info.Mode().Perm())
 	}
 
 	update := `{"name":"p1","type":"generic","chat":"https://api.example.com/v1"}`
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p1", update, csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/"+pid, update, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("update status = %d", resp.StatusCode)
 	}
 	if len(rel.cfg.Providers[0].Keys) != 1 || rel.cfg.Providers[0].Keys[0].Key != "sk-secret-value" {
@@ -261,7 +326,7 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"r1","nodes":["n1"]}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create route status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/p1", "", csrf); resp.StatusCode != http.StatusBadRequest {
+	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/"+pid, "", csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("delete referenced provider status = %d, want 400", resp.StatusCode)
 	}
 	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/n1", "", csrf); resp.StatusCode != http.StatusBadRequest {
@@ -273,7 +338,7 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/n1", "", csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete node status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/p1", "", csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/"+pid, "", csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete provider status = %d", resp.StatusCode)
 	}
 }
@@ -422,7 +487,7 @@ func TestProbeProvider(t *testing.T) {
 		t.Fatalf("create status = %d", resp.StatusCode)
 	}
 
-	resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers/local/test", "", csrf)
+	resp := doJSON(t, client, http.MethodPost, providerURL(ts.URL, providerID(t, client, ts.URL, "local"))+"/test", "", csrf)
 	var res probeResult
 	if err := jsonDecode(resp.Body, &res); err != nil {
 		t.Fatal(err)
@@ -479,11 +544,12 @@ func TestProbeProviderAnthropicAPI(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
 	}
+	pid := providerID(t, client, ts.URL, "anthropic")
 
 	s.ProbeOnce(context.Background())
 
 	s.mu.Lock()
-	res, ok := s.probes["anthropic"]
+	res, ok := s.probes[pid]
 	s.mu.Unlock()
 	if !ok || !res.OK || res.Status != http.StatusOK {
 		t.Fatalf("probe = %+v", res)
@@ -868,10 +934,12 @@ func TestProviderTypeAndURLsImmutable(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
 	}
+	pid := providerID(t, client, ts.URL, "p")
+	providerPath := providerURL(ts.URL, pid)
 	calls := rel.calls
 
 	same := `{"name":"p","type":"deepseek","chat":"` + chat + `","responses":"` + responses + `","anthropic":"` + anthropic + `","gemini":"` + gemini + `"}`
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", same, csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodPut, providerPath, same, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("unchanged update = %d: %s", resp.StatusCode, b)
 	}
@@ -903,7 +971,7 @@ func TestProviderTypeAndURLsImmutable(t *testing.T) {
 	}
 	for _, tt := range checks {
 		t.Run(tt.name, func(t *testing.T) {
-			if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", tt.body, csrf); resp.StatusCode != http.StatusBadRequest {
+			if resp := doJSON(t, client, http.MethodPut, providerPath, tt.body, csrf); resp.StatusCode != http.StatusBadRequest {
 				b, _ := io.ReadAll(resp.Body)
 				t.Fatalf("update with changed %s = %d: %s, want 400", tt.name, resp.StatusCode, b)
 			}
@@ -933,9 +1001,10 @@ func TestGenericProviderURLsRemainEditable(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
 	}
+	providerPath := providerURL(ts.URL, providerID(t, client, ts.URL, "p"))
 
 	changed := `{"name":"p","type":"generic","chat":"https://api.example.com/v2"}`
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", changed, csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodPut, providerPath, changed, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("generic url update = %d: %s", resp.StatusCode, b)
 	}
@@ -944,7 +1013,7 @@ func TestGenericProviderURLsRemainEditable(t *testing.T) {
 	}
 
 	retype := `{"name":"p","type":"deepseek","chat":"https://api.example.com/v2"}`
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", retype, csrf); resp.StatusCode != http.StatusBadRequest {
+	if resp := doJSON(t, client, http.MethodPut, providerPath, retype, csrf); resp.StatusCode != http.StatusBadRequest {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("generic type change = %d: %s, want 400", resp.StatusCode, b)
 	}
@@ -1002,9 +1071,15 @@ func TestProviderKeyUpdates(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create provider = %d", resp.StatusCode)
 	}
+	pid := providerID(t, client, ts.URL, "p")
+	providerPath := providerURL(ts.URL, pid)
+	keyIDs := make(map[string]string, 3)
+	for _, k := range getProvider(t, client, ts.URL, pid).Keys {
+		keyIDs[k.Name] = k.ID
+	}
 
-	update := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"name":"key-3","delete":true},{"name":"key-4","key":"d"}]}`
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", update, csrf); resp.StatusCode != http.StatusNoContent {
+	update := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"id":"` + keyIDs["key-3"] + `","delete":true},{"name":"key-4","key":"d"}]}`
+	if resp := doJSON(t, client, http.MethodPut, providerPath, update, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := readAll(resp.Body)
 		t.Fatalf("update keys = %d: %s", resp.StatusCode, b)
 	}
@@ -1012,18 +1087,23 @@ func TestProviderKeyUpdates(t *testing.T) {
 	if len(got) != 3 || got[0].Key != "a" || got[1].Key != "b" || got[2].Key != "d" || got[2].Name != "key-4" {
 		t.Fatalf("keys = %v, want [a b d] named key-4", got)
 	}
+	if got[0].ID != keyIDs["key-1"] || got[1].ID != keyIDs["key-2"] || got[2].ID == "" {
+		t.Fatalf("keys = %+v, want the stored ids kept and a generated one for key-4", got)
+	}
 
+	// A name without an id is a new key, so it collides with the existing
+	// name instead of replacing its value.
 	replace := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"name":"key-1","key":"x"}]}`
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", replace, csrf); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("replace existing key = %d, want 400", resp.StatusCode)
+	if resp := doJSON(t, client, http.MethodPut, providerPath, replace, csrf); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("duplicate name = %d, want 400", resp.StatusCode)
 	}
 	if got := rel.cfg.Providers[0].Keys; len(got) != 3 || got[0].Key != "a" {
 		t.Fatalf("keys changed after rejected replace: %v", got)
 	}
 
-	bad := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"name":"nope","delete":true}]}`
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", bad, csrf); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("unknown key name = %d, want 400", resp.StatusCode)
+	bad := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"id":"pk_0000000000","delete":true}]}`
+	if resp := doJSON(t, client, http.MethodPut, providerPath, bad, csrf); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown key id = %d, want 400", resp.StatusCode)
 	}
 	if got := rel.cfg.Providers[0].Keys; len(got) != 3 || got[0].Key != "a" {
 		t.Fatalf("keys changed after rejected update: %v", got)

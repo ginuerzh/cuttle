@@ -16,11 +16,16 @@ import (
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
+// setUsageProviders replaces the provider list and assigns entity ids, so the
+// usage cache and the local rollups join by provider id.
 func setUsageProviders(t *testing.T, srv *Server, providers ...config.Provider) {
 	t.Helper()
 	srv.mu.Lock()
+	defer srv.mu.Unlock()
 	srv.cfg.Providers = providers
-	srv.mu.Unlock()
+	if _, err := config.MigrateIdentities(srv.cfg); err != nil {
+		t.Fatalf("migrate providers: %v", err)
+	}
 }
 
 func decodeUsage(t *testing.T, resp *http.Response) (providerUsageResponse, string) {
@@ -45,8 +50,14 @@ func TestProviderUsageAPI(t *testing.T) {
 	setUsageProviders(t, srv, config.Provider{
 		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret-1234"}},
 	})
+	srv.mu.Lock()
+	pid := srv.cfg.Providers[0].ID
+	srv.mu.Unlock()
+	if pid == "" {
+		t.Fatal("the seeded provider has no id")
+	}
 	if err := rel.store.Insert(context.Background(), stats.Request{
-		ID: "r1", SID: "r1", TS: time.Now().UTC(), Provider: "deepseek",
+		ID: "r1", SID: "r1", TS: time.Now().UTC(), Provider: pid,
 		Status: 200, InputTokens: 10, OutputTokens: 2, CachedTokens: 3,
 	}); err != nil {
 		t.Fatal(err)
@@ -65,8 +76,11 @@ func TestProviderUsageAPI(t *testing.T) {
 		t.Fatalf("providers = %+v", got.Providers)
 	}
 	p := got.Providers[0]
-	if p.Local == nil || p.Local.CachedTokens != 3 {
-		t.Fatalf("local = %+v", p.Local)
+	if p.ID != pid || p.Name != "deepseek" {
+		t.Fatalf("provider = %+v, want id %q and name deepseek", p, pid)
+	}
+	if p.Local == nil || p.Local.CachedTokens != 3 || p.Local.Provider != pid {
+		t.Fatalf("local = %+v, want the rollup joined by provider id", p.Local)
 	}
 	if !p.Supported || !p.Enabled || len(p.Accounts) != 1 {
 		t.Fatalf("provider = %+v", p)
@@ -340,9 +354,11 @@ func TestProviderUsageCacheInvalidationRace(t *testing.T) {
 	<-started
 
 	srv.mu.Lock()
+	p := srv.cfg.Providers[0]
 	next := *srv.cfg
 	next.Providers = []config.Provider{{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-new-2222"}},
+		ID: p.ID, Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1",
+		Keys: []config.ProviderKey{{ID: p.Keys[0].ID, Name: "key-1", Key: "sk-new-2222"}},
 	}}
 	srv.mu.Unlock()
 	srv.SetConfig(&next)

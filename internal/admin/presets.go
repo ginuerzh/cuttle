@@ -2,7 +2,7 @@ package admin
 
 // Preset fills a new provider with a type and the base URL of every API the
 // upstream endpoint serves. Empty fields mean the endpoint does not offer that
-// API.
+// API. A preset carries no id: the server assigns one on create.
 type Preset struct {
 	Name      string `json:"name"`
 	Type      string `json:"type"`

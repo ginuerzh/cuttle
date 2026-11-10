@@ -30,6 +30,7 @@ type accountUsageView struct {
 
 // providerUsageView is one provider card.
 type providerUsageView struct {
+	ID        string               `json:"id"`
 	Name      string               `json:"name"`
 	Type      string               `json:"type"`
 	Enabled   bool                 `json:"enabled"`
@@ -100,7 +101,7 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			defer wg.Done()
 			p := providers[i]
-			old, cached := s.cachedUsage(p.Name)
+			old, cached := s.cachedUsage(p.ID)
 			var view providerUsageView
 			if !refresh && cached {
 				view = old
@@ -108,12 +109,12 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 			} else {
 				view = s.buildProviderUsage(r.Context(), p, old)
 				if r.Context().Err() == nil {
-					s.storeUsage(p.Name, view, now, generation)
+					s.storeUsage(p.ID, view, now, generation)
 				}
 			}
 			if statsStore != nil {
-				local := localMap[p.Name]
-				local.Provider = p.Name
+				local := localMap[p.ID]
+				local.Provider = p.ID
 				view.Local = &local
 			}
 			views[i] = view
@@ -134,6 +135,7 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, old providerUsageView) providerUsageView {
 	now := time.Now().UTC()
 	view := providerUsageView{
+		ID:        cfg.ID,
 		Name:      cfg.Name,
 		Type:      cfg.Type,
 		Enabled:   cfg.EnabledValue(),
@@ -221,23 +223,25 @@ func oldAccount(v providerUsageView, index int) (accountUsageView, bool) {
 	return v.Accounts[index], true
 }
 
-func (s *Server) cachedUsage(name string) (providerUsageView, bool) {
+// cachedUsage returns the cached card for one provider id.
+func (s *Server) cachedUsage(id string) (providerUsageView, bool) {
 	s.usageMu.Lock()
 	defer s.usageMu.Unlock()
-	e, ok := s.usageCache[name]
+	e, ok := s.usageCache[id]
 	if !ok || time.Since(e.fetchedAt) >= usageCacheTTL {
 		return e.view, false
 	}
 	return e.view, true
 }
 
-func (s *Server) storeUsage(name string, view providerUsageView, now time.Time, generation uint64) {
+// storeUsage caches one provider card under its provider id.
+func (s *Server) storeUsage(id string, view providerUsageView, now time.Time, generation uint64) {
 	s.usageMu.Lock()
 	defer s.usageMu.Unlock()
 	if generation != s.usageGeneration {
 		return
 	}
-	s.usageCache[name] = usageCacheEntry{view: view, fetchedAt: now}
+	s.usageCache[id] = usageCacheEntry{view: view, fetchedAt: now}
 }
 
 func (s *Server) invalidateUsageLocked() {

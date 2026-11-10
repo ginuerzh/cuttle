@@ -61,11 +61,12 @@ func TestProbeOnce(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create provider = %d", resp.StatusCode)
 	}
+	pid := providerID(t, client, ts.URL, "p")
 
 	srv.ProbeOnce(context.Background())
 
 	srv.mu.Lock()
-	res, ok := srv.probes["p"]
+	res, ok := srv.probes[pid]
 	srv.mu.Unlock()
 	if !ok || !res.OK || res.Status != 200 {
 		t.Fatalf("probe = %+v", res)
@@ -74,8 +75,8 @@ func TestProbeOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := latest["p"]; !ok || !got.OK {
-		t.Fatalf("persisted probe = %+v", latest)
+	if got, ok := latest[pid]; !ok || !got.OK {
+		t.Fatalf("persisted probe = %+v, want the provider id %q", latest, pid)
 	}
 }
 

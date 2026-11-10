@@ -29,7 +29,8 @@ func (s *Server) StartProbes(ctx context.Context) {
 	}()
 }
 
-// ProbeOnce probes every enabled provider once and records the result.
+// ProbeOnce probes every enabled provider once and records the result. Results
+// are keyed by provider id, in memory and in the stats store.
 func (s *Server) ProbeOnce(ctx context.Context) {
 	s.mu.Lock()
 	providers := append([]config.Provider(nil), s.cfg.Providers...)
@@ -42,13 +43,13 @@ func (s *Server) ProbeOnce(ctx context.Context) {
 		res := probeHTTP(ctx, p)
 
 		s.mu.Lock()
-		s.probes[p.Name] = res
+		s.probes[p.ID] = res
 		s.mu.Unlock()
 
 		if s.stats != nil {
 			_ = s.stats.InsertProbe(ctx, stats.ProbeResult{
 				TS:        time.Now(),
-				Provider:  p.Name,
+				Provider:  p.ID,
 				OK:        res.OK,
 				Status:    res.Status,
 				LatencyMS: res.LatencyMS,

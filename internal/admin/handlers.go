@@ -12,6 +12,7 @@ import (
 
 	"github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/health"
+	"github.com/ginuerzh/cuttle/internal/identity"
 	"github.com/ginuerzh/cuttle/internal/logging"
 	"github.com/ginuerzh/cuttle/internal/provider"
 )
@@ -19,12 +20,14 @@ import (
 // providerKeyView is one configured key as the browser sees it. The raw value
 // is never included; KeyPreview is the existing admin mask.
 type providerKeyView struct {
+	ID         string `json:"id"`
 	Name       string `json:"name"`
 	KeyPreview string `json:"keyPreview"`
 	Enabled    bool   `json:"enabled"`
 }
 
 type providerView struct {
+	ID        string                          `json:"id"`
 	Name      string                          `json:"name"`
 	Type      string                          `json:"type"`
 	Chat      string                          `json:"chat,omitempty"`
@@ -62,6 +65,7 @@ type configView struct {
 
 func (s *Server) viewProvider(p config.Provider) providerView {
 	v := providerView{
+		ID:        p.ID,
 		Name:      p.Name,
 		Type:      p.Type,
 		Chat:      p.Chat,
@@ -77,12 +81,13 @@ func (s *Server) viewProvider(p config.Provider) providerView {
 	}
 	for _, k := range p.Keys {
 		v.Keys = append(v.Keys, providerKeyView{
+			ID:         k.ID,
 			Name:       k.Name,
 			KeyPreview: preview(k.Key),
 			Enabled:    k.EnabledValue(),
 		})
 	}
-	if pr, ok := s.probes[p.Name]; ok {
+	if pr, ok := s.probes[p.ID]; ok {
 		v.Probe = &pr
 	}
 	return v
@@ -93,6 +98,20 @@ func preview(key string) string {
 		return "****"
 	}
 	return key[:3] + "..." + key[len(key)-4:]
+}
+
+// providerIndexByID returns the index of the provider with the id, or -1. It is
+// the write-side lookup: mutations only address entities by id.
+func providerIndexByID(c *config.Config, id string) int {
+	if id == "" {
+		return -1
+	}
+	for i := range c.Providers {
+		if c.Providers[i].ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 func (s *Server) clone() *config.Config {
@@ -144,24 +163,37 @@ func (s *Server) mutate(fn func(*config.Config) error) error {
 // validateProviderImmutability rejects provider identity changes through the
 // management API. A provider's type is fixed after creation, and so are the
 // API base URLs of non-generic providers; operators must delete and recreate
-// the provider instead. New and deleted providers are always allowed.
+// the provider instead. Providers are matched by id, so a rename keeps every
+// rule intact. New and deleted providers are always allowed. An id-less entry
+// (a config written without ids) still matches by name.
 func validateProviderImmutability(old, next *config.Config) error {
 	if old == nil || next == nil {
 		return nil
 	}
 
+	nextByID := make(map[string]config.Provider, len(next.Providers))
 	nextByName := make(map[string]config.Provider, len(next.Providers))
 	for _, p := range next.Providers {
-		nextByName[p.Name] = p
+		if p.ID != "" {
+			nextByID[p.ID] = p
+		}
+		nextByName[strings.TrimSpace(p.Name)] = p
 	}
 
 	for _, prev := range old.Providers {
-		updated, ok := nextByName[prev.Name]
+		updated, ok := nextByID[prev.ID]
+		if !ok {
+			updated, ok = nextByName[strings.TrimSpace(prev.Name)]
+		}
 		if !ok {
 			continue
 		}
+		name := strings.TrimSpace(updated.Name)
+		if name == "" {
+			name = prev.Name
+		}
 		if !strings.EqualFold(strings.TrimSpace(prev.Type), strings.TrimSpace(updated.Type)) {
-			return fmt.Errorf("provider %q: type cannot change after creation; delete and recreate it", prev.Name)
+			return fmt.Errorf("provider %q: type cannot change after creation; delete and recreate it", name)
 		}
 		if strings.EqualFold(strings.TrimSpace(prev.Type), "generic") {
 			continue
@@ -170,7 +202,7 @@ func validateProviderImmutability(old, next *config.Config) error {
 			!sameBaseURL(prev.Responses, updated.Responses) ||
 			!sameBaseURL(prev.Anthropic, updated.Anthropic) ||
 			!sameBaseURL(prev.Gemini, updated.Gemini) {
-			return fmt.Errorf("provider %q: base URL cannot change after creation for type %q", prev.Name, prev.Type)
+			return fmt.Errorf("provider %q: base URL cannot change after creation for type %q", name, prev.Type)
 		}
 	}
 	return nil
@@ -218,14 +250,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			c.Gateway.Keys = dst.Gateway.Keys
 		}
 		// Provider keys are write-only too. Preserve them per existing
-		// provider name when the decoded field is absent; an explicit []
+		// provider id when the decoded field is absent; an explicit []
 		// still clears and a new provider stays keyless.
 		oldProviders := make(map[string]config.Provider, len(dst.Providers))
 		for _, p := range dst.Providers {
-			oldProviders[p.Name] = p
+			if p.ID != "" {
+				oldProviders[p.ID] = p
+			}
 		}
 		for i := range c.Providers {
-			old, ok := oldProviders[c.Providers[i].Name]
+			old, ok := oldProviders[c.Providers[i].ID]
 			if !ok {
 				continue
 			}
@@ -233,7 +267,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return fmt.Errorf("provider %q: %w", c.Providers[i].Name, err)
 			}
-			if err := ensureKeysNotPinned(&c, c.Providers[i].Name, keys); err != nil {
+			if err := ensureKeysNotPinned(&c, keys, old, c.Providers[i]); err != nil {
 				return fmt.Errorf("provider %q: %w", c.Providers[i].Name, err)
 			}
 			c.Providers[i].Keys = keys
@@ -259,16 +293,16 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetProvider(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	ref := r.PathValue("id")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, p := range s.cfg.Providers {
-		if p.Name == name {
-			writeJSON(w, http.StatusOK, s.viewProvider(p))
-			return
-		}
+	// Reads still accept the display name until Task 7 removes the
+	// transition fallback.
+	if p, ok := s.providerLocked(ref); ok {
+		writeJSON(w, http.StatusOK, s.viewProvider(p))
+		return
 	}
 	writeError(w, http.StatusNotFound, "provider not found")
 }
@@ -283,7 +317,21 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.mutate(func(c *config.Config) error {
+	// The server owns the id; a client-supplied one is ignored.
+	id, err := identity.New(identity.Provider)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	p.ID = id
+	keys, err := mergeProviderKeys(nil, p.Keys)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %q: %v", p.Name, err))
+		return
+	}
+	p.Keys = keys
+
+	err = s.mutate(func(c *config.Config) error {
 		for _, existing := range c.Providers {
 			if existing.Name == p.Name {
 				return fmt.Errorf("provider %q already exists", p.Name)
@@ -299,8 +347,11 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
+// providerKeyUpdate is one write-only key change addressed by key id. An entry
+// with an empty id and a value appends a new key and receives a generated id.
 type providerKeyUpdate struct {
-	Name    string `json:"name"`
+	ID      string `json:"id,omitempty"`
+	Name    string `json:"name,omitempty"`
 	Key     string `json:"key,omitempty"`
 	Enabled *bool  `json:"enabled,omitempty"`
 	Delete  bool   `json:"delete,omitempty"`
@@ -311,91 +362,92 @@ type providerUpdate struct {
 	KeyUpdates []providerKeyUpdate `json:"keyUpdates,omitempty"`
 }
 
-// applyProviderKeyUpdates applies name-based key changes without exposing the
-// existing secrets. Deletes run first, then enabled sets, then appends, so one
-// request may delete and re-add the same name (value rotation). Existing keys
-// are read-only: changing a value requires deleting it and adding a
-// replacement.
+// applyProviderKeyUpdates applies key changes by key id without exposing the
+// existing secrets. A rename, a value replacement and an enabled flag may be
+// combined for one id; a delete runs on its own. Updates apply in request
+// order, so one request may delete a key and append a replacement with the
+// same name.
 func applyProviderKeyUpdates(keys []config.ProviderKey, updates []providerKeyUpdate) ([]config.ProviderKey, error) {
-	type appendKey struct{ name, key string }
-	deletes := make(map[string]bool)
-	enables := make(map[string]*bool)
-	var appends []appendKey
+	out := make([]config.ProviderKey, len(keys))
+	copy(out, keys)
+
+	indexOf := func(id string) int {
+		for i := range out {
+			if out[i].ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+	nameTaken := func(name string, except int) bool {
+		for i := range out {
+			if i != except && strings.TrimSpace(out[i].Name) == name {
+				return true
+			}
+		}
+		return false
+	}
 
 	for _, u := range updates {
+		id := strings.TrimSpace(u.ID)
 		name := strings.TrimSpace(u.Name)
-		if name == "" {
-			return nil, fmt.Errorf("key name is required")
-		}
-		key := strings.TrimSpace(u.Key)
-		switch {
-		case u.Delete:
-			if key != "" || u.Enabled != nil {
-				return nil, fmt.Errorf("key %q: delete cannot be combined with key or enabled", name)
-			}
-			if deletes[name] {
-				return nil, fmt.Errorf("duplicate delete for key %q", name)
-			}
-			deletes[name] = true
-		case key != "":
-			if u.Enabled != nil {
-				return nil, fmt.Errorf("key %q: append cannot set enabled", name)
-			}
-			appends = append(appends, appendKey{name: name, key: key})
-		case u.Enabled != nil:
-			enables[name] = u.Enabled
-		default:
-			return nil, fmt.Errorf("key %q: key, enabled or delete is required", name)
-		}
-	}
+		value := strings.TrimSpace(u.Key)
 
-	configured := make(map[string]bool, len(keys))
-	for _, k := range keys {
-		configured[k.Name] = true
-	}
-	for name := range deletes {
-		if !configured[name] {
-			return nil, fmt.Errorf("key %q is not configured", name)
-		}
-	}
-	for name := range enables {
-		if deletes[name] {
-			return nil, fmt.Errorf("key %q: cannot delete and toggle in the same request", name)
-		}
-		if !configured[name] {
-			return nil, fmt.Errorf("key %q is not configured", name)
-		}
-	}
-
-	out := make([]config.ProviderKey, 0, len(keys)+len(appends))
-	for _, k := range keys {
-		if deletes[k.Name] {
+		if id == "" {
+			// A new key is identified by its value.
+			switch {
+			case value == "":
+				return nil, fmt.Errorf("key id is required, or a name and key to append a new key")
+			case name == "":
+				return nil, fmt.Errorf("key name is required")
+			case u.Delete:
+				return nil, fmt.Errorf("key %q: a new key cannot be deleted", name)
+			case nameTaken(name, -1):
+				return nil, fmt.Errorf("key %q already exists", name)
+			}
+			newID, err := identity.New(identity.ProviderKey)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, config.ProviderKey{ID: newID, Name: name, Key: value, Enabled: u.Enabled})
 			continue
 		}
-		if enabled, ok := enables[k.Name]; ok {
-			k.Enabled = enabled
-		}
-		out = append(out, k)
-	}
 
-	present := make(map[string]bool, len(out))
-	for _, k := range out {
-		present[k.Name] = true
-	}
-	for _, a := range appends {
-		if present[a.name] {
-			return nil, fmt.Errorf("key %q already exists", a.name)
+		i := indexOf(id)
+		if i < 0 {
+			return nil, fmt.Errorf("key %q is not configured", id)
 		}
-		present[a.name] = true
-		out = append(out, config.ProviderKey{Name: a.name, Key: a.key})
+		if u.Delete {
+			if name != "" || value != "" || u.Enabled != nil {
+				return nil, fmt.Errorf("key %q: delete cannot be combined with name, key or enabled", id)
+			}
+			out = append(out[:i], out[i+1:]...)
+			continue
+		}
+		if name == "" && value == "" && u.Enabled == nil {
+			return nil, fmt.Errorf("key %q: name, key, enabled or delete is required", id)
+		}
+		if name != "" {
+			if nameTaken(name, i) {
+				return nil, fmt.Errorf("key %q is already used by another key", name)
+			}
+			out[i].Name = name
+		}
+		if value != "" {
+			out[i].Key = value
+		}
+		if u.Enabled != nil {
+			out[i].Enabled = u.Enabled
+		}
 	}
 	return out, nil
 }
 
 // mergeProviderKeys applies a full key replacement: nil preserves the stored
-// keys, an empty slice clears them, and a non-empty list replaces the set by
-// name. An entry with an empty key whose name already exists keeps the stored
-// value, so a GET -> PUT round-trip of the masked view is safe.
+// keys, an empty slice clears them, and a non-empty list merges by key id. An
+// entry with an empty id is a new key and receives a generated id, so a
+// GET -> PUT round-trip of the masked view is safe: the view carries the ids
+// and an entry with an empty value keeps the stored value.
 func mergeProviderKeys(old, incoming []config.ProviderKey) ([]config.ProviderKey, error) {
 	if incoming == nil {
 		return old, nil
@@ -403,42 +455,103 @@ func mergeProviderKeys(old, incoming []config.ProviderKey) ([]config.ProviderKey
 	if len(incoming) == 0 {
 		return []config.ProviderKey{}, nil
 	}
-	byName := make(map[string]config.ProviderKey, len(old))
+
+	byID := make(map[string]config.ProviderKey, len(old))
 	for _, k := range old {
-		byName[k.Name] = k
+		if k.ID != "" {
+			byID[k.ID] = k
+		}
 	}
+
 	out := make([]config.ProviderKey, 0, len(incoming))
+	names := make(map[string]bool, len(incoming))
 	for _, k := range incoming {
-		name := strings.TrimSpace(k.Name)
-		prev, exists := byName[name]
-		key := strings.TrimSpace(k.Key)
-		if key == "" {
-			if !exists {
-				return nil, fmt.Errorf("key %q: key is required", name)
+		k.ID = strings.TrimSpace(k.ID)
+		k.Name = strings.TrimSpace(k.Name)
+		value := strings.TrimSpace(k.Key)
+
+		if k.ID == "" {
+			if value == "" {
+				return nil, fmt.Errorf("key %q: key is required", k.Name)
 			}
-			k.Key = prev.Key
+			id, err := identity.New(identity.ProviderKey)
+			if err != nil {
+				return nil, err
+			}
+			k.ID = id
+			k.Key = value
+		} else {
+			prev, ok := byID[k.ID]
+			if !ok {
+				return nil, fmt.Errorf("key id %q is not configured", k.ID)
+			}
+			if k.Name == "" {
+				k.Name = strings.TrimSpace(prev.Name)
+			}
+			if value == "" {
+				k.Key = prev.Key
+			} else {
+				k.Key = value
+			}
+			if k.Enabled == nil {
+				k.Enabled = prev.Enabled
+			}
 		}
-		k.Name = name
-		if k.Enabled == nil && exists {
-			k.Enabled = prev.Enabled
+		if k.Name == "" {
+			return nil, fmt.Errorf("key name is required")
 		}
+		if names[k.Name] {
+			return nil, fmt.Errorf("key %q is already used by another key", k.Name)
+		}
+		names[k.Name] = true
 		out = append(out, k)
 	}
 	return out, nil
 }
 
-// ensureKeysNotPinned rejects a key change that would leave a node of the same
-// provider pointing at a missing key.
-func ensureKeysNotPinned(c *config.Config, providerName string, keys []config.ProviderKey) error {
-	present := make(map[string]bool, len(keys))
-	for _, k := range keys {
-		present[k.Name] = true
+// sameProviderRef reports whether a node's provider reference points at one of
+// the given snapshots of the same provider: the stored one and, after a rename,
+// the incoming one. A node may still name its provider until Task 7 makes
+// references id-only.
+func sameProviderRef(ref string, providers ...config.Provider) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return false
 	}
+	for _, p := range providers {
+		if ref == p.ID || ref == strings.TrimSpace(p.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameKeyRef reports whether a node's key pin points at k. A pin may still use
+// the key name until Task 7 makes references id-only.
+func sameKeyRef(ref string, k config.ProviderKey) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return false
+	}
+	return ref == k.ID || ref == strings.TrimSpace(k.Name)
+}
+
+// ensureKeysNotPinned rejects a key change that would leave a node of the same
+// provider pointing at a missing key. Every snapshot of the provider (stored
+// and incoming) is matched, so a rename cannot hide a pin.
+func ensureKeysNotPinned(c *config.Config, keys []config.ProviderKey, providers ...config.Provider) error {
 	for _, n := range c.Nodes {
-		if n.Provider != providerName || strings.TrimSpace(n.Key) == "" {
+		if !sameProviderRef(n.Provider, providers...) || strings.TrimSpace(n.Key) == "" {
 			continue
 		}
-		if !present[n.Key] {
+		found := false
+		for _, k := range keys {
+			if sameKeyRef(n.Key, k) {
+				found = true
+				break
+			}
+		}
+		if !found {
 			return fmt.Errorf("key %q is used by node %q", n.Key, n.Name)
 		}
 	}
@@ -446,50 +559,51 @@ func ensureKeysNotPinned(c *config.Config, providerName string, keys []config.Pr
 }
 
 func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 	var in providerUpdate
 	if err := decode(w, r, &in); err != nil {
 		return
 	}
 	p := in.Provider
-	if p.Name != "" && p.Name != name {
-		writeError(w, http.StatusBadRequest, "name in body does not match the path")
+	if p.ID != "" && p.ID != id {
+		writeError(w, http.StatusBadRequest, "id in body does not match the path")
 		return
 	}
 	if len(in.KeyUpdates) > 0 && len(p.Keys) > 0 {
 		writeError(w, http.StatusBadRequest, "keys and keyUpdates cannot both be set")
 		return
 	}
-	p.Name = name
+	p.ID = id
 
 	err := s.mutate(func(c *config.Config) error {
-		for i := range c.Providers {
-			if c.Providers[i].Name != name {
-				continue
-			}
-			current := c.Providers[i]
-			keys := current.Keys
-			if len(in.KeyUpdates) > 0 {
-				var err error
-				keys, err = applyProviderKeyUpdates(current.Keys, in.KeyUpdates)
-				if err != nil {
-					return fmt.Errorf("provider %q: %w", name, err)
-				}
-			} else {
-				var err error
-				keys, err = mergeProviderKeys(current.Keys, p.Keys)
-				if err != nil {
-					return fmt.Errorf("provider %q: %w", name, err)
-				}
-			}
-			if err := ensureKeysNotPinned(c, name, keys); err != nil {
-				return fmt.Errorf("provider %q: %w", name, err)
-			}
-			p.Keys = keys
-			c.Providers[i] = p
-			return nil
+		i := providerIndexByID(c, id)
+		if i < 0 {
+			return fmt.Errorf("provider %q not found", id)
 		}
-		return fmt.Errorf("provider %q not found", name)
+		current := c.Providers[i]
+		if strings.TrimSpace(p.Name) == "" {
+			// The name is a display label: an omitted one keeps the
+			// stored label instead of blanking it.
+			p.Name = current.Name
+		}
+		var (
+			keys []config.ProviderKey
+			err  error
+		)
+		if len(in.KeyUpdates) > 0 {
+			keys, err = applyProviderKeyUpdates(current.Keys, in.KeyUpdates)
+		} else {
+			keys, err = mergeProviderKeys(current.Keys, p.Keys)
+		}
+		if err != nil {
+			return fmt.Errorf("provider %q: %w", id, err)
+		}
+		if err := ensureKeysNotPinned(c, keys, current, p); err != nil {
+			return fmt.Errorf("provider %q: %w", id, err)
+		}
+		p.Keys = keys
+		c.Providers[i] = p
+		return nil
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -499,27 +613,20 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 
 	err := s.mutate(func(c *config.Config) error {
+		i := providerIndexByID(c, id)
+		if i < 0 {
+			return fmt.Errorf("provider %q not found", id)
+		}
+		target := c.Providers[i]
 		for _, n := range c.Nodes {
-			if n.Provider == name {
-				return fmt.Errorf("provider %q is used by node %q", name, n.Name)
+			if sameProviderRef(n.Provider, target) {
+				return fmt.Errorf("provider %q is used by node %q", target.Name, n.Name)
 			}
 		}
-		out := c.Providers[:0]
-		found := false
-		for _, p := range c.Providers {
-			if p.Name == name {
-				found = true
-				continue
-			}
-			out = append(out, p)
-		}
-		if !found {
-			return fmt.Errorf("provider %q not found", name)
-		}
-		c.Providers = out
+		c.Providers = append(c.Providers[:i], c.Providers[i+1:]...)
 		return nil
 	})
 	if err != nil {
@@ -530,17 +637,10 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	ref := r.PathValue("id")
 
 	s.mu.Lock()
-	var p config.Provider
-	found := false
-	for _, candidate := range s.cfg.Providers {
-		if candidate.Name == name {
-			p, found = candidate, true
-			break
-		}
-	}
+	p, found := s.providerLocked(ref)
 	s.mu.Unlock()
 
 	if !found {
@@ -553,10 +653,10 @@ func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 	refresh := r.URL.Query().Get("refresh") == "1"
 
-	models, fetchedAt, err := s.providerModels(r.Context(), name, refresh)
+	models, fetchedAt, err := s.providerModels(r.Context(), id, refresh)
 	if err != nil {
 		if errors.Is(err, errProviderNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
@@ -569,7 +669,7 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 	// Read the current overrides after the fetch: the provider may have been
 	// edited while the upstream call was in flight.
 	s.mu.Lock()
-	p, ok := s.providerLocked(name)
+	p, ok := s.providerLocked(id)
 	s.mu.Unlock()
 	if !ok {
 		writeError(w, http.StatusNotFound, errProviderNotFound.Error())
