@@ -90,9 +90,9 @@ func TestSSEFirstLastCount(t *testing.T) {
 	if _, ok := m.Start("s1", "r", "m"); !ok {
 		t.Fatal("not captured")
 	}
-	m.Offer("s1", "response", []byte("o1"), []byte("r1"), "start", 0)
-	m.Offer("s1", "response", []byte("o2"), []byte("r2"), "event", 1)
-	m.Offer("s1", "response", []byte("o3"), []byte("r3"), "event", 2)
+	m.Offer("s1", "response", []byte("o1"), []byte("r1"), "start", 0, 0)
+	m.Offer("s1", "response", []byte("o2"), []byte("r2"), "event", 1, 0)
+	m.Offer("s1", "response", []byte("o3"), []byte("r3"), "event", 2, 0)
 	cap, ok := m.Finish("s1")
 	if !ok {
 		t.Fatal("finish failed")
@@ -113,7 +113,7 @@ func TestPreviewsTruncated(t *testing.T) {
 	if _, ok := m.Start("s1", "r", "m"); !ok {
 		t.Fatal("not captured")
 	}
-	m.Offer("s1", "request", []byte("abcdef"), []byte("ghijkl"), "", 0)
+	m.Offer("s1", "request", []byte("abcdef"), []byte("ghijkl"), "", 0, 0)
 	cap, _ := m.Finish("s1")
 	if cap.RequestOriginal != "abcd" || cap.RequestRewritten != "ghij" {
 		t.Fatalf("previews = %+v", cap)
@@ -134,7 +134,7 @@ func TestExactLimitNotTruncated(t *testing.T) {
 	if _, ok := m.Start("s1", "r", "m"); !ok {
 		t.Fatal("not captured")
 	}
-	m.Offer("s1", "request", []byte("abcdef"), []byte("ghijkl"), "", 0)
+	m.Offer("s1", "request", []byte("abcdef"), []byte("ghijkl"), "", 0, 0)
 	cap, _ := m.Finish("s1")
 	if len(cap.TruncatedFields) != 0 {
 		t.Fatalf("truncatedFields = %+v, want none", cap.TruncatedFields)
@@ -146,8 +146,8 @@ func TestSecondChunkMarksTruncated(t *testing.T) {
 	if _, ok := m.Start("s1", "r", "m"); !ok {
 		t.Fatal("not captured")
 	}
-	m.Offer("s1", "request", []byte("abcd"), []byte("efgh"), "", 0)
-	m.Offer("s1", "request", []byte("efghij"), []byte("klmnop"), "", 0)
+	m.Offer("s1", "request", []byte("abcd"), []byte("efgh"), "", 0, 0)
+	m.Offer("s1", "request", []byte("efghij"), []byte("klmnop"), "", 0, 0)
 	cap, _ := m.Finish("s1")
 	if cap.RequestOriginal != "abcdefgh" {
 		t.Fatalf("requestOriginal = %q", cap.RequestOriginal)
@@ -159,12 +159,39 @@ func TestSecondChunkMarksTruncated(t *testing.T) {
 	}
 }
 
+func TestNewAttemptReplacesPreviousCapture(t *testing.T) {
+	m := testManager(Policy{Mode: "errors", MaxBytes: 64})
+	if _, ok := m.Start("s1", "r", "m"); !ok {
+		t.Fatal("not captured")
+	}
+	m.Offer("s1", "request", []byte("a"), []byte("ra"), "", 0, 0)
+	m.Offer("s1", "response", []byte("o"), []byte("ro"), "", 0, 0)
+	m.Offer("s1", "request", []byte("a"), []byte("rb"), "", 0, 1)
+	cap, ok := m.Finish("s1")
+	if !ok {
+		t.Fatal("finish failed")
+	}
+	if cap.RequestRewritten != "rb" {
+		t.Fatalf("requestRewritten = %q, want rb", cap.RequestRewritten)
+	}
+	if cap.ResponseRewritten != "" {
+		t.Fatalf("responseRewritten = %q, want empty", cap.ResponseRewritten)
+	}
+	want := sha256.Sum256([]byte("rb"))
+	if cap.RequestSHA256 != hex.EncodeToString(want[:]) {
+		t.Fatalf("requestSha256 = %q", cap.RequestSHA256)
+	}
+	if m.totalBytes != 0 {
+		t.Fatalf("totalBytes = %d, want 0 after finish", m.totalBytes)
+	}
+}
+
 func TestFailedRewriteKeepsOriginal(t *testing.T) {
 	m := testManager(Policy{Mode: "errors", MaxBytes: 64})
 	if _, ok := m.Start("s1", "r", "m"); !ok {
 		t.Fatal("not captured")
 	}
-	m.Offer("s1", "response", []byte("original"), nil, "", 0)
+	m.Offer("s1", "response", []byte("original"), nil, "", 0, 0)
 	cap, _ := m.Finish("s1")
 	if cap.ResponseOriginal != "original" || cap.ResponseRewritten != "" {
 		t.Fatalf("capture = %+v", cap)
@@ -189,9 +216,9 @@ func TestSSELastIgnoresSyntheticEnd(t *testing.T) {
 	if _, ok := m.Start("s1", "r", "m"); !ok {
 		t.Fatal("not captured")
 	}
-	m.Offer("s1", "response", []byte("o1"), []byte("r1"), "start", 0)
-	m.Offer("s1", "response", []byte("o2"), []byte("r2"), "event", 1)
-	m.Offer("s1", "response", nil, []byte("message_stop"), "end", 2)
+	m.Offer("s1", "response", []byte("o1"), []byte("r1"), "start", 0, 0)
+	m.Offer("s1", "response", []byte("o2"), []byte("r2"), "event", 1, 0)
+	m.Offer("s1", "response", nil, []byte("message_stop"), "end", 2, 0)
 	cap, _ := m.Finish("s1")
 	if cap.SSELastOriginal != "o2" || cap.SSELastRewritten != "r2" {
 		t.Fatalf("last = %q/%q", cap.SSELastOriginal, cap.SSELastRewritten)

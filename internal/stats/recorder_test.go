@@ -356,7 +356,7 @@ func TestRecorderCaptureErrorMode(t *testing.T) {
 		if _, ok := mgr.Start(tc.sid, "r", "m"); !ok {
 			t.Fatalf("%s not captured", tc.sid)
 		}
-		mgr.Offer(tc.sid, "request", []byte("in"), []byte("out"), "", 0)
+		mgr.Offer(tc.sid, "request", []byte("in"), []byte("out"), "", 0, 0)
 		body, _ := json.Marshal(map[string]any{
 			"sid": tc.sid, "node": "r/p/n", "time": time.Now().UTC(),
 			"http": map[string]any{

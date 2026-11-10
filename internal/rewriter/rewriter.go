@@ -69,6 +69,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		SSEPhase:   stringValue(md["sse_phase"]),
 		EventIndex: intValue(md["event_index"]),
 	}
+	attempt := intValue(md["attempt"])
 	inbound := inboundProtocol(meta.URI)
 	if inbound != "" && r.opts.Sink != nil {
 		r.opts.Sink.AddInboundProtocol(meta.SID, inbound)
@@ -96,7 +97,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		}
 	}
 	if err != nil {
-		r.captureRewrite(meta, b, nil, res)
+		r.captureRewrite(meta, b, nil, res, attempt)
 		stage := rewriteStage(meta.Direction, meta.SSEPhase)
 		if r.opts.Sink != nil {
 			r.opts.Sink.AddRewriteError(meta.SID, stage, meta.Direction, meta.SSEPhase, meta.EventIndex)
@@ -116,7 +117,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		}).Errorf("rewrite %s: %v", meta.Direction, err)
 		return b, err
 	}
-	r.captureRewrite(meta, b, res.Data, res)
+	r.captureRewrite(meta, b, res.Data, res, attempt)
 	if level := requestEffort(meta.Direction, b); level != "" {
 		res.Effort = level
 	}
@@ -126,7 +127,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 	return res.Data, nil
 }
 
-func (r *Rewriter) captureRewrite(meta engine.Meta, original, rewritten []byte, res engine.Result) {
+func (r *Rewriter) captureRewrite(meta engine.Meta, original, rewritten []byte, res engine.Result, attempt int) {
 	if r.opts.Capture == nil || meta.SID == "" {
 		return
 	}
@@ -138,10 +139,10 @@ func (r *Rewriter) captureRewrite(meta engine.Meta, original, rewritten []byte, 
 		if _, ok := r.opts.Capture.Start(meta.SID, r.opts.Route, model); !ok {
 			return
 		}
-		r.opts.Capture.Offer(meta.SID, "request", original, rewritten, "", 0)
+		r.opts.Capture.Offer(meta.SID, "request", original, rewritten, "", 0, attempt)
 		return
 	}
-	r.opts.Capture.Offer(meta.SID, "response", original, rewritten, meta.SSEPhase, meta.EventIndex)
+	r.opts.Capture.Offer(meta.SID, "response", original, rewritten, meta.SSEPhase, meta.EventIndex, attempt)
 }
 
 // requestEffort returns the explicit effort level on a request body, preserving

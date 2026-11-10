@@ -87,6 +87,7 @@ type session struct {
 	respHashUsed bool
 	sseSeen      bool
 	bytes        int
+	attempt      int
 	truncated    map[string]bool
 }
 
@@ -235,14 +236,26 @@ func (m *Manager) Start(sid, route, clientModel string) (string, bool) {
 	return "", false
 }
 
-// Offer buffers one rewrite call. Rewritten is nil when the engine failed.
-func (m *Manager) Offer(sid, direction string, original, rewritten []byte, ssePhase string, eventIndex int) {
+// Offer buffers one rewrite call. Rewritten is nil when the engine failed. A
+// request-direction offer carrying a new attempt replaces everything captured
+// for the previous attempts, so a retried request keeps only the final one.
+func (m *Manager) Offer(sid, direction string, original, rewritten []byte, ssePhase string, eventIndex, attempt int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	s, ok := m.sessions[sid]
 	if !ok {
 		return
+	}
+	request := strings.EqualFold(strings.TrimSpace(direction), "request")
+	if request && attempt != s.attempt {
+		m.totalBytes -= s.bytes
+		if m.totalBytes < 0 {
+			m.totalBytes = 0
+		}
+		prev := s.capture
+		*s = *newSession(prev.Reason, prev.OnError, prev.CreatedAt)
+		s.attempt = attempt
 	}
 	if m.totalBytes+len(original)+len(rewritten) > maxTotalBytes {
 		m.deleteLocked(sid)
@@ -252,7 +265,7 @@ func (m *Manager) Offer(sid, direction string, original, rewritten []byte, ssePh
 	s.bytes += len(original) + len(rewritten)
 	maxBytes := m.policy.MaxBytes
 
-	if strings.EqualFold(strings.TrimSpace(direction), "request") {
+	if request {
 		var trunc bool
 		s.capture.RequestOriginal, trunc = appendPreview(s.capture.RequestOriginal, original, maxBytes)
 		s.markTruncated(FieldRequestOriginal, trunc)
@@ -328,6 +341,7 @@ func newSession(reason string, onError bool, now time.Time) *session {
 		capture:  Capture{Reason: reason, OnError: onError, CreatedAt: now},
 		reqHash:  sha256.New(),
 		respHash: sha256.New(),
+		attempt:  -1,
 	}
 }
 

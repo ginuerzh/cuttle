@@ -8,6 +8,8 @@ import (
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 	corerewriter "github.com/go-gost/core/rewriter"
+
+	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
 type sinkStub struct {
@@ -232,6 +234,33 @@ func TestReplaceModelField(t *testing.T) {
 	}
 	if got := replaceModelField(in, ""); string(got) != string(in) {
 		t.Fatalf("empty target changed the body: %s", got)
+	}
+}
+
+func TestRewritePassesAttemptToCapture(t *testing.T) {
+	capMgr := capture.NewManager(capture.Policy{Mode: "errors", MaxBytes: 256})
+	rw := New(engine.New(engine.Options{}), Options{Capture: capMgr, Protocol: "chat", Route: "r"})
+	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`)
+	meta := func(attempt int) corerewriter.RewriteOption {
+		return corerewriter.MetadataRewriteOption(map[string]any{
+			"sid":       "s1",
+			"direction": "request",
+			"uri":       "/v1/chat/completions",
+			"attempt":   attempt,
+		})
+	}
+	if _, err := rw.Rewrite(context.Background(), body, meta(0)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rw.Rewrite(context.Background(), body, meta(1)); err != nil {
+		t.Fatal(err)
+	}
+	cap, ok := capMgr.Finish("s1")
+	if !ok {
+		t.Fatal("no capture recorded")
+	}
+	if got := cap.RequestOriginal; got != string(body) {
+		t.Fatalf("requestOriginal = %q, want the body once", got)
 	}
 }
 

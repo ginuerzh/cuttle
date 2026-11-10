@@ -120,7 +120,7 @@ func TestReloadAppliesCapturePolicy(t *testing.T) {
 	if _, ok := m.Start("s", "r", "m"); !ok {
 		t.Fatal("not captured before reload")
 	}
-	m.Offer("s", "request", []byte("abcdef"), []byte("ghijkl"), "", 0)
+	m.Offer("s", "request", []byte("abcdef"), []byte("ghijkl"), "", 0, 0)
 	cap, _ := m.Finish("s")
 	if len(cap.TruncatedFields) != 0 {
 		t.Fatalf("unexpected truncation before reload: %+v", cap.TruncatedFields)
@@ -140,7 +140,7 @@ func TestReloadAppliesCapturePolicy(t *testing.T) {
 	if _, ok := m.Start("s2", "r", "m"); !ok {
 		t.Fatal("not captured after reload")
 	}
-	m.Offer("s2", "request", []byte("abcdef"), []byte("ghijkl"), "", 0)
+	m.Offer("s2", "request", []byte("abcdef"), []byte("ghijkl"), "", 0, 0)
 	cap, _ = m.Finish("s2")
 	if cap.RequestOriginal != "abcd" {
 		t.Fatalf("requestOriginal = %q, want abcd", cap.RequestOriginal)
