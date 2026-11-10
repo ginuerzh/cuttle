@@ -276,3 +276,57 @@ func TestUsageViewIncludesNameAndEnabled(t *testing.T) {
 		t.Fatalf("accounts = %+v", accounts)
 	}
 }
+
+func TestMergeProviderKeysPreservesEnabled(t *testing.T) {
+	disabled := false
+	old := []config.ProviderKey{{Name: "a", Key: "sk-a", Enabled: &disabled}}
+
+	got, err := mergeProviderKeys(old, []config.ProviderKey{{Name: "a"}})
+	if err != nil || len(got) != 1 || got[0].EnabledValue() {
+		t.Fatalf("empty key = %+v/%v, want the stored value and disabled", got, err)
+	}
+	got, err = mergeProviderKeys(old, []config.ProviderKey{{Name: "a", Key: "sk-new"}})
+	if err != nil || len(got) != 1 || got[0].EnabledValue() {
+		t.Fatalf("new value = %+v/%v, want disabled", got, err)
+	}
+	enabled := true
+	got, err = mergeProviderKeys(old, []config.ProviderKey{{Name: "a", Key: "sk-new", Enabled: &enabled}})
+	if err != nil || len(got) != 1 || !got[0].EnabledValue() {
+		t.Fatalf("explicit enabled = %+v/%v, want enabled", got, err)
+	}
+}
+
+func TestMergeProviderKeysTrimsNames(t *testing.T) {
+	old := []config.ProviderKey{{Name: "a", Key: "sk-a"}}
+	got, err := mergeProviderKeys(old, []config.ProviderKey{{Name: " a ", Key: "sk-new"}})
+	if err != nil || len(got) != 1 || got[0].Name != "a" {
+		t.Fatalf("merged = %+v/%v, want the trimmed name a", got, err)
+	}
+}
+
+func TestProviderFullKeysReplacementPinned(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+	seedNamedProvider(t, client, ts.URL, csrf)
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes",
+		`{"name":"n","provider":"p","model":"m1","key":"a"}`, csrf); resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create node = %d: %s", resp.StatusCode, b)
+	}
+
+	keep := `{"name":"p","type":"generic","chat":"https://a.example","keys":[{"name":"a","key":"sk-new"}]}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", keep, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("replace keys = %d: %s", resp.StatusCode, b)
+	}
+	got := rel.cfg.Providers[0].Keys
+	if len(got) != 1 || got[0].Name != "a" || got[0].Key != "sk-new" {
+		t.Fatalf("keys = %+v, want a=sk-new", got)
+	}
+
+	clear := `{"name":"p","type":"generic","chat":"https://a.example","keys":[]}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", clear, csrf); resp.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("clear pinned keys = %d, want 400: %s", resp.StatusCode, b)
+	}
+}

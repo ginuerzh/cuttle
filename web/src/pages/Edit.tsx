@@ -88,7 +88,10 @@ function ProviderKeyEditor({
       style={{ marginBottom: 12 }}
     >
       {rows.map((row, i) => (
-        <div key={`${row.name || 'new'}-${i}`} style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center' }}>
+        <div
+          key={row.existing ? `existing-${row.name}` : `new-${i}`}
+          style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center' }}
+        >
           {row.existing ? (
             <>
               <Tag color="blue" style={{ marginInlineEnd: 0 }}>{row.name}</Tag>
@@ -394,6 +397,13 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
   };
 
   const save = async () => {
+    const incomplete = keyRows.some(
+      (row) => !row.existing && (row.name.trim() || row.value.trim()) && (!row.name.trim() || !row.value.trim()),
+    );
+    if (incomplete) {
+      message.error(tr('key 名称和值都必须填写'));
+      return;
+    }
     const v = await form.validateFields();
     let headers: Record<string, string>;
     try {

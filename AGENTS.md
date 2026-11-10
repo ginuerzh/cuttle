@@ -253,7 +253,7 @@ Entrypoint -> Route -> Node -> Provider model
 
 ## Stats invariants
 
-- x node names stay `<route>/<provider>/<node>[/<keyIndex>]`;
+- x node names stay `<route>/<provider>/<node>[/<key>]`;
   `stats.parseNodeName` depends on that shape.
 - Record the route, node, provider, client model, target model, status, duration
   and token counts for every request.

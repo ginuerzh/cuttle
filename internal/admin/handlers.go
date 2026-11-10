@@ -410,14 +410,17 @@ func mergeProviderKeys(old, incoming []config.ProviderKey) ([]config.ProviderKey
 	out := make([]config.ProviderKey, 0, len(incoming))
 	for _, k := range incoming {
 		name := strings.TrimSpace(k.Name)
+		prev, exists := byName[name]
 		key := strings.TrimSpace(k.Key)
 		if key == "" {
-			prev, ok := byName[name]
-			if !ok {
+			if !exists {
 				return nil, fmt.Errorf("key %q: key is required", name)
 			}
-			k.Name = name
 			k.Key = prev.Key
+		}
+		k.Name = name
+		if k.Enabled == nil && exists {
+			k.Enabled = prev.Enabled
 		}
 		out = append(out, k)
 	}
