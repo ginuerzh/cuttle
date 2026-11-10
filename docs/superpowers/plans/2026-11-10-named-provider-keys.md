@@ -555,12 +555,12 @@ git commit -m "docs: document named provider keys and node pinning"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `ba1cab32` — `docs: document named provider keys and node pinning`
+- Files changed: `README.md` (feature list, routing model, minimal config, `providers[]`, `nodes[]`, admin provider-key flow), `example.yaml` (named keys, commented `node.key`), `AGENTS.md` (config/admin/web invariants).
+- Tests/commands + results: `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1` PASS.
+- Review findings + fixes: none.
+- Deferred/limitations: none.
 
 ---
 
