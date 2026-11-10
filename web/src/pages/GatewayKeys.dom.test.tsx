@@ -106,4 +106,33 @@ describe('GatewayKeysPage rename', () => {
 
     expect(updateMock).toHaveBeenCalledWith('gk_0000000001', { name: 'claude-code-2' });
   });
+
+  it('hints that the name is display-only in the rename and add dialogs', async () => {
+    const hint = '仅用于显示，可随时修改；实体 id 不变。';
+    document.body.innerHTML = '';
+
+    const renameView = render(<GatewayKeysPage />);
+    await settle();
+    act(() => {
+      buttonByText(renameView.container, '重命名').click();
+    });
+    expect(document.body.querySelector('.ant-modal')?.textContent).toContain(hint);
+
+    act(() => {
+      renameView.root.unmount();
+    });
+    document.body.innerHTML = '';
+
+    const addView = render(<GatewayKeysPage />);
+    await settle();
+    act(() => {
+      buttonByText(addView.container, '添加网关密钥').click();
+    });
+    const modal = document.body.querySelector('.ant-modal');
+    expect(modal).not.toBeNull();
+    expect(modal?.textContent).toContain(hint);
+    act(() => {
+      addView.root.unmount();
+    });
+  });
 });

@@ -50,6 +50,15 @@ export function gatewayKeyState(keys: Pick<GatewayKey, 'enabled'>[]): 'none' | '
   return keys.some((key) => key.enabled) ? 'ok' : 'all-disabled';
 }
 
+/** Both dialogs edit only the display name; the key id never changes. */
+function NameHint() {
+  return (
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      {t('仅用于显示，可随时修改；实体 id 不变。')}
+    </Typography.Text>
+  );
+}
+
 function usageLine(usage?: GatewayKeyUsage): string | undefined {
   if (!usage) return undefined;
   return [
@@ -420,13 +429,16 @@ export function GatewayKeysPage() {
         okText={t('保存')}
         destroyOnClose
       >
-        <Input
-          placeholder={t('名称')}
-          aria-label={t('名称')}
-          value={renaming?.name ?? ''}
-          onChange={(e) => setRenaming((cur) => (cur ? { ...cur, name: e.target.value } : cur))}
-          onPressEnter={() => void submitRename()}
-        />
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          <Input
+            placeholder={t('名称')}
+            aria-label={t('名称')}
+            value={renaming?.name ?? ''}
+            onChange={(e) => setRenaming((cur) => (cur ? { ...cur, name: e.target.value } : cur))}
+            onPressEnter={() => void submitRename()}
+          />
+          <NameHint />
+        </Space>
       </Modal>
 
       <Modal
@@ -446,6 +458,7 @@ export function GatewayKeysPage() {
             onChange={(e) => setAddName(e.target.value)}
             onPressEnter={() => void submitAdd()}
           />
+          <NameHint />
           <Space>
             <Switch
               checked={addEnabled}

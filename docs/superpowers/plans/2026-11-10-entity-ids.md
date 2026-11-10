@@ -677,7 +677,7 @@ git commit -m "feat(web): key console data and graph by entity id"
 - Consumes: Task 8 types/client.
 - Produces: editable `name` fields; ids in select values; filters and detail links by id; display labels from the backend names with a raw-id fallback.
 
-- [ ] **Step 1: Write the failing form tests**
+- [x] **Step 1: Write the failing form tests**
 
 ```tsx
 it('renames a provider without changing its id', async () => { /* open edit, change name, save -> updateProvider called with provider.id and payload.name */ });
@@ -685,25 +685,25 @@ it('pins a provider key by id', async () => { /* node form submits key: 'pk_...'
 it('renders request row labels from the backend', async () => { /* row shows providerName even when the config has no such id */ });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd web && npx vitest run src/pages/Edit.dom.test.tsx src/pages/Edit.test.tsx src/App.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement the rename and id plumbing**
+- [x] **Step 3: Implement the rename and id plumbing**
 
 Provider/node/route/entrypoint/gateway-key/provider-key forms get a `name` input (hint: display only, editable any time); selects list `id` values labelled by name; provider key rows carry ids in payloads; delete/test/models calls pass ids; lists and topology use ids for keys and selection; request and usage surfaces show `*Name` with an id fallback; summary/error/alert cards resolve ids through the loaded config and fall back to the raw id.
 
-- [ ] **Step 4: Add the Chinese strings and their English translations**
+- [x] **Step 4: Add the Chinese strings and their English translations**
 
 Every new label/hint goes into the source as Chinese and into `web/src/locales/en-US.ts`.
 
-- [ ] **Step 5: Run the full web gate**
+- [x] **Step 5: Run the full web gate**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web
@@ -714,8 +714,8 @@ git commit -m "feat(web): edit entity names and submit ids"
 - Date/status: 2026-11-10 — DONE (code in `93362b6c`); this record is added by the follow-up plan commit.
 - Repository + commit: `github.com/ginuerzh/cuttle` @ `93362b6c` (`feat(web): edit entity names and submit ids`). No sibling repository changed.
 - Files changed: new `web/src/labels.ts` (`labelMap`, `entityLabel`, `configLabels`, `graphLabel`) and its test; new `web/src/pages/Requests.dom.test.tsx` and `web/src/pages/GatewayKeys.dom.test.tsx`; `web/src/App.tsx` (`SessionCard` labels + `key:<gatewayKeyName>`, `NodePanel` `label`, `dead 路由` names, `EdgePanel` `graphLabel` path, `configLabels` memo, `RequestsPage config`), `web/src/pages/Edit.tsx` (required `名称` field with the display-only hint on provider/route/node/entrypoint, editable provider-key names, id-addressed key updates, exported `RouteNodeList` using `entityLabel`, id-based `EdgeForm` labels), `web/src/pages/presets.ts` (`ProviderKeyRow.id/originalName`, `ProviderKeyUpdate.id`, id-addressed `providerKeyUpdates`), `web/src/pages/Requests.tsx` (id-valued provider/route/node/entrypoint/gateway-key filter selects, id-valued capture-route select, `*Name` row labels, capture-rule route labels, `node`/`entrypoint` filters sent), `web/src/pages/GatewayKeys.tsx` (rename dialog calling `updateGatewayKey(id, {name})`, usage joined by key id, historical cards keyed by id, session rows labelled by route name), `web/src/pages/Nodes.tsx`/`Routes.tsx`/`Entrypoints.tsx` (`entityLabel` instead of inline lookups), `web/src/pages/Usage.tsx` (`provider.id` key + id fallback title), `web/src/pages/Topology.tsx` (`sameRoutes`/`mergeNodeHealth` parameters renamed to ids), `web/src/api/types.ts` (`ProviderUsage.id`, `GatewayKeyUsage.id`, `GatewayKeySecret` moved here), `web/src/api/client.ts` (`updateGatewayKey` accepts `name`), `web/src/components/RequestDetail.tsx` (route/key/provider/node names with id fallback), `web/src/requestLabels.ts` (`key:<gatewayKeyName>`), `web/src/locales/en-US.ts`; tests `web/src/App.test.tsx`, `web/src/pages/Edit.dom.test.tsx`, `web/src/pages/Edit.test.tsx`, `web/src/pages/Nodes.test.tsx`, `web/src/pages/GatewayKeys.test.tsx`, `web/src/pages/presets.test.ts`, `web/src/components/RequestDetail.test.tsx`.
-- Tests/commands and results: RED `cd web && npx vitest run src/pages/Edit.dom.test.tsx src/pages/Edit.test.tsx src/App.test.tsx` → 8 failed / 22 passed (no name inputs, name-based key delete, unexported `RouteNodeList`, unlabelled `SessionCard`/`NodePanel`, missing route-name field); RED `npx vitest run src/labels.test.ts src/pages/Requests.dom.test.tsx src/pages/GatewayKeys.dom.test.tsx src/pages/Nodes.test.tsx src/components/RequestDetail.test.tsx` → 5 failed / 5 passed (`./labels` missing, free-text filters, no rename action). GREEN `cd web && npm test` → 41 files / 285 tests passed (baseline 38/263), `npx tsc --noEmit` clean, `npm run build` → 3447 modules, `internal/admin/dist` rebuilt. Go gate with the rebuilt bundle: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...` and `GOWORK=off go test ./... -count=1` all pass. Full report: `.superpowers/sdd/2026-11-10-entity-ids/task-9-report.md`.
-- Review findings and fixes: existing provider-key rows use `aria-label` instead of the `key 名称` placeholder so the older DOM tests keep addressing the new-row inputs; `providerKeyUpdates` only emits an existing-key update when the name or enable flag changed, and a delete is sent as `{id, delete:true}` with no name (the admin API rejects that combination); a blank name on an existing row blocks the save; `NodePanel` takes a `label` prop (resolved in `App`) so it stays config-free for its SSR tests; the gateway-key rename button only renders for configured keys.
+- Tests/commands and results: RED `cd web && npx vitest run src/pages/Edit.dom.test.tsx src/pages/Edit.test.tsx src/App.test.tsx` → 8 failed / 22 passed (no name inputs, name-based key delete, unexported `RouteNodeList`, unlabelled `SessionCard`/`NodePanel`, missing route-name field); RED `npx vitest run src/labels.test.ts src/pages/Requests.dom.test.tsx src/pages/GatewayKeys.dom.test.tsx src/pages/Nodes.test.tsx src/components/RequestDetail.test.tsx` → 5 failed / 5 passed (`./labels` missing, free-text filters, no rename action). GREEN `cd web && npm test` → 41 files / 285 tests passed (baseline 38/263), `npx tsc --noEmit` clean, `npm run build` → 3447 modules, `internal/admin/dist` rebuilt. Go gate with the rebuilt bundle: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...` and `GOWORK=off go test ./... -count=1` all pass. Follow-up review fixes re-ran the gate: `npm test` → 41 files / 287 tests passed (two new cases), `npx tsc --noEmit` clean, `npm run build` → `internal/admin/dist` rebuilt, `GOWORK=off go build ./...` OK. Full report: `.superpowers/sdd/2026-11-10-entity-ids/task-9-report.md`.
+- Review findings and fixes: existing provider-key rows use `aria-label` instead of the `key 名称` placeholder so the older DOM tests keep addressing the new-row inputs; `providerKeyUpdates` only emits an existing-key update when the name or enable flag changed, and a delete is sent as `{id, delete:true}` with no name (the admin API rejects that combination); a blank name on an existing row blocks the save; `NodePanel` takes a `label` prop (resolved in `App`) so it stays config-free for its SSR tests; the gateway-key rename button only renders for configured keys. Review round 2 (follow-up fixes, carried by the commit that also ticks these steps): (a) the gateway-key page now shows the display-only hint (`仅用于显示，可随时修改；实体 id 不变。`) under the name input of both the rename and the create dialog, so every listed form carries the hint the plan mandates — pinned by `GatewayKeys.dom.test.tsx` ("hints that the name is display-only in the rename and add dialogs"); (b) the provider-key hint no longer claims a node pins a key by name: it now says a node can pin one of these keys and that a key rename never touches the nodes that pin it, in both the Chinese source string and its `en-US` translation, pinned by `Edit.test.tsx` ("says a node pins a key, so a rename does not touch nodes", which also asserts the old `按名称固定` wording is gone and checks the English sentence); (c) the Task 9 steps above are ticked now that the task is DONE.
 - Deferred items/limitations: `Settings.tsx` and `Providers.tsx` needed no edit (nothing there prints an id, and the provider rename is the shared form they already embed); the Requests error-summary `byProvider`/`byRoute` groups still are not rendered at all (they were not before either), so id→name resolution there is unused — the "summary card" labels are the monitor `NodePanel`/`EdgePanel` surfaces; `graph/build.ts` keeps its two local `?.name ?? id` subtitles (Task 8 file); the Requests page makes one extra `listGatewayKeys()` call on mount for the key filter; rename/edit behaviour is verified only by TypeScript, Vitest SSR/jsdom DOM tests and the build (no browser visual test, no live console run); `AGENTS.md`'s name-based Requests key filter and "gateway-key PUT changes only enabled" lines remain for Task 10.
 
 ---

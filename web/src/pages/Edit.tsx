@@ -86,7 +86,7 @@ function ProviderKeyEditor({
   return (
     <Form.Item
       label="keys"
-      extra={tr('已有 key 的名称可随时修改，值继续以掩码显示；如需更换请删除后添加新 key。一个 node 可以按名称固定使用其中一个。')}
+      extra={tr('已有 key 的名称可随时修改，值继续以掩码显示；如需更换请删除后添加新 key。一个 node 可以固定使用其中一个，key 改名不会影响已固定它的 node。')}
       style={{ marginBottom: 12 }}
     >
       {rows.map((row, i) => (

@@ -47,6 +47,23 @@ describe('ProviderForm', () => {
     expect(html).toContain('account-b');
     expect(html).toContain('sk-...b');
   });
+
+  it('says a node pins a key, so a rename does not touch nodes', () => {
+    const provider: Provider = {
+      id: 'p_0000000001',
+      name: 'p',
+      type: 'generic',
+      chat: 'https://a.example/v1',
+      keys: [{ id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true }],
+    };
+    const html = renderToStaticMarkup(<ProviderForm provider={provider} onSaved={async () => undefined} />);
+    expect(html).toContain('key 改名不会影响已固定它的 node。');
+    expect(html).not.toContain('按名称固定');
+
+    setActiveLang('en-US');
+    const en = renderToStaticMarkup(<ProviderForm provider={provider} onSaved={async () => undefined} />);
+    expect(en).toContain('renaming a key never affects the nodes that pin it');
+  });
 });
 
 describe('NodeForm', () => {

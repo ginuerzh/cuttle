@@ -64,7 +64,7 @@ export const enUS: Record<string, string> = {
   '编辑 {name}': 'Edit {name}',
   '保存': 'Save',
   '删除 key': 'Delete key',
-  '已有 key 的名称可随时修改，值继续以掩码显示；如需更换请删除后添加新 key。一个 node 可以按名称固定使用其中一个。': 'An existing key name can be changed at any time while its value stays masked; delete and re-add one to replace it. A node can pin a key by name.',
+  '已有 key 的名称可随时修改，值继续以掩码显示；如需更换请删除后添加新 key。一个 node 可以固定使用其中一个，key 改名不会影响已固定它的 node。': 'An existing key name can be changed at any time while its value stays masked; delete and re-add one to replace it. A node can pin one of these keys, and renaming a key never affects the nodes that pin it.',
   '固定 key': 'Pinned key',
   '留空表示在所有启用的 key 之间轮询；选择后该 node 只使用这个 key。': 'Leave blank to rotate across every enabled key; a selected key is the only one this node uses.',
   '全部 key（轮询）': 'All keys (round-robin)',
