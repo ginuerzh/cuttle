@@ -41,14 +41,10 @@ func (s *Server) handleCreateCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if route := strings.TrimSpace(in.Route); route != "" {
+		// A rule is scoped by route id: the recorder records the id, so a
+		// display name would never match.
 		s.mu.Lock()
-		found := false
-		for _, r := range s.cfg.Routes {
-			if r.Name == route {
-				found = true
-				break
-			}
-		}
+		found := routeIndexByID(s.cfg, route) >= 0
 		s.mu.Unlock()
 		if !found {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("route %q does not exist", route))

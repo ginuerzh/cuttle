@@ -263,17 +263,23 @@ func TestAuthAndCSRF(t *testing.T) {
 		path, body string
 	}{
 		{"/api/providers", providerBody("p", "https://a.example")},
-		{"/api/nodes", `{"name":"n","provider":"p","model":"m1"}`},
-		{"/api/routes", `{"name":"fast","nodes":["n"]}`},
 	} {
 		if resp := doJSON(t, client, http.MethodPost, ts.URL+tc.path, tc.body, csrf); resp.StatusCode != http.StatusCreated {
 			t.Fatalf("create %s status = %d", tc.path, resp.StatusCode)
 		}
 	}
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+	pid := providerID(t, client, ts.URL, "p")
+	mustCreate(t, client, ts.URL+"/api/nodes",
+		`{"name":"n","provider":"`+pid+`","model":"m1"}`, csrf)
+	nid := nodeID(t, client, ts.URL, "n")
+	mustCreate(t, client, ts.URL+"/api/routes",
+		`{"name":"fast","nodes":["`+nid+`"]}`, csrf)
+	rid := routeID(t, client, ts.URL, "fast")
+	entrypoints := `[{"name":"default","match":["*"],"route":"` + rid + `"}]`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", entrypoints, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put entrypoints status = %d", resp.StatusCode)
 	}
-	if len(rel.cfg.Entrypoints) != 1 || rel.cfg.Entrypoints[0].Route != "fast" {
+	if len(rel.cfg.Entrypoints) != 1 || rel.cfg.Entrypoints[0].Route != rid {
 		t.Fatalf("entrypoints not applied: %+v", rel.cfg.Entrypoints)
 	}
 
@@ -320,22 +326,24 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 		t.Fatalf("keys were cleared by an update without keys: %+v", rel.cfg.Providers[0].Keys)
 	}
 
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n1","provider":"p1","model":"m1"}`, csrf); resp.StatusCode != http.StatusCreated {
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n1","provider":"`+pid+`","model":"m1"}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create node status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"r1","nodes":["n1"]}`, csrf); resp.StatusCode != http.StatusCreated {
+	nid := nodeID(t, client, ts.URL, "n1")
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"r1","nodes":["`+nid+`"]}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create route status = %d", resp.StatusCode)
 	}
+	rid := routeID(t, client, ts.URL, "r1")
 	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/"+pid, "", csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("delete referenced provider status = %d, want 400", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/n1", "", csrf); resp.StatusCode != http.StatusBadRequest {
+	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/"+nid, "", csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("delete referenced node status = %d, want 400", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/routes/r1", "", csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/routes/"+rid, "", csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete route status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/n1", "", csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/nodes/"+nid, "", csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete node status = %d", resp.StatusCode)
 	}
 	if resp := doJSON(t, client, http.MethodDelete, ts.URL+"/api/providers/"+pid, "", csrf); resp.StatusCode != http.StatusNoContent {
@@ -350,7 +358,8 @@ func TestNodeAPIRoundTripThroughAdmin(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", providerBody("p", "https://a.example"), csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create provider status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n","provider":"p","model":"m1","api":"anthropic"}`, csrf); resp.StatusCode != http.StatusCreated {
+	pid := providerID(t, client, ts.URL, "p")
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n","provider":"`+pid+`","model":"m1","api":"anthropic"}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create node status = %d", resp.StatusCode)
 	}
 
@@ -362,12 +371,17 @@ func TestNodeAPIRoundTripThroughAdmin(t *testing.T) {
 	if len(nodes) != 1 || nodes[0].API != "anthropic" {
 		t.Fatalf("nodes = %+v, want one node with api anthropic", nodes)
 	}
-
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/nodes/n", `{"name":"n","provider":"p","model":"m1","api":"auto"}`, csrf); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("update node status = %d", resp.StatusCode)
+	nid := nodes[0].ID
+	if nid == "" {
+		t.Fatal("node has no id")
 	}
-	if len(rel.cfg.Nodes) != 1 || rel.cfg.Nodes[0].API != "" {
-		t.Fatalf("stored node = %+v, want api normalized away", rel.cfg.Nodes)
+
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/nodes/"+nid, `{"name":"n","provider":"`+pid+`","model":"m1","api":"auto"}`, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("update node status = %d: %s", resp.StatusCode, b)
+	}
+	if len(rel.cfg.Nodes) != 1 || rel.cfg.Nodes[0].API != "" || rel.cfg.Nodes[0].ID != nid {
+		t.Fatalf("stored node = %+v, want api normalized away and the id kept", rel.cfg.Nodes)
 	}
 }
 
@@ -379,13 +393,16 @@ func TestReloadFailureKeepsFileAndMemory(t *testing.T) {
 		path, body string
 	}{
 		{"/api/providers", providerBody("p", "https://a.example")},
-		{"/api/nodes", `{"name":"n","provider":"p","model":"m1"}`},
-		{"/api/routes", `{"name":"fast","nodes":["n"]}`},
 	} {
 		if resp := doJSON(t, client, http.MethodPost, ts.URL+tc.path, tc.body, csrf); resp.StatusCode != http.StatusCreated {
 			t.Fatalf("create %s = %d", tc.path, resp.StatusCode)
 		}
 	}
+	pid := providerID(t, client, ts.URL, "p")
+	mustCreate(t, client, ts.URL+"/api/nodes", `{"name":"n","provider":"`+pid+`","model":"m1"}`, csrf)
+	nid := nodeID(t, client, ts.URL, "n")
+	mustCreate(t, client, ts.URL+"/api/routes", `{"name":"fast","nodes":["`+nid+`"]}`, csrf)
+	fastID := routeID(t, client, ts.URL, "fast")
 
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -393,7 +410,8 @@ func TestReloadFailureKeepsFileAndMemory(t *testing.T) {
 	}
 	attempts := rel.attempts
 	rel.err = errors.New("boom")
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusBadRequest {
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints",
+		`[{"name":"default","match":["*"],"route":"`+fastID+`"}]`, csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 	after, err := os.ReadFile(path)
@@ -1118,13 +1136,16 @@ func TestPutStatsCapture(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", provider, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create provider status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n","provider":"p","model":"m1"}`, csrf); resp.StatusCode != http.StatusCreated {
+	pid := providerID(t, client, ts.URL, "p")
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/nodes", `{"name":"n","provider":"`+pid+`","model":"m1"}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create node status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"fast","nodes":["n"]}`, csrf); resp.StatusCode != http.StatusCreated {
+	nid := nodeID(t, client, ts.URL, "n")
+	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/routes", `{"name":"fast","nodes":["`+nid+`"]}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create route status = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+	rid := routeID(t, client, ts.URL, "fast")
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"`+rid+`"}]`, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put entrypoints status = %d", resp.StatusCode)
 	}
 

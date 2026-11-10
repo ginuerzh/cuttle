@@ -8,14 +8,16 @@ import (
 
 	"github.com/ginuerzh/cuttle/internal/capture"
 	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/identity"
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
 func TestCaptureAPI(t *testing.T) {
 	srv, _, _, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)
+	routeID := identity.Derive(identity.Route, "fast")
 	srv.mu.Lock()
-	srv.cfg.Routes = []config.Route{{Name: "fast"}}
+	srv.cfg.Routes = []config.Route{{ID: routeID, Name: "fast"}}
 	srv.mu.Unlock()
 
 	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/captures", "", "")
@@ -30,7 +32,7 @@ func TestCaptureAPI(t *testing.T) {
 		t.Fatalf("initial rules = %+v", rules)
 	}
 
-	body := `{"route":"fast","clientModel":"claude-*","reason":"investigate","limit":5,"ttlSeconds":60}`
+	body := `{"route":"` + routeID + `","clientModel":"claude-*","reason":"investigate","limit":5,"ttlSeconds":60}`
 	resp = doJSON(t, client, http.MethodPost, ts.URL+"/api/captures", body, csrf)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d", resp.StatusCode)
@@ -39,7 +41,7 @@ func TestCaptureAPI(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&rule); err != nil {
 		t.Fatal(err)
 	}
-	if rule.ID == "" || rule.Route != "fast" || rule.ClientModel != "claude-*" || rule.Limit != 5 {
+	if rule.ID == "" || rule.Route != routeID || rule.ClientModel != "claude-*" || rule.Limit != 5 {
 		t.Fatalf("rule = %+v", rule)
 	}
 

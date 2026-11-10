@@ -9,22 +9,28 @@ import (
 	"github.com/ginuerzh/cuttle/internal/config"
 )
 
+// setupRouteFixtures creates one provider, one node and the fast/default
+// routes that reference the node id.
 func setupRouteFixtures(t *testing.T) (string, *http.Client, string) {
 	t.Helper()
 	_, _, _, ts := newTestAdmin(t)
 	base := ts.URL
 	client, csrf := login(t, ts.URL)
-	for _, tc := range []struct {
-		method, path, body string
-		want               int
-	}{
-		{http.MethodPost, "/api/providers", providerBody("p", "https://a.example"), http.StatusCreated},
-		{http.MethodPost, "/api/nodes", `{"name":"n","provider":"p","model":"m1"}`, http.StatusCreated},
-		{http.MethodPost, "/api/routes", `{"name":"fast","nodes":["n"],"strategy":"round"}`, http.StatusCreated},
-		{http.MethodPost, "/api/routes", `{"name":"default","nodes":["n"],"strategy":"round"}`, http.StatusCreated},
+	if resp := doJSON(t, client, http.MethodPost, base+"/api/providers", providerBody("p", "https://a.example"), csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create provider = %d, want 201", resp.StatusCode)
+	}
+	pid := providerID(t, client, base, "p")
+	if resp := doJSON(t, client, http.MethodPost, base+"/api/nodes",
+		`{"name":"n","provider":"`+pid+`","model":"m1"}`, csrf); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create node = %d, want 201", resp.StatusCode)
+	}
+	nid := nodeID(t, client, base, "n")
+	for _, body := range []string{
+		`{"name":"fast","nodes":["` + nid + `"],"strategy":"round"}`,
+		`{"name":"default","nodes":["` + nid + `"],"strategy":"round"}`,
 	} {
-		if resp := doJSON(t, client, tc.method, base+tc.path, tc.body, csrf); resp.StatusCode != tc.want {
-			t.Fatalf("%s %s = %d, want %d", tc.method, tc.path, resp.StatusCode, tc.want)
+		if resp := doJSON(t, client, http.MethodPost, base+"/api/routes", body, csrf); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create route = %d, want 201", resp.StatusCode)
 		}
 	}
 	return base, client, csrf
@@ -32,6 +38,8 @@ func setupRouteFixtures(t *testing.T) (string, *http.Client, string) {
 
 func TestEntrypointListAndPut(t *testing.T) {
 	base, client, csrf := setupRouteFixtures(t)
+	fastID := routeID(t, client, base, "fast")
+	defaultID := routeID(t, client, base, "default")
 
 	resp := doJSON(t, client, http.MethodGet, base+"/api/entrypoints", "", "")
 	var list []config.Entrypoint
@@ -42,7 +50,7 @@ func TestEntrypointListAndPut(t *testing.T) {
 		t.Fatalf("entrypoints = %+v, want empty", list)
 	}
 
-	body := `[{"name":"fast","match":["gpt-4.5*"],"route":"fast"},{"name":"default","match":["*"],"route":"default"}]`
+	body := `[{"name":"fast","match":["gpt-4.5*"],"route":"` + fastID + `"},{"name":"default","match":["*"],"route":"` + defaultID + `"}]`
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", body, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put entrypoints = %d", resp.StatusCode)
 	}
@@ -54,6 +62,14 @@ func TestEntrypointListAndPut(t *testing.T) {
 	if len(list) != 2 || list[0].Name != "fast" || list[1].Name != "default" {
 		t.Fatalf("entrypoints = %+v, want fast then default", list)
 	}
+	for i, want := range []string{fastID, defaultID} {
+		if list[i].Route != want {
+			t.Fatalf("entrypoint %d route = %q, want the route id %q", i, list[i].Route, want)
+		}
+		if list[i].ID == "" {
+			t.Fatalf("entrypoint %d has no id", i)
+		}
+	}
 
 	resp = doJSON(t, client, http.MethodGet, base+"/api/config", "", "")
 	var cfg map[string]json.RawMessage
@@ -64,7 +80,7 @@ func TestEntrypointListAndPut(t *testing.T) {
 	if err := json.Unmarshal(cfg["entrypoints"], &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].Name != "fast" {
+	if len(got) != 2 || got[0].Name != "fast" || got[0].Route != fastID {
 		t.Fatalf("config entrypoints = %+v", got)
 	}
 }
@@ -86,13 +102,14 @@ func TestEntrypointPutRejectsUnknownRoute(t *testing.T) {
 
 func TestRouteDeleteRejectedWhileEntrypointReferences(t *testing.T) {
 	base, client, csrf := setupRouteFixtures(t)
+	rid := routeID(t, client, base, "fast")
 
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints",
-		`[{"name":"fast","match":["*"],"route":"fast"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+		`[{"name":"fast","match":["*"],"route":"`+rid+`"}]`, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put entrypoints = %d", resp.StatusCode)
 	}
 
-	resp := doJSON(t, client, http.MethodDelete, base+"/api/routes/fast", "", csrf)
+	resp := doJSON(t, client, http.MethodDelete, base+"/api/routes/"+rid, "", csrf)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("delete = %d, want 400", resp.StatusCode)
 	}
@@ -113,11 +130,12 @@ func TestRouteDeleteRejectedWhileEntrypointReferences(t *testing.T) {
 
 func TestRouteDeleteAfterEntrypointRemoved(t *testing.T) {
 	base, client, csrf := setupRouteFixtures(t)
+	rid := routeID(t, client, base, "fast")
 
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", `[]`, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put entrypoints = %d", resp.StatusCode)
 	}
-	if resp := doJSON(t, client, http.MethodDelete, base+"/api/routes/fast", "", csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodDelete, base+"/api/routes/"+rid, "", csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete = %d, want 204", resp.StatusCode)
 	}
 }
@@ -139,11 +157,13 @@ func TestRouteCreateHasNoMatchField(t *testing.T) {
 
 func TestRouteRetryFieldsRoundTrip(t *testing.T) {
 	base, client, csrf := setupRouteFixtures(t)
+	nid := nodeID(t, client, base, "n")
 
 	if resp := doJSON(t, client, http.MethodPost, base+"/api/routes",
-		`{"name":"retry","nodes":["n"],"retries":2,"retryCodes":"429,502"}`, csrf); resp.StatusCode != http.StatusCreated {
+		`{"name":"retry","nodes":["`+nid+`"],"retries":2,"retryCodes":"429,502"}`, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create route = %d, want 201", resp.StatusCode)
 	}
+	rid := routeID(t, client, base, "retry")
 
 	routeRetryFields := func() (json.RawMessage, json.RawMessage) {
 		t.Helper()
@@ -153,11 +173,11 @@ func TestRouteRetryFieldsRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, route := range list {
-			var name string
-			if err := json.Unmarshal(route["name"], &name); err != nil {
+			var id string
+			if err := json.Unmarshal(route["id"], &id); err != nil {
 				t.Fatal(err)
 			}
-			if name == "retry" {
+			if id == rid {
 				return route["retries"], route["retryCodes"]
 			}
 		}
@@ -178,8 +198,8 @@ func TestRouteRetryFieldsRoundTrip(t *testing.T) {
 
 	assertRetry("2", `"429,502"`)
 
-	if resp := doJSON(t, client, http.MethodPut, base+"/api/routes/retry",
-		`{"name":"retry","nodes":["n"],"retries":1,"retryCodes":"5xx"}`, csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodPut, base+"/api/routes/"+rid,
+		`{"name":"retry","nodes":["`+nid+`"],"retries":1,"retryCodes":"5xx"}`, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("update route = %d, want 204", resp.StatusCode)
 	}
 

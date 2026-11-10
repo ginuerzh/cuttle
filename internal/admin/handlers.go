@@ -213,6 +213,33 @@ func sameBaseURL(a, b string) bool {
 	return strings.TrimSpace(a) == strings.TrimSpace(b)
 }
 
+// entityLabel renders an entity for an error message: its display label and,
+// when it has one, the id the API addresses it by.
+func entityLabel(name, id string) string {
+	name = strings.TrimSpace(name)
+	id = strings.TrimSpace(id)
+	switch {
+	case id == "":
+		return fmt.Sprintf("%q", name)
+	case name == "":
+		return id
+	}
+	return fmt.Sprintf("%q (%s)", name, id)
+}
+
+// adoptEntityID returns the id to keep for one entity of a full replacement:
+// the sent id, the stored id for the same display name, or a freshly minted
+// id. It is the shared write rule for an id-less payload.
+func adoptEntityID(kind identity.Kind, sent, name string, storedByName map[string]string) (string, error) {
+	if id := strings.TrimSpace(sent); id != "" {
+		return id, nil
+	}
+	if id, ok := storedByName[strings.TrimSpace(name)]; ok {
+		return id, nil
+	}
+	return identity.New(kind)
+}
+
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -298,6 +325,48 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				return fmt.Errorf("provider %q: %w", in.Name, err)
 			}
 			in.Keys = keys
+		}
+		// Nodes, routes and entrypoints follow the same identity rule: an
+		// id-less entity adopts the stored id of the same name, and only a
+		// genuinely new entity is minted.
+		nodeIDs := make(map[string]string, len(dst.Nodes))
+		for _, n := range dst.Nodes {
+			if n.ID != "" {
+				nodeIDs[strings.TrimSpace(n.Name)] = n.ID
+			}
+		}
+		for i := range c.Nodes {
+			id, err := adoptEntityID(identity.Node, c.Nodes[i].ID, c.Nodes[i].Name, nodeIDs)
+			if err != nil {
+				return err
+			}
+			c.Nodes[i].ID = id
+		}
+		routeIDs := make(map[string]string, len(dst.Routes))
+		for _, rt := range dst.Routes {
+			if rt.ID != "" {
+				routeIDs[strings.TrimSpace(rt.Name)] = rt.ID
+			}
+		}
+		for i := range c.Routes {
+			id, err := adoptEntityID(identity.Route, c.Routes[i].ID, c.Routes[i].Name, routeIDs)
+			if err != nil {
+				return err
+			}
+			c.Routes[i].ID = id
+		}
+		entrypointIDs := make(map[string]string, len(dst.Entrypoints))
+		for _, e := range dst.Entrypoints {
+			if e.ID != "" {
+				entrypointIDs[strings.TrimSpace(e.Name)] = e.ID
+			}
+		}
+		for i := range c.Entrypoints {
+			id, err := adoptEntityID(identity.Entrypoint, c.Entrypoints[i].ID, c.Entrypoints[i].Name, entrypointIDs)
+			if err != nil {
+				return err
+			}
+			c.Entrypoints[i].ID = id
 		}
 		*dst = c
 		return nil
@@ -737,11 +806,37 @@ func (s *Server) handleListRoutes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, nonNilSlice(s.cfg.Routes))
 }
 
+// routeIndexByID returns the index of the route with the id, or -1. It is the
+// write-side lookup: mutations only address routes by id.
+func routeIndexByID(c *config.Config, id string) int {
+	if id == "" {
+		return -1
+	}
+	for i := range c.Routes {
+		if c.Routes[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// sameRouteRef reports whether an entrypoint's route reference points at rt:
+// the route id, or until Task 7 the display name for an id-less config.
+func sameRouteRef(ref string, rt config.Route) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return false
+	}
+	return ref == rt.ID || ref == strings.TrimSpace(rt.Name)
+}
+
 func (s *Server) handleRouteHealth(w http.ResponseWriter, r *http.Request) {
 	if s.routeHealth == nil {
 		writeJSON(w, http.StatusOK, []health.Route{})
 		return
 	}
+	// Already id-bearing: the payload carries route, node and provider ids
+	// beside their display labels.
 	writeJSON(w, http.StatusOK, nonNilSlice(s.routeHealth()))
 }
 
@@ -755,7 +850,15 @@ func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.mutate(func(c *config.Config) error {
+	// The server owns the id; a client-supplied one is ignored.
+	id, err := identity.New(identity.Route)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	rt.ID = id
+
+	err = s.mutate(func(c *config.Config) error {
 		for _, existing := range c.Routes {
 			if existing.Name == rt.Name {
 				return fmt.Errorf("route %q already exists", rt.Name)
@@ -772,26 +875,29 @@ func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 	var rt config.Route
 	if err := decode(w, r, &rt); err != nil {
 		return
 	}
-	if rt.Name != "" && rt.Name != name {
-		writeError(w, http.StatusBadRequest, "name in body does not match the path")
+	if rt.ID != "" && rt.ID != id {
+		writeError(w, http.StatusBadRequest, "id in body does not match the path")
 		return
 	}
-	rt.Name = name
+	rt.ID = id
 
 	err := s.mutate(func(c *config.Config) error {
-		for i := range c.Routes {
-			if c.Routes[i].Name != name {
-				continue
-			}
-			c.Routes[i] = rt
-			return nil
+		i := routeIndexByID(c, id)
+		if i < 0 {
+			return fmt.Errorf("route %q not found", id)
 		}
-		return fmt.Errorf("route %q not found", name)
+		if strings.TrimSpace(rt.Name) == "" {
+			// The name is a display label: an omitted one keeps the
+			// stored label instead of blanking it.
+			rt.Name = c.Routes[i].Name
+		}
+		c.Routes[i] = rt
+		return nil
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -801,32 +907,25 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 
 	err := s.mutate(func(c *config.Config) error {
-		out := c.Routes[:0]
-		found := false
-		for _, rt := range c.Routes {
-			if rt.Name == name {
-				found = true
-				continue
-			}
-			out = append(out, rt)
+		i := routeIndexByID(c, id)
+		if i < 0 {
+			return fmt.Errorf("route %q not found", id)
 		}
-		if !found {
-			return fmt.Errorf("route %q not found", name)
-		}
+		target := c.Routes[i]
 		var refs []string
 		for _, e := range c.Entrypoints {
-			if strings.EqualFold(strings.TrimSpace(e.Route), name) {
-				refs = append(refs, e.Name)
+			if sameRouteRef(e.Route, target) {
+				refs = append(refs, entityLabel(e.Name, e.ID))
 			}
 		}
 		if len(refs) > 0 {
-			return fmt.Errorf("route %q: still referenced by entrypoints %s; update or delete them first",
-				name, strings.Join(refs, ", "))
+			return fmt.Errorf("route %s: still referenced by entrypoints %s; update or delete them first",
+				entityLabel(target.Name, target.ID), strings.Join(refs, ", "))
 		}
-		c.Routes = out
+		c.Routes = append(c.Routes[:i], c.Routes[i+1:]...)
 		return nil
 	})
 	if err != nil {
@@ -849,6 +948,23 @@ func (s *Server) handlePutEntrypoints(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.mutate(func(c *config.Config) error {
+		storedByName := make(map[string]string, len(c.Entrypoints))
+		for _, e := range c.Entrypoints {
+			if e.ID != "" {
+				storedByName[strings.TrimSpace(e.Name)] = e.ID
+			}
+		}
+		// A full-list replacement keeps the id of every entry that carries
+		// one, keeps the stored identity of an id-less entry matched by
+		// name, and mints one for a genuinely new entry. Order is
+		// precedence and is never reordered here.
+		for i := range entrypoints {
+			id, err := adoptEntityID(identity.Entrypoint, entrypoints[i].ID, entrypoints[i].Name, storedByName)
+			if err != nil {
+				return err
+			}
+			entrypoints[i].ID = id
+		}
 		c.Entrypoints = entrypoints
 		return nil
 	})

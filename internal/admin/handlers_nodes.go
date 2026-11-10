@@ -6,7 +6,32 @@ import (
 	"strings"
 
 	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/identity"
 )
+
+// nodeIndexByID returns the index of the node with the id, or -1. It is the
+// write-side lookup: mutations only address nodes by id.
+func nodeIndexByID(c *config.Config, id string) int {
+	if id == "" {
+		return -1
+	}
+	for i := range c.Nodes {
+		if c.Nodes[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// sameNodeRef reports whether a route's node reference points at n: the node
+// id, or until Task 7 the display name for an id-less config.
+func sameNodeRef(ref string, n config.Node) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return false
+	}
+	return ref == n.ID || ref == strings.TrimSpace(n.Name)
+}
 
 func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
@@ -15,14 +40,16 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	ref := r.PathValue("id")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, n := range s.cfg.Nodes {
-		if n.Name == name {
-			writeJSON(w, http.StatusOK, n)
-			return
-		}
+
+	// Reads still accept the display name until Task 7 removes the
+	// transition fallback.
+	if n, ok := s.cfg.Node(ref); ok {
+		writeJSON(w, http.StatusOK, n)
+		return
 	}
 	writeError(w, http.StatusNotFound, "node not found")
 }
@@ -36,7 +63,16 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	err := s.mutate(func(c *config.Config) error {
+
+	// The server owns the id; a client-supplied one is ignored.
+	id, err := identity.New(identity.Node)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	n.ID = id
+
+	err = s.mutate(func(c *config.Config) error {
 		for _, existing := range c.Nodes {
 			if existing.Name == n.Name {
 				return fmt.Errorf("node %q already exists", n.Name)
@@ -53,24 +89,29 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
 	var n config.Node
 	if err := decode(w, r, &n); err != nil {
 		return
 	}
-	if n.Name != "" && n.Name != name {
-		writeError(w, http.StatusBadRequest, "name in body does not match the path")
+	if n.ID != "" && n.ID != id {
+		writeError(w, http.StatusBadRequest, "id in body does not match the path")
 		return
 	}
-	n.Name = name
+	n.ID = id
+
 	err := s.mutate(func(c *config.Config) error {
-		for i := range c.Nodes {
-			if c.Nodes[i].Name == name {
-				c.Nodes[i] = n
-				return nil
-			}
+		i := nodeIndexByID(c, id)
+		if i < 0 {
+			return fmt.Errorf("node %q not found", id)
 		}
-		return fmt.Errorf("node %q not found", name)
+		if strings.TrimSpace(n.Name) == "" {
+			// The name is a display label: an omitted one keeps the
+			// stored label instead of blanking it.
+			n.Name = c.Nodes[i].Name
+		}
+		c.Nodes[i] = n
+		return nil
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -80,28 +121,23 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	id := r.PathValue("id")
+
 	err := s.mutate(func(c *config.Config) error {
+		i := nodeIndexByID(c, id)
+		if i < 0 {
+			return fmt.Errorf("node %q not found", id)
+		}
+		target := c.Nodes[i]
 		for _, rt := range c.Routes {
 			for _, ref := range rt.Nodes {
-				if ref == name {
-					return fmt.Errorf("node %q is used by route %q", name, rt.Name)
+				if sameNodeRef(ref, target) {
+					return fmt.Errorf("node %s is used by route %s",
+						entityLabel(target.Name, target.ID), entityLabel(rt.Name, rt.ID))
 				}
 			}
 		}
-		out := c.Nodes[:0]
-		found := false
-		for _, n := range c.Nodes {
-			if n.Name == name {
-				found = true
-				continue
-			}
-			out = append(out, n)
-		}
-		if !found {
-			return fmt.Errorf("node %q not found", name)
-		}
-		c.Nodes = out
+		c.Nodes = append(c.Nodes[:i], c.Nodes[i+1:]...)
 		return nil
 	})
 	if err != nil {
