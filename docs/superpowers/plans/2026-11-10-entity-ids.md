@@ -400,12 +400,12 @@ git commit -m "feat(stats): migrate persisted ids and track entity labels"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10, done.
+- Repository + commit: `github.com/ginuerzh/cuttle` — code + tests in `a8908067 feat(stats): migrate persisted ids and track entity labels`, this record in the following `docs(plan): record entity ids task 4 implementation` commit.
+- Files changed: `internal/stats/store.go` (schema v2: `entity_labels`, `path` field, `isFresh` detection, `statsVersion`, `MigrateIdentities`, `backupV1`, `SyncLabels`, `Labels`), `internal/stats/gatewaykey.go` (comment: the value is the key identifier, id or display-name fallback until Task 7), `internal/stats/store_test.go` (`TestFreshDatabaseIsVersion2` + `entity_labels` schema assertion), new `internal/stats/labels_test.go`, `internal/stats/migrate_ids_test.go`, `internal/stats/open_version_test.go`, `internal/gateway/gateway.go` (`apply`: migrate then sync labels after a successful hop swap, warnings only), new `internal/gateway/stats_identity_test.go`.
+- Tests/commands and results: RED `GOWORK=off go test ./internal/stats -run 'TestSyncLabels|TestLabels|TestMigrateIdentities|TestFreshDatabase|TestRename|TestOpenLeaves' -count=1` → build failure (`SyncLabels`, `Labels`, `MigrateIdentities`, `statsVersion` undefined). An intermediate RED (`sql: no rows in result set`) exposed that the fresh path skipped the `request_seq` seed; fixed in `migrate(fresh)`. GREEN the same command, then `GOWORK=off go test ./internal/stats -count=1` (`ok`, 14.3s), `GOWORK=off go test ./internal/gateway -run TestApplyMigratesStatsAndSyncsLabels -count=1` (`ok`). Gate: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test ./internal/stats ./internal/gateway ./internal/config -count=1` and the full `GOWORK=off go test ./... -count=1` all pass; `gofmt -l` clean. Full report: `.superpowers/sdd/2026-11-10-entity-ids/task-4-report.md`.
+- Review findings and fixes: fresh databases skipped the `request_seq` seed (caught by the existing suite, fixed before commit); the design's "no series merge" assumption does not hold for Task 3-era id-keyed rows, so `rollups`/`key_rollups` are summed into the id row instead of overwriting it; a legacy and an id-keyed topology position can coexist, so the id-keyed one wins; `SyncLabels` filters to the five stats kinds so `config.LabelsByID()`'s `provider_key` entries are not stored; seeded labels use `ON CONFLICT DO NOTHING` so a synced rename wins; the test opens the backup and asserts it still holds the v1 name.
+- Deferred items/limitations: `probe_results` migrates to ids while `internal/admin/probe.go` still writes provider names until Task 5, so the table holds both kinds in the interim (`LatestProbes` has no production consumer); name-keyed consumers (`Filter.GatewayKey` exact-name filter, provider/key usage pages) show nothing for migrated history until Tasks 5/7 join `entity_labels`; backup file permissions follow the umask (nothing specifies `0600`); a retried migration within the same second is refused by `VACUUM INTO` and warns until the next apply (a failed migration never advances `user_version`); Task 10 documents schema v2, the backup and the "no destructive migration" exception.
 
 ---
 
