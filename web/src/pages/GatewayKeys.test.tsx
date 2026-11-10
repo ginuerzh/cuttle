@@ -18,7 +18,7 @@ describe('GatewayKeyCard', () => {
   it('renders a key card with mask and usage', () => {
     const html = renderToStaticMarkup(
       <GatewayKeyCard
-        item={{ name: 'claude-code', keyPreview: 'sk-...abcd', enabled: true }}
+        item={{ id: 'gk_0000000001', name: 'claude-code', keyPreview: 'sk-...abcd', enabled: true }}
         usage={{
           name: 'claude-code',
           configured: true,
@@ -47,7 +47,7 @@ describe('GatewayKeyCard', () => {
 describe('GatewaySecretContent', () => {
   it('shows the one-time secret and warning', () => {
     const html = renderToStaticMarkup(
-      <GatewaySecretContent secret={{ name: 'k', key: 'sk-gw-raw' }} />,
+      <GatewaySecretContent secret={{ id: 'gk_0000000002', name: 'k', key: 'sk-gw-raw' }} />,
     );
 
     expect(html).toContain('sk-gw-raw');

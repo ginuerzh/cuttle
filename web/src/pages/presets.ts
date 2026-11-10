@@ -154,7 +154,7 @@ export function nodeAPIOptions(
 export function nodeKeyOptions(keys: ProviderKeyView[]): { value: string; label: string }[] {
   return [
     { value: '', label: t('全部 key（轮询）') },
-    ...keys.map((k) => ({ value: k.name, label: k.enabled ? k.name : `${k.name}${t('（已禁用）')}` })),
+    ...keys.map((k) => ({ value: k.id, label: k.enabled ? k.name : `${k.name}${t('（已禁用）')}` })),
   ];
 }
 

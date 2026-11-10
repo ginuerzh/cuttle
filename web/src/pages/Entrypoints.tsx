@@ -49,9 +49,9 @@ export function EntrypointsPage({ config, onReload }: { config: ConfigResponse; 
       </Typography.Paragraph>
       {config.entrypoints.length === 0 ? <Empty /> : config.entrypoints.map((e, i) => (
         <ListCard
-          key={`${i}-${e.name}`}
+          key={e.id}
           title={`${i + 1}. ${e.name}`}
-          subtitle={`${(e.match ?? []).join(', ')} → ${e.route}`}
+          subtitle={`${(e.match ?? []).join(', ')} → ${config.routes.find((r) => r.id === e.route)?.name ?? e.route}`}
           actions={
             <>
               <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>

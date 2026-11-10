@@ -84,6 +84,7 @@ describe('modelApiLabel', () => {
 });
 
 const provider: Provider = {
+  id: 'p_0000000001',
   name: 'p',
   type: 'generic',
   chat: ' https://a.example/v1 ',
@@ -455,13 +456,14 @@ describe('toggleModelOverride', () => {
 
 describe('providerPayload', () => {
   const full: Provider = {
+    id: 'p_0000000001',
     name: 'p',
     type: 'deepseek',
     chat: 'https://chat.example/v1',
     responses: '',
     anthropic: 'https://anthropic.example',
     gemini: '',
-    keys: [{ name: 'account-a', keyPreview: 'sk-...abcd', enabled: true }],
+    keys: [{ id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...abcd', enabled: true }],
     auth: { header: 'Authorization' },
     health: { api: 'chat', path: '/models' },
     tls: { secure: false },
@@ -498,7 +500,7 @@ describe('providerPayload', () => {
   });
 
   it('includes empty objects for optional server fields and defaults enabled to true', () => {
-    expect(providerPayload({ name: 'bare', type: 'generic', keys: [] })).toMatchObject({
+    expect(providerPayload({ id: 'p_0000000009', name: 'bare', type: 'generic', keys: [] })).toMatchObject({
       auth: {},
       health: {},
       tls: {},
@@ -529,8 +531,8 @@ describe('provider headers', () => {
 describe('provider keys', () => {
   it('builds named editable rows from the view', () => {
     const keys: ProviderKeyView[] = [
-      { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
-      { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+      { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+      { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
     ];
     expect(providerKeyRows(keys)).toEqual([
       { name: 'account-a', preview: 'sk-...a', value: '', enabled: true, originalEnabled: true, existing: true },
@@ -540,8 +542,8 @@ describe('provider keys', () => {
 
   it('turns deletes, additions and toggles into name-based updates', () => {
     const rows = providerKeyRows([
-      { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
-      { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+      { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+      { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
     ]);
     rows[0].enabled = false;
     rows.push({ name: 'account-c', value: 'sk-new', enabled: true, originalEnabled: true, existing: false });
@@ -556,16 +558,16 @@ describe('provider keys', () => {
 });
 
 describe('nodeKeyOptions', () => {
-  it('offers the unpinned option plus every named key', () => {
+  it('offers the unpinned option plus every named key, valued by key id', () => {
     expect(
       nodeKeyOptions([
-        { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
-        { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+        { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+        { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
       ]),
     ).toEqual([
       { value: '', label: '全部 key（轮询）' },
-      { value: 'account-a', label: 'account-a' },
-      { value: 'account-b', label: 'account-b（已禁用）' },
+      { value: 'pk_0000000001', label: 'account-a' },
+      { value: 'pk_0000000002', label: 'account-b（已禁用）' },
     ]);
   });
 });

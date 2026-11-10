@@ -35,6 +35,9 @@ export interface ModelOverride {
 
 /** One configured provider key as the console sees it; the value is masked. */
 export interface ProviderKeyView {
+  /** Immutable id; the handle nodes pin and key updates carry. */
+  id: string;
+  /** Display label. */
   name: string;
   keyPreview: string;
   enabled: boolean;
@@ -42,12 +45,17 @@ export interface ProviderKeyView {
 
 /** One write-only provider key in a create or full-replace payload. */
 export interface ProviderKeyInput {
+  /** Stored key id; absent for a key that is being added. */
+  id?: string;
   name: string;
   key: string;
   enabled?: boolean;
 }
 
 export interface Provider {
+  /** Immutable id; the handle every API path and association uses. */
+  id: string;
+  /** Display label. */
   name: string;
   type: string;
   /** OpenAI Chat Completions base URL; empty when the provider does not serve it. */
@@ -96,12 +104,16 @@ export interface ProviderModel {
 }
 
 export interface Node {
+  /** Immutable id; the handle every API path and association uses. */
+  id: string;
+  /** Display label. */
   name: string;
+  /** Provider id this node binds. */
   provider: string;
   model: string;
   /** Upstream API; 'auto' or absent matches the client protocol. */
   api?: NodeAPI;
-  /** Optional provider key name this node pins; absent spreads across every enabled key. */
+  /** Optional provider key id this node pins; absent spreads across every enabled key. */
   key?: string;
   backup?: boolean;
   weight?: number;
@@ -109,7 +121,11 @@ export interface Node {
 }
 
 export interface Route {
+  /** Immutable id; the handle every API path and association uses. */
+  id: string;
+  /** Display label. */
   name: string;
+  /** Node ids in selection order. */
   nodes: string[];
   strategy?: string;
   maxFails?: number;
@@ -121,8 +137,10 @@ export interface Route {
 }
 
 export interface RouteNodeHealth {
+  /** Node id and provider id; the names are display labels only. */
+  id: string;
   name: string;
-  provider?: string;
+  providerId?: string;
   failCount: number;
   lastFailure?: string | null;
   dead: boolean;
@@ -130,6 +148,8 @@ export interface RouteNodeHealth {
 }
 
 export interface RouteHealth {
+  /** Route id; the name is a display label. */
+  id: string;
   name: string;
   maxFails: number;
   failTimeout: string;
@@ -137,8 +157,12 @@ export interface RouteHealth {
 }
 
 export interface Entrypoint {
+  /** Immutable id; the handle every API path and association uses. */
+  id: string;
+  /** Display label. */
   name: string;
   match: string[];
+  /** Route id this entrypoint points at. */
   route: string;
 }
 
@@ -300,11 +324,22 @@ export interface RequestRow {
   ts: string;
   model: string;
   clientModel?: string;
+  /** Provider id recorded with the request; `providerName` is its label. */
   provider: string;
+  /** Route id recorded with the request; `routeName` is its label. */
   route?: string;
-  /** Gateway key name that authenticated the request, when keys are enabled. */
+  /** Gateway key id that authenticated the request, when keys are enabled. */
   gatewayKey?: string;
+  /** Node id recorded with the request; `nodeName` is its label. */
   node?: string;
+  /** Provider display label resolved by the admin API. */
+  providerName: string;
+  /** Node display label resolved by the admin API. */
+  nodeName: string;
+  /** Route display label resolved by the admin API. */
+  routeName: string;
+  /** Gateway key display label resolved by the admin API. */
+  gatewayKeyName: string;
   protocol: string;
   inboundProtocol?: string;
   uri?: string;
@@ -395,6 +430,9 @@ export interface ProviderUsageResponse {
 
 /** One configured data-plane key; the raw value is never returned by the list API. */
 export interface GatewayKey {
+  /** Immutable id; the handle every API path and filter uses. */
+  id: string;
+  /** Display label. */
   name: string;
   keyPreview: string;
   enabled: boolean;

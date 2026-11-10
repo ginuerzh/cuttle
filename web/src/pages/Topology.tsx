@@ -77,7 +77,7 @@ export function canEditTopology(editable?: boolean): boolean {
   return editable === true;
 }
 
-/** Compares dead-route name lists so an unchanged health snapshot is a no-op. */
+/** Compares dead-route id lists so an unchanged health snapshot is a no-op. */
 function sameRoutes(a?: readonly string[], b?: readonly string[]): boolean {
   const left = a ?? [];
   const right = b ?? [];

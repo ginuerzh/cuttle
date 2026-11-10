@@ -32,12 +32,13 @@ describe('AddButtons', () => {
 describe('ProviderForm', () => {
   it('renders one named row per configured key', () => {
     const provider: Provider = {
+      id: 'p_0000000001',
       name: 'p',
       type: 'generic',
       chat: 'https://a.example/v1',
       keys: [
-        { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
-        { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+        { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+        { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
       ],
     };
     const html = renderToStaticMarkup(<ProviderForm provider={provider} onSaved={async () => undefined} />);
@@ -50,16 +51,23 @@ describe('ProviderForm', () => {
 
 describe('NodeForm', () => {
   it('renders a pinned-key select with the node provider keys', () => {
-    const node: Node = { name: 'n', provider: 'p', model: 'm1', key: 'account-a' };
+    const node: Node = {
+      id: 'n_0000000001',
+      name: 'n',
+      provider: 'p_0000000001',
+      model: 'm1',
+      key: 'pk_0000000001',
+    };
     const config = {
       providers: [
         {
+          id: 'p_0000000001',
           name: 'p',
           type: 'generic',
           chat: 'https://a.example/v1',
           keys: [
-            { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
-            { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+            { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+            { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
           ],
         },
       ],
@@ -77,7 +85,7 @@ describe('RouteForm', () => {
   const config = { providers: [], nodes: [], routes: [], entrypoints: [] } as unknown as ConfigResponse;
 
   it('defaults retries to 0 and retryCodes to 429,5xx', () => {
-    const route: Route = { name: 'r', nodes: [] };
+    const route: Route = { id: 'r_0000000001', name: 'r', nodes: [] };
     const html = renderToStaticMarkup(<RouteForm route={route} config={config} onSaved={async () => undefined} />);
     expect(html).toContain('retries');
     expect(html).toContain('retryCodes');
@@ -86,7 +94,7 @@ describe('RouteForm', () => {
   });
 
   it('shows the stored retry settings of an existing route', () => {
-    const route: Route = { name: 'r', nodes: [], retries: 2, retryCodes: '429,502' };
+    const route: Route = { id: 'r_0000000001', name: 'r', nodes: [], retries: 2, retryCodes: '429,502' };
     const html = renderToStaticMarkup(<RouteForm route={route} config={config} onSaved={async () => undefined} />);
     expect(html).toContain('429,502');
     expect(html).toContain('value="2"');

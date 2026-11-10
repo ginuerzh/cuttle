@@ -126,12 +126,12 @@ export function createProvider(p: ProviderInput): Promise<void> {
   return request<void>('POST', '/api/providers', p);
 }
 
-export function updateProvider(name: string, p: ProviderInput): Promise<void> {
-  return request<void>('PUT', `/api/providers/${encodeURIComponent(name)}`, p);
+export function updateProvider(id: string, p: ProviderInput): Promise<void> {
+  return request<void>('PUT', `/api/providers/${encodeURIComponent(id)}`, p);
 }
 
-export function deleteProvider(name: string): Promise<void> {
-  return request<void>('DELETE', `/api/providers/${encodeURIComponent(name)}`);
+export function deleteProvider(id: string): Promise<void> {
+  return request<void>('DELETE', `/api/providers/${encodeURIComponent(id)}`);
 }
 
 export function listNodes(): Promise<Node[]> {
@@ -142,45 +142,52 @@ export function createNode(n: Partial<Node>): Promise<void> {
   return request<void>('POST', '/api/nodes', n);
 }
 
-export function updateNode(name: string, n: Partial<Node>): Promise<void> {
-  return request<void>('PUT', `/api/nodes/${encodeURIComponent(name)}`, n);
+export function updateNode(id: string, n: Partial<Node>): Promise<void> {
+  return request<void>('PUT', `/api/nodes/${encodeURIComponent(id)}`, n);
 }
 
-export function deleteNode(name: string): Promise<void> {
-  return request<void>('DELETE', `/api/nodes/${encodeURIComponent(name)}`);
+export function deleteNode(id: string): Promise<void> {
+  return request<void>('DELETE', `/api/nodes/${encodeURIComponent(id)}`);
 }
 
 export function createRoute(r: Partial<Route>): Promise<void> {
   return request<void>('POST', '/api/routes', r);
 }
 
-export function updateRoute(name: string, r: Partial<Route>): Promise<void> {
-  return request<void>('PUT', `/api/routes/${encodeURIComponent(name)}`, r);
+export function updateRoute(id: string, r: Partial<Route>): Promise<void> {
+  return request<void>('PUT', `/api/routes/${encodeURIComponent(id)}`, r);
 }
 
-export function deleteRoute(name: string): Promise<void> {
-  return request<void>('DELETE', `/api/routes/${encodeURIComponent(name)}`);
+export function deleteRoute(id: string): Promise<void> {
+  return request<void>('DELETE', `/api/routes/${encodeURIComponent(id)}`);
 }
 
 export function getRouteHealth(): Promise<RouteHealth[]> {
   return request<RouteHealth[]>('GET', '/api/routes/health');
 }
 
-export function putEntrypoints(entrypoints: Entrypoint[]): Promise<void> {
+/**
+ * One entry in the full entrypoint replacement. Order is precedence; an entry
+ * without an id is new and gets one from the admin API.
+ */
+export type EntrypointInput = Omit<Entrypoint, 'id'> & { id?: string };
+
+export function putEntrypoints(entrypoints: EntrypointInput[]): Promise<void> {
   return request<void>('PUT', '/api/entrypoints', entrypoints);
 }
 
-export function testProvider(name: string): Promise<ProbeResult> {
-  return request<ProbeResult>('POST', `/api/providers/${encodeURIComponent(name)}/test`);
+export function testProvider(id: string): Promise<ProbeResult> {
+  return request<ProbeResult>('POST', `/api/providers/${encodeURIComponent(id)}/test`);
 }
 
-export function getProviderModels(name: string, refresh = false): Promise<ProviderModel[]> {
+export function getProviderModels(id: string, refresh = false): Promise<ProviderModel[]> {
   const query = refresh ? '?refresh=1' : '';
-  return request<ProviderModel[] | null>('GET', `/api/providers/${encodeURIComponent(name)}/models${query}`).then(
+  return request<ProviderModel[] | null>('GET', `/api/providers/${encodeURIComponent(id)}/models${query}`).then(
     (models) => models ?? [],
   );
 }
 
+/** Every entity filter takes the id; the admin API never matches a display name. */
 export interface RequestQuery {
   from: Date;
   to: Date;
@@ -246,26 +253,33 @@ export function listGatewayKeys(): Promise<GatewayKey[]> {
   return request<GatewayKey[] | null>('GET', '/api/gateway-keys').then((keys) => keys ?? []);
 }
 
+/** The one-time create/rotate response; the raw value appears only here. */
+export interface GatewayKeySecret {
+  id: string;
+  name: string;
+  key: string;
+}
+
 export function createGatewayKey(input: {
   name: string;
   enabled?: boolean;
-}): Promise<{ name: string; key: string }> {
-  return request<{ name: string; key: string }>('POST', '/api/gateway-keys', input);
+}): Promise<GatewayKeySecret> {
+  return request<GatewayKeySecret>('POST', '/api/gateway-keys', input);
 }
 
-export function updateGatewayKey(name: string, input: { enabled: boolean }): Promise<void> {
-  return request<void>('PUT', `/api/gateway-keys/${encodeURIComponent(name)}`, input);
+export function updateGatewayKey(id: string, input: { enabled: boolean }): Promise<void> {
+  return request<void>('PUT', `/api/gateway-keys/${encodeURIComponent(id)}`, input);
 }
 
-export function rotateGatewayKey(name: string): Promise<{ name: string; key: string }> {
-  return request<{ name: string; key: string }>(
+export function rotateGatewayKey(id: string): Promise<GatewayKeySecret> {
+  return request<GatewayKeySecret>(
     'POST',
-    `/api/gateway-keys/${encodeURIComponent(name)}/rotate`,
+    `/api/gateway-keys/${encodeURIComponent(id)}/rotate`,
   );
 }
 
-export function deleteGatewayKey(name: string): Promise<void> {
-  return request<void>('DELETE', `/api/gateway-keys/${encodeURIComponent(name)}`);
+export function deleteGatewayKey(id: string): Promise<void> {
+  return request<void>('DELETE', `/api/gateway-keys/${encodeURIComponent(id)}`);
 }
 
 export function getGatewayKeyUsage(q: { from: Date; to: Date }): Promise<GatewayKeyUsageResponse> {

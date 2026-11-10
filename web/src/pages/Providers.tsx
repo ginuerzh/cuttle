@@ -20,25 +20,25 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
   const [editing, setEditing] = useState<Provider | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
-  const [models, setModels] = useState<{ name: string; list: ProviderModel[] } | null>(null);
+  const [models, setModels] = useState<{ id: string; name: string; list: ProviderModel[] } | null>(null);
   const [modelsError, setModelsError] = useState('');
   const [modelsBusy, setModelsBusy] = useState(false);
   const [providerBusy, setProviderBusy] = useState('');
 
-  const test = async (name: string) => {
+  const test = async (provider: Provider) => {
     try {
-      const r = await testProvider(name);
-      if (r.ok) message.success(`${name}: ${r.latencyMs}ms`);
-      else message.error(`${name}: ${r.error || `status ${r.status}`}`);
+      const r = await testProvider(provider.id);
+      if (r.ok) message.success(`${provider.name}: ${r.latencyMs}ms`);
+      else message.error(`${provider.name}: ${r.error || `status ${r.status}`}`);
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     }
   };
 
   const toggleProvider = async (provider: Provider, enabled: boolean) => {
-    setProviderBusy(provider.name);
+    setProviderBusy(provider.id);
     try {
-      await updateProvider(provider.name, providerPayload({ ...provider, enabled }));
+      await updateProvider(provider.id, providerPayload({ ...provider, enabled }));
       await onReload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
@@ -56,12 +56,12 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     setAddOpen(true);
   };
 
-  const showModels = async (name: string, refresh = false) => {
+  const showModels = async (id: string, name: string, refresh = false) => {
     setModelsBusy(true);
     setModelsError('');
-    setModels((cur) => (cur && cur.name === name ? cur : { name, list: [] }));
+    setModels((cur) => (cur && cur.id === id ? cur : { id, name, list: [] }));
     try {
-      setModels({ name, list: await getProviderModels(name, refresh) });
+      setModels({ id, name, list: await getProviderModels(id, refresh) });
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
       setModelsError(text);
@@ -73,7 +73,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
 
   const toggleModel = async (model: ProviderModel, checked: boolean) => {
     if (!models) return;
-    const provider = config.providers.find((p) => p.name === models.name);
+    const provider = config.providers.find((p) => p.id === models.id);
     if (!provider) {
       message.error(t('未找到 Provider {name}', { name: models.name }));
       return;
@@ -82,9 +82,9 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     const next = toggleModelOverride(provider.models, model.id, disabled);
     setModelsBusy(true);
     try {
-      await updateProvider(provider.name, providerPayload(provider, { models: next }));
+      await updateProvider(provider.id, providerPayload(provider, { models: next }));
       setModels((cur) =>
-        cur && cur.name === provider.name
+        cur && cur.id === provider.id
           ? { ...cur, list: cur.list.map((m) => (m.id === model.id ? { ...m, disabled } : m)) }
           : cur,
       );
@@ -98,7 +98,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
 
   const setAllModelsEnabled = async (enabled: boolean) => {
     if (!models) return;
-    const provider = config.providers.find((p) => p.name === models.name);
+    const provider = config.providers.find((p) => p.id === models.id);
     if (!provider) {
       message.error(t('未找到 Provider {name}', { name: models.name }));
       return;
@@ -108,9 +108,9 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       : Object.fromEntries(models.list.map((m) => [m.id, { disabled: true }]));
     setModelsBusy(true);
     try {
-      await updateProvider(provider.name, providerPayload(provider, { models: next }));
+      await updateProvider(provider.id, providerPayload(provider, { models: next }));
       setModels((cur) =>
-        cur && cur.name === provider.name
+        cur && cur.id === provider.id
           ? { ...cur, list: cur.list.map((m) => ({ ...m, disabled: !enabled })) }
           : cur,
       );
@@ -122,9 +122,9 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
     }
   };
 
-  const remove = async (name: string) => {
+  const remove = async (id: string) => {
     try {
-      await deleteProvider(name);
+      await deleteProvider(id);
       message.success(t('已删除'));
       await onReload();
     } catch (err) {
@@ -158,7 +158,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
       </Space>
       {config.providers.length === 0 ? <Empty /> : config.providers.map((p) => (
         <ListCard
-          key={p.name}
+          key={p.id}
           title={p.name}
           subtitle={
             <>
@@ -191,7 +191,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
               <Switch
                 size="small"
                 checked={p.enabled !== false}
-                disabled={providerBusy === p.name}
+                disabled={providerBusy === p.id}
                 onChange={(checked) => void toggleProvider(p, checked)}
                 aria-label={t('切换 {name}', { name: p.name })}
               />
@@ -199,10 +199,10 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
           }
           actions={
             <>
-              <Button size="small" onClick={() => void test(p.name)}>{t('测试')}</Button>
-              <Button size="small" onClick={() => void showModels(p.name)}>{t('模型')}</Button>
+              <Button size="small" onClick={() => void test(p)}>{t('测试')}</Button>
+              <Button size="small" onClick={() => void showModels(p.id, p.name)}>{t('模型')}</Button>
               <Button size="small" onClick={() => setEditing(p)}>{t('编辑')}</Button>
-              <Popconfirm title={t('删除 {name}?', { name: p.name })} onConfirm={() => void remove(p.name)}>
+              <Popconfirm title={t('删除 {name}?', { name: p.name })} onConfirm={() => void remove(p.id)}>
                 <Button size="small" danger>{t('删除')}</Button>
               </Popconfirm>
             </>
@@ -244,7 +244,7 @@ export function ProvidersPage({ config, onReload }: { config: ConfigResponse; on
               />
               <span style={{ fontSize: 12 }}>{t('全局启用')}</span>
             </Space>
-            <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.name, true)}>
+            <Button size="small" loading={modelsBusy} onClick={() => models && void showModels(models.id, models.name, true)}>
               {t('刷新')}
             </Button>
           </div>

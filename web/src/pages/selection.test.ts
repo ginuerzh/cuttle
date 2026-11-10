@@ -5,26 +5,26 @@ import { entrypointFromNodeId, errorMatchesNodeId } from './selection';
 
 const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
   entrypoints: [
-    { name: 'strong', match: ['claude-opus*'], route: 'strong' },
-    { name: 'fast', match: ['gpt-4.5*'], route: 'fast' },
+    { id: 'e_0000000001', name: 'strong', match: ['claude-opus*'], route: 'r_0000000001' },
+    { id: 'e_0000000002', name: 'fast', match: ['gpt-4.5*'], route: 'r_0000000002' },
   ],
-  providers: [{ name: 'p1', type: 'deepseek', chat: 'https://a/v1', keys: [] }],
-  nodes: [{ name: 'p1', provider: 'p1', model: 'm1' }],
+  providers: [{ id: 'p_0000000001', name: 'p1', type: 'deepseek', chat: 'https://a/v1', keys: [] }],
+  nodes: [{ id: 'n_0000000001', name: 'p1', provider: 'p_0000000001', model: 'm1' }],
   routes: [
-    { name: 'strong', nodes: ['p1'] },
-    { name: 'fast', nodes: ['p1'] },
+    { id: 'r_0000000001', name: 'strong', nodes: ['n_0000000001'] },
+    { id: 'r_0000000002', name: 'fast', nodes: ['n_0000000001'] },
   ],
 };
 
 describe('entrypointFromNodeId', () => {
   it('resolves the entrypoint node id drawn on the canvas', () => {
     const { nodes } = buildGraph(cfg);
-    const node = nodes.find((n) => n.id === 'entrypoint:strong');
+    const node = nodes.find((n) => n.id === 'entrypoint:e_0000000001');
     expect(node).toBeTruthy();
 
     const found = entrypointFromNodeId(cfg.entrypoints, node!.id);
     expect(found?.index).toBe(0);
-    expect(found?.entrypoint.route).toBe('strong');
+    expect(found?.entrypoint.route).toBe('r_0000000001');
   });
 
   it('returns null for an unknown or non-entrypoint id', () => {
@@ -34,19 +34,19 @@ describe('entrypointFromNodeId', () => {
 });
 
 describe('errorMatchesNodeId', () => {
-  it('matches entrypoint errors by entrypoint name', () => {
+  it('matches entrypoint errors by the recorded entity id', () => {
     const err = {
       requestId: '1',
       ts: '2026-11-05T00:00:00Z',
-      entrypoint: 'strong',
-      route: 'strong',
-      node: 'n',
-      provider: 'p',
+      entrypoint: 'e_0000000001',
+      route: 'r_0000000001',
+      node: 'n_0000000001',
+      provider: 'p_0000000001',
       status: 500,
       message: 'boom',
     } as ErrorRow;
-    expect(errorMatchesNodeId('entrypoint:strong', err)).toBe(true);
-    expect(errorMatchesNodeId('entrypoint:fast', err)).toBe(false);
-    expect(errorMatchesNodeId('route:strong', err)).toBe(true);
+    expect(errorMatchesNodeId('entrypoint:e_0000000001', err)).toBe(true);
+    expect(errorMatchesNodeId('entrypoint:e_0000000002', err)).toBe(false);
+    expect(errorMatchesNodeId('route:r_0000000001', err)).toBe(true);
   });
 });

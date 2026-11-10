@@ -80,7 +80,9 @@ function edge(
  * Builds the routing DAG from the gateway config.
  *
  * An entrypoint owns the client model globs and points at exactly one route.
- * A route references nodes, and each node points at one provider model.
+ * A route references nodes, and each node points at one provider model. Every
+ * association is an entity id; names are display labels only, so graph ids stay
+ * stable across a rename.
  */
 export function buildGraph(
   cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'>,
@@ -95,12 +97,13 @@ export function buildGraph(
   const entrypoints = cfg.entrypoints ?? [];
   const providers = cfg.providers ?? [];
   const bindings = cfg.nodes ?? [];
-  const bindingByName = new Map(bindings.map((n) => [n.name, n]));
-  const routeByName = new Map(routes.map((r) => [r.name, r]));
+  const bindingById = new Map(bindings.map((n) => [n.id, n]));
+  const providerById = new Map(providers.map((p) => [p.id, p]));
+  const routeById = new Map(routes.map((r) => [r.id, r]));
 
   for (const p of providers) {
     nodes.push({
-      id: `provider:${p.name}`,
+      id: `provider:${p.id}`,
       type: 'provider',
       position: { x: 0, y: 0 },
       data: {
@@ -114,22 +117,22 @@ export function buildGraph(
   }
 
   for (const n of bindings) {
-    const p = providers.find((x) => x.name === n.provider);
+    const p = providerById.get(n.provider);
     nodes.push({
-      id: `node:${n.name}`,
+      id: `node:${n.id}`,
       type: 'node',
       position: { x: 0, y: 0 },
       data: {
         kind: 'node',
         label: n.name,
-        sub: [n.provider, n.model].filter(Boolean).join(' · '),
+        sub: [p?.name ?? n.provider, n.model].filter(Boolean).join(' · '),
         node: n,
         disabled: n.enabled === false || (p ? p.enabled === false : false),
       },
     });
     if (p) {
       edges.push(
-        edge(`node:${n.name}|provider:${n.provider}`, `node:${n.name}`, `provider:${n.provider}`, undefined, undefined, {
+        edge(`node:${n.id}|provider:${p.id}`, `node:${n.id}`, `provider:${p.id}`, undefined, undefined, {
           color: '#0891b2',
         }),
       );
@@ -138,7 +141,7 @@ export function buildGraph(
 
   for (const r of routes) {
     nodes.push({
-      id: `route:${r.name}`,
+      id: `route:${r.id}`,
       type: 'route',
       position: { x: 0, y: 0 },
       data: {
@@ -151,12 +154,12 @@ export function buildGraph(
 
     const color = routeColor(r.name);
     for (const ref of r.nodes ?? []) {
-      const n = bindingByName.get(ref);
+      const n = bindingById.get(ref);
       if (!n) {
         continue;
       }
       edges.push(
-        edge(`route:${r.name}|node:${n.name}`, `route:${r.name}`, `node:${n.name}`, undefined, undefined, {
+        edge(`route:${r.id}|node:${n.id}`, `route:${r.id}`, `node:${n.id}`, undefined, undefined, {
           color,
         }),
       );
@@ -166,7 +169,7 @@ export function buildGraph(
   const entrypointIds = new Set<string>();
   let needsUnrouted = false;
   for (const e of entrypoints) {
-    const id = `entrypoint:${e.name}`;
+    const id = `entrypoint:${e.id}`;
     if (entrypointIds.has(id)) {
       continue;
     }
@@ -178,14 +181,14 @@ export function buildGraph(
       data: {
         kind: 'entrypoint',
         label: e.name,
-        sub: `${(e.match ?? []).join(', ')} → ${e.route}`,
+        sub: `${(e.match ?? []).join(', ')} → ${routeById.get(e.route)?.name ?? e.route}`,
         entrypoint: e,
       },
     });
 
-    const target = routeByName.get(e.route);
+    const target = routeById.get(e.route);
     if (target) {
-      edges.push(edge(`${id}->route:${target.name}`, id, `route:${target.name}`, undefined, undefined, { color: ENTRYPOINT_COLOR }));
+      edges.push(edge(`${id}->route:${target.id}`, id, `route:${target.id}`, undefined, undefined, { color: ENTRYPOINT_COLOR }));
     } else {
       needsUnrouted = true;
       edges.push(edge(`${id}->unrouted`, id, 'unrouted', undefined, undefined, { color: UNROUTED_COLOR }));

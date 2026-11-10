@@ -27,10 +27,11 @@ describe('parseLiveMessage', () => {
         metrics: { nodes: {}, edges: {}, errors: [] },
         health: [
           {
+            id: 'r_0000000001',
             name: 'r',
             maxFails: 1,
             failTimeout: '10s',
-            nodes: [{ name: 'n', failCount: 1, dead: true }],
+            nodes: [{ id: 'n_0000000001', name: 'n', providerId: 'p_0000000001', failCount: 1, dead: true }],
           },
         ],
       }),

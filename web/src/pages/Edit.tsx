@@ -263,7 +263,7 @@ function ModelField({
 }
 
 /** Load a provider's model catalog; failures are non-blocking. */
-function useProviderModels(providerName?: string) {
+function useProviderModels(providerId?: string) {
   const [models, setModels] = useState<ProviderModel[]>([]);
   const [error, setError] = useState('');
 
@@ -271,8 +271,8 @@ function useProviderModels(providerName?: string) {
     let active = true;
     setModels([]);
     setError('');
-    if (!providerName) return;
-    getProviderModels(providerName)
+    if (!providerId) return;
+    getProviderModels(providerId)
       .then((list) => {
         if (active) setModels(list);
       })
@@ -282,7 +282,7 @@ function useProviderModels(providerName?: string) {
     return () => {
       active = false;
     };
-  }, [providerName]);
+  }, [providerId]);
 
   return { models, error };
 }
@@ -386,7 +386,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
     setKeyRows(providerKeyRows(provider.keys ?? []));
     setDeletedKeys([]);
     setHeadersJSON(headersText(provider.headers));
-  }, [provider.name, provider.keys, provider.headers]);
+  }, [provider.id, provider.keys, provider.headers]);
 
   const deleteKey = (i: number) => {
     const row = keyRows[i];
@@ -430,7 +430,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       );
       const keyUpdates = providerKeyUpdates(keyRows, deletedKeys);
       if (keyUpdates.length > 0) payload.keyUpdates = keyUpdates;
-      await updateProvider(provider.name, payload);
+      await updateProvider(provider.id, payload);
       message.success(tr('已保存'));
       await onSaved();
     } catch (err) {
@@ -443,7 +443,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
   const remove = async () => {
     setBusy(true);
     try {
-      await deleteProvider(provider.name);
+      await deleteProvider(provider.id);
       message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
@@ -553,17 +553,21 @@ function RouteNodeList({
   value = [],
   onChange,
   nodes,
+  providers = [],
   health,
 }: {
   value?: string[];
   onChange?: (value: string[]) => void;
   nodes: BindNode[];
+  providers?: Provider[];
   health?: RouteHealth;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const byName = new Map(nodes.map((n) => [n.name, n]));
-  const healthByName = new Map((health?.nodes ?? []).map((n) => [n.name, n]));
-  const available = nodes.filter((n) => !value.includes(n.name));
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const providerById = new Map(providers.map((p) => [p.id, p]));
+  const healthById = new Map((health?.nodes ?? []).map((n) => [n.id, n]));
+  const available = nodes.filter((n) => !value.includes(n.id));
+  const providerLabel = (id: string) => providerById.get(id)?.name ?? id;
   const update = (next: string[]) => onChange?.(next);
 
   return (
@@ -571,12 +575,12 @@ function RouteNodeList({
       {value.length === 0 ? (
         <Typography.Text type="secondary">{tr('还没有 node，先从下面添加')}</Typography.Text>
       ) : null}
-      {value.map((name, index) => {
-        const node = byName.get(name);
-        const h = healthByName.get(name);
+      {value.map((id, index) => {
+        const node = byId.get(id);
+        const h = healthById.get(id);
         return (
           <div
-            key={name}
+            key={id}
             draggable
             onDragStart={(e) => {
               setDragIndex(index);
@@ -610,10 +614,10 @@ function RouteNodeList({
             </Typography.Text>
             <div style={{ flex: 1, minWidth: 0 }}>
               <Typography.Text strong style={{ display: 'block', wordBreak: 'break-all' }}>
-                {name}
+                {node?.name ?? id}
               </Typography.Text>
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                {node ? `${node.provider} · ${node.model}` : 'node'}
+                {node ? `${providerLabel(node.provider)} · ${node.model}` : 'node'}
               </Typography.Text>
             </div>
             {h ? (
@@ -638,9 +642,9 @@ function RouteNodeList({
               type="text"
               size="small"
               danger
-              aria-label={tr('移除 {name}', { name })}
+              aria-label={tr('移除 {name}', { name: node?.name ?? id })}
               icon={<MinusCircleOutlined />}
-              onClick={() => update(value.filter((v) => v !== name))}
+              onClick={() => update(value.filter((v) => v !== id))}
             />
           </div>
         );
@@ -650,8 +654,8 @@ function RouteNodeList({
         showSearch
         value={null}
         placeholder={tr('添加 node')}
-        options={available.map((n) => ({ value: n.name, label: `${n.name} (${n.provider})` }))}
-        onSelect={(name) => update(addRouteNode(value, String(name)))}
+        options={available.map((n) => ({ value: n.id, label: `${n.name} (${providerLabel(n.provider)})` }))}
+        onSelect={(id) => update(addRouteNode(value, String(id)))}
         style={{ width: '100%', marginTop: 6 }}
       />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '6px 0 0' }}>
@@ -669,7 +673,7 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
     const v = await form.validateFields();
     setBusy(true);
     try {
-      await updateRoute(route.name, {
+      await updateRoute(route.id, {
         name: route.name,
         nodes: v.nodes ?? [],
         strategy: v.strategy,
@@ -690,7 +694,7 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
   const remove = async () => {
     setBusy(true);
     try {
-      await deleteRoute(route.name);
+      await deleteRoute(route.id);
       message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
@@ -761,7 +765,7 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
         label={tr('Nodes（拖动排序，顺序 = 优先级）')}
         rules={[{ required: true, message: tr('至少选择一个 node') }]}
       >
-        <RouteNodeList nodes={config.nodes} health={health} />
+        <RouteNodeList nodes={config.nodes} providers={config.providers} health={health} />
       </Form.Item>
       <Divider />
       <Space>
@@ -793,7 +797,7 @@ export function NodeForm({
     const v = await form.validateFields();
     setBusy(true);
     try {
-      await updateNode(node.name, {
+      await updateNode(node.id, {
         name: node.name,
         provider: v.provider,
         backup: v.backup,
@@ -815,7 +819,7 @@ export function NodeForm({
   const remove = async () => {
     setBusy(true);
     try {
-      await deleteNode(node.name);
+      await deleteNode(node.id);
       message.success(tr('已删除'));
       await onSaved();
     } catch (err) {
@@ -825,10 +829,10 @@ export function NodeForm({
     }
   };
 
-  const providerOptions = config.providers.map((p) => ({ value: p.name, label: p.name }));
-  const providerName = (Form.useWatch('provider', form) as string | undefined) ?? node.provider;
-  const provider = config.providers.find((p) => p.name === providerName);
-  const { models, error: modelsError } = useProviderModels(providerName);
+  const providerOptions = config.providers.map((p) => ({ value: p.id, label: p.name }));
+  const providerId = (Form.useWatch('provider', form) as string | undefined) ?? node.provider;
+  const provider = config.providers.find((p) => p.id === providerId);
+  const { models, error: modelsError } = useProviderModels(provider?.id);
   const model = Form.useWatch('model', form) as string | undefined;
   const api = Form.useWatch('api', form) as string | undefined;
   const keyOptions = nodeKeyOptions(provider?.keys ?? []);
@@ -911,7 +915,7 @@ export function EntrypointForm({
     setBusy(true);
     try {
       const next = config.entrypoints.map((e, i) =>
-        i === index ? { name: v.name, match: v.match, route: v.route } : e,
+        i === index ? { ...e, name: v.name, match: v.match, route: v.route } : e,
       );
       await putEntrypoints(next);
       message.success(tr('已保存'));
@@ -963,7 +967,7 @@ export function EntrypointForm({
         <Select
           showSearch
           optionFilterProp="label"
-          options={config.routes.map((r) => ({ value: r.name, label: r.name }))}
+          options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
           placeholder="strong / fast"
         />
       </Form.Item>
@@ -999,16 +1003,17 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
   const target = parts[1] ?? '';
 
   if (source.startsWith('route:') && target.startsWith('node:')) {
-    const routeName = source.slice('route:'.length);
-    const nodeName = target.slice('node:'.length);
-    const route = config.routes.find((r) => r.name === routeName);
-    const node = config.nodes.find((n) => n.name === nodeName);
+    const routeId = source.slice('route:'.length);
+    const nodeId = target.slice('node:'.length);
+    const route = config.routes.find((r) => r.id === routeId);
+    const node = config.nodes.find((n) => n.id === nodeId);
+    const provider = config.providers.find((p) => p.id === node?.provider);
 
     const remove = async () => {
       if (!route) return;
       setBusy(true);
       try {
-        await updateRoute(route.name, { ...route, nodes: route.nodes.filter((n) => n !== nodeName) });
+        await updateRoute(route.id, { ...route, nodes: route.nodes.filter((n) => n !== nodeId) });
         message.success(tr('已断开'));
         await onSaved();
       } catch (err) {
@@ -1024,8 +1029,8 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
           {tr('连线')}
         </Typography.Title>
         <Typography.Paragraph>
-          {routeName} → {nodeName}
-          {node ? `（${node.provider}）` : ''}
+          {route?.name ?? routeId} → {node?.name ?? nodeId}
+          {provider ? `（${provider.name}）` : ''}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {tr('模型映射和 backup/weight 都在 Node 面板里改。')}
@@ -1038,15 +1043,17 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
   }
 
   if (source.startsWith('node:') && target.startsWith('provider:')) {
-    const nodeName = source.slice('node:'.length);
-    const providerName = target.slice('provider:'.length);
+    const nodeId = source.slice('node:'.length);
+    const providerId = target.slice('provider:'.length);
+    const node = config.nodes.find((n) => n.id === nodeId);
+    const provider = config.providers.find((p) => p.id === providerId);
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
           {tr('连线')}
         </Typography.Title>
         <Typography.Paragraph>
-          {nodeName} → {providerName}
+          {node?.name ?? nodeId} → {provider?.name ?? providerId}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {tr('Node 指向哪个 Provider 由 Node 的 provider 字段决定，请在 Node 面板修改。')}
@@ -1111,23 +1118,23 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
 
   const connect = async (c: Connection) => {
     if (!c.source || !c.target) return;
-    const [skind, sname] = splitId(c.source);
-    const [tkind, tname] = splitId(c.target);
+    const [skind, sid] = splitId(c.source);
+    const [tkind, tid] = splitId(c.target);
     setError('');
     setBusy(true);
     try {
       if (skind === 'route' && tkind === 'node') {
-        const route = config.routes.find((r) => r.name === sname);
+        const route = config.routes.find((r) => r.id === sid);
         if (!route) throw new Error('route not found');
-        if (!route.nodes.includes(tname)) {
-          await updateRoute(route.name, { ...route, nodes: [...route.nodes, tname] });
+        if (!route.nodes.includes(tid)) {
+          await updateRoute(route.id, { ...route, nodes: [...route.nodes, tid] });
         }
       } else if (skind === 'entrypoint' && tkind === 'route') {
         const found = entrypointFromNodeId(config.entrypoints, c.source);
         if (!found) throw new Error('entrypoint not found');
-        if (!config.routes.some((r) => r.name === tname)) throw new Error('route not found');
+        if (!config.routes.some((r) => r.id === tid)) throw new Error('route not found');
         const next = config.entrypoints.map((e, i) =>
-          i === found.index ? { ...e, route: tname } : e,
+          i === found.index ? { ...e, route: tid } : e,
         );
         await putEntrypoints(next);
       } else {
@@ -1146,18 +1153,18 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
     if (selection.kind === 'edge') {
       return <EdgeForm id={selection.id} config={config} onSaved={onReload} />;
     }
-    const [kind, name] = splitId(selection.id);
+    const [kind, entityId] = splitId(selection.id);
     if (kind === 'provider') {
-      const p = config.providers.find((x) => x.name === name);
-      return p ? <ProviderForm key={p.name} provider={p} onSaved={onReload} /> : null;
+      const p = config.providers.find((x) => x.id === entityId);
+      return p ? <ProviderForm key={p.id} provider={p} onSaved={onReload} /> : null;
     }
     if (kind === 'route') {
-      const r = config.routes.find((x) => x.name === name);
-      return r ? <RouteForm key={r.name} route={r} config={config} onSaved={onReload} /> : null;
+      const r = config.routes.find((x) => x.id === entityId);
+      return r ? <RouteForm key={r.id} route={r} config={config} onSaved={onReload} /> : null;
     }
     if (kind === 'node') {
-      const n = config.nodes.find((x) => x.name === name);
-      return n ? <NodeForm key={n.name} node={n} config={config} onSaved={onReload} /> : null;
+      const n = config.nodes.find((x) => x.id === entityId);
+      return n ? <NodeForm key={n.id} node={n} config={config} onSaved={onReload} /> : null;
     }
     if (kind === 'entrypoint') {
       const found = entrypointFromNodeId(config.entrypoints, selection.id);
@@ -1410,10 +1417,10 @@ export function AddNodeModal({
     }
   };
 
-  const providerOptions = config.providers.map((p) => ({ value: p.name, label: p.name }));
-  const providerName = Form.useWatch('provider', form) as string | undefined;
-  const provider = config.providers.find((p) => p.name === providerName);
-  const { models, error: modelsError } = useProviderModels(providerName);
+  const providerOptions = config.providers.map((p) => ({ value: p.id, label: p.name }));
+  const providerId = Form.useWatch('provider', form) as string | undefined;
+  const provider = config.providers.find((p) => p.id === providerId);
+  const { models, error: modelsError } = useProviderModels(provider?.id);
   const model = Form.useWatch('model', form) as string | undefined;
   const api = Form.useWatch('api', form) as string | undefined;
 
@@ -1515,7 +1522,7 @@ export function AddRouteModal({
           label={tr('Nodes（拖动排序，顺序 = 优先级）')}
           rules={[{ required: true, message: tr('至少选择一个 node') }]}
         >
-          <RouteNodeList nodes={config.nodes} />
+          <RouteNodeList nodes={config.nodes} providers={config.providers} />
         </Form.Item>
       </Form>
     </Modal>
@@ -1579,7 +1586,7 @@ export function AddEntrypointModal({
           <Select
             showSearch
             optionFilterProp="label"
-            options={config.routes.map((r) => ({ value: r.name, label: r.name }))}
+            options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
             placeholder="strong / fast"
           />
         </Form.Item>

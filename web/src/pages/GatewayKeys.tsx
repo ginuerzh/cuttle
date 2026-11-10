@@ -23,6 +23,7 @@ import {
   rotateGatewayKey,
   updateGatewayKey,
 } from '../api/client';
+import type { GatewayKeySecret } from '../api/client';
 import type {
   GatewayKey,
   GatewayKeyUsage,
@@ -137,7 +138,7 @@ export function GatewayKeyCard({
 }
 
 /** Body of the one-time secret dialog; rendered directly by SSR tests. */
-export function GatewaySecretContent({ secret }: { secret: { name: string; key: string } }) {
+export function GatewaySecretContent({ secret }: { secret: GatewayKeySecret }) {
   return (
     <>
       <Alert
@@ -160,7 +161,7 @@ export function GatewaySecretDialog({
   secret,
   onClose,
 }: {
-  secret: { name: string; key: string } | null;
+  secret: GatewayKeySecret | null;
   onClose: () => void;
 }) {
   return (
@@ -190,7 +191,7 @@ export function GatewayKeysPage() {
   const [addName, setAddName] = useState('');
   const [addEnabled, setAddEnabled] = useState(true);
   const [addBusy, setAddBusy] = useState(false);
-  const [secret, setSecret] = useState<{ name: string; key: string } | null>(null);
+  const [secret, setSecret] = useState<GatewayKeySecret | null>(null);
   const [sessionsKey, setSessionsKey] = useState('');
   const [sessions, setSessions] = useState<RequestRow[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -233,14 +234,14 @@ export function GatewayKeysPage() {
     void load();
   }, [load]);
 
-  const openSessions = useCallback(async (name: string) => {
+  const openSessions = useCallback(async (id: string, name: string) => {
     setSessionsKey(name);
     setSessions([]);
     setSessionsLoading(true);
     try {
       const to = new Date();
       const from = new Date(to.getTime() - SESSION_WINDOW_MS);
-      setSessions(await getRequests({ from, to, gatewayKey: name, limit: 100 }));
+      setSessions(await getRequests({ from, to, gatewayKey: id, limit: 100 }));
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -269,27 +270,27 @@ export function GatewayKeysPage() {
     }
   };
 
-  const toggle = async (name: string, enabled: boolean) => {
+  const toggle = async (id: string, enabled: boolean) => {
     try {
-      await updateGatewayKey(name, { enabled });
+      await updateGatewayKey(id, { enabled });
       await load();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const rotate = async (name: string) => {
+  const rotate = async (id: string) => {
     try {
-      setSecret(await rotateGatewayKey(name));
+      setSecret(await rotateGatewayKey(id));
       await load();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const remove = async (name: string) => {
+  const remove = async (id: string) => {
     try {
-      await deleteGatewayKey(name);
+      await deleteGatewayKey(id);
       message.success(t('已删除'));
       await load();
     } catch (err) {
@@ -364,19 +365,19 @@ export function GatewayKeysPage() {
 
       {keys.map((item) => (
         <GatewayKeyCard
-          key={item.name}
+          key={item.id}
           item={item}
           usage={usageByName.get(item.name)}
-          onSessions={() => void openSessions(item.name)}
-          onToggle={(enabled) => void toggle(item.name, enabled)}
-          onRotate={() => void rotate(item.name)}
-          onDelete={() => void remove(item.name)}
+          onSessions={() => void openSessions(item.id, item.name)}
+          onToggle={(enabled) => void toggle(item.id, enabled)}
+          onRotate={() => void rotate(item.id)}
+          onDelete={() => void remove(item.id)}
         />
       ))}
       {historical.map((item) => (
         <GatewayKeyCard
           key={`history-${item.name}`}
-          item={{ name: item.name, keyPreview: item.keyPreview ?? '', enabled: false }}
+          item={{ id: '', name: item.name, keyPreview: item.keyPreview ?? '', enabled: false }}
           usage={item}
         />
       ))}

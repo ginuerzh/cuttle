@@ -49,10 +49,11 @@ function typeInto(input: HTMLInputElement, value: string) {
 }
 
 const provider: Provider = {
+  id: 'p_0000000001',
   name: 'p',
   type: 'generic',
   chat: 'https://a.example/v1',
-  keys: [{ name: 'account-a', keyPreview: 'sk-...a', enabled: true }],
+  keys: [{ id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true }],
 };
 
 describe('ProviderForm key editor', () => {
@@ -116,16 +117,23 @@ describe('ProviderForm key editor', () => {
 });
 
 describe('NodeForm key pin', () => {
-  const node: Node = { name: 'n', provider: 'p', model: 'm1', key: 'account-a' };
+  const node: Node = {
+    id: 'n_0000000001',
+    name: 'n',
+    provider: 'p_0000000001',
+    model: 'm1',
+    key: 'pk_0000000001',
+  };
   const config = {
     providers: [
       {
+        id: 'p_0000000001',
         name: 'p',
         type: 'generic',
         chat: 'https://a.example/v1',
         keys: [
-          { name: 'account-a', keyPreview: 'sk-...a', enabled: true },
-          { name: 'account-b', keyPreview: 'sk-...b', enabled: false },
+          { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
+          { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
         ],
       },
     ],
@@ -154,7 +162,8 @@ describe('NodeForm key pin', () => {
     });
 
     expect(updateNodeMock).toHaveBeenCalledTimes(1);
-    const [, payload] = updateNodeMock.mock.calls[0];
-    expect(payload).toMatchObject({ key: 'account-a' });
+    const [id, payload] = updateNodeMock.mock.calls[0];
+    expect(id).toBe('n_0000000001');
+    expect(payload).toMatchObject({ key: 'pk_0000000001' });
   });
 });

@@ -3,12 +3,23 @@ import {
   createCaptureRule,
   createGatewayKey,
   createProvider,
+  deleteGatewayKey,
+  deleteNode,
+  deleteProvider,
+  deleteRoute,
   getGatewayKeyUsage,
+  getProviderModels,
   getProviderUsage,
   getRequests,
   getTopologyPositions,
   listCaptureRules,
   putStatsCapture,
+  rotateGatewayKey,
+  testProvider,
+  updateGatewayKey,
+  updateNode,
+  updateProvider,
+  updateRoute,
 } from './client';
 
 describe('request', () => {
@@ -191,4 +202,64 @@ it('updates the capture policy', async () => {
       body: JSON.stringify({ mode: 'errors', sampleRate: 0.5, maxBytes: 1048576, retain: '24h' }),
     }),
   );
+});
+
+it('addresses every entity mutation and lookup by id', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  await updateProvider('p_3k9x2m4q7a', { name: 'DeepSeek' });
+  await deleteProvider('p_3k9x2m4q7a');
+  await testProvider('p_3k9x2m4q7a');
+  await getProviderModels('p_3k9x2m4q7a', true);
+  await updateNode('n_3k9x2m4q7a', { name: 'fast' });
+  await deleteNode('n_3k9x2m4q7a');
+  await updateRoute('r_3k9x2m4q7a', { name: 'fast' });
+  await deleteRoute('r_3k9x2m4q7a');
+  await updateGatewayKey('gk_3k9x2m4q7a', { enabled: false });
+  await rotateGatewayKey('gk_3k9x2m4q7a');
+  await deleteGatewayKey('gk_3k9x2m4q7a');
+
+  const calls = fetchMock.mock.calls.map((call) => {
+    const [path, init] = call as unknown as [string, RequestInit];
+    return `${init.method} ${path}`;
+  });
+  expect(calls).toEqual([
+    'PUT /api/providers/p_3k9x2m4q7a',
+    'DELETE /api/providers/p_3k9x2m4q7a',
+    'POST /api/providers/p_3k9x2m4q7a/test',
+    'GET /api/providers/p_3k9x2m4q7a/models?refresh=1',
+    'PUT /api/nodes/n_3k9x2m4q7a',
+    'DELETE /api/nodes/n_3k9x2m4q7a',
+    'PUT /api/routes/r_3k9x2m4q7a',
+    'DELETE /api/routes/r_3k9x2m4q7a',
+    'PUT /api/gateway-keys/gk_3k9x2m4q7a',
+    'POST /api/gateway-keys/gk_3k9x2m4q7a/rotate',
+    'DELETE /api/gateway-keys/gk_3k9x2m4q7a',
+  ]);
+});
+
+it('sends entity ids as request filters', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  await getRequests({
+    from: new Date(0),
+    to: new Date(0),
+    provider: 'p_3k9x2m4q7a',
+    route: 'r_3k9x2m4q7a',
+    node: 'n_3k9x2m4q7a',
+    entrypoint: 'e_3k9x2m4q7a',
+    gatewayKey: 'gk_3k9x2m4q7a',
+  });
+
+  const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
+  const params = new URL(url, 'http://localhost').searchParams;
+  expect(params.get('provider')).toBe('p_3k9x2m4q7a');
+  expect(params.get('route')).toBe('r_3k9x2m4q7a');
+  expect(params.get('node')).toBe('n_3k9x2m4q7a');
+  expect(params.get('entrypoint')).toBe('e_3k9x2m4q7a');
+  expect(params.get('key')).toBe('gk_3k9x2m4q7a');
 });

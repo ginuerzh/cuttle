@@ -19,10 +19,14 @@ export function NodesPage({
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
+  const providerName = (id: string) => config.providers.find((p) => p.id === id)?.name ?? id;
+  const keyName = (providerId: string, keyId: string) =>
+    config.providers.find((p) => p.id === providerId)?.keys?.find((k) => k.id === keyId)?.name ?? keyId;
+
   const toggle = async (n: Node, enabled: boolean) => {
-    setBusy(n.name);
+    setBusy(n.id);
     try {
-      await updateNode(n.name, {
+      await updateNode(n.id, {
         name: n.name,
         provider: n.provider,
         model: n.model,
@@ -39,9 +43,9 @@ export function NodesPage({
     }
   };
 
-  const remove = async (name: string) => {
+  const remove = async (id: string) => {
     try {
-      await deleteNode(name);
+      await deleteNode(id);
       message.success(t('已删除'));
       await onReload();
     } catch (err) {
@@ -65,18 +69,18 @@ export function NodesPage({
         {config.nodes.length === 0 ? <Empty /> : config.nodes.map((n) => {
           return (
             <ListCard
-              key={n.name}
+              key={n.id}
               title={n.name}
-              subtitle={`${n.provider} · ${n.model}`}
+              subtitle={`${providerName(n.provider)} · ${n.model}`}
               tags={
                 <Space direction="vertical" align="end" size={2}>
                   <Tag>{n.api || 'auto'}</Tag>
-                  {n.key ? <Tag color="blue">{n.key}</Tag> : null}
+                  {n.key ? <Tag color="blue">{keyName(n.provider, n.key)}</Tag> : null}
                   {n.backup ? <Tag color="purple">backup</Tag> : null}
                   <Switch
                     size="small"
                     checked={n.enabled !== false}
-                    disabled={busy === n.name}
+                    disabled={busy === n.id}
                     onChange={(checked) => void toggle(n, checked)}
                     aria-label={t('切换 {name}', { name: n.name })}
                   />
@@ -85,7 +89,7 @@ export function NodesPage({
               actions={
                 <>
                   <Button size="small" onClick={() => setEditing(n)}>{t('编辑')}</Button>
-                  <Popconfirm title={t('删除 {name}?', { name: n.name })} onConfirm={() => void remove(n.name)}>
+                  <Popconfirm title={t('删除 {name}?', { name: n.name })} onConfirm={() => void remove(n.id)}>
                     <Button size="small" danger>{t('删除')}</Button>
                   </Popconfirm>
                 </>
@@ -103,7 +107,7 @@ export function NodesPage({
       >
         {editing ? (
           <NodeForm
-            key={editing.name}
+            key={editing.id}
             node={editing}
             config={config}
             onSaved={async () => {

@@ -107,12 +107,12 @@ function rate(m?: { requests: number; errors: number }): string {
 const SESSION_LIMIT = 100;
 
 export function sessionQuery(id: string, from: Date, to: Date, errorsOnly: boolean): RequestQuery {
-  const [kind, name] = splitId(id);
+  const [kind, entityId] = splitId(id);
   const query: RequestQuery = { from, to, limit: SESSION_LIMIT, errorsOnly };
-  if (kind === 'node') query.node = name;
-  else if (kind === 'route') query.route = name;
-  else if (kind === 'provider') query.provider = name;
-  else if (kind === 'entrypoint') query.entrypoint = name;
+  if (kind === 'node') query.node = entityId;
+  else if (kind === 'route') query.route = entityId;
+  else if (kind === 'provider') query.provider = entityId;
+  else if (kind === 'entrypoint') query.entrypoint = entityId;
   return query;
 }
 

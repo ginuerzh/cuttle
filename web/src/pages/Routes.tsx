@@ -32,11 +32,12 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
     };
   }, [config]);
 
-  const healthByName = new Map(health.map((h) => [h.name, h]));
+  const healthById = new Map(health.map((h) => [h.id, h]));
+  const nodeName = (id: string) => config.nodes.find((n) => n.id === id)?.name ?? id;
 
-  const remove = async (name: string) => {
+  const remove = async (id: string) => {
     try {
-      await deleteRoute(name);
+      await deleteRoute(id);
       message.success(t('已删除'));
       await onReload();
     } catch (err) {
@@ -57,15 +58,15 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
         </Button>
       </Space>
       {config.routes.length === 0 ? <Empty /> : config.routes.map((r, i) => {
-        const h = healthByName.get(r.name);
+        const h = healthById.get(r.id);
         const dead = h?.nodes.filter((n) => n.dead).length ?? 0;
         const retries = r.retries ?? 0;
         const retrySuffix = retries > 0 ? ` · retries ${retries}` : '';
         return (
           <ListCard
-            key={r.name}
+            key={r.id}
             title={`${i + 1}. ${r.name}`}
-            subtitle={`${r.strategy || 'round'} · maxFails ${r.maxFails ?? 1} / ${r.failTimeout ?? '10s'} · ${(r.nodes ?? []).join(', ') || 'no nodes'}${retrySuffix}`}
+            subtitle={`${r.strategy || 'round'} · maxFails ${r.maxFails ?? 1} / ${r.failTimeout ?? '10s'} · ${(r.nodes ?? []).map(nodeName).join(', ') || 'no nodes'}${retrySuffix}`}
             tags={h ? (
               <Tag color={dead > 0 ? 'red' : 'green'}>
                 {dead > 0 ? t('{count} dead', { count: dead }) : t('正常')}
@@ -74,7 +75,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
             actions={
               <>
                 <Button size="small" onClick={() => setEditing(r)}>{t('编辑')}</Button>
-                <Popconfirm title={t('删除 {name}?', { name: r.name })} onConfirm={() => void remove(r.name)}>
+                <Popconfirm title={t('删除 {name}?', { name: r.name })} onConfirm={() => void remove(r.id)}>
                   <Button size="small" danger>{t('删除')}</Button>
                 </Popconfirm>
               </>
@@ -88,7 +89,7 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
           <RouteForm
             route={editing}
             config={config}
-            health={healthByName.get(editing.name)}
+            health={healthById.get(editing.id)}
             onSaved={async () => {
               setEditing(null);
               await onReload();
