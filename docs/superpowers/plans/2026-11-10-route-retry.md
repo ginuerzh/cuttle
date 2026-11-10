@@ -814,14 +814,14 @@ git commit -m "test(gateway): cover end-to-end route retries"
 **Interfaces:**
 - Consumes: everything above.
 
-- [ ] **Step 1: Update the user guide**
+- [x] **Step 1: Update the user guide**
 
 - `README.md` routes table: add `retries` (`Extra attempts; 0 disables, default 0`) and `retryCodes` (`Statuses that trigger a retry, default 429,5xx`).
 - Add a short paragraph after the routes section: retries re-select through the route strategy, only trigger before any response byte reaches the client (dial failures included, post-write read failures not), samples are bounded by a 32 MiB request buffer, `Expect: 100-continue` requests are not retried, and no `Retry-After` backoff exists in v1. State the worst case: each attempt is bounded by `gateway.readTimeout`, so `retries: 10` can hold a connection for roughly eleven read timeouts.
 - Stats section: mention `requests.retries` and that Sessions shows `重试 N 次`.
 - Do not promise attempt-level rows or attempt-level captures.
 
-- [ ] **Step 2: Update the agent invariants**
+- [x] **Step 2: Update the agent invariants**
 
 `AGENTS.md`:
 - Routing invariants: routes carry `retries`/`retryCodes`; the values are stamped on every node as `retry.max`/`retry.codes`, and x owns the retry loop.
@@ -829,11 +829,11 @@ git commit -m "test(gateway): cover end-to-end route retries"
 - Stats invariants: `requests.retries` is additive, counts extra attempts only, and capture keeps the final attempt (`attempt` metadata).
 - Gotchas: the x dependency must be `v0.31.0` or newer for retries; `GOWORK=off` still applies.
 
-- [ ] **Step 3: Update `example.yaml`**
+- [x] **Step 3: Update `example.yaml`**
 
 Add `retries: 1` and `retryCodes: "429,5xx"` to one route; run `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1` so the fixture stays valid.
 
-- [ ] **Step 4: Rebuild the console and run the full gate**
+- [x] **Step 4: Rebuild the console and run the full gate**
 
 ```bash
 cd web && npm run build
@@ -845,7 +845,7 @@ cd web && npm test && npx tsc --noEmit
 ```
 Expected: all PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md AGENTS.md example.yaml
@@ -853,12 +853,12 @@ git commit -m "docs: document route retries"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `cuttle` `docs: document route retries` on `feat/route-retry`; the SHA is recorded in a follow-up `docs(plan)` commit because a commit cannot contain its own hash
+- Files changed: `README.md`, `AGENTS.md`, `example.yaml`, `docs/superpowers/plans/2026-11-10-route-retry.md`; `internal/admin/dist` was rebuilt by `npm run build` (git-ignored, not committed)
+- Tests/commands and results: `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1` → `ok 0.005s`, so the fixture still loads with `retries: 1`/`retryCodes: "429,5xx"`; `cd web && npm run build` → built in 4.98s, wrote `internal/admin/dist/assets/index-CdeV2XpD.js` and `index-BCyLQKlW.css` (git-ignored); `GOWORK=off go build ./...` → OK; `GOWORK=off go vet ./...` → OK, no output; `GOWORK=off go test ./... -count=1` → every package `ok` (root 0.510s, admin 13.780s, gateway 14.226s, stats 17.245s, config 0.208s, `internal/health` has no test files); `cd web && npm test` → 38 files / 258 tests passed; `npx tsc --noEmit` → clean
+- Review findings and fixes: (1) The README intro bullet still said "A route contains only nodes and a selection strategy", which the new `retries`/`retryCodes` fields contradict, so it now names the optional retry budget; the `AGENTS.md` route bullet was extended the same way. (2) An early draft said a retry happens on a "complete response"; x decides on the response head (status line plus headers) before any body byte is relayed, so the text now says "an upstream response status that matches `retryCodes`" to avoid implying a completed body. (3) The literal brief text for the table rows omits the `0..10` bound; the table documents "max `10`" because `config.Validate` rejects anything outside it and the console bounds `InputNumber` at 10, so a reader would otherwise learn the limit only from an error. (4) The worst-case claim was checked against x rather than assumed: `ho.ReadTimeout` is applied per `httpRoundTrip` (`internal/util/forwarder/sniffer_http.go` sets the deadline before every attempt), so `retries: 10` really can consume up to eleven `gateway.readTimeout` periods; the SSE parenthetical matches x clearing the body read deadline after the response head. (5) `retryCodes` syntax was checked against `internal/config.parseRetryCodes`: exact codes `>= 100` plus `Nxx` hundred wildcards, and an invalid token is a load error (unlike x's lenient parser), so the README documents the syntax without promising leniency. (6) Added the operator-visible fact that each discarded attempt is logged at `warn` with node and status and is never stored, which the plan required ("discarded attempts are logged, not stored") but an earlier draft left out. (7) The stats paragraph states one row and one set of rollups per client request and that capture keeps the final attempt (selected via the rewriter's `attempt` metadata), so it promises nothing attempt-level; `requests.retries` is `json:"retries"` without `omitempty`, so the count is present on every row. (8) `example.yaml` gains the two fields only on the `strong` route, leaving `fast` at the default zero so the fixture still represents a non-retrying route.
+- Deferred items/limitations: This is a documentation task, so the behavior claims rest on the x unit tests (Task 2), the config tests (Task 5) and the end-to-end retry test (Task 10); cuttle still has no end-to-end coverage for dial-failure retries, oversized bodies, `Expect: 100-continue` or streaming retryable statuses. The README documents neither the Retry logs' exact format nor the `Routes` page's ` · retries N` subtitle. The console was verified by Vitest, `tsc` and the production build only; this repository has no browser or visual regression tests, and the rebuilt `internal/admin/dist` is not part of the commit.
 
 ---
 

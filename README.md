@@ -57,8 +57,8 @@ Entrypoint ──► Route ──► Node ──► Provider model
 - Entrypoints are evaluated in declaration order. The first entrypoint with a
   matching glob wins; `*` is the explicit catch-all.
 - Globs are case-insensitive. `*` is the only wildcard.
-- A **route** contains only nodes and a selection strategy. It does not match
-  anything by itself.
+- A **route** contains only nodes, a selection strategy and an optional retry
+  budget. It does not match anything by itself.
 - A **node** binds one provider and one provider model. `backup` marks fallback
   nodes; `weight` controls the round-robin share. `key` optionally pins one
   named provider key; without it the node spreads across every enabled key.
@@ -653,12 +653,33 @@ Messages to the native endpoint.
 | `strategy` | no | `fifo`, `round` (default), `random` or `sticky` |
 | `maxFails` | no | Consecutive failures before a node is marked dead; default `1` |
 | `failTimeout` | no | How long a dead node is skipped; default `10s` |
+| `retries` | no | Extra attempts; `0` disables retries, default `0` (max `10`) |
+| `retryCodes` | no | Statuses that trigger a retry, default `429,5xx`; comma-separated exact codes and `Nxx` wildcards |
 
 `sticky` keeps one conversation on one node: it reads the client's session
 header (`x-claude-code-session-id`, `x-opencode-session`, `x-session-id` and the
 other known session headers) and uses weighted rendezvous hashing, so new
 conversations split by node weight while a conversation keeps its upstream
 prompt cache. A request without a session header falls back to weighted random.
+
+`retries` is an opt-in budget of extra attempts, so a route with `retries: 2`
+makes at most three upstream attempts. A retry re-runs node selection through
+the route strategy, so `fifo`, `round`, `random`, `sticky`, `backup`, `weight`
+and the failure marker (`maxFails`/`failTimeout`) decide the next node exactly
+as they would for a new request. A retry only happens before any response byte
+reaches the client: a dial/connect failure and an upstream response status that
+matches `retryCodes` are retried, while an error after the request was written
+(including a broken stream) is not, because the upstream may already have
+charged for it. Retries buffer the request body for replay up to 32 MiB; a
+larger body, or a request carrying `Expect: 100-continue`, is forwarded exactly
+once with no retry. There is no `Retry-After` backoff, delay or jitter in v1:
+each attempt starts immediately, and each attempt is still bounded by
+`gateway.readTimeout` for the upstream response head, so `retries: 10` can hold
+a client connection for roughly eleven read timeouts (SSE responses already
+have no total read bound). A discarded response is logged at `warn` level with
+the node and status, and is never stored. Retries do not apply to TLS
+passthrough, HTTP/2 connections or the locally answered `count_tokens`
+estimate.
 
 ## Stats and topology
 
@@ -668,6 +689,14 @@ the name of the key that authenticated the request and is empty in open mode.
 Raw rows are retained for `stats.retainRequests`; rollups are retained for
 `stats.retainRollups`. Rollups also store `cached_tokens`; rows written before
 that column existed read as 0 cached tokens.
+
+Each row carries `retries`, the number of extra upstream attempts made for that
+client request (`0` when the first attempt was the only one). It counts extra
+attempts only: one client request is always one row, a discarded attempt creates
+no row and no rollup entry, and rollups, graphs and filters are unchanged.
+Sessions tags a retried row with `重试 N 次`, and the detail panel repeats the
+count. Body capture keeps only the final attempt, so a captured pair describes
+the response the client actually received.
 
 Hourly `key_rollups` store requests, errors and input/output/cached tokens per
 gateway key for the per-key usage view. They use the same

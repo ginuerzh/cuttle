@@ -103,6 +103,10 @@ routes:
     strategy: round
     maxFails: 2
     failTimeout: 30s
+    # Opt-in retry budget: extra upstream attempts (0 disables, max 10) and the
+    # statuses that trigger a retry. A retry re-selects through the strategy.
+    retries: 1
+    retryCodes: "429,5xx"
   - name: fast
     nodes: [deepseek-fast]
     strategy: round

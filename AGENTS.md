@@ -83,7 +83,12 @@ Entrypoint -> Route -> Node -> Provider model
   wire API inside a matched entrypoint. There is no host matching and no
   client-model pass-through.
 - A route contains only nodes and a strategy (`fifo`, `round`, `random`,
-  `sticky`). It does not match anything itself.
+  `sticky`), plus its retry budget (`retries`/`retryCodes`). It does not match
+  anything itself.
+- Route retry policy is stamped on every node of the route as the metadata keys
+  `retry.max` (int) and `retry.codes` (string); absent or `retry.max <= 0`
+  disables retries. Cuttle only carries the policy: x owns the retry loop, the
+  replay buffer and the retry status matching.
 - A node binds exactly one provider and exactly one provider model.
   `Node.Models`, `EffectiveModel`, logical models and `*` model fallbacks must
   not come back.
@@ -132,6 +137,11 @@ Entrypoint -> Route -> Node -> Provider model
 - The authenticated key name travels only in the request context for stats. It
   is never added as an upstream header, and inbound credentials are stripped
   as before.
+- Route retries are x's loop around `hop.Select`: every retry re-runs selection
+  (so the strategy, backup flag and node marker pick the next node), marks the
+  failed node, and is decided before any response byte reaches the client.
+  Cuttle records one request row per client request and the final attempt's
+  response. Never add a cuttle-level retry dispatcher or one row per attempt.
 
 ## Configuration invariants
 
@@ -283,6 +293,11 @@ Entrypoint -> Route -> Node -> Provider model
 - `requests.gateway_key` and the `idx_requests_gateway_key_ts` index are added
   by `ensureColumns`; old rows read as empty. `Filter.GatewayKey` maps to
   `GET /api/requests?key=<name>` (exact name).
+- `requests.retries` is additive (`INTEGER NOT NULL DEFAULT 0`) and counts extra
+  upstream attempts only: `0` means the first attempt served the request. One
+  client request is one row and one set of rollups; never insert a row per
+  attempt. Body capture keeps the final attempt only, selected through the
+  rewriter's `attempt` metadata.
 - Hourly `key_rollups` (bucket + gateway_key) store per-key requests, errors and
   token counters. Insert them only for authenticated requests, in the same
   transaction as `rollups`. `Cleanup` deletes them with the same
@@ -391,6 +406,11 @@ GOWORK=off go test ./internal/stats -count=1
 - Route variants multiply hop entries and rewriters by inbound protocol. Build
   one route plan and register rewriters from that plan; never recompute the
   target API separately, or path, body protocol and stats can diverge.
+- Route retries require `github.com/go-gost/x` `v0.31.0` or newer: the retry
+  loop, the 32 MiB replay buffer and the `retry.max`/`retry.codes` node
+  metadata all live in x. An older tag ignores that metadata silently. The Go
+  gate still runs with `GOWORK=off` inside the parent workspace, so the tagged
+  module is what gets built and tested.
 - Admin config writes require a writable config file. With a Docker `:ro` mount,
   console edits fail; edit the host file and send `SIGHUP`.
 - First-run config and stats live in `$CUTTLE_DATA` (default `/data`). The
