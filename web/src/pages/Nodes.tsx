@@ -71,6 +71,7 @@ export function NodesPage({
               tags={
                 <Space direction="vertical" align="end" size={2}>
                   <Tag>{n.api || 'auto'}</Tag>
+                  {n.key ? <Tag color="blue">{n.key}</Tag> : null}
                   {n.backup ? <Tag color="purple">backup</Tag> : null}
                   <Switch
                     size="small"

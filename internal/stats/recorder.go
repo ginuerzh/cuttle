@@ -32,7 +32,7 @@ func NewRecorder(store *Store, facts *Facts, log logger.Logger, captureMgr *capt
 }
 
 // Record implements recorder.Recorder.
-// parseNodeName splits <route>/<provider>/<node>[/<keyIndex>].
+// parseNodeName splits <route>/<provider>/<node>[/<key>].
 func parseNodeName(name string) (route, provider, node string) {
 	parts := strings.Split(name, "/")
 	if len(parts) == 0 || parts[0] == "" {

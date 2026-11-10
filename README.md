@@ -23,8 +23,10 @@ metrics.*
   native API.
 - Matches client model names with case-insensitive globs and an explicit
   precedence order.
-- Balances or fails over across provider keys, nodes and backup nodes.
-- Locks provider keys to a write-only admin flow and masks previews in the API.
+- Balances or fails over across provider keys, nodes and backup nodes, and lets
+  a node pin one named provider key for account-level isolation.
+- Keeps provider keys write-only in the admin API and masks previews; every key
+  has a name.
 - Authenticates data-plane clients with named gateway keys and reports per-key
   usage, or stays open when no keys are configured.
 - Serves an admin console for providers, nodes, routes, entrypoints, gateway
@@ -58,7 +60,8 @@ Entrypoint ──► Route ──► Node ──► Provider model
 - A **route** contains only nodes and a selection strategy. It does not match
   anything by itself.
 - A **node** binds one provider and one provider model. `backup` marks fallback
-  nodes; `weight` controls the round-robin share.
+  nodes; `weight` controls the round-robin share. `key` optionally pins one
+  named provider key; without it the node spreads across every enabled key.
 - A node's target API is `auto` by default. The gateway matches the inbound wire
   API (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, or
   `/v1beta/models/...`) to a configured provider API and converts only when the
@@ -200,12 +203,14 @@ providers:
     responses: https://api.deepseek.com/v1
     anthropic: https://api.deepseek.com/anthropic
     keys:
-      - ${DEEPSEEK_API_KEY}
+      - name: default
+        key: ${DEEPSEEK_API_KEY}
 
 nodes:
   - name: deepseek-fast
     provider: deepseek
     model: deepseek-v4-flash
+    # key: default   # pin one named key; omit to spread across all enabled keys
     # api: auto
 
 routes:
@@ -286,9 +291,11 @@ when `admin.passwordHash` is set.
 Admin edits validate the new configuration, apply it to the data plane, and
 then atomically rewrite the config file with `0600` permissions.
 
-Provider keys are write-only through the admin API: `GET` returns only
-`keysSet` and masked `keyPreviews`. New keys can be appended and existing keys
-can be deleted; an existing key cannot be replaced in place.
+Provider keys are write-only through the admin API: `GET` returns each key's
+`name`, `enabled` flag and masked `keyPreview`, never the value. Keys are
+managed by name: append a new `{name, key}`, toggle `enabled`, delete a name, or
+delete and re-add the same name to rotate a value. Existing values are never
+returned or replaced in place.
 
 A provider's `type` and its non-`generic` API base URLs are immutable after
 creation. Delete and recreate the provider to change them, or edit the config
@@ -517,7 +524,9 @@ union.
   chat: https://api.deepseek.com/v1
   responses: https://api.deepseek.com/v1
   anthropic: https://api.deepseek.com/anthropic
-  keys: ["${DEEPSEEK_API_KEY}"]
+  keys:
+    - name: default
+      key: "${DEEPSEEK_API_KEY}"
   models:
     deepseek-v4-pro:
       disabled: true
@@ -531,7 +540,7 @@ union.
 | `responses` | no | OpenAI Responses base URL |
 | `anthropic` | no | Anthropic Messages base URL |
 | `gemini` | no | Gemini API base URL |
-| `keys` | no | API keys; expanded from the environment |
+| `keys` | no | Named keys `{name, key, enabled}`; values expand from the environment; names are unique per provider |
 | `models` | no | Local overrides, currently `disabled: true` |
 | `auth` | no | Header/prefix/key-header overrides |
 | `userAgent` | no | Overrides `gateway.userAgent` for this provider |
@@ -539,6 +548,12 @@ union.
 | `health` | no | Probe API, path, interval (default `30s`), timeout (default `5s`) |
 | `tls` | no | `serverName`, `secure` (default `true`) |
 | `enabled` | no | Set `false` to remove the provider from routing |
+
+A provider can hold several named keys, for example one per upstream account.
+Each entry is `{name, key, enabled}`; a disabled key stays configured but is
+skipped when routes compile. Without a node pin, every enabled key becomes a
+separate x node and the route selector spreads traffic and fails over across
+them. Set `node.key` to use only one of them.
 
 An empty API base URL means the provider does not serve that API. A node's
 target API is chosen as follows:
@@ -588,7 +603,9 @@ Anthropic Messages endpoints. All three use `Authorization: Bearer`:
   chat: https://openrouter.ai/api/v1
   responses: https://openrouter.ai/api/v1
   anthropic: https://openrouter.ai/api
-  keys: ["${OPENROUTER_API_KEY}"]
+  keys:
+    - name: default
+      key: "${OPENROUTER_API_KEY}"
 ```
 
 OpenRouter does not implement `/v1/messages/count_tokens`, so its routes answer
@@ -604,6 +621,7 @@ Messages to the native endpoint.
   api: auto
   backup: false
   weight: 1
+  # key: default   # optional: pin one named provider key
   enabled: true
 ```
 
@@ -613,6 +631,7 @@ Messages to the native endpoint.
 | `provider` | yes | Existing provider name |
 | `model` | yes | Exactly one provider model ID |
 | `api` | no | `auto` (default), `chat`, `responses`, `anthropic` or `gemini`; a pinned API requires the matching base URL |
+| `key` | no | Pin one provider key by name; empty spreads across every enabled key |
 | `backup` | no | Mark as a fallback node |
 | `weight` | no | Selection weight; default `1`, must be `>= 0` |
 | `enabled` | no | Set `false` to remove the node from routing |

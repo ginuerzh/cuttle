@@ -128,6 +128,7 @@ type nodePlan struct {
 	provider gwconfig.Provider
 	node     gwconfig.Node
 	targets  nodeTargets
+	keys     []gwconfig.ProviderKey
 }
 
 func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
@@ -167,7 +168,15 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 			}
 			return nil, fmt.Errorf("node %q: %w", n.Name, err)
 		}
-		plans = append(plans, nodePlan{provider: p, node: n, targets: targets})
+		keys, err := resolveNodeKeys(p, n)
+		if err != nil {
+			if errors.Is(err, errNodeKeyDisabled) {
+				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
+				continue
+			}
+			return nil, fmt.Errorf("node %q: %w", n.Name, err)
+		}
+		plans = append(plans, nodePlan{provider: p, node: n, targets: targets, keys: keys})
 	}
 
 	plan := &routePlan{
@@ -216,7 +225,7 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 			return nil, err
 		}
 		*names = append(*names, name)
-		ns, err := buildNodes(np.provider, np.node, r.Name, target, name)
+		ns, err := buildNodes(np.provider, np.node, np.keys, r.Name, target, name)
 		if err != nil {
 			return nil, fmt.Errorf("node %q: %w", np.node.Name, err)
 		}
@@ -246,7 +255,44 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 	}, log)
 }
 
-func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstreamTarget, rewriter string) ([]*xconfig.NodeConfig, error) {
+// errNodeKeyDisabled marks a node whose key set is empty, either because every
+// provider key is disabled or because the pinned key is disabled.
+var errNodeKeyDisabled = errors.New("node has no enabled key")
+
+// resolveNodeKeys returns the provider keys a node should build. A pinned node
+// uses exactly the named key; an unpinned node uses every enabled key. A
+// provider with no keys yields one keyless entry. A pinned name that does not
+// exist is a regular error; an empty usable set is errNodeKeyDisabled.
+func resolveNodeKeys(p gwconfig.Provider, n gwconfig.Node) ([]gwconfig.ProviderKey, error) {
+	if pin := strings.TrimSpace(n.Key); pin != "" {
+		for _, k := range p.Keys {
+			if strings.TrimSpace(k.Name) != pin {
+				continue
+			}
+			if !k.EnabledValue() {
+				return nil, fmt.Errorf("%w: %s is disabled", errNodeKeyDisabled, pin)
+			}
+			return []gwconfig.ProviderKey{k}, nil
+		}
+		return nil, fmt.Errorf("key %q is not configured on provider %q", pin, p.Name)
+	}
+
+	if len(p.Keys) == 0 {
+		return []gwconfig.ProviderKey{{}}, nil
+	}
+	keys := make([]gwconfig.ProviderKey, 0, len(p.Keys))
+	for _, k := range p.Keys {
+		if k.EnabledValue() {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("%w: every provider key is disabled", errNodeKeyDisabled)
+	}
+	return keys, nil
+}
+
+func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKey, route string, target upstreamTarget, rewriter string) ([]*xconfig.NodeConfig, error) {
 	auth := target.auth
 
 	u, err := url.Parse(strings.TrimSpace(target.baseURL))
@@ -280,13 +326,9 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 
 	rewrites := upstreamRewrites(target.baseURL, target.api, target.targetModel)
 
-	keys := p.Keys
-	if len(keys) == 0 {
-		keys = []string{""}
-	}
-
 	nodes := make([]*xconfig.NodeConfig, 0, len(keys))
-	for i, key := range keys {
+	for _, k := range keys {
+		key := k.Key
 		headers := make(map[string]string, len(auth.Extra)+len(p.Headers)+6)
 		// The gateway owns upstream authentication. Inbound credentials, such
 		// as the Authorization header Claude Code sends or an SDK's x-api-key,
@@ -334,7 +376,7 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 
 		name := fmt.Sprintf("%s/%s/%s", route, p.Name, n.Name)
 		if len(keys) > 1 {
-			name = fmt.Sprintf("%s/%d", name, i)
+			name = fmt.Sprintf("%s/%s", name, k.Name)
 		}
 
 		bodyRewrites := []xconfig.HTTPBodyRewriteConfig{{

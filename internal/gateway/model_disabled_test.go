@@ -48,7 +48,7 @@ func disabledModelConfig(upstreamURL string) *gwconfig.Config {
 			Name: "up",
 			Type: "generic",
 			Chat: upstreamURL,
-			Keys: []string{"sk-test"},
+			Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 			Models: map[string]gwconfig.ModelOverride{
 				"disabled-model": {Disabled: true},
 			},

@@ -31,8 +31,8 @@ func stickyConfig(ocURL, ccURL string) *config.Config {
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Entrypoints = []config.Entrypoint{{Name: "default", Match: []string{"*"}, Route: "r"}}
 	cfg.Providers = []config.Provider{
-		{Name: "oc", Type: "generic", Chat: ocURL, Keys: []string{"sk-oc"}},
-		{Name: "cc", Type: "generic", Chat: ccURL, Keys: []string{"sk-cc"}},
+		{Name: "oc", Type: "generic", Chat: ocURL, Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-oc"}}},
+		{Name: "cc", Type: "generic", Chat: ccURL, Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-cc"}}},
 	}
 	cfg.Nodes = []config.Node{
 		{Name: "oc", Provider: "oc", Model: "m", Weight: 10},

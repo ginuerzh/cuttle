@@ -85,7 +85,7 @@ func TestProviderCapabilities(t *testing.T) {
 			Type:      "opencode-go",
 			Chat:      up.srv.URL + "/v1",
 			Anthropic: up.srv.URL,
-			Keys:      []string{"sk-oc"},
+			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{
 			{Name: "n-fast", Provider: "oc", Model: "deepseek-v4-flash"},
@@ -155,7 +155,7 @@ func TestProviderCapabilities(t *testing.T) {
 			Name: "ds",
 			Type: "deepseek",
 			Chat: up.srv.URL + "/v1",
-			Keys: []string{"sk-ds"},
+			Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
@@ -192,7 +192,7 @@ func TestProviderCapabilities(t *testing.T) {
 			Chat:      up.srv.URL + "/v1",
 			Responses: up.srv.URL + "/v1",
 			Anthropic: up.srv.URL + "/anthropic",
-			Keys:      []string{"sk-ds"},
+			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
@@ -216,7 +216,7 @@ func TestProviderCapabilities(t *testing.T) {
 			Name:      "ds",
 			Type:      "deepseek",
 			Responses: up.srv.URL + "/v1",
-			Keys:      []string{"sk-ds"},
+			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
@@ -241,7 +241,7 @@ func TestProviderCapabilities(t *testing.T) {
 			Type:      "commandcode",
 			Chat:      up.srv.URL + "/provider/v1",
 			Anthropic: up.srv.URL + "/provider",
-			Keys:      []string{"sk-cc"},
+			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-cc"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
@@ -272,7 +272,7 @@ func TestProviderCapabilities(t *testing.T) {
 			Name:   "gm",
 			Type:   "generic",
 			Gemini: up.srv.URL + "/v1beta",
-			Keys:   []string{"gk"},
+			Keys:   []gwconfig.ProviderKey{{Name: "key-1", Key: "gk"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
@@ -301,7 +301,7 @@ func TestProviderCapabilities(t *testing.T) {
 			Type:      "opencode-go",
 			Chat:      up.srv.URL + "/v1",
 			Anthropic: up.srv.URL,
-			Keys:      []string{"sk-oc"},
+			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
 		}}
 		cfg.Nodes = []gwconfig.Node{{
 			Name:     "n",
@@ -365,7 +365,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Type:      "generic",
 				Responses: up.srv.URL + "/v1",
 				Chat:      up.srv.URL + "/v1",
-				Keys:      []string{"sk-gm"},
+				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-gm"}},
 			}},
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
@@ -394,7 +394,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Name: "gm",
 				Type: "generic",
 				Chat: up.srv.URL + "/v1",
-				Keys: []string{"sk-gm"},
+				Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-gm"}},
 			}},
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
@@ -436,7 +436,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Type:      "opencode-go",
 				Chat:      up.srv.URL + "/v1",
 				Anthropic: up.srv.URL,
-				Keys:      []string{"sk-oc"},
+				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
 			}},
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
@@ -477,7 +477,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Name:      "ds",
 				Type:      "deepseek",
 				Responses: up.srv.URL + "/v1",
-				Keys:      []string{"sk-ds"},
+				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-ds"}},
 			}},
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
@@ -516,7 +516,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Type:      "opencode-go",
 				Chat:      up.srv.URL + "/v1",
 				Anthropic: up.srv.URL,
-				Keys:      []string{"sk-oc"},
+				Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-oc"}},
 			}},
 			Nodes: []gwconfig.Node{{
 				Name:     "n",
@@ -556,7 +556,11 @@ func TestBuildNodesSkipsEmptyHeaderWhenKeyless(t *testing.T) {
 			Extra:  map[string]string{"X-Org": "acme"},
 		},
 	}
-	nodes, err := buildNodes(p, n, "route", target, "r/route/default/n")
+	keys, keyErr := resolveNodeKeys(p, n)
+	if keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	nodes, err := buildNodes(p, n, keys, "route", target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +577,7 @@ func TestBuildNodesSkipsEmptyHeaderWhenKeyless(t *testing.T) {
 }
 
 func TestBuildNodesExtraWinsOverKeyHeaders(t *testing.T) {
-	p := gwconfig.Provider{Name: "p", Type: "generic", Chat: "https://example.com/v1", Keys: []string{"sk-test"}}
+	p := gwconfig.Provider{Name: "p", Type: "generic", Chat: "https://example.com/v1", Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}}}
 	n := gwconfig.Node{Name: "n", Provider: "p"}
 	target := upstreamTarget{
 		baseURL:     "https://example.com/v1",
@@ -589,7 +593,11 @@ func TestBuildNodesExtraWinsOverKeyHeaders(t *testing.T) {
 			},
 		},
 	}
-	nodes, err := buildNodes(p, n, "route", target, "r/route/default/n")
+	keys, keyErr := resolveNodeKeys(p, n)
+	if keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	nodes, err := buildNodes(p, n, keys, "route", target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}

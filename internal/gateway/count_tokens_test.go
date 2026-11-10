@@ -107,7 +107,7 @@ func TestCountTokensMixedRouteEstimates(t *testing.T) {
 
 	cfg := matrixConfig(chatUp.URL, provider.Chat)
 	cfg.Providers = append(cfg.Providers, gwconfig.Provider{
-		Name: "anth", Type: "generic", Keys: []string{"k"}, Anthropic: anthUp.URL,
+		Name: "anth", Type: "generic", Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "k"}}, Anthropic: anthUp.URL,
 	})
 	cfg.Nodes = append(cfg.Nodes, gwconfig.Node{Name: "anth", Provider: "anth", Model: "deepseek-v4-flash"})
 	cfg.Routes[0].Nodes = append(cfg.Routes[0].Nodes, "anth")

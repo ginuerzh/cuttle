@@ -35,7 +35,7 @@ func autoProtocolConfig(t *testing.T, upstream string) *gwconfig.Config {
 			Chat:      upstream + "/chat",
 			Responses: upstream + "/responses",
 			Anthropic: upstream + "/anthropic",
-			Keys:      []string{"sk-test"},
+			Keys:      []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 		}},
 		Nodes:  []gwconfig.Node{{Name: "n", Provider: "ds", Model: "deepseek-v4-flash"}},
 		Routes: []gwconfig.Route{{Name: "r", Nodes: []string{"n"}}},

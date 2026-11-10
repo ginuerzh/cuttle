@@ -61,7 +61,8 @@ providers:
     responses: https://api.deepseek.com/v1
     anthropic: https://api.deepseek.com/anthropic
     keys:
-      - ${DEEPSEEK_API_KEY}
+      - name: default
+        key: "${DEEPSEEK_API_KEY}"
     health:
       api: chat
       interval: 30s
@@ -78,7 +79,9 @@ providers:
   #   chat: https://openrouter.ai/api/v1
   #   responses: https://openrouter.ai/api/v1
   #   anthropic: https://openrouter.ai/api
-  #   keys: ["${OPENROUTER_API_KEY}"]
+  #   keys:
+  #     - name: default
+  #       key: "${OPENROUTER_API_KEY}"
 
 # A node binds one provider model plus routing policy. backup: true makes it a
 # fallback; weight controls the round-robin share.
@@ -86,6 +89,7 @@ nodes:
   - name: deepseek-fast
     provider: deepseek
     model: deepseek-v4-flash
+    # key: default   # pin this node to one named provider key; omit to spread across all enabled keys
     # api: auto   # auto matches the client protocol; pin chat/responses/anthropic/gemini to force one
   - name: deepseek-strong
     provider: deepseek

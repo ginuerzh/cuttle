@@ -44,6 +44,7 @@ type QuotaWindow struct {
 // AccountUsage is one configured key's upstream usage report.
 type AccountUsage struct {
 	KeyIndex  int           `json:"-"`
+	Name      string        `json:"name,omitempty"`
 	Balance   []BalancePart `json:"balance,omitempty"`
 	Windows   []QuotaWindow `json:"windows,omitempty"`
 	Note      string        `json:"note,omitempty"`
@@ -131,7 +132,9 @@ func (p *baseProvider) Usage(ctx context.Context) ([]AccountUsage, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			accounts[i] = p.usageAccount(ctx, kind, key, i)
+			acc := p.usageAccount(ctx, kind, key.Key, i)
+			acc.Name = key.Name
+			accounts[i] = acc
 		}()
 	}
 	wg.Wait()

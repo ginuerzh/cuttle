@@ -71,7 +71,7 @@ func TestProviderModelsCachesAndRefreshes(t *testing.T) {
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model","name":"Chat Model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -121,7 +121,7 @@ func TestProviderModelsConcurrentRefreshSingleflight(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -210,7 +210,7 @@ func TestProviderModelsKeepLastGoodOnRefreshFailure(t *testing.T) {
 	var fail atomic.Bool
 	up := newModelsUpstream(t, &hits, &fail, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -239,7 +239,7 @@ func TestProviderModelsLastGoodKeepsFetchedAtHeader(t *testing.T) {
 	var fail atomic.Bool
 	up := newModelsUpstream(t, &hits, &fail, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -271,7 +271,7 @@ func TestProviderModelsInvalidatedByProviderUpdate(t *testing.T) {
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -299,7 +299,7 @@ func TestProviderModelsInvalidatedByConfigPut(t *testing.T) {
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -311,7 +311,7 @@ func TestProviderModelsInvalidatedByConfigPut(t *testing.T) {
 
 	// Replace the whole config through PUT /api/config while changing the
 	// provider's health timeout; the cached catalog must be dropped.
-	cfg := `{"providers":[{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"],"health":{"timeout":"2s"}}]}`
+	cfg := `{"providers":[{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}],"health":{"timeout":"2s"}}]}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", cfg, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("put config = %d: %s", resp.StatusCode, b)
@@ -328,7 +328,7 @@ func TestProviderModelsInvalidatedByProviderDelete(t *testing.T) {
 
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
@@ -361,7 +361,7 @@ func TestProviderModelsCacheExpires(t *testing.T) {
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -411,7 +411,7 @@ func TestProviderModelsMergeDisabledOverrides(t *testing.T) {
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model","name":"Chat Model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"],"models":{"chat-model":{"disabled":true}}}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}],"models":{"chat-model":{"disabled":true}}}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -446,7 +446,7 @@ func TestProviderModelsShowDisabledOverridesMissingFromCatalog(t *testing.T) {
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"current-model","name":"Current Model"}]}`)
 
-	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"],"models":{" removed-model ":{"disabled":true},"z-missing":{"disabled":true},"a-missing":{"disabled":true}}}`
+	body := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}],"models":{" removed-model ":{"disabled":true},"z-missing":{"disabled":true},"a-missing":{"disabled":true}}}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -544,7 +544,7 @@ func TestProviderModelsKeepCacheOnModelOverrideChange(t *testing.T) {
 	var hits atomic.Int32
 	up := newModelsUpstream(t, &hits, nil, "/v1/models", `{"data":[{"id":"chat-model"}]}`)
 
-	base := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}`
+	base := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", base, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -556,7 +556,7 @@ func TestProviderModelsKeepCacheOnModelOverrideChange(t *testing.T) {
 		t.Fatalf("upstream hits = %d, want 1", got)
 	}
 
-	disable := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"],"models":{"chat-model":{"disabled":true}}}`
+	disable := `{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}],"models":{"chat-model":{"disabled":true}}}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", disable, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("disable model = %d: %s", resp.StatusCode, b)
@@ -570,7 +570,7 @@ func TestProviderModelsKeepCacheOnModelOverrideChange(t *testing.T) {
 
 	// Enabling again through the raw config endpoint must also reuse the
 	// cached catalog.
-	enable := `{"providers":[{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":["sk-test"]}]}`
+	enable := `{"providers":[{"name":"p","type":"generic","chat":"` + up.URL + `/v1","keys":[{"name":"key-1","key":"sk-test"}]}]}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", enable, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("put config = %d: %s", resp.StatusCode, b)

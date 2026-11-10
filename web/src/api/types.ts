@@ -33,6 +33,20 @@ export interface ModelOverride {
   disabled?: boolean;
 }
 
+/** One configured provider key as the console sees it; the value is masked. */
+export interface ProviderKeyView {
+  name: string;
+  keyPreview: string;
+  enabled: boolean;
+}
+
+/** One write-only provider key in a create or full-replace payload. */
+export interface ProviderKeyInput {
+  name: string;
+  key: string;
+  enabled?: boolean;
+}
+
 export interface Provider {
   name: string;
   type: string;
@@ -44,8 +58,7 @@ export interface Provider {
   anthropic?: string;
   /** Gemini API base URL; empty when the provider does not serve it. */
   gemini?: string;
-  keysSet: number;
-  keyPreviews: string[];
+  keys: ProviderKeyView[];
   auth?: AuthConfig;
   health?: HealthConfig;
   tls?: Record<string, unknown>;
@@ -53,7 +66,6 @@ export interface Provider {
   userAgent?: string;
   /** Extra upstream request headers; auth.extra is applied after these. */
   headers?: Record<string, string>;
-  keys?: string[];
   enabled?: boolean;
   /** Per-model local overrides, keyed by model ID; preserved on every save. */
   models?: Record<string, ModelOverride>;
@@ -89,6 +101,8 @@ export interface Node {
   model: string;
   /** Upstream API; 'auto' or absent matches the client protocol. */
   api?: NodeAPI;
+  /** Optional provider key name this node pins; absent spreads across every enabled key. */
+  key?: string;
   backup?: boolean;
   weight?: number;
   enabled?: boolean;
@@ -332,7 +346,9 @@ export interface QuotaWindow {
 }
 
 export interface AccountUsage {
+  name?: string;
   keyPreview?: string;
+  enabled?: boolean;
   balance?: BalancePart[];
   windows?: QuotaWindow[];
   note?: string;

@@ -132,10 +132,7 @@ func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([
 	if err != nil {
 		return nil, err
 	}
-	key := ""
-	if len(p.cfg.Keys) > 0 {
-		key = p.cfg.Keys[0]
-	}
+	key, _ := p.cfg.FirstEnabledKey()
 	if p.CatalogKeyless() {
 		key = ""
 	}

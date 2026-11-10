@@ -126,12 +126,12 @@ git commit -m "feat(config): name provider keys and add node key pin"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `0408eb45` — `feat(config): name provider keys and add node key pin`
+- Files changed: `internal/config/config.go` (`ProviderKey`, `Node.Key`, validation, defaults, expandEnv); mechanical call-site updates in `internal/provider/{models,usage}.go`, `internal/admin/{handlers,handlers_usage,probe}.go`, `internal/gateway/build.go`; `example.yaml`; tests (`internal/config/config_test.go` and every `Keys: []string` fixture, plus the JSON `"keys":[...]` payloads in admin/gateway tests).
+- Tests/commands + results: `GOWORK=off go build ./...` PASS; `GOWORK=off go vet ./...` PASS; `GOWORK=off go test ./... -count=1` all packages PASS.
+- Review findings + fixes: no reviewer at task level (native execution). Self-review caught an intermediate bad edit that removed `ModelOverride.Disabled`; restored before the gate. Moved `nextProviderKeyName` to `internal/admin` (unexported helper cannot cross packages).
+- Deferred/limitations: the admin view is still `keysSet`/`keyPreviews` and `keyUpdates` still uses indices with auto-generated `key-N` names; Task 4 replaces both. Catalog/usage/probe still use the first key; Task 3 changes that.
 
 ---
 
@@ -220,12 +220,12 @@ git commit -m "feat(gateway): pin nodes to a named provider key"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `3ca4924b` — `feat(gateway): pin nodes to a named provider key`
+- Files changed: `internal/gateway/build.go` (`resolveNodeKeys`, `errNodeKeyDisabled`, `nodePlan.keys`, `buildNodes` takes the resolved keys and suffixes with the key name); `internal/stats/recorder.go` (comment); `internal/gateway/node_keys_test.go` (new); `internal/gateway/provider_capabilities_test.go` (`buildNodes` call sites); `internal/stats/recorder_test.go`.
+- Tests/commands + results: `GOWORK=off go test ./internal/gateway ./internal/stats -count=1` PASS; `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: the new `authUpstream` test helper collided with `auth_test.go`; renamed to `namedKeyUpstream`. `TestParseNodeNameIgnoresKeySegment` pins existing behavior, so it passed before the implementation; it is a regression guard for Review Focus item 1.
+- Deferred/limitations: per-key request attribution is still not recorded; the key name lives only in the x node name and `parseNodeName` strips it (per the spec's non-goals).
 
 ---
 
@@ -283,12 +283,12 @@ git commit -m "fix(provider): use the first enabled key and name usage accounts"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `566b090e` — `fix(provider): use the first enabled key and name usage accounts`
+- Files changed: `internal/config/config.go` (`Provider.FirstEnabledKey`); `internal/provider/models.go`; `internal/provider/usage.go` (`AccountUsage.Name`); `internal/admin/probe.go`; tests in `internal/provider/models_test.go`, `internal/provider/usage_test.go`, `internal/admin/probe_test.go`.
+- Tests/commands + results: `GOWORK=off go test ./internal/provider ./internal/admin -count=1` PASS; `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: none.
+- Deferred/limitations: the admin usage view does not yet carry `name`/`enabled`; Task 4 adds it.
 
 ---
 
@@ -372,12 +372,12 @@ git commit -m "feat(admin): manage named provider keys"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `af01e6eb` — `feat(admin): manage named provider keys`
+- Files changed: `internal/admin/handlers.go` (`providerKeyView`, `providerView.Keys`, name-based `providerKeyUpdate`/`applyProviderKeyUpdates`, `mergeProviderKeys`, `ensureKeysNotPinned`, `handleUpdateProvider`, `handlePutConfig`); `internal/admin/handlers_usage.go` (`accountUsageView.Name`/`Enabled`); `internal/admin/handlers_provider_keys_test.go` (new); `internal/admin/server_test.go` (provider view and keyUpdates tests updated).
+- Tests/commands + results: focused `go test ./internal/admin -run 'TestProviderViewReturnsNamedMaskedKeys|TestKeyUpdates|TestMergeProviderKeys|TestPutConfigPreservesProviderKeys|TestUsageViewIncludesNameAndEnabled' -count=1` PASS; `go test ./internal/admin -count=1` PASS; full `go build ./... && go vet ./... && go test ./... -count=1` PASS.
+- Review findings + fixes: two test assertions corrected — the error body escapes quotes (assert on `is used by node`) and appended keys land after surviving keys by design (assert by name).
+- Deferred/limitations: the console bundle still uses the old view shape until Task 5; provider key renaming is still delete+re-add (per the spec).
 
 ---
 
@@ -442,12 +442,12 @@ git commit -m "feat(web): manage named provider keys"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `97c4a7d4` — `feat(web): manage named provider keys`
+- Files changed: `web/src/api/types.ts` (`ProviderKeyView`, `ProviderKeyInput`, `Provider.keys`); `web/src/api/client.ts` (`ProviderInput`); `web/src/pages/presets.ts` (name-based key rows/updates, `providerPayload` drops keys); `web/src/pages/Edit.tsx` (`ProviderKeyEditor`, `ProviderForm`, `KeyField`, `AddProviderModal`); `web/src/pages/Providers.tsx`; `web/src/graph/build.ts`; `web/src/locales/en-US.ts`; tests in `presets.test.ts`, `Edit.test.tsx`, `graph/build.test.ts`, `pages/selection.test.ts`.
+- Tests/commands + results: `cd web && npx tsc --noEmit` PASS; `npm test` 236/236 PASS; `npm run build` PASS; `GOWORK=off go build ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: the `keysSet` fixtures in `graph/build.ts`, `graph/build.test.ts` and `selection.test.ts` moved to `keys`; the create modal now requires a name and a value per key.
+- Deferred/limitations: provider key renaming is still delete+re-add (per the spec); the topology label shows `keys×N`, not key names.
 
 ---
 
@@ -506,12 +506,12 @@ git commit -m "feat(web): pin a node to a provider key"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `7d88e7dd` — `feat(web): pin a node to a provider key`
+- Files changed: `web/src/api/types.ts` (`Node.key`, `AccountUsage.name`/`enabled`); `web/src/pages/presets.ts` (`nodeKeyOptions`); `web/src/pages/Edit.tsx` (`NodeForm` key select + save); `web/src/pages/Nodes.tsx` (pinned-key tag); `web/src/pages/Usage.tsx` (name/disabled tags); `web/src/locales/en-US.ts`; tests in `Edit.test.tsx`, `Usage.test.ts`, `Nodes.test.tsx` (new), `presets.test.ts`.
+- Tests/commands + results: focused `npx vitest run ...` PASS; `npx tsc --noEmit` PASS; `npm test` 240/240 PASS; `npm run build` PASS; `GOWORK=off go build ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: `NodeForm` falls back to `node.provider` when `Form.useWatch` is empty, so the key options render on the first pass and under SSR.
+- Deferred/limitations: per-key request stats are still not recorded (spec non-goal); a node pins at most one key.
 
 ---
 
@@ -555,12 +555,12 @@ git commit -m "docs: document named provider keys and node pinning"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `ba1cab32` — `docs: document named provider keys and node pinning`
+- Files changed: `README.md` (feature list, routing model, minimal config, `providers[]`, `nodes[]`, admin provider-key flow), `example.yaml` (named keys, commented `node.key`), `AGENTS.md` (config/admin/web invariants).
+- Tests/commands + results: `GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1` PASS.
+- Review findings + fixes: none.
+- Deferred/limitations: none.
 
 ---
 
@@ -624,3 +624,32 @@ git commit -m "docs(memory): record named provider keys deploy"
 - Tests/commands + results:
 - Review findings + fixes:
 - Deferred/limitations:
+
+---
+
+## Final review (2026-11-10)
+
+A fresh reviewer read the whole branch (`7bd76325..HEAD`). No Critical issues.
+Two Important issues and six Minor findings:
+
+- **Important (fixed):** the provider add-key row lost focus after every keystroke
+  because its React key included the editable name (`web/src/pages/Edit.tsx`);
+  fixed with a stable key plus a DOM regression test.
+- **Important (fixed):** the web interaction/save tests the plan asked for were
+  missing; added `web/src/pages/Edit.dom.test.tsx` (add-key payload, partial-row
+  guard, focus retention, node pin save).
+- **Minor (fixed after re-grading):** a full `keys` replacement could silently
+  re-enable a disabled key; `mergeProviderKeys` now preserves the stored
+  `enabled` unless the incoming entry sets it.
+- **Minor (fixed after re-grading):** `mergeProviderKeys`/`ensureKeysNotPinned`
+  now trim names consistently.
+- **Minor (fixed):** `AGENTS.md` still said the x node suffix is `<keyIndex>`;
+  updated to `<key>`.
+- **Minor (deferred):** `NodeForm` does not clear `key` when the provider
+  changes; the save then fails with a clear 400.
+- **Minor (deferred):** README does not document the key-name character rules or
+  the old-scalar-config rejection.
+
+Verification after the fix pass: `GOWORK=off go build ./... && go vet ./... &&
+go test ./... -count=1` green; `cd web && npx tsc --noEmit && npm test` (244/244)
+and `npm run build` green.

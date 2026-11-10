@@ -33,7 +33,9 @@ providers:
   - name: deepseek
     type: generic
     chat: https://api.deepseek.com/v1
-    keys: ["${TEST_KEY}"]
+    keys:
+      - name: default
+        key: "${TEST_KEY}"
     auth:
       header: Authorization
       prefix: "Bearer "
@@ -48,11 +50,182 @@ routes:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := c.Providers[0].Keys[0]; got != "sk-test" {
+	if got := c.Providers[0].Keys[0].Key; got != "sk-test" {
 		t.Fatalf("key = %q, want sk-test", got)
 	}
 	if err := Validate(c); err != nil {
 		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestProviderKeysNamedShape(t *testing.T) {
+	t.Setenv("TEST_KEY", "sk-test")
+
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: "127.0.0.1:0"
+entrypoints:
+  - name: default
+    match: ["*"]
+    route: default
+providers:
+  - name: deepseek
+    type: generic
+    chat: https://api.deepseek.com/v1
+    keys:
+      - name: account-a
+        key: "${TEST_KEY}"
+nodes:
+  - name: deepseek
+    provider: deepseek
+    model: deepseek-chat
+routes:
+  - name: default
+    nodes: [deepseek]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Providers[0].Keys) != 1 {
+		t.Fatalf("keys = %d, want 1", len(c.Providers[0].Keys))
+	}
+	k := c.Providers[0].Keys[0]
+	if k.Name != "account-a" || k.Key != "sk-test" {
+		t.Fatalf("key = %+v, want name account-a / key sk-test", k)
+	}
+	if !k.EnabledValue() {
+		t.Fatal("EnabledValue() = false, want true")
+	}
+}
+
+func TestProviderKeysScalarRejected(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+providers:
+  - name: deepseek
+    type: generic
+    chat: https://api.deepseek.com/v1
+    keys: ["sk-a"]
+`))
+	if err == nil {
+		t.Fatal("scalar keys accepted, want a parse error")
+	}
+}
+
+func TestProviderKeyNameValidation(t *testing.T) {
+	base := func(keys []ProviderKey) *Config {
+		return &Config{
+			Gateway:   Gateway{Listen: ":8787"},
+			Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1", Keys: keys}},
+			Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
+			Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
+		}
+	}
+	cases := []struct {
+		name string
+		keys []ProviderKey
+	}{
+		{"empty name", []ProviderKey{{Name: "", Key: "sk-a"}}},
+		{"blank name", []ProviderKey{{Name: "   ", Key: "sk-a"}}},
+		{"too long", []ProviderKey{{Name: strings.Repeat("a", 65), Key: "sk-a"}}},
+		{"duplicate name", []ProviderKey{{Name: "a", Key: "sk-a"}, {Name: "a", Key: "sk-b"}}},
+		{"slash name", []ProviderKey{{Name: "a/b", Key: "sk-a"}}},
+		{"dollar name", []ProviderKey{{Name: "a$b", Key: "sk-a"}}},
+		{"control name", []ProviderKey{{Name: "a\nb", Key: "sk-a"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(base(tc.keys))
+			if err == nil {
+				t.Fatalf("%+v should not validate", tc.keys)
+			}
+			if !strings.Contains(err.Error(), `provider "p"`) {
+				t.Fatalf("err = %v, want it to name the provider", err)
+			}
+		})
+	}
+}
+
+func TestProviderKeyValueValidation(t *testing.T) {
+	base := func(key string) *Config {
+		return &Config{
+			Gateway:   Gateway{Listen: ":8787"},
+			Providers: []Provider{{Name: "p", Type: "generic", Chat: "https://a.example/v1", Keys: []ProviderKey{{Name: "a", Key: key}}}},
+			Nodes:     []Node{{Name: "n", Provider: "p", Model: "m1"}},
+			Routes:    []Route{{Name: "r", Nodes: []string{"n"}}},
+		}
+	}
+	cases := []struct {
+		name string
+		key  string
+	}{
+		{"empty key", ""},
+		{"blank key", "   "},
+		{"dollar key", "sk-$A"},
+		{"control key", "sk-a\nb"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := Validate(base(tc.key)); err == nil {
+				t.Fatalf("key %q should not validate", tc.key)
+			}
+		})
+	}
+}
+
+func TestProviderKeyEnabledValue(t *testing.T) {
+	if !(ProviderKey{Name: "a", Key: "sk-a"}).EnabledValue() {
+		t.Fatal("nil enabled should default to true")
+	}
+	disabled := false
+	if (ProviderKey{Name: "a", Key: "sk-a", Enabled: &disabled}).EnabledValue() {
+		t.Fatal("explicit false should be disabled")
+	}
+}
+
+func TestNodeKeyPinResolves(t *testing.T) {
+	c := &Config{
+		Gateway: Gateway{Listen: ":8787"},
+		Providers: []Provider{{
+			Name: "p", Type: "generic", Chat: "https://a.example/v1",
+			Keys: []ProviderKey{{Name: "account-a", Key: "sk-a"}},
+		}},
+		Nodes:  []Node{{Name: "n", Provider: "p", Model: "m1", Key: "account-a"}},
+		Routes: []Route{{Name: "r", Nodes: []string{"n"}}},
+	}
+	if err := Validate(c); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestNodeKeyPinUnknownFails(t *testing.T) {
+	c := &Config{
+		Gateway: Gateway{Listen: ":8787"},
+		Providers: []Provider{{
+			Name: "p", Type: "generic", Chat: "https://a.example/v1",
+			Keys: []ProviderKey{{Name: "account-a", Key: "sk-a"}},
+		}},
+		Nodes:  []Node{{Name: "n", Provider: "p", Model: "m1", Key: "nope"}},
+		Routes: []Route{{Name: "r", Nodes: []string{"n"}}},
+	}
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("err = %v, want it to name the unknown key", err)
+	}
+}
+
+func TestNodeKeyPinOtherProviderFails(t *testing.T) {
+	c := &Config{
+		Gateway: Gateway{Listen: ":8787"},
+		Providers: []Provider{
+			{Name: "a", Type: "generic", Chat: "https://a.example/v1", Keys: []ProviderKey{{Name: "account-a", Key: "sk-a"}}},
+			{Name: "b", Type: "generic", Chat: "https://b.example/v1", Keys: []ProviderKey{{Name: "account-b", Key: "sk-b"}}},
+		},
+		Nodes:  []Node{{Name: "n", Provider: "b", Model: "m1", Key: "account-a"}},
+		Routes: []Route{{Name: "r", Nodes: []string{"n"}}},
+	}
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "account-a") {
+		t.Fatalf("err = %v, want it to reject a pin from another provider", err)
 	}
 }
 
@@ -384,7 +557,9 @@ providers:
   - name: a
     type: generic
     chat: https://a.example/v1
-    keys: ["${THIS_ENV_DOES_NOT_EXIST}"]
+    keys:
+      - name: default
+        key: "${THIS_ENV_DOES_NOT_EXIST}"
 nodes:
   - name: n
     provider: a

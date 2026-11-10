@@ -29,6 +29,29 @@ func findModel(models []Model, id string) (Model, bool) {
 	return Model{}, false
 }
 
+func TestFetchModelsUsesFirstEnabledKey(t *testing.T) {
+	disabled := false
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-b" {
+			t.Errorf("Authorization = %q, want Bearer sk-b", got)
+		}
+		fmt.Fprint(w, `{"data":[{"id":"chat-model"}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "p",
+		Type: "generic",
+		Chat: srv.URL + "/v1",
+		Keys: []config.ProviderKey{
+			{Name: "a", Key: "sk-a", Enabled: &disabled},
+			{Name: "b", Key: "sk-b"},
+		},
+	})
+
+	if _, err := p.Models(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestModelsListShapes(t *testing.T) {
 	t.Run("openai", func(t *testing.T) {
 		srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +67,7 @@ func TestModelsListShapes(t *testing.T) {
 			Name: "p",
 			Type: "generic",
 			Chat: srv.URL + "/v1",
-			Keys: []string{"sk-test"},
+			Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 		})
 
 		models, err := p.Models(context.Background())
@@ -76,7 +99,7 @@ func TestModelsListShapes(t *testing.T) {
 			Name:      "p",
 			Type:      "generic",
 			Anthropic: srv.URL,
-			Keys:      []string{"sk-test"},
+			Keys:      []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 		})
 
 		models, err := p.Models(context.Background())
@@ -109,7 +132,7 @@ func TestModelsGeminiNamesAreStripped(t *testing.T) {
 		Name:   "p",
 		Type:   "generic",
 		Gemini: srv.URL + "/v1beta",
-		Keys:   []string{"sk-test"},
+		Keys:   []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	})
 
 	models, err := p.Models(context.Background())
@@ -277,7 +300,7 @@ func TestModelsOpenRouterMetadata(t *testing.T) {
 		Chat:      srv.URL + "/api/v1",
 		Responses: srv.URL + "/api/v1",
 		Anthropic: srv.URL + "/api",
-		Keys:      []string{"sk-or-test"},
+		Keys:      []config.ProviderKey{{Name: "key-1", Key: "sk-or-test"}},
 	})
 
 	models, err := p.Models(context.Background())
@@ -399,7 +422,7 @@ func TestModelsAppliesKeyHeadersWithKey(t *testing.T) {
 		Name: "p",
 		Type: "generic",
 		Chat: srv.URL + "/v1",
-		Keys: []string{"sk-test"},
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 		Auth: config.Auth{KeyHeaders: []config.KeyHeader{{Header: "X-Extra", Prefix: "Key "}}},
 	})
 
@@ -488,7 +511,7 @@ func TestModelsOpenCodeCatalogIsKeyless(t *testing.T) {
 		Name: "opencode-go",
 		Type: "opencode-go",
 		Chat: srv.URL + "/v1",
-		Keys: []string{"invalid-key"},
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "invalid-key"}},
 		Auth: config.Auth{Extra: map[string]string{"X-Org": "acme"}},
 	})
 
@@ -516,7 +539,7 @@ func TestModelsOpenCodeKeylessHonorsExplicitAuthHeader(t *testing.T) {
 		Name: "opencode-go",
 		Type: "opencode-go",
 		Chat: srv.URL + "/v1",
-		Keys: []string{"invalid-key"},
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "invalid-key"}},
 		Auth: config.Auth{Header: "X-Custom", Prefix: "Token "},
 	})
 

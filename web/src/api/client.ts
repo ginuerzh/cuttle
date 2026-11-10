@@ -1,4 +1,4 @@
-import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
+import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -117,11 +117,16 @@ export function getPresets(): Promise<Preset[]> {
   return request<Preset[]>('GET', '/api/presets');
 }
 
-export function createProvider(p: Partial<Provider>): Promise<void> {
+/** Provider create/update payload; keys are write-only inputs, never the view. */
+export interface ProviderInput extends Omit<Partial<Provider>, 'keys'> {
+  keys?: ProviderKeyInput[];
+}
+
+export function createProvider(p: ProviderInput): Promise<void> {
   return request<void>('POST', '/api/providers', p);
 }
 
-export function updateProvider(name: string, p: Partial<Provider>): Promise<void> {
+export function updateProvider(name: string, p: ProviderInput): Promise<void> {
   return request<void>('PUT', `/api/providers/${encodeURIComponent(name)}`, p);
 }
 

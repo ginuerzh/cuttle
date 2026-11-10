@@ -8,8 +8,8 @@ const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'
     { name: 'fast', match: ['gpt-4.5*'], route: 'fast' },
   ],
   providers: [
-    { name: 'p1', type: 'deepseek', chat: 'https://a/v1', keysSet: 1, keyPreviews: [] },
-    { name: 'p2', type: 'generic', anthropic: 'https://b', keysSet: 2, keyPreviews: [] },
+    { name: 'p1', type: 'deepseek', chat: 'https://a/v1', keys: [] },
+    { name: 'p2', type: 'generic', anthropic: 'https://b', keys: [] },
   ],
   nodes: [
     { name: 'p1', provider: 'p1', model: 'm1' },

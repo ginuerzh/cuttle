@@ -30,7 +30,7 @@ func testConfig(upstreamURL string) *gwconfig.Config {
 			Name: "up",
 			Type: "generic",
 			Chat: upstreamURL,
-			Keys: []string{"sk-test"},
+			Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 		}},
 		Nodes: []gwconfig.Node{{
 			Name:     "up",
