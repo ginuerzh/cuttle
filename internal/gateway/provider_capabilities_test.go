@@ -560,7 +560,7 @@ func TestBuildNodesSkipsEmptyHeaderWhenKeyless(t *testing.T) {
 	if keyErr != nil {
 		t.Fatal(keyErr)
 	}
-	nodes, err := buildNodes(p, n, keys, "route", target, "r/route/default/n")
+	nodes, err := buildNodes(p, n, keys, gwconfig.Route{ID: "route"}, target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +597,7 @@ func TestBuildNodesExtraWinsOverKeyHeaders(t *testing.T) {
 	if keyErr != nil {
 		t.Fatal(keyErr)
 	}
-	nodes, err := buildNodes(p, n, keys, "route", target, "r/route/default/n")
+	nodes, err := buildNodes(p, n, keys, gwconfig.Route{ID: "route"}, target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -140,7 +140,7 @@ func TestBuildNodesSuffixUsesKeyID(t *testing.T) {
 		{ID: "pk_0000000002", Name: "account-b", Key: "sk-b"},
 	}
 
-	nodes, err := buildNodes(p, n, keys, "r_0000000001", target, "r/r_0000000001/default/n_0000000001")
+	nodes, err := buildNodes(p, n, keys, gwconfig.Route{ID: "r_0000000001", Name: "route-display"}, target, "r/r_0000000001/default/n_0000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestBuildNodesSingleKeyHasNoSuffix(t *testing.T) {
 		auth:        gwconfig.Auth{Header: "Authorization", Prefix: "Bearer "},
 	}
 
-	nodes, err := buildNodes(p, n, []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "account-a", Key: "sk-a"}}, "r_0000000001", target, "r/r_0000000001/default/n_0000000001")
+	nodes, err := buildNodes(p, n, []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "account-a", Key: "sk-a"}}, gwconfig.Route{ID: "r_0000000001", Name: "route-display"}, target, "r/r_0000000001/default/n_0000000001")
 	if err != nil {
 		t.Fatal(err)
 	}

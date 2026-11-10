@@ -186,7 +186,11 @@ func TestStatsRecordsStreamingUsage(t *testing.T) {
 	}
 }
 
-func TestAuthAttributesKeyID(t *testing.T) {
+// authenticatedRow starts a gateway with one key, sends one authenticated
+// request through it and returns the recorded row.
+func authenticatedRow(t *testing.T, key config.GatewayKey) stats.Request {
+	t.Helper()
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
@@ -194,7 +198,7 @@ func TestAuthAttributesKeyID(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := statsConfig(t, upstream.URL)
-	cfg.Gateway.Keys = []config.GatewayKey{{ID: "gk_0000000001", Name: "alpha", Key: "secret-key"}}
+	cfg.Gateway.Keys = []config.GatewayKey{key}
 	gw, err := gateway.New(cfg, xlogger.Nop())
 	if err != nil {
 		t.Fatal(err)
@@ -207,17 +211,36 @@ func TestAuthAttributesKeyID(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+"/v1/chat/completions",
 		strings.NewReader(`{"model":"gpt-4.5","messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer secret-key")
+	req.Header.Set("Authorization", "Bearer "+key.Key)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	return waitRow(t, gw)
+}
 
-	row := waitRow(t, gw)
+// TestAuthAttributesKeyID proves an authenticated request is attributed to the
+// gateway key id.
+func TestAuthAttributesKeyID(t *testing.T) {
+	row := authenticatedRow(t, config.GatewayKey{ID: "gk_0000000001", Name: "alpha", Key: "secret-key"})
 	if row.GatewayKey != "gk_0000000001" {
 		t.Fatalf("gateway key = %q, want the key id gk_0000000001 (row %+v)", row.GatewayKey, row)
+	}
+}
+
+// TestAuthAttributesKeyNameWithoutID covers the transition name fallback: a key
+// written by the admin API has no id until Tasks 4-6 mint one, and an
+// authenticated request must stay distinguishable from an unauthenticated one
+// in requests.gateway_key. Task 7 removes the fallback with mandatory ids.
+func TestAuthAttributesKeyNameWithoutID(t *testing.T) {
+	row := authenticatedRow(t, config.GatewayKey{Name: "alpha", Key: "secret-key"})
+	if row.GatewayKey != "alpha" {
+		t.Fatalf("gateway key = %q, want the key name alpha while the key has no id (row %+v)", row.GatewayKey, row)
 	}
 }
 

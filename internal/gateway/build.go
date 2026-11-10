@@ -139,6 +139,18 @@ func routePlanKey(r gwconfig.Route) string {
 	return "name:" + r.Name
 }
 
+// entityRef returns the identifier emitted for an entity in a compiled name:
+// its id when the config carries one, otherwise its display name. A config
+// written by the admin API stays id-less until Tasks 4-6 mint ids, and in that
+// window two distinct entities must not collapse onto one x node name or onto
+// one rewriter engine. Task 7 removes this fallback together with routePlanKey.
+func entityRef(id, name string) string {
+	if id != "" {
+		return id
+	}
+	return name
+}
+
 func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
 	var plans []nodePlan
 	for _, ref := range r.Nodes {
@@ -212,6 +224,7 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 // variant; otherwise every node uses its per-protocol target when it has one.
 func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans []nodePlan, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager, names *[]string) (hop.Hop, error) {
 	variant := variantKey(inbound)
+	routeRef := entityRef(r.ID, r.Name)
 	var nodes []*xconfig.NodeConfig
 	for _, np := range plans {
 		target := np.targets.defaultTarget
@@ -220,12 +233,15 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 				target = t
 			}
 		}
-		name := buildRewriterName(build, r.ID, variant, np.node.ID)
+		// One engine per node and variant: a shared name would be
+		// unregistered and replaced by the next node's engine, so every node
+		// of the route would run the last node's target model.
+		name := buildRewriterName(build, routeRef, variant, entityRef(np.node.ID, np.node.Name))
 		if err := registerRewriter(name, np.provider, np.node, target, r.ID, facts, captureMgr, log); err != nil {
 			return nil, err
 		}
 		*names = append(*names, name)
-		ns, err := buildNodes(np.provider, np.node, np.keys, r.ID, target, name)
+		ns, err := buildNodes(np.provider, np.node, np.keys, r, target, name)
 		if err != nil {
 			return nil, fmt.Errorf("node %q: %w", np.node.Name, err)
 		}
@@ -311,10 +327,12 @@ func resolveNodeKeys(p gwconfig.Provider, n gwconfig.Node) ([]gwconfig.ProviderK
 	return keys, nil
 }
 
-// buildNodes compiles the x nodes for one provider node. routeID, the provider
-// id and the node id (plus the key id when the node spreads across several
-// keys) form the x node name that stats parses back into entity ids.
-func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKey, routeID string, target upstreamTarget, rewriter string) ([]*xconfig.NodeConfig, error) {
+// buildNodes compiles the x nodes for one provider node. The route, provider
+// and node identifiers (plus the key identifier when the node spreads across
+// several keys) form the x node name that stats parses back into entities. Ids
+// are used when the config has them and display names otherwise until Task 7;
+// the node metadata always keeps the ids for route health.
+func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKey, route gwconfig.Route, target upstreamTarget, rewriter string) ([]*xconfig.NodeConfig, error) {
 	auth := target.auth
 
 	u, err := url.Parse(strings.TrimSpace(target.baseURL))
@@ -396,9 +414,9 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKe
 		// over auth.Extra as well.
 		headers["Accept-Encoding"] = ""
 
-		name := fmt.Sprintf("%s/%s/%s", routeID, p.ID, n.ID)
+		name := fmt.Sprintf("%s/%s/%s", entityRef(route.ID, route.Name), entityRef(p.ID, p.Name), entityRef(n.ID, n.Name))
 		if len(keys) > 1 {
-			name = fmt.Sprintf("%s/%s", name, k.ID)
+			name = fmt.Sprintf("%s/%s", name, entityRef(k.ID, k.Name))
 		}
 
 		bodyRewrites := []xconfig.HTTPBodyRewriteConfig{{
@@ -416,7 +434,7 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, keys []gwconfig.ProviderKe
 		// Keep the operator-facing node id and route id beside the internal
 		// route/provider/node name used by x.
 		metadata["configNode"] = n.ID
-		metadata["configRoute"] = routeID
+		metadata["configRoute"] = route.ID
 		if n.Weight > 0 {
 			metadata["weight"] = n.Weight
 		}
@@ -491,7 +509,9 @@ func variantKey(api provider.API) string {
 // rewriterName returns the registry key for a route-scoped node engine. The
 // same node can select different target APIs in different routes and protocol
 // variants, so engines cannot be shared. Ids forbid '/', and the variant is one
-// of a fixed set, so the key cannot collide.
+// of a fixed set, so an id-based key cannot collide. Until Task 7 an id-less
+// entity contributes its display name instead; names are unique per kind, so
+// every node of a route still gets its own engine.
 func rewriterName(route, variant, node string) string {
 	return "r/" + route + "/" + variant + "/" + node
 }
