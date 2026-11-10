@@ -101,6 +101,7 @@ export function RequestDetail({ request }: { request: RequestRow }) {
           </Typography.Text>
         </Descriptions.Item>
         <Descriptions.Item label={t('耗时')}>{`${request.durationMs} ms`}</Descriptions.Item>
+        <Descriptions.Item label="retries">{request.retries ?? 0}</Descriptions.Item>
         <Descriptions.Item label="tokens">
           {t('入 {input} · 出 {output} · 缓存 {cached}', {
             input: formatCount(request.inputTokens),

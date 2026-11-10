@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RequestRow } from '../api/types';
-import { setActiveLang } from '../i18n';
-import { errorClassLabel, gatewayKeyLabel, statusLabel } from './Requests';
+import { setActiveLang, translateFor } from '../i18n';
+import { errorClassLabel, gatewayKeyLabel, retryLabel, statusLabel } from './Requests';
 
 setActiveLang('zh-CN');
 
@@ -42,5 +42,12 @@ describe('request error labels', () => {
   it('labels the gateway key only when present', () => {
     expect(gatewayKeyLabel(base)).toBe('');
     expect(gatewayKeyLabel({ ...base, gatewayKey: 'claude-code' })).toBe('key:claude-code');
+  });
+
+  it('labels retried sessions only when retries happened', () => {
+    expect(retryLabel(base)).toBe('');
+    expect(retryLabel({ ...base, retries: 0 })).toBe('');
+    expect(retryLabel({ ...base, retries: 2 })).toBe('重试 2 次');
+    expect(translateFor('en-US', '重试 {count} 次', { count: 2 })).toBe('retried 2×');
   });
 });

@@ -20,10 +20,10 @@ import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
 import { formatCount } from '../format';
-import { errorClassLabel, errorClassText, gatewayKeyLabel, statusLabel } from '../requestLabels';
+import { errorClassLabel, errorClassText, gatewayKeyLabel, retryLabel, statusLabel } from '../requestLabels';
 import { formatDateTime } from '../time';
 
-export { errorClassLabel, gatewayKeyLabel, statusLabel };
+export { errorClassLabel, gatewayKeyLabel, retryLabel, statusLabel };
 
 const RANGES = [
   { label: '15 分钟', value: 15 * 60_000 },
@@ -224,6 +224,7 @@ export function RequestsPage() {
         const failed = r.status >= 400 || !!r.error;
         const classLabel = errorClassLabel(r);
         const keyLabel = gatewayKeyLabel(r);
+        const retry = retryLabel(r);
         return (
           <ListCard
             key={r.requestId}
@@ -233,6 +234,7 @@ export function RequestsPage() {
               <Space size={4}>
                 {r.truncated ? <Tag color="volcano">{t('已截断')}</Tag> : null}
                 {r.hasCapture ? <Tag color="blue">{t('已捕获')}</Tag> : null}
+                {retry ? <Tag color="geekblue">{retry}</Tag> : null}
                 <Tag color={failed ? 'red' : r.status >= 300 ? 'orange' : 'green'}>{statusLabel(r)}</Tag>
               </Space>
             }

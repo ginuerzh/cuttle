@@ -37,3 +37,9 @@ export function errorClassLabel(r: RequestRow): string {
 export function gatewayKeyLabel(row: RequestRow): string {
   return row.gatewayKey ? `key:${row.gatewayKey}` : '';
 }
+
+export function retryLabel(row: RequestRow): string {
+  const count = row.retries ?? 0;
+  if (count <= 0) return '';
+  return t('重试 {count} 次', { count });
+}

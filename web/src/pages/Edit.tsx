@@ -675,6 +675,8 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
         strategy: v.strategy,
         maxFails: v.maxFails,
         failTimeout: v.failTimeout,
+        retries: v.retries,
+        retryCodes: v.retryCodes,
       });
       message.success(tr('已保存'));
       await onSaved();
@@ -707,6 +709,8 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
         strategy: route.strategy ?? 'round',
         maxFails: route.maxFails ?? 1,
         failTimeout: route.failTimeout ?? '10s',
+        retries: route.retries ?? 0,
+        retryCodes: route.retryCodes ?? '429,5xx',
         nodes: route.nodes,
       }}
     >
@@ -734,6 +738,22 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
           style={{ marginBottom: 8 }}
         >
           <Input size="small" placeholder="10s" style={{ width: 110 }} />
+        </Form.Item>
+        <Form.Item
+          name="retries"
+          label="retries"
+          tooltip={tr('可重试响应的额外尝试次数。默认 0（不重试），最多 10。')}
+          style={{ marginBottom: 8 }}
+        >
+          <InputNumber min={0} max={10} size="small" style={{ width: 90 }} />
+        </Form.Item>
+        <Form.Item
+          name="retryCodes"
+          label="retryCodes"
+          tooltip={tr('触发重试的状态码，逗号分隔，支持 5xx。默认 429,5xx。')}
+          style={{ marginBottom: 8 }}
+        >
+          <Input size="small" placeholder="429,5xx" style={{ width: 130 }} />
         </Form.Item>
       </Space>
       <Form.Item
@@ -1443,6 +1463,8 @@ export function AddRouteModal({
         strategy: v.strategy,
         maxFails: v.maxFails,
         failTimeout: v.failTimeout,
+        retries: v.retries,
+        retryCodes: v.retryCodes,
       });
       form.resetFields();
       await onDone();
@@ -1468,6 +1490,24 @@ export function AddRouteModal({
           </Form.Item>
           <Form.Item name="failTimeout" label="failTimeout" initialValue="10s" style={{ marginBottom: 8 }}>
             <Input size="small" placeholder="10s" style={{ width: 110 }} />
+          </Form.Item>
+          <Form.Item
+            name="retries"
+            label="retries"
+            tooltip={tr('可重试响应的额外尝试次数。默认 0（不重试），最多 10。')}
+            initialValue={0}
+            style={{ marginBottom: 8 }}
+          >
+            <InputNumber min={0} max={10} size="small" style={{ width: 90 }} />
+          </Form.Item>
+          <Form.Item
+            name="retryCodes"
+            label="retryCodes"
+            tooltip={tr('触发重试的状态码，逗号分隔，支持 5xx。默认 429,5xx。')}
+            initialValue="429,5xx"
+            style={{ marginBottom: 8 }}
+          >
+            <Input size="small" placeholder="429,5xx" style={{ width: 130 }} />
           </Form.Item>
         </Space>
         <Form.Item

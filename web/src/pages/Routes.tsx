@@ -59,11 +59,13 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
       {config.routes.length === 0 ? <Empty /> : config.routes.map((r, i) => {
         const h = healthByName.get(r.name);
         const dead = h?.nodes.filter((n) => n.dead).length ?? 0;
+        const retries = r.retries ?? 0;
+        const retrySuffix = retries > 0 ? ` · retries ${retries}` : '';
         return (
           <ListCard
             key={r.name}
             title={`${i + 1}. ${r.name}`}
-            subtitle={`${r.strategy || 'round'} · maxFails ${r.maxFails ?? 1} / ${r.failTimeout ?? '10s'} · ${(r.nodes ?? []).join(', ') || 'no nodes'}`}
+            subtitle={`${r.strategy || 'round'} · maxFails ${r.maxFails ?? 1} / ${r.failTimeout ?? '10s'} · ${(r.nodes ?? []).join(', ') || 'no nodes'}${retrySuffix}`}
             tags={h ? (
               <Tag color={dead > 0 ? 'red' : 'green'}>
                 {dead > 0 ? t('{count} dead', { count: dead }) : t('正常')}

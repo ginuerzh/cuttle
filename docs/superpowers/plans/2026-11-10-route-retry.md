@@ -722,16 +722,16 @@ git commit -m "feat(capture): keep the final retry attempt only"
 - Consumes: `Route.retries`/`route.retryCodes`, `RequestRow.retries` (Tasks 5 and 7).
 - Produces: `retryLabel(row: RequestRow): string`; UI fields and tags.
 
-- [ ] **Step 1: Write the failing label test**
+- [x] **Step 1: Write the failing label test**
 
 In `Requests.test.ts`, add a case for `retryLabel`: `retryLabel({...base, retries: 0}) === ''` and `retryLabel({...base, retries: 2}) === '重试 2 次'` (import `retryLabel` from `./Requests`; re-export it there like the other helpers).
 
-- [ ] **Step 2: Run the web test to verify it fails**
+- [x] **Step 2: Run the web test to verify it fails**
 
 Run: `cd web && npm test -- --run src/pages/Requests.test.ts`
 Expected: FAIL (missing export).
 
-- [ ] **Step 3: Implement the types and helpers**
+- [x] **Step 3: Implement the types and helpers**
 
 - `types.ts`: add `retries?: number; retryCodes?: string;` to `Route` and `retries?: number;` to `RequestRow`.
 - `requestLabels.ts`: add `retryLabel(row)` returning `''` when `(row.retries ?? 0) <= 0`, else `t('重试 {count} 次', { count: row.retries })`.
@@ -741,12 +741,12 @@ Expected: FAIL (missing export).
 - `Routes.tsx`: append ` · retries N` to the subtitle only when `(r.retries ?? 0) > 0`.
 - `locales/en-US.ts`: add `'重试 {count} 次': 'retried {count}×'`.
 
-- [ ] **Step 4: Run the web gate**
+- [x] **Step 4: Run the web gate**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS. Rebuilding writes `internal/admin/dist` (git-ignored).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/api/types.ts web/src/requestLabels.ts web/src/pages/Requests.tsx web/src/components/RequestDetail.tsx web/src/pages/Edit.tsx web/src/pages/Routes.tsx web/src/locales/en-US.ts web/src/pages/Requests.test.ts
@@ -754,12 +754,12 @@ git commit -m "feat(web): show route retries and retried sessions"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `cuttle` `PENDING_SHA` `feat(web): show route retries and retried sessions` on `feat/route-retry`; the SHA is recorded in a follow-up `docs(plan)` commit because a commit cannot contain its own hash
+- Files changed: `web/src/api/types.ts`, `web/src/requestLabels.ts`, `web/src/pages/Requests.tsx`, `web/src/pages/Requests.test.ts`, `web/src/components/RequestDetail.tsx`, `web/src/pages/Edit.tsx`, `web/src/pages/Edit.test.tsx`, `web/src/pages/Routes.tsx`, `web/src/locales/en-US.ts`, `docs/superpowers/plans/2026-11-10-route-retry.md`
+- Tests/commands and results: RED first — `cd web && npm test -- --run src/pages/Requests.test.ts` failed exactly as expected (`retryLabel is not a function`, 1 failed | 4 passed) because the export did not exist. GREEN after the implementation — `npm test -- --run src/pages/Requests.test.ts src/pages/Edit.test.tsx` → 2 files, 11 tests passed. Full web gate: `npm test` → 38 files / 258 tests passed; `npx tsc --noEmit` → no output; `npm run build` → built in 8.9s, wrote `internal/admin/dist/assets/index-CrMfhtz0.js` (git-ignored). Go side after the bundle rebuild: `GOWORK=off go build ./...` → OK, `GOWORK=off go vet ./...` → clean.
+- Review findings and fixes: (1) `retryLabel` reads `row.retries` once into `count` instead of repeating `row.retries ?? 0`; the brief's literal `{ count: row.retries }` does not type-check because the guard `(row.retries ?? 0) <= 0` cannot narrow the optional field. (2) `Routes.tsx` builds a local `retrySuffix` from `r.retries ?? 0`; interpolating `r.retries` inside the template literal would emit `undefined` if the guard expression were ever changed to one TS does not narrow. (3) The detail row keeps the raw label `retries`, matching the untranslated `route`/`provider`/`tokens` rows around it; the only new translatable strings are the tag plus two field tooltips, and all three have an `en-US` entry. (4) Beyond the brief, `Edit.test.tsx` now renders `RouteForm` through `renderToStaticMarkup` to pin the defaults (`retries` 0, `retryCodes` `429,5xx`) and stored values (`retries` 2, `retryCodes` `429,502`); the `value="0"` assertion is unambiguous because `maxFails` defaults to 1. (5) The `Requests.test.ts` case also asserts `translateFor('en-US', '重试 {count} 次', { count: 2 }) === 'retried 2×'`, so the locale entry is verified, not just present. (6) `retries` is submitted as an explicit `0`; the backend `omitempty` then drops it from the read-back JSON, which the UI treats as 0 — consistent with the "missing means 0" constraint. (7) UI `InputNumber` max 10 matches the config validation bound `r.Retries < 0 || r.Retries > 10`.
+- Deferred items/limitations: `AddRouteModal` is not rendered by any test (the file has no SSR test for it), so its duplicated fields are covered only by `tsc` and by reading the diff; the create path submits the same names as the drawer. There is no component-level test for the Sessions tag or the detail row — only `retryLabel` is unit-tested, as the brief specified. No browser/visual verification exists in this repository; UI behavior is verified only by Vitest SSR markup, `tsc` and the production build. The monitor's error list in `App.tsx` still shows only status and class and does not mark repeated attempts; the monitor detail panel reuses `RequestDetail` and therefore gains the new row automatically.
 
 ---
 

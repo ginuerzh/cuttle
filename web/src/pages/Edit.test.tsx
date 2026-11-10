@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AddButtons, NodeForm, ProviderForm } from './Edit';
+import { AddButtons, NodeForm, ProviderForm, RouteForm } from './Edit';
 import { setActiveLang } from '../i18n';
-import type { ConfigResponse, Node, Provider } from '../api/types';
+import type { ConfigResponse, Node, Provider, Route } from '../api/types';
 
 beforeEach(() => setActiveLang('zh-CN'));
 
@@ -70,5 +70,25 @@ describe('NodeForm', () => {
     const html = renderToStaticMarkup(<NodeForm node={node} config={config} onSaved={async () => undefined} />);
     expect(html).toContain('固定 key');
     expect(html).toContain('account-a');
+  });
+});
+
+describe('RouteForm', () => {
+  const config = { providers: [], nodes: [], routes: [], entrypoints: [] } as unknown as ConfigResponse;
+
+  it('defaults retries to 0 and retryCodes to 429,5xx', () => {
+    const route: Route = { name: 'r', nodes: [] };
+    const html = renderToStaticMarkup(<RouteForm route={route} config={config} onSaved={async () => undefined} />);
+    expect(html).toContain('retries');
+    expect(html).toContain('retryCodes');
+    expect(html).toContain('429,5xx');
+    expect(html).toContain('value="0"');
+  });
+
+  it('shows the stored retry settings of an existing route', () => {
+    const route: Route = { name: 'r', nodes: [], retries: 2, retryCodes: '429,502' };
+    const html = renderToStaticMarkup(<RouteForm route={route} config={config} onSaved={async () => undefined} />);
+    expect(html).toContain('429,502');
+    expect(html).toContain('value="2"');
   });
 });

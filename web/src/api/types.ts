@@ -114,6 +114,10 @@ export interface Route {
   strategy?: string;
   maxFails?: number;
   failTimeout?: string;
+  /** Extra attempts for retryable responses; absent means no retries. */
+  retries?: number;
+  /** Comma-separated status codes, e.g. `429,5xx`. */
+  retryCodes?: string;
 }
 
 export interface RouteNodeHealth {
@@ -318,6 +322,8 @@ export interface RequestRow {
   clientStatus?: number;
   error?: string;
   durationMs: number;
+  /** Retry attempts made before the recorded final attempt. */
+  retries?: number;
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
