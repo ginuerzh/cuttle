@@ -222,12 +222,12 @@ git commit -m "feat(web): derive per-route node health for the topology"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / done
+- Repository + commit: cuttle `f4784fed` — `feat(web): derive per-route node health for the topology`
+- Files changed: `web/src/pages/routeHealth.ts` (`NodeRouteHealth`, `nodeRouteHealth` replacing `deadNodeNames`), `web/src/pages/routeHealth.test.ts` (5 cases), `web/src/App.tsx` (derive `nodeHealth`, pass it to `Edit`/`Topology`/`NodePanel`), `web/src/pages/Topology.tsx` (`nodeHealth` prop and node effect), `web/src/pages/Edit.tsx` (pass-through); plus the design and plan docs.
+- Tests/commands and results: `npx vitest run src/pages/routeHealth.test.ts` RED (5 failed, `nodeRouteHealth is not a function`) then GREEN (5 passed); `npx tsc --noEmit` clean; `npm test` 38 files / 246 tests passed.
+- Review findings and fixes: none (native execution, self-review only).
+- Deferred items/limitations: the partial badge, dead edges and the node-panel row land in Tasks 2–3; the rendered UI is unchanged in this task.
 
 ---
 
