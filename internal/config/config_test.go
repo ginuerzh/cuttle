@@ -128,7 +128,6 @@ func TestProviderKeyNameValidation(t *testing.T) {
 		{"blank name", []ProviderKey{{Name: "   ", Key: "sk-a"}}},
 		{"too long", []ProviderKey{{Name: strings.Repeat("a", 65), Key: "sk-a"}}},
 		{"duplicate name", []ProviderKey{{Name: "a", Key: "sk-a"}, {Name: "a", Key: "sk-b"}}},
-		{"slash name", []ProviderKey{{Name: "a/b", Key: "sk-a"}}},
 		{"dollar name", []ProviderKey{{Name: "a$b", Key: "sk-a"}}},
 		{"control name", []ProviderKey{{Name: "a\nb", Key: "sk-a"}}},
 	}
@@ -142,6 +141,11 @@ func TestProviderKeyNameValidation(t *testing.T) {
 				t.Fatalf("err = %v, want it to name the provider", err)
 			}
 		})
+	}
+
+	// A display name is free-form; "/" feeds nothing structural any more.
+	if err := Validate(base([]ProviderKey{{Name: "a/b", Key: "sk-a"}})); err != nil {
+		t.Fatalf("slash name should validate: %v", err)
 	}
 }
 
@@ -420,7 +424,6 @@ func TestValidateEntrypoints(t *testing.T) {
 		ep   Entrypoint
 	}{
 		{"empty name", Entrypoint{Match: []string{"*"}, Route: "r"}},
-		{"slash name", Entrypoint{Name: "a/b", Match: []string{"*"}, Route: "r"}},
 		{"empty match", Entrypoint{Name: "e", Route: "r"}},
 		{"empty match entries", Entrypoint{Name: "e", Match: []string{"", "  "}, Route: "r"}},
 		{"unknown route", Entrypoint{Name: "e", Match: []string{"*"}, Route: "missing"}},
@@ -443,6 +446,14 @@ func TestValidateEntrypoints(t *testing.T) {
 		}
 		if err := Validate(c); err == nil {
 			t.Fatal("duplicate entrypoint names should not validate")
+		}
+	})
+
+	t.Run("slash name accepted", func(t *testing.T) {
+		c := base()
+		c.Entrypoints = []Entrypoint{{Name: "cli/desktop", Match: []string{"*"}, Route: "r"}}
+		if err := Validate(c); err != nil {
+			t.Fatalf("slash in an entrypoint name should validate: %v", err)
 		}
 	})
 }
@@ -1397,24 +1408,19 @@ func TestValidateGatewayKeys(t *testing.T) {
 			want: "gateway.keys[0]: name is required",
 		},
 		{
-			name: "slash in name",
-			keys: []GatewayKey{{Name: "a/b", Key: "sk-gateway-key-1"}},
-			want: "gateway.keys[0]: name must not contain '/'",
-		},
-		{
 			name: "dollar in name",
 			keys: []GatewayKey{{Name: "bad$name", Key: "sk-gateway-key-1"}},
-			want: "gateway.keys[0]: name must not contain '$'",
+			want: `gateway.keys[0]: name "bad$name" must not contain '$'`,
 		},
 		{
 			name: "control character in name",
 			keys: []GatewayKey{{Name: "bad\x01name", Key: "sk-gateway-key-1"}},
-			want: "gateway.keys[0]: name contains control characters",
+			want: `gateway.keys[0]: name "bad\x01name" contains control characters`,
 		},
 		{
 			name: "name too long",
 			keys: []GatewayKey{{Name: strings.Repeat("n", 65), Key: "sk-gateway-key-1"}},
-			want: "gateway.keys[0]: name must be at most 64 characters",
+			want: fmt.Sprintf(`gateway.keys[0]: name %q must be at most 64 characters`, strings.Repeat("n", 65)),
 		},
 		{
 			name: "empty key",
@@ -1542,5 +1548,242 @@ func TestWriteNewDoesNotOverwrite(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func validEntityConfig() *Config {
+	return &Config{
+		Gateway:     Gateway{Listen: ":8787"},
+		Entrypoints: []Entrypoint{{Name: "entry", Match: []string{"*"}, Route: "route"}},
+		Providers: []Provider{{
+			Name: "provider", Type: "generic", Chat: "https://a.example/v1",
+			Keys: []ProviderKey{{Name: "key", Key: "sk-a"}},
+		}},
+		Nodes:  []Node{{Name: "node", Provider: "provider", Model: "m1"}},
+		Routes: []Route{{Name: "route", Nodes: []string{"node"}}},
+	}
+}
+
+func TestValidateNameRules(t *testing.T) {
+	for _, name := range []string{"", "  ", "a$b", "ctl\x01", strings.Repeat("x", 65)} {
+		c := validEntityConfig()
+		c.Providers[0].Name = name
+		c.Nodes[0].Provider = name
+		err := Validate(c)
+		if err == nil {
+			t.Fatalf("provider name %q should not validate", name)
+		}
+		if !strings.Contains(err.Error(), "providers[0]") {
+			t.Fatalf("name %q: err = %v, want it to name the provider", name, err)
+		}
+	}
+	for _, name := range []string{"DeepSeek 官方", "a/b", "x y", strings.Repeat("x", 64)} {
+		c := validEntityConfig()
+		c.Providers[0].Name = name
+		c.Nodes[0].Provider = name
+		if err := Validate(c); err != nil {
+			t.Fatalf("provider name %q should validate: %v", name, err)
+		}
+	}
+}
+
+func TestValidateNameRulesPerKind(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"provider", func(c *Config) { c.Providers[0].Name = "a$b" }, "providers[0]"},
+		{"provider key", func(c *Config) { c.Providers[0].Keys[0].Name = "a\x01b" }, `provider "provider"`},
+		{"node", func(c *Config) { c.Nodes[0].Name = strings.Repeat("n", 65) }, "nodes[0]"},
+		{"route", func(c *Config) { c.Routes[0].Name = "a$b" }, "routes[0]"},
+		{"entrypoint", func(c *Config) { c.Entrypoints[0].Name = "a\x01b" }, "entrypoints[0]"},
+		{"gateway key", func(c *Config) {
+			c.Gateway.Keys = []GatewayKey{{Name: "a\x01b", Key: "sk-gateway-key"}}
+		}, "gateway.keys[0]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := validEntityConfig()
+			tc.mutate(c)
+			err := Validate(c)
+			if err == nil {
+				t.Fatal("want a name error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateSlashInKeyNamesAllowed(t *testing.T) {
+	c := validEntityConfig()
+	c.Providers[0].Keys[0].Name = "team/primary"
+	c.Gateway.Keys = []GatewayKey{{Name: "laptop/home", Key: "sk-gateway-key"}}
+	c.Nodes[0].Key = "team/primary"
+	if err := Validate(c); err != nil {
+		t.Fatalf("slash in key names should validate: %v", err)
+	}
+}
+
+func TestValidateDuplicateNamesAcrossKinds(t *testing.T) {
+	c := validEntityConfig()
+	c.Providers[0].Name = "shared"
+	c.Nodes[0].Name = "shared"
+	c.Nodes[0].Provider = "shared"
+	c.Routes[0].Name = "shared"
+	c.Routes[0].Nodes = []string{"shared"}
+	c.Entrypoints[0].Name = "shared"
+	c.Entrypoints[0].Route = "shared"
+	if err := Validate(c); err != nil {
+		t.Fatalf("duplicate names across kinds should validate: %v", err)
+	}
+
+	c2 := validEntityConfig()
+	c2.Providers = append(c2.Providers, Provider{Name: "provider", Type: "generic", Chat: "https://b.example/v1"})
+	if err := Validate(c2); err == nil {
+		t.Fatal("duplicate provider names should not validate")
+	}
+}
+
+func TestLoadAcceptsEntityIDs(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: ":8787"
+  keys:
+    - id: gk_9x2m4q7a3k
+      name: laptop
+      key: sk-gateway-key
+entrypoints:
+  - id: e_q7a4m2xk9d
+    name: entry
+    match: ["*"]
+    route: route
+providers:
+  - id: p_3k9x2m4q7a
+    name: provider
+    type: generic
+    chat: https://a.example/v1
+    keys:
+      - id: pk_8m2xq7a4k9
+        name: key
+        key: sk-a
+nodes:
+  - id: n_4q7a9x2m3k
+    name: node
+    provider: provider
+    model: m1
+routes:
+  - id: r_f3k9x2m4qa
+    name: route
+    nodes: [node]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Gateway.Keys[0].ID; got != "gk_9x2m4q7a3k" {
+		t.Fatalf("gateway key id = %q", got)
+	}
+	if got := c.Entrypoints[0].ID; got != "e_q7a4m2xk9d" {
+		t.Fatalf("entrypoint id = %q", got)
+	}
+	if got := c.Providers[0].ID; got != "p_3k9x2m4q7a" {
+		t.Fatalf("provider id = %q", got)
+	}
+	if got := c.Providers[0].Keys[0].ID; got != "pk_8m2xq7a4k9" {
+		t.Fatalf("provider key id = %q", got)
+	}
+	if got := c.Nodes[0].ID; got != "n_4q7a9x2m3k" {
+		t.Fatalf("node id = %q", got)
+	}
+	if got := c.Routes[0].ID; got != "r_f3k9x2m4qa" {
+		t.Fatalf("route id = %q", got)
+	}
+}
+
+func TestEntityIDsExpandEnv(t *testing.T) {
+	t.Setenv("PROVIDER_ID", "p_3k9x2m4q7a")
+	c, err := Load(writeConfig(t, `
+gateway:
+  listen: ":8787"
+entrypoints:
+  - name: entry
+    match: ["*"]
+    route: route
+providers:
+  - id: "${PROVIDER_ID}"
+    name: provider
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: node
+    provider: provider
+    model: m1
+routes:
+  - name: route
+    nodes: [node]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Providers[0].ID; got != "p_3k9x2m4q7a" {
+		t.Fatalf("provider id = %q, want expanded value", got)
+	}
+}
+
+func TestValidateOptionalIDs(t *testing.T) {
+	c := validEntityConfig()
+	c.Gateway.Keys = []GatewayKey{{Name: "laptop", Key: "sk-gateway-key"}}
+	if err := Validate(c); err != nil {
+		t.Fatalf("ids are optional in this task: %v", err)
+	}
+
+	withIDs := validEntityConfig()
+	withIDs.Gateway.Keys = []GatewayKey{{ID: "gk_9x2m4q7a3k", Name: "laptop", Key: "sk-gateway-key"}}
+	withIDs.Providers[0].ID = "p_3k9x2m4q7a"
+	withIDs.Providers[0].Keys[0].ID = "pk_8m2xq7a4k9"
+	withIDs.Nodes[0].ID = "n_4q7a9x2m3k"
+	withIDs.Routes[0].ID = "r_f3k9x2m4qa"
+	withIDs.Entrypoints[0].ID = "e_q7a4m2xk9d"
+	if err := Validate(withIDs); err != nil {
+		t.Fatalf("valid ids should validate: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"provider wrong shape", func(c *Config) { c.Providers[0].ID = "p_short" }, `provider "provider"`},
+		{"provider wrong prefix", func(c *Config) { c.Providers[0].ID = "n_4q7a9x2m3k" }, `provider "provider"`},
+		{"provider key wrong kind", func(c *Config) { c.Providers[0].Keys[0].ID = "p_3k9x2m4q7a" }, `provider "provider"`},
+		{"node wrong kind", func(c *Config) { c.Nodes[0].ID = "r_f3k9x2m4qa" }, `node "node"`},
+		{"route wrong shape", func(c *Config) { c.Routes[0].ID = "r_3K9X2M4Q7A" }, `route "route"`},
+		{"entrypoint wrong kind", func(c *Config) { c.Entrypoints[0].ID = "e_q7a4m2xk9" }, `entrypoint "entry"`},
+		{"gateway key wrong kind", func(c *Config) {
+			c.Gateway.Keys = []GatewayKey{{ID: "p_3k9x2m4q7a", Name: "laptop", Key: "sk-gateway-key"}}
+		}, "gateway.keys[0]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Config{
+				Gateway:     withIDs.Gateway,
+				Entrypoints: append([]Entrypoint(nil), withIDs.Entrypoints...),
+				Providers:   append([]Provider(nil), withIDs.Providers...),
+				Nodes:       append([]Node(nil), withIDs.Nodes...),
+				Routes:      append([]Route(nil), withIDs.Routes...),
+			}
+			c.Providers[0].Keys = append([]ProviderKey(nil), withIDs.Providers[0].Keys...)
+			c.Gateway.Keys = append([]GatewayKey(nil), withIDs.Gateway.Keys...)
+			tc.mutate(c)
+			err := Validate(c)
+			if err == nil {
+				t.Fatal("want an id error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
 	}
 }

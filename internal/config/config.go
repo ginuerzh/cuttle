@@ -18,6 +18,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 	"gopkg.in/yaml.v3"
 
+	"github.com/ginuerzh/cuttle/internal/identity"
 	"github.com/ginuerzh/cuttle/internal/version"
 )
 
@@ -46,8 +47,10 @@ type Gateway struct {
 }
 
 // GatewayKey is one named data-plane access credential. Enabled defaults to
-// true; a disabled entry stays configured but never authenticates.
+// true; a disabled entry stays configured but never authenticates. The id is
+// the stable handle; the name is a display label.
 type GatewayKey struct {
+	ID      string `yaml:"id" json:"id"`
 	Name    string `yaml:"name" json:"name"`
 	Key     string `yaml:"key" json:"key,omitempty"`
 	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
@@ -87,8 +90,10 @@ type Log struct {
 }
 
 // Entrypoint is the client-facing ingress: it owns the model globs that select
-// it and exactly one route.
+// it and exactly one route. The id is the stable handle; the name is a display
+// label.
 type Entrypoint struct {
+	ID    string   `yaml:"id" json:"id"`
 	Name  string   `yaml:"name" json:"name"`
 	Match []string `yaml:"match" json:"match"`
 	Route string   `yaml:"route" json:"route"`
@@ -101,6 +106,7 @@ type Entrypoint struct {
 // Type selects the adapter. Each non-empty API base URL advertises one wire
 // API; an empty field means the provider does not serve that API.
 type Provider struct {
+	ID        string        `yaml:"id" json:"id"`
 	Name      string        `yaml:"name" json:"name"`
 	Type      string        `yaml:"type" json:"type"`
 	Chat      string        `yaml:"chat,omitempty" json:"chat,omitempty"`
@@ -124,10 +130,11 @@ type Provider struct {
 	Models map[string]ModelOverride `yaml:"models,omitempty" json:"models,omitempty"`
 }
 
-// ProviderKey is one named upstream account key. The name is the stable
-// handle used by a node pin, the admin API and the console; the value is
-// write-only.
+// ProviderKey is one named upstream account key. The name is a display label;
+// the id is the stable handle used by a node pin, the admin API and the
+// console. The value is write-only.
 type ProviderKey struct {
+	ID      string `yaml:"id" json:"id"`
 	Name    string `yaml:"name" json:"name"`
 	Key     string `yaml:"key" json:"key,omitempty"`
 	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
@@ -164,8 +171,10 @@ func IsProviderType(typ string) bool {
 
 // Node is one concrete use of a provider: exactly one provider model plus the
 // local routing policy (backup, weight). The same provider can back several
-// nodes with different models.
+// nodes with different models. The id is the stable handle; the name is a
+// display label.
 type Node struct {
+	ID       string `yaml:"id" json:"id"`
 	Name     string `yaml:"name" json:"name"`
 	Provider string `yaml:"provider" json:"provider"`
 	Model    string `yaml:"model" json:"model"`
@@ -212,8 +221,10 @@ type TLS struct {
 // route; the route only decides which node serves it. MaxFails and
 // FailTimeout control how long a node is skipped after failures. Retries and
 // RetryCodes control how many times and for which status codes a retryable
-// response is retried.
+// response is retried. The id is the stable handle; the name is a display
+// label.
 type Route struct {
+	ID          string   `yaml:"id" json:"id"`
 	Name        string   `yaml:"name" json:"name"`
 	Nodes       []string `yaml:"nodes" json:"nodes"`
 	Strategy    string   `yaml:"strategy,omitempty" json:"strategy,omitempty"`
@@ -391,6 +402,7 @@ func (c *Config) expandEnv() {
 	c.Gateway.UserAgent = ExpandEnv(c.Gateway.UserAgent)
 	for i := range c.Gateway.Keys {
 		k := &c.Gateway.Keys[i]
+		k.ID = ExpandEnv(k.ID)
 		k.Name = ExpandEnv(k.Name)
 		k.Key = ExpandEnv(k.Key)
 	}
@@ -400,6 +412,7 @@ func (c *Config) expandEnv() {
 	c.Log.Format = ExpandEnv(c.Log.Format)
 	for i := range c.Entrypoints {
 		e := &c.Entrypoints[i]
+		e.ID = ExpandEnv(e.ID)
 		e.Name = ExpandEnv(e.Name)
 		e.Route = ExpandEnv(e.Route)
 		for j := range e.Match {
@@ -408,6 +421,7 @@ func (c *Config) expandEnv() {
 	}
 	for i := range c.Providers {
 		p := &c.Providers[i]
+		p.ID = ExpandEnv(p.ID)
 		p.Name = ExpandEnv(p.Name)
 		p.Type = ExpandEnv(p.Type)
 		p.Chat = ExpandEnv(p.Chat)
@@ -421,6 +435,7 @@ func (c *Config) expandEnv() {
 		p.Health.API = ExpandEnv(p.Health.API)
 		p.Health.Path = ExpandEnv(p.Health.Path)
 		for j := range p.Keys {
+			p.Keys[j].ID = ExpandEnv(p.Keys[j].ID)
 			p.Keys[j].Name = ExpandEnv(p.Keys[j].Name)
 			p.Keys[j].Key = ExpandEnv(p.Keys[j].Key)
 		}
@@ -449,12 +464,14 @@ func (c *Config) expandEnv() {
 	}
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
+		n.ID = ExpandEnv(n.ID)
 		n.Name = ExpandEnv(n.Name)
 		n.Provider = ExpandEnv(n.Provider)
 		n.Model = ExpandEnv(n.Model)
 	}
 	for i := range c.Routes {
 		r := &c.Routes[i]
+		r.ID = ExpandEnv(r.ID)
 		r.Name = ExpandEnv(r.Name)
 		for j := range r.Nodes {
 			r.Nodes[j] = ExpandEnv(r.Nodes[j])
@@ -683,10 +700,40 @@ func validateProviderBaseURL(name, field, raw string) error {
 }
 
 const (
-	gatewayKeyNameMax  = 64
 	gatewayKeyValueMin = 8
 	gatewayKeyValueMax = 512
 )
+
+// entityNameMax bounds every entity display name, in runes.
+const entityNameMax = 64
+
+// validateEntityName enforces the display-name rules shared by every entity:
+// trimmed non-empty, at most 64 runes, no "$" (names are env-expanded on
+// load) and no control characters. Names are otherwise free-form, so spaces,
+// "/" and non-ASCII are allowed. scope names the entity in errors.
+func validateEntityName(scope, name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("%s: name is required", scope)
+	case utf8.RuneCountInString(name) > entityNameMax:
+		return fmt.Errorf("%s: name %q must be at most %d characters", scope, name, entityNameMax)
+	case strings.Contains(name, "$"):
+		return fmt.Errorf("%s: name %q must not contain '$'", scope, name)
+	case strings.ContainsFunc(name, unicode.IsControl):
+		return fmt.Errorf("%s: name %q contains control characters", scope, name)
+	}
+	return nil
+}
+
+// validateEntityID checks an optional entity id against its kind. An empty id
+// is accepted until migration makes ids mandatory.
+func validateEntityID(scope string, kind identity.Kind, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" || identity.Valid(kind, id) {
+		return nil
+	}
+	return fmt.Errorf("%s: invalid id %q", scope, id)
+}
 
 // validateGatewayKeys checks the named data-plane access keys. Names and values
 // must survive config.Load's environment expansion on every reload, so a
@@ -697,17 +744,12 @@ func validateGatewayKeys(keys []GatewayKey) error {
 	values := make(map[string]struct{}, len(keys))
 	for i := range keys {
 		name := strings.TrimSpace(keys[i].Name)
-		switch {
-		case name == "":
-			return fmt.Errorf("gateway.keys[%d]: name is required", i)
-		case utf8.RuneCountInString(name) > gatewayKeyNameMax:
-			return fmt.Errorf("gateway.keys[%d]: name must be at most %d characters", i, gatewayKeyNameMax)
-		case strings.Contains(name, "/"):
-			return fmt.Errorf("gateway.keys[%d]: name must not contain '/'", i)
-		case strings.Contains(name, "$"):
-			return fmt.Errorf("gateway.keys[%d]: name must not contain '$'", i)
-		case strings.ContainsFunc(name, unicode.IsControl):
-			return fmt.Errorf("gateway.keys[%d]: name contains control characters", i)
+		scope := fmt.Sprintf("gateway.keys[%d]", i)
+		if err := validateEntityName(scope, name); err != nil {
+			return err
+		}
+		if err := validateEntityID(scope, identity.GatewayKey, keys[i].ID); err != nil {
+			return err
 		}
 		if _, ok := names[name]; ok {
 			return fmt.Errorf("gateway.keys[%d]: duplicate name %q", i, name)
@@ -737,26 +779,19 @@ func validateGatewayKeys(keys []GatewayKey) error {
 	return nil
 }
 
-const providerKeyNameMax = 64
-
 // validateProviderKeys checks the named upstream account keys. Names are
-// required, unique inside the provider, and safe for the x node name and the
-// environment expansion on reload. Values are write-only and never echoed.
+// required, unique inside the provider, and safe for the environment expansion
+// on reload. Values are write-only and never echoed.
 func validateProviderKeys(providerName string, keys []ProviderKey) error {
 	names := make(map[string]struct{}, len(keys))
 	for i := range keys {
 		name := strings.TrimSpace(keys[i].Name)
-		switch {
-		case name == "":
-			return fmt.Errorf("provider %q: keys[%d]: name is required", providerName, i)
-		case utf8.RuneCountInString(name) > providerKeyNameMax:
-			return fmt.Errorf("provider %q: keys[%d]: name must be at most %d characters", providerName, i, providerKeyNameMax)
-		case strings.Contains(name, "/"):
-			return fmt.Errorf("provider %q: keys[%d]: name must not contain '/'", providerName, i)
-		case strings.Contains(name, "$"):
-			return fmt.Errorf("provider %q: keys[%d]: name must not contain '$'", providerName, i)
-		case strings.ContainsFunc(name, unicode.IsControl):
-			return fmt.Errorf("provider %q: keys[%d]: name contains control characters", providerName, i)
+		scope := fmt.Sprintf("provider %q: keys[%d]", providerName, i)
+		if err := validateEntityName(scope, name); err != nil {
+			return err
+		}
+		if err := validateEntityID(scope, identity.ProviderKey, keys[i].ID); err != nil {
+			return err
 		}
 		if _, ok := names[name]; ok {
 			return fmt.Errorf("provider %q: keys[%d]: duplicate name %q", providerName, i, name)
@@ -870,11 +905,11 @@ func Validate(c *Config) error {
 	for i := range c.Providers {
 		p := &c.Providers[i]
 		name := strings.TrimSpace(p.Name)
-		if name == "" {
-			return fmt.Errorf("providers[%d]: name is required", i)
+		if err := validateEntityName(fmt.Sprintf("providers[%d]", i), name); err != nil {
+			return err
 		}
-		if strings.Contains(name, "/") {
-			return fmt.Errorf("provider %q: name must not contain '/'", name)
+		if err := validateEntityID(fmt.Sprintf("provider %q", name), identity.Provider, p.ID); err != nil {
+			return err
 		}
 		if seen[name] {
 			return fmt.Errorf("providers[%d]: duplicate name %q", i, name)
@@ -927,11 +962,11 @@ func Validate(c *Config) error {
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
 		name := strings.TrimSpace(n.Name)
-		if name == "" {
-			return fmt.Errorf("nodes[%d]: name is required", i)
+		if err := validateEntityName(fmt.Sprintf("nodes[%d]", i), name); err != nil {
+			return err
 		}
-		if strings.Contains(name, "/") {
-			return fmt.Errorf("node %q: name must not contain '/'", name)
+		if err := validateEntityID(fmt.Sprintf("node %q", name), identity.Node, n.ID); err != nil {
+			return err
 		}
 		if nodeNames[name] {
 			return fmt.Errorf("nodes[%d]: duplicate name %q", i, name)
@@ -980,11 +1015,11 @@ func Validate(c *Config) error {
 	for i := range c.Routes {
 		r := &c.Routes[i]
 		name := strings.TrimSpace(r.Name)
-		if name == "" {
-			return fmt.Errorf("routes[%d]: name is required", i)
+		if err := validateEntityName(fmt.Sprintf("routes[%d]", i), name); err != nil {
+			return err
 		}
-		if strings.Contains(name, "/") {
-			return fmt.Errorf("route %q: name must not contain '/'", name)
+		if err := validateEntityID(fmt.Sprintf("route %q", name), identity.Route, r.ID); err != nil {
+			return err
 		}
 		if routes[name] {
 			return fmt.Errorf("routes[%d]: duplicate name %q", i, name)
@@ -1029,11 +1064,11 @@ func Validate(c *Config) error {
 	for i := range c.Entrypoints {
 		e := &c.Entrypoints[i]
 		name := strings.TrimSpace(e.Name)
-		if name == "" {
-			return fmt.Errorf("entrypoints[%d]: name is required", i)
+		if err := validateEntityName(fmt.Sprintf("entrypoints[%d]", i), name); err != nil {
+			return err
 		}
-		if strings.Contains(name, "/") {
-			return fmt.Errorf("entrypoint %q: name must not contain '/'", name)
+		if err := validateEntityID(fmt.Sprintf("entrypoint %q", name), identity.Entrypoint, e.ID); err != nil {
+			return err
 		}
 		if entrypointNames[name] {
 			return fmt.Errorf("entrypoints[%d]: duplicate name %q", i, name)
