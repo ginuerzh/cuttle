@@ -107,12 +107,19 @@ export function decorateEdge(
   metrics: GraphMetrics | null,
   activity?: Activity,
   animate = true,
+  deadEdges?: ReadonlySet<string>,
 ): Edge {
   const m = metrics?.edges[e.id];
   const data = e.data as EdgeData | undefined;
-  const label = m ? edgeLabel(m) : undefined;
+  const dead = deadEdges?.has(e.id) ?? false;
+  const trafficLabel = m ? edgeLabel(m) : undefined;
+  const label = dead
+    ? trafficLabel
+      ? <>{trafficLabel}<span style={{ color: '#dc2626' }}> · dead</span></>
+      : <span style={{ color: '#dc2626' }}>dead</span>
+    : trafficLabel;
   const width = m ? Math.min(4, 1.5 + Math.log10(m.requests + 1)) : 1.5;
-  const color = m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
+  const color = dead ? '#dc2626' : m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
   return {
     ...e,
     label,
@@ -123,7 +130,7 @@ export function decorateEdge(
       error: animate ? !!activity?.error : false,
       duration: activity?.duration ?? 0,
     },
-    style: { ...e.style, stroke: color, strokeWidth: width },
+    style: { ...e.style, stroke: color, strokeWidth: width, strokeDasharray: dead ? '6 4' : undefined },
     markerEnd: undefined,
   } as Edge;
 }
@@ -357,7 +364,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
   }, [config, positions]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>(structure.nodes);
-  const [edges, setEdges] = useState<Edge[]>(structure.edges.map((e) => decorateEdge(e, metrics)));
+  const [edges, setEdges] = useState<Edge[]>(structure.edges.map((e) => decorateEdge(e, metrics, undefined, true, nodeHealth?.edges)));
   const onEdgesChange: OnEdgesChange = (changes) => {
     setEdges((current) => applyEdgeChanges(changes, current));
   };
@@ -377,13 +384,13 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
     setNodes((prev) => mergeNodeState(prev, structure.nodes));
     setEdges(
       structure.edges.map((e) =>
-        decorateEdge(e, metrics, activityRef.current.edges[e.id], animate),
+        decorateEdge(e, metrics, activityRef.current.edges[e.id], animate, nodeHealth?.edges),
       ),
     );
     // metrics is intentionally read once per structure change; the metrics
     // effect below keeps labels fresh without touching positions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structure, animate]);
+  }, [structure, animate, nodeHealth?.edges]);
 
   useEffect(() => {
     setNodes((prev) =>
@@ -396,8 +403,8 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
         return { ...n, data: { ...n.data, metrics: m, pulse, error } };
       }),
     );
-    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics, activity.edges[e.id], animate)));
-  }, [metrics, activity, animate, setNodes]);
+    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics, activity.edges[e.id], animate, nodeHealth?.edges)));
+  }, [metrics, activity, animate, nodeHealth?.edges, setNodes]);
 
   useEffect(() => {
     setNodes((prev) =>

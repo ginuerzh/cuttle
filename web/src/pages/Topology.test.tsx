@@ -1,6 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { GraphMetrics } from '../api/types';
 import { canEditTopology, decorateEdge, edgeLabel, viewportInit } from './Topology';
 
 describe('viewportInit', () => {
@@ -61,5 +62,38 @@ describe('decorateEdge', () => {
     const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
     const decorated = decorateEdge(edge, null, { pulse: 7, error: false, duration: 0.6 }, false);
     expect(decorated.data).toMatchObject({ pulse: 0 });
+  });
+
+  it('draws a dead binding as a red dashed edge labelled dead', () => {
+    const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
+
+    const decorated = decorateEdge(edge, null, undefined, true, new Set([edge.id]));
+
+    expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
+    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('dead');
+  });
+
+  it('keeps the traffic counts and still marks a dead binding', () => {
+    const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
+    const metrics = {
+      nodes: {},
+      edges: { [edge.id]: { requests: 10, errors: 2 } },
+    } as unknown as GraphMetrics;
+
+    const decorated = decorateEdge(edge, metrics, undefined, true, new Set([edge.id]));
+    const html = renderToStaticMarkup(<>{decorated.label}</>);
+
+    expect(html).toContain('10');
+    expect(html).toContain('dead');
+    expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
+  });
+
+  it('leaves a live binding solid', () => {
+    const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
+
+    const decorated = decorateEdge(edge, null, undefined, true, new Set());
+
+    expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
+    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
   });
 });
