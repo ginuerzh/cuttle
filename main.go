@@ -132,7 +132,7 @@ func run(args []string) error {
 			return nil
 		}
 
-		newCfg, err := config.Load(res.ConfigPath)
+		newCfg, err := config.Load(res.ConfigPath, config.WithLogger(log))
 		if err != nil {
 			log.Errorf("reload: %v", err)
 			continue

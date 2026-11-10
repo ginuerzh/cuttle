@@ -269,7 +269,7 @@ routes:
 	if c.Routes[0].Name != "r" || c.Routes[0].Strategy != "round" {
 		t.Fatalf("route defaults = %+v, want name r and strategy round", c.Routes[0])
 	}
-	if c.Entrypoints[0].Name != "default" || c.Entrypoints[0].Route != "r" {
+	if c.Entrypoints[0].Name != "default" || c.Entrypoints[0].Route != c.Routes[0].ID {
 		t.Fatalf("entrypoint defaults = %+v", c.Entrypoints[0])
 	}
 	if got := c.Entrypoints[0].Match; len(got) != 1 || got[0] != "*" {
@@ -371,8 +371,8 @@ routes:
 
 func TestResolveEntrypointOrder(t *testing.T) {
 	c := &Config{Entrypoints: []Entrypoint{
-		{Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
-		{Name: "fallback", Match: []string{"*"}, Route: "b"},
+		{ID: "e_3k9x2m4q7a", Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
+		{ID: "e_8m2xq7a4k9", Name: "fallback", Match: []string{"*"}, Route: "b"},
 	}}
 
 	ep, ok := c.ResolveEntrypoint("GPT-5.5")
@@ -383,20 +383,20 @@ func TestResolveEntrypointOrder(t *testing.T) {
 	if !ok || ep.Name != "fallback" || ep.Route != "b" {
 		t.Fatalf("fallback = %+v, %v", ep, ok)
 	}
-	if got := c.ResolveEntrypointName("gpt-5.5"); got != "specific" {
-		t.Fatalf("ResolveEntrypointName = %q, want specific", got)
+	if got := c.ResolveEntrypointID("gpt-5.5"); got != "e_3k9x2m4q7a" {
+		t.Fatalf("ResolveEntrypointID = %q, want the specific entrypoint id", got)
 	}
-	if got := c.ResolveEntrypointName(""); got != "fallback" {
-		t.Fatalf("ResolveEntrypointName(empty) = %q, want fallback", got)
+	if got := c.ResolveEntrypointID(""); got != "e_8m2xq7a4k9" {
+		t.Fatalf("ResolveEntrypointID(empty) = %q, want the fallback entrypoint id", got)
 	}
 	noCatchAll := &Config{Entrypoints: []Entrypoint{
-		{Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
+		{ID: "e_3k9x2m4q7a", Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
 	}}
-	if got := noCatchAll.ResolveEntrypointName("unmatched"); got != "" {
-		t.Fatalf("ResolveEntrypointName(unmatched) = %q, want empty", got)
+	if got := noCatchAll.ResolveEntrypointID("unmatched"); got != "" {
+		t.Fatalf("ResolveEntrypointID(unmatched) = %q, want empty", got)
 	}
-	if got := noCatchAll.ResolveEntrypointName(""); got != "" {
-		t.Fatalf("ResolveEntrypointName(empty) = %q, want empty", got)
+	if got := noCatchAll.ResolveEntrypointID(""); got != "" {
+		t.Fatalf("ResolveEntrypointID(empty) = %q, want empty", got)
 	}
 }
 
@@ -1003,10 +1003,10 @@ providers:
 
 func TestTopologyIncludes(t *testing.T) {
 	c := &Config{
-		Routes: []Route{{Name: "fast", Nodes: []string{"n1", "n2"}}},
+		Routes: []Route{{ID: "r_f3k9x2m4qa", Name: "fast", Nodes: []string{"n_4q7a9x2m3k", "n_7a4m2xk9d3"}}},
 		Nodes: []Node{
-			{Name: "n1", Provider: "p", Model: "m1"},
-			{Name: "n2", Provider: "q", Model: "m2"},
+			{ID: "n_4q7a9x2m3k", Name: "n1", Provider: "p_3k9x2m4q7a", Model: "m1"},
+			{ID: "n_7a4m2xk9d3", Name: "n2", Provider: "p_8m2xq7a4k9", Model: "m2"},
 		},
 	}
 
@@ -1014,13 +1014,13 @@ func TestTopologyIncludes(t *testing.T) {
 		route, node, provider string
 		want                  bool
 	}{
-		{"fast", "n1", "p", true},
-		{"fast", "n2", "q", true},
-		{"", "orphan", "p", true},
-		{"fast", "", "", true},
-		{"missing", "n1", "p", false},
-		{"fast", "orphan", "p", false},
-		{"fast", "n1", "wrong", false},
+		{"r_f3k9x2m4qa", "n_4q7a9x2m3k", "p_3k9x2m4q7a", true},
+		{"r_f3k9x2m4qa", "n_7a4m2xk9d3", "p_8m2xq7a4k9", true},
+		{"", "n_orphan", "p_3k9x2m4q7a", true},
+		{"r_f3k9x2m4qa", "", "", true},
+		{"r_missing", "n_4q7a9x2m3k", "p_3k9x2m4q7a", false},
+		{"r_f3k9x2m4qa", "n_orphan", "p_3k9x2m4q7a", false},
+		{"r_f3k9x2m4qa", "n_4q7a9x2m3k", "p_8m2xq7a4k9", false},
 	}
 	for _, tc := range cases {
 		if got := c.TopologyIncludes(tc.route, tc.node, tc.provider); got != tc.want {
@@ -1205,7 +1205,13 @@ func TestRouteRetryValidation(t *testing.T) {
 
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "test")
-	c, err := Load("../../example.yaml")
+	body, err := os.ReadFile("../../example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Load migrates a legacy config and writes it back, so never point it at
+	// the repository file.
+	c, err := Load(writeConfig(t, string(body)))
 	if err != nil {
 		t.Fatalf("load example: %v", err)
 	}
@@ -1214,7 +1220,7 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 	routes := make(map[string]bool, len(c.Routes))
 	for _, r := range c.Routes {
-		routes[r.Name] = true
+		routes[r.ID] = true
 	}
 	for _, e := range c.Entrypoints {
 		if !routes[e.Route] {
@@ -1756,6 +1762,7 @@ func TestValidateOptionalIDs(t *testing.T) {
 		want   string
 	}{
 		{"provider wrong shape", func(c *Config) { c.Providers[0].ID = "p_short" }, `provider "provider"`},
+		{"provider padded id", func(c *Config) { c.Providers[0].ID = " p_3k9x2m4q7a" }, "surrounding whitespace"},
 		{"provider wrong prefix", func(c *Config) { c.Providers[0].ID = "n_4q7a9x2m3k" }, `provider "provider"`},
 		{"provider key wrong kind", func(c *Config) { c.Providers[0].Keys[0].ID = "p_3k9x2m4q7a" }, `provider "provider"`},
 		{"node wrong kind", func(c *Config) { c.Nodes[0].ID = "r_f3k9x2m4qa" }, `node "node"`},

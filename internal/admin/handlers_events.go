@@ -135,7 +135,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lastRowID := high
-	prev := agg.Metrics(cfg.ResolveEntrypointName, cfg.TopologyIncludes, stats.GraphMetrics{}, true)
+	prev := agg.Metrics(cfg.ResolveEntrypointID, cfg.TopologyIncludes, stats.GraphMetrics{}, true)
 	lastPct := time.Now()
 	if err := writeEvent(client, eventMessage{
 		Type:         "snapshot",
@@ -196,7 +196,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 			cfg := s.monitorConfig()
 			recompute := s.wsPctInterval <= 0 || time.Since(lastPct) >= s.wsPctInterval
-			metrics := agg.Metrics(cfg.ResolveEntrypointName, cfg.TopologyIncludes, prev, recompute)
+			metrics := agg.Metrics(cfg.ResolveEntrypointID, cfg.TopologyIncludes, prev, recompute)
 			if recompute {
 				lastPct = time.Now()
 			}

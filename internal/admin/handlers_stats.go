@@ -144,7 +144,7 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parseRange(r)
 	cfg := s.monitorConfig()
-	g, err := s.stats.GraphWithFilter(r.Context(), from, to, cfg.ResolveEntrypointName, cfg.TopologyIncludes)
+	g, err := s.stats.GraphWithFilter(r.Context(), from, to, cfg.ResolveEntrypointID, cfg.TopologyIncludes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

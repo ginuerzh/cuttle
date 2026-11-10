@@ -140,7 +140,7 @@ func TestGraphEntrypointAPI(t *testing.T) {
 	client, _ := login(t, ts.URL)
 
 	srv.mu.Lock()
-	srv.cfg.Entrypoints = []config.Entrypoint{{Name: "claude", Match: []string{"claude*"}, Route: "r"}}
+	srv.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude*"}, Route: "r"}}
 	srv.cfg.Routes = []config.Route{{Name: "r", Nodes: []string{"n"}}}
 	srv.cfg.Nodes = []config.Node{{Name: "n", Provider: "p", Model: "m1"}}
 	srv.mu.Unlock()
@@ -157,10 +157,10 @@ func TestGraphEntrypointAPI(t *testing.T) {
 	if err := jsonDecode(resp.Body, &g); err != nil {
 		t.Fatal(err)
 	}
-	if got := g.Nodes["entrypoint:claude"]; got.Requests != 1 {
+	if got := g.Nodes["entrypoint:e_3k9x2m4q7a"]; got.Requests != 1 {
 		t.Fatalf("alias node = %+v", got)
 	}
-	if got := g.Edges["entrypoint:claude->route:r"]; got.Requests != 1 {
+	if got := g.Edges["entrypoint:e_3k9x2m4q7a->route:r"]; got.Requests != 1 {
 		t.Fatalf("alias edge = %+v", got)
 	}
 }

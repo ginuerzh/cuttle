@@ -122,7 +122,7 @@ func fileExists(path string) (bool, error) {
 }
 
 // loadConfig is a test seam for the final config round-trip.
-var loadConfig = config.Load
+var loadConfig = func(path string) (*config.Config, error) { return config.Load(path) }
 
 // writeConfig is a test seam for the exclusive first-run write.
 var writeConfig = config.WriteNew
