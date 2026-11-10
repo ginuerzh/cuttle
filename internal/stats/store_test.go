@@ -262,6 +262,62 @@ func TestRequestsSchemaHasNoHeadersOrBody(t *testing.T) {
 	}
 }
 
+func TestFreshDatabaseIsVersion2(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != statsVersion {
+		t.Fatalf("fresh user_version = %d, want %d", version, statsVersion)
+	}
+
+	rows, err := s.db.Query(`PRAGMA table_info(entity_labels)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	type column struct {
+		typ string
+		pk  int
+	}
+	cols := make(map[string]column)
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			t.Fatal(err)
+		}
+		cols[name] = column{typ: typ, pk: pk}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cols) != 3 {
+		t.Fatalf("entity_labels columns = %+v, want kind, id and name", cols)
+	}
+	for _, c := range []struct {
+		name string
+		pk   int
+	}{{"kind", 1}, {"id", 2}, {"name", 0}} {
+		got, ok := cols[c.name]
+		if !ok {
+			t.Fatalf("entity_labels has no %q column: %+v", c.name, cols)
+		}
+		if got.typ != "TEXT" || got.pk != c.pk {
+			t.Fatalf("entity_labels.%s = %q pk %d, want TEXT pk %d", c.name, got.typ, got.pk, c.pk)
+		}
+	}
+}
+
 func TestTopologyPositions(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

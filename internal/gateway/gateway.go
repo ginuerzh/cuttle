@@ -28,6 +28,7 @@ import (
 	"github.com/ginuerzh/cuttle/internal/capture"
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/health"
+	"github.com/ginuerzh/cuttle/internal/identity"
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
@@ -375,6 +376,20 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	}
 	if g.store != nil {
 		g.store.SetCaptureRetain(time.Duration(cfg.Stats.Capture.Retain))
+		names := cfg.NameToIDs()
+		if err := g.store.MigrateIdentities(context.Background(), func(kind, name string) string {
+			if id, ok := names[kind][name]; ok {
+				return id
+			}
+			return identity.Derive(identity.Kind(kind), name)
+		}); err != nil {
+			g.log.Warnf("stats: migrating entity ids: %v", err)
+		}
+		// Migration is idempotent; syncing labels on every apply is what keeps
+		// a rename visible in the history of an unchanged id.
+		if err := g.store.SyncLabels(context.Background(), cfg.LabelsByID()); err != nil {
+			g.log.Warnf("stats: syncing entity labels: %v", err)
+		}
 	}
 
 	// In-flight requests hold the old nodes; give them time to finish before

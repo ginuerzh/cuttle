@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -14,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/ginuerzh/cuttle/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/identity"
 )
 
 // Request is one recorded request. It deliberately has no header/body fields.
@@ -123,10 +125,13 @@ type KeyUsage struct {
 // Store is the SQLite-backed statistics store.
 type Store struct {
 	db            *sql.DB
+	path          string
 	captureRetain atomic.Int64
 }
 
-// Open opens or creates the store. Use ":memory:" for tests.
+// Open opens or creates the store. Use ":memory:" for tests. A database that
+// already holds a requests table is left for MigrateIdentities to upgrade; a
+// fresh database is created in the current schema version and never migrated.
 func Open(path string) (*Store, error) {
 	dsn := path
 	if path != ":memory:" && path != "" {
@@ -142,15 +147,29 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 
-	s := &Store{db: db}
-	if err := s.migrate(); err != nil {
+	s := &Store{db: db, path: path}
+	fresh, err := s.isFresh()
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.migrate(fresh); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-func (s *Store) migrate() error {
+// isFresh reports whether the database has no requests table yet. It runs
+// before migrate creates anything, so a nil error with true means this Open is
+// the one that builds the schema.
+func (s *Store) isFresh() (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'requests'`).Scan(&n)
+	return n == 0, err
+}
+
+func (s *Store) migrate(fresh bool) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS requests (
 			request_id TEXT PRIMARY KEY,
@@ -235,6 +254,12 @@ func (s *Store) migrate() error {
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			value INTEGER NOT NULL DEFAULT 0
 		)`,
+		`CREATE TABLE IF NOT EXISTS entity_labels (
+			kind TEXT NOT NULL,
+			id TEXT NOT NULL,
+			name TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (kind, id)
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -280,6 +305,16 @@ func (s *Store) migrate() error {
 	if err := s.ensureColumns("rollups", map[string]string{
 		"cached_tokens": "INTEGER NOT NULL DEFAULT 0",
 	}); err != nil {
+		return err
+	}
+
+	// A fresh database is created in the current version: every column already
+	// holds ids and entity_labels is empty, so there is nothing to rewrite.
+	if fresh {
+		if _, err := s.db.Exec(`INSERT OR IGNORE INTO request_seq(id, value) VALUES(1, 0)`); err != nil {
+			return err
+		}
+		_, err := s.db.Exec(`PRAGMA user_version = ` + strconv.Itoa(statsVersion))
 		return err
 	}
 
@@ -331,6 +366,367 @@ func (s *Store) ensureColumns(table string, cols map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// statsVersion is the current statistics schema version. Version 2 keeps entity
+// ids in every reference column and keeps display names in entity_labels.
+const statsVersion = 2
+
+// unroutedRef is the literal graph key recorded for rows without a route.
+const unroutedRef = "unrouted"
+
+// entityKinds are the kinds entity_labels keeps: the ones that appear in stats
+// rows, topology positions and labels. Provider keys are identified only inside
+// their provider and are never labelled.
+var entityKinds = map[string]bool{
+	string(identity.Provider):   true,
+	string(identity.Node):       true,
+	string(identity.Route):      true,
+	string(identity.Entrypoint): true,
+	string(identity.GatewayKey): true,
+}
+
+// positionKinds maps a topology position key prefix to its entity kind.
+var positionKinds = map[string]identity.Kind{
+	"provider:":   identity.Provider,
+	"node:":       identity.Node,
+	"route:":      identity.Route,
+	"entrypoint:": identity.Entrypoint,
+}
+
+// MigrateIdentities rewrites the v1 name-keyed rows of an existing database to
+// entity ids exactly once. lookup resolves a kind and a display name to the id
+// the current config uses; a name the config does not know keeps a stable id
+// derived from the name, so its history stays in one series. The database is
+// copied to <path>.v1.bak-<unix> first, and a failed copy aborts the migration
+// rather than upgrading without a backup.
+func (s *Store) MigrateIdentities(ctx context.Context, lookup func(kind, name string) string) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	version, err := s.userVersion(ctx)
+	if err != nil {
+		return err
+	}
+	if version >= statsVersion {
+		return nil
+	}
+	if err := s.backupV1(ctx); err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	r := newIDResolver(lookup)
+	for _, c := range []struct{ table, column, kind string }{
+		{"requests", "provider", string(identity.Provider)},
+		{"requests", "route", string(identity.Route)},
+		{"requests", "node", string(identity.Node)},
+		{"requests", "gateway_key", string(identity.GatewayKey)},
+		{"probe_results", "provider", string(identity.Provider)},
+	} {
+		if err := rewriteColumn(ctx, tx, c.table, c.column, c.kind, r); err != nil {
+			return err
+		}
+	}
+	if err := rewriteRollups(ctx, tx, r); err != nil {
+		return err
+	}
+	if err := rewriteKeyRollups(ctx, tx, r); err != nil {
+		return err
+	}
+	if err := rewritePositions(ctx, tx, r); err != nil {
+		return err
+	}
+	if err := r.seedLabels(ctx, tx); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = `+strconv.Itoa(statsVersion)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// backupV1 copies the database before the rewrite. Statistics accumulated over
+// months cannot be rebuilt, so a database that cannot be copied is left alone.
+func (s *Store) backupV1(ctx context.Context) error {
+	if s.path == "" || s.path == ":memory:" {
+		return nil
+	}
+	target := fmt.Sprintf("%s.v1.bak-%d", s.path, time.Now().Unix())
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
+		return fmt.Errorf("stats: back up %s to %s: %w", s.path, target, err)
+	}
+	return nil
+}
+
+func (s *Store) userVersion(ctx context.Context) (int, error) {
+	var version int
+	err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version)
+	return version, err
+}
+
+// idResolver maps a v1 display name to the id it now has and remembers every
+// pair the migration rewrote, so entity_labels keeps the historical name.
+type idResolver struct {
+	lookup func(kind, name string) string
+	ids    map[string]string
+}
+
+func newIDResolver(lookup func(kind, name string) string) *idResolver {
+	return &idResolver{lookup: lookup, ids: make(map[string]string)}
+}
+
+// id returns the entity id for a v1 name and caches it, so one name maps to one
+// id for the whole migration.
+func (r *idResolver) id(kind, name string) string {
+	key := kind + "\x00" + name
+	if id, ok := r.ids[key]; ok {
+		return id
+	}
+	id := ""
+	if r.lookup != nil {
+		id = r.lookup(kind, name)
+	}
+	if id == "" {
+		id = identity.Derive(identity.Kind(kind), name)
+	}
+	r.ids[key] = id
+	return id
+}
+
+// seedLabels stores the historical name of every rewritten reference. An
+// existing row wins: a label already synced from a renamed config is more
+// current than the name an old row happened to record.
+func (r *idResolver) seedLabels(ctx context.Context, tx *sql.Tx) error {
+	for key, id := range r.ids {
+		kind, name, ok := strings.Cut(key, "\x00")
+		if !ok || id == "" || !entityKinds[kind] {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO entity_labels(kind, id, name) VALUES(?,?,?)
+			ON CONFLICT(kind, id) DO NOTHING`, kind, id, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migratableRef reports whether v is a v1 display name that still needs its id.
+// A value that already satisfies identity.Shape is an id an id-aware gateway
+// wrote before this migration; deriving from it would split its history. Empty
+// values and the unrouted marker are not entity references.
+func migratableRef(v string) bool {
+	return v != "" && v != unroutedRef && !identity.Shape(v)
+}
+
+// distinctRefs returns the distinct v1 display names recorded in one column.
+func distinctRefs(ctx context.Context, tx *sql.Tx, table, column string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT `+column+` FROM `+table+` WHERE `+column+` <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if migratableRef(v) {
+			refs = append(refs, v)
+		}
+	}
+	rows.Close()
+	return refs, rows.Err()
+}
+
+// rewriteColumn rewrites every v1 name in one column to its entity id.
+func rewriteColumn(ctx context.Context, tx *sql.Tx, table, column, kind string, r *idResolver) error {
+	refs, err := distinctRefs(ctx, tx, table, column)
+	if err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		id := r.id(kind, ref)
+		if id == ref {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE `+table+` SET `+column+` = ? WHERE `+column+` = ?`, id, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rewriteRollups rewrites rollups.provider and sums a v1 series into the row an
+// id-aware gateway already wrote for the same bucket and model, so neither
+// history is lost to the shared primary key.
+func rewriteRollups(ctx context.Context, tx *sql.Tx, r *idResolver) error {
+	refs, err := distinctRefs(ctx, tx, "rollups", "provider")
+	if err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		id := r.id(string(identity.Provider), ref)
+		if id == ref {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO rollups
+			(bucket, provider, model, requests, errors, input_tokens, output_tokens, cached_tokens)
+			SELECT bucket, ?, model, requests, errors, input_tokens, output_tokens, cached_tokens
+			FROM rollups WHERE provider = ?
+			ON CONFLICT(bucket, provider, model) DO UPDATE SET
+				requests = requests + excluded.requests,
+				errors = errors + excluded.errors,
+				input_tokens = input_tokens + excluded.input_tokens,
+				output_tokens = output_tokens + excluded.output_tokens,
+				cached_tokens = cached_tokens + excluded.cached_tokens`, id, ref); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM rollups WHERE provider = ?`, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rewriteKeyRollups rewrites key_rollups.gateway_key with the same merge.
+func rewriteKeyRollups(ctx context.Context, tx *sql.Tx, r *idResolver) error {
+	refs, err := distinctRefs(ctx, tx, "key_rollups", "gateway_key")
+	if err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		id := r.id(string(identity.GatewayKey), ref)
+		if id == ref {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO key_rollups
+			(bucket, gateway_key, requests, errors, input_tokens, output_tokens, cached_tokens)
+			SELECT bucket, ?, requests, errors, input_tokens, output_tokens, cached_tokens
+			FROM key_rollups WHERE gateway_key = ?
+			ON CONFLICT(bucket, gateway_key) DO UPDATE SET
+				requests = requests + excluded.requests,
+				errors = errors + excluded.errors,
+				input_tokens = input_tokens + excluded.input_tokens,
+				output_tokens = output_tokens + excluded.output_tokens,
+				cached_tokens = cached_tokens + excluded.cached_tokens`, id, ref); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM key_rollups WHERE gateway_key = ?`, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rewritePositions rewrites the entity id carried by a topology position key.
+// A position already stored under the id wins, so a saved layout is never
+// replaced by a stale one.
+func rewritePositions(ctx context.Context, tx *sql.Tx, r *idResolver) error {
+	rows, err := tx.QueryContext(ctx, `SELECT node_id, x, y FROM topology_positions`)
+	if err != nil {
+		return err
+	}
+	type move struct {
+		from, to string
+		x, y     float64
+	}
+	var moves []move
+	for rows.Next() {
+		var id string
+		var x, y float64
+		if err := rows.Scan(&id, &x, &y); err != nil {
+			rows.Close()
+			return err
+		}
+		prefix, name, ok := strings.Cut(id, ":")
+		if !ok {
+			continue
+		}
+		kind, ok := positionKinds[prefix+":"]
+		if !ok || !migratableRef(name) {
+			continue
+		}
+		newID := r.id(string(kind), name)
+		if newID == name {
+			continue
+		}
+		moves = append(moves, move{from: id, to: prefix + ":" + newID, x: x, y: y})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, m := range moves {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM topology_positions WHERE node_id = ?`, m.from); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO topology_positions(node_id, x, y) VALUES(?,?,?)
+			ON CONFLICT(node_id) DO NOTHING`, m.to, m.x, m.y); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SyncLabels upserts the current display names of the entities the config still
+// knows. Rows are never deleted: a label is the last known name of an entity
+// and outlives it.
+func (s *Store) SyncLabels(ctx context.Context, labels map[string]map[string]string) error {
+	if s == nil || s.db == nil || len(labels) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for kind, byID := range labels {
+		if !entityKinds[kind] {
+			continue
+		}
+		for id, name := range byID {
+			if id == "" || name == "" {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO entity_labels(kind, id, name) VALUES(?,?,?)
+				ON CONFLICT(kind, id) DO UPDATE SET name = excluded.name`, kind, id, name); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+// Labels returns the last known display name of every labelled entity, keyed by
+// kind and id.
+func (s *Store) Labels(ctx context.Context) (map[string]map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT kind, id, name FROM entity_labels`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]map[string]string)
+	for rows.Next() {
+		var kind, id, name string
+		if err := rows.Scan(&kind, &id, &name); err != nil {
+			return nil, err
+		}
+		if out[kind] == nil {
+			out[kind] = make(map[string]string)
+		}
+		out[kind][id] = name
+	}
+	return out, rows.Err()
 }
 
 // Position is one topology node position in graph coordinates.
