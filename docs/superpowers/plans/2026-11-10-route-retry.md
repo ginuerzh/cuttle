@@ -403,12 +403,12 @@ git commit -m "feat(forward): retry retryable upstream statuses through the hop 
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `go-gost/x` `b051fa0` (`feat(forward): retry retryable upstream statuses through the hop selector`) followed by fix commit `a22bbba` (`fix(forward): keep retry state on reused HTTP upstream connections`), branch `feat/route-retry`
+- Files changed: `recorder/recorder.go`, `internal/util/forwarder/rewrite_metadata.go`, `internal/util/forwarder/retry.go`, `internal/util/forwarder/sniffer_sse.go`, `internal/util/forwarder/sniffer_http.go`, `internal/util/forwarder/sniffer_http_retry_test.go`
+- Tests/commands and results: 11 new forwarder tests RED (missing `Retries`/`withAttempt`/`MetaKeyAttempt`) then GREEN; keep-alive regression test RED (429 reached the client) then GREEN; `-race -count=4` stable; full x gate `go build ./... && go vet ./... && go test ./... -count=1` PASS
+- Review findings and fixes: retries were skipped when the upstream connection was reused → create the retry state on every request using the retained node, plus a two-request keep-alive test; controller accepted `dial` returning the selected node with a connect error, and spending the budget only after a successful replay parse
+- Deferred items/limitations: fresh-dial path can call `newRetryState` twice for an oversized/`Expect` request (redundant bounded buffering); `dial` doc overstates marking on the pinned-node path; SSE per-event/header metadata omit `attempt` (request capture is non-SSE); keep-alive `Retries` reset test; `attempt` wiring not covered end-to-end; helper swallows handler errors; budget test asserts the aggregate only; `retryBodyLimit` is a mutable test seam; cache guard untested; byte counters include discarded attempts
 
 ---
 
