@@ -50,6 +50,7 @@ import {
 } from '../graph/inertia';
 import { edgeTypes } from './edges';
 import { translate as t } from '../i18n';
+import type { NodeRouteHealth } from './routeHealth';
 
 export type Selection =
   | { kind: 'node'; id: string }
@@ -62,7 +63,7 @@ interface Props {
   onSelect: (s: Selection) => void;
   editable?: boolean;
   onConnect?: (c: Connection) => void;
-  deadNodes?: ReadonlySet<string>;
+  nodeHealth?: NodeRouteHealth;
   since?: string;
   animate?: boolean;
 }
@@ -176,7 +177,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
   }
 }
 
-export function Topology({ config, metrics, onSelect, editable, onConnect, deadNodes, since, animate = true }: Props) {
+export function Topology({ config, metrics, onSelect, editable, onConnect, nodeHealth, since, animate = true }: Props) {
   const canEdit = canEditTopology(editable);
   const [initialViewport] = useState(() => viewportInit(lastViewport));
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
@@ -402,12 +403,12 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, deadN
     setNodes((prev) =>
       prev.map((n) => {
         if (!n.id.startsWith('node:')) return n;
-        const dead = !!deadNodes?.has(n.id.slice('node:'.length));
+        const dead = nodeHealth?.dead.has(n.id.slice('node:'.length)) ?? false;
         if ((n.data.dead ?? false) === dead) return n;
         return { ...n, data: { ...n.data, dead } };
       }),
     );
-  }, [deadNodes, setNodes]);
+  }, [nodeHealth, setNodes]);
 
   const onNodeClick: NodeMouseHandler = (_event, node) => {
     onSelect({ kind: 'node', id: node.id });

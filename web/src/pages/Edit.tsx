@@ -57,11 +57,12 @@ import {
 } from './presets';
 import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
+import type { NodeRouteHealth } from './routeHealth';
 
 interface Props {
   config: ConfigResponse;
   onReload: () => Promise<void>;
-  deadNodes?: ReadonlySet<string>;
+  nodeHealth?: NodeRouteHealth;
 }
 
 
@@ -1068,7 +1069,7 @@ export function AddButtons({ onAdd }: { onAdd: (kind: AddKind) => void }) {
   );
 }
 
-export function Edit({ config, onReload, deadNodes }: Props) {
+export function Edit({ config, onReload, nodeHealth }: Props) {
   const isMobile = !Grid.useBreakpoint().md;
   const [selection, setSelection] = useState<Selection>(null);
   const [addOpen, setAddOpen] = useState<AddKind | null>(null);
@@ -1165,7 +1166,7 @@ export function Edit({ config, onReload, deadNodes }: Props) {
             <Alert style={{ marginTop: 8, maxWidth: 520 }} type="error" message={error} showIcon closable onClose={() => setError('')} />
           ) : null}
         </div>
-        <Topology config={config} metrics={null} onSelect={setSelection} editable onConnect={connect} deadNodes={deadNodes} />
+        <Topology config={config} metrics={null} onSelect={setSelection} editable onConnect={connect} nodeHealth={nodeHealth} />
       </div>
 
       {isMobile ? (

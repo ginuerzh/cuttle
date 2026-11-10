@@ -48,7 +48,7 @@ import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
 import { splitId } from './pages/selection';
-import { deadNodeNames } from './pages/routeHealth';
+import { nodeRouteHealth } from './pages/routeHealth';
 import { useLiveGraph } from './useLiveGraph';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
@@ -420,7 +420,7 @@ export default function App() {
   const [sessionKey, setSessionKey] = useState(0);
   const [routeHealth, setRouteHealth] = useState<RouteHealth[]>([]);
   const rangeMs = RANGES.find((item) => item.value === range)?.ms ?? 60 * 60_000;
-  const deadNodes = useMemo(() => deadNodeNames(routeHealth), [routeHealth]);
+  const nodeHealth = useMemo(() => nodeRouteHealth(routeHealth), [routeHealth]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -656,14 +656,14 @@ export default function App() {
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                   {mode === 'edit' ? (
                     config ? (
-                      <Edit config={config} onReload={loadConfig} deadNodes={deadNodes} />
+                      <Edit config={config} onReload={loadConfig} nodeHealth={nodeHealth} />
                     ) : null
                   ) : config ? (
                     <Topology
                       config={config}
                       metrics={metrics}
                       onSelect={setSelection}
-                      deadNodes={deadNodes}
+                      nodeHealth={nodeHealth}
                       since={since}
                       animate={animate}
                     />
@@ -710,7 +710,7 @@ export default function App() {
                     metrics={metrics?.nodes[selection.id]}
                     since={since}
                     rangeMs={rangeMs}
-                    dead={selection.id.startsWith('node:') && deadNodes.has(selection.id.slice('node:'.length))}
+                    dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
@@ -732,7 +732,7 @@ export default function App() {
                     metrics={metrics?.nodes[selection.id]}
                     since={since}
                     rangeMs={rangeMs}
-                    dead={selection.id.startsWith('node:') && deadNodes.has(selection.id.slice('node:'.length))}
+                    dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />

@@ -1,37 +1,62 @@
 import { describe, expect, it } from 'vitest';
 import type { RouteHealth } from '../api/types';
-import { deadNodeNames } from './routeHealth';
+import { nodeRouteHealth } from './routeHealth';
 
-const node = (name: string, dead: boolean) => ({
+const node = (name: string, dead: boolean) => ({ name, failCount: dead ? 2 : 0, dead });
+const route = (name: string, ...nodes: ReturnType<typeof node>[]): RouteHealth => ({
   name,
-  failCount: dead ? 2 : 0,
-  dead,
+  maxFails: 1,
+  failTimeout: '10s',
+  nodes,
 });
 
-describe('deadNodeNames', () => {
-  it('marks a node dead only when every route that references it is dead', () => {
-    const health: RouteHealth[] = [
-      { name: 'r1', maxFails: 1, failTimeout: '10s', nodes: [node('a', true), node('b', false)] },
-      { name: 'r2', maxFails: 1, failTimeout: '10s', nodes: [node('b', true), node('c', false)] },
+describe('nodeRouteHealth', () => {
+  it('marks a node dead when every route that reports it is dead', () => {
+    const health = [
+      route('r1', node('a', true), node('b', false)),
+      route('r2', node('b', true), node('c', false)),
+      route('r3', node('d', true)),
     ];
 
-    expect([...deadNodeNames(health)].sort()).toEqual(['a']);
+    const got = nodeRouteHealth(health);
+
+    expect([...got.dead].sort()).toEqual(['a', 'd']);
   });
 
-  it('marks a shared node dead when all of its routes are dead', () => {
-    const health: RouteHealth[] = [
-      { name: 'r1', maxFails: 1, failTimeout: '10s', nodes: [node('a', true)] },
-      { name: 'r2', maxFails: 1, failTimeout: '10s', nodes: [node('a', true)] },
+  it('reports partial death with the dead route names in route order', () => {
+    const health = [
+      route('r1', node('a', true)),
+      route('r2', node('a', false)),
+      route('r3', node('a', true)),
     ];
 
-    expect([...deadNodeNames(health)]).toEqual(['a']);
+    const got = nodeRouteHealth(health);
+
+    expect([...got.partial.keys()]).toEqual(['a']);
+    expect(got.partial.get('a')).toEqual(['r1', 'r3']);
+    expect(got.dead.size).toBe(0);
   });
 
-  it('returns an empty set when every node is healthy', () => {
-    const health: RouteHealth[] = [
-      { name: 'r1', maxFails: 1, failTimeout: '10s', nodes: [node('a', false)] },
-    ];
+  it('lists every dead route→node binding as an edge', () => {
+    const health = [route('r1', node('a', true), node('b', false)), route('r2', node('a', false))];
 
-    expect(deadNodeNames(health).size).toBe(0);
+    expect([...nodeRouteHealth(health).edges].sort()).toEqual(['route:r1|node:a']);
+  });
+
+  it('does not count a route that does not report the node', () => {
+    const health = [route('r1', node('a', true)), route('r2', node('b', false))];
+
+    const got = nodeRouteHealth(health);
+
+    expect([...got.dead]).toEqual(['a']);
+    expect(got.partial.size).toBe(0);
+  });
+
+  it('returns empty results without health', () => {
+    const got = nodeRouteHealth([]);
+
+    expect(got.dead.size).toBe(0);
+    expect(got.partial.size).toBe(0);
+    expect(got.edges.size).toBe(0);
   });
 });
