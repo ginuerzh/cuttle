@@ -372,12 +372,12 @@ git commit -m "feat(admin): manage named provider keys"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `af01e6eb` — `feat(admin): manage named provider keys`
+- Files changed: `internal/admin/handlers.go` (`providerKeyView`, `providerView.Keys`, name-based `providerKeyUpdate`/`applyProviderKeyUpdates`, `mergeProviderKeys`, `ensureKeysNotPinned`, `handleUpdateProvider`, `handlePutConfig`); `internal/admin/handlers_usage.go` (`accountUsageView.Name`/`Enabled`); `internal/admin/handlers_provider_keys_test.go` (new); `internal/admin/server_test.go` (provider view and keyUpdates tests updated).
+- Tests/commands + results: focused `go test ./internal/admin -run 'TestProviderViewReturnsNamedMaskedKeys|TestKeyUpdates|TestMergeProviderKeys|TestPutConfigPreservesProviderKeys|TestUsageViewIncludesNameAndEnabled' -count=1` PASS; `go test ./internal/admin -count=1` PASS; full `go build ./... && go vet ./... && go test ./... -count=1` PASS.
+- Review findings + fixes: two test assertions corrected — the error body escapes quotes (assert on `is used by node`) and appended keys land after surviving keys by design (assert by name).
+- Deferred/limitations: the console bundle still uses the old view shape until Task 5; provider key renaming is still delete+re-add (per the spec).
 
 ---
 
