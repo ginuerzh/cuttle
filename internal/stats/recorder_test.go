@@ -409,3 +409,12 @@ func TestRecorderCaptureOffWritesNothing(t *testing.T) {
 		t.Fatalf("off mode wrote capture: %+v", c)
 	}
 }
+
+func TestParseNodeNameIgnoresKeySegment(t *testing.T) {
+	for _, in := range []string{"route/provider/node/account-a", "route/provider/node/1"} {
+		route, provider, node := parseNodeName(in)
+		if route != "route" || provider != "provider" || node != "node" {
+			t.Fatalf("parseNodeName(%q) = %q/%q/%q, want route/provider/node", in, route, provider, node)
+		}
+	}
+}

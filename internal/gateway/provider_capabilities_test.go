@@ -556,7 +556,11 @@ func TestBuildNodesSkipsEmptyHeaderWhenKeyless(t *testing.T) {
 			Extra:  map[string]string{"X-Org": "acme"},
 		},
 	}
-	nodes, err := buildNodes(p, n, "route", target, "r/route/default/n")
+	keys, keyErr := resolveNodeKeys(p, n)
+	if keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	nodes, err := buildNodes(p, n, keys, "route", target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,7 +593,11 @@ func TestBuildNodesExtraWinsOverKeyHeaders(t *testing.T) {
 			},
 		},
 	}
-	nodes, err := buildNodes(p, n, "route", target, "r/route/default/n")
+	keys, keyErr := resolveNodeKeys(p, n)
+	if keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	nodes, err := buildNodes(p, n, keys, "route", target, "r/route/default/n")
 	if err != nil {
 		t.Fatal(err)
 	}
