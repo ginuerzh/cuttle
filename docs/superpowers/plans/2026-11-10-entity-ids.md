@@ -239,12 +239,12 @@ git commit -m "feat(config): migrate legacy configs to entity ids"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 — DONE (code in `3ca7064f`); this record is added by the follow-up plan commit.
+- Repository + commit: `github.com/ginuerzh/cuttle` @ `3ca7064f` (`feat(config): migrate legacy configs to entity ids`).
+- Files changed: `internal/config/migrate.go` (new), `internal/config/migrate_test.go` (new), `internal/config/config.go`, `internal/config/config_test.go`, `internal/admin/handlers_stats.go`, `internal/admin/handlers_events.go`, `internal/admin/p6a_test.go` (id in the entrypoint fixture), `internal/bootstrap/bootstrap.go` (test seam wrapper for the new `Load` signature), `main.go`.
+- Tests/commands and results: RED `GOWORK=off go test ./internal/config -run 'TestMigrate|TestLoadReadOnly|TestLoadWritesBack|TestLoadRenameWithoutID|TestValidateNameReferencesRejected' -count=1` → `undefined: MigrateIdentities` (build failure). GREEN the same command, then `GOWORK=off go test ./internal/config -count=1` and `GOWORK=off go test ./internal/admin -count=1`. Gate: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...` and `GOWORK=off go test ./internal/config ./internal/admin -count=1` all pass. `GOWORK=off go test ./... -count=1` passes everywhere except `internal/gateway` `TestEntrypointConfigEndToEnd` and `TestZeroConfigOnboarding`, which fail with `entrypoint "…": unknown route "r_…"` because `internal/gateway/build.go` still keys routes, providers, nodes and keys by name — Task 3 (Step 3) moves those maps to ids and owns those two e2e tests. Full report: `.superpowers/sdd/2026-11-10-entity-ids/task-2-report.md`.
+- Review findings and fixes: `TestExampleConfigLoads` loaded `../../example.yaml` in place, so the new write-back rewrote the repository file during the first green run (restored; the test now copies the file into `t.TempDir()`); `bootstrap.go`'s `var loadConfig = config.Load` no longer matched the `func(string)` test seam after the variadic option, so it became an explicit wrapper; the write-back refuses to rewrite the file when the `.bak-<unix>` copy cannot be created; `validateEntityID` now rejects ids with surrounding whitespace instead of trimming them (ruling 2) with a new `provider padded id` case; `TestGraphEntrypointAPI` gained a real entrypoint id instead of weakening its assertions; `TestTopologyIncludes` and `TestResolveEntrypointOrder` were moved to ids.
+- Deferred items/limitations: ids stay optional in `Validate` and reference checks still accept a unique name (`TestValidateNameReferencesRejected` is skipped with `enabled in Task 7`), per the controller ruling; the legacy name fallback in `Provider/Node/Route/Entrypoint/GatewayKey` and `TopologyIncludes` disappears in Task 7. The read-only write-back subtest skips when the suite runs as root (root bypasses the `0555` directory); a second subtest still pins deterministic derivation, and the failure path is `warn`-only by construction. Migration writes raw YAML, so comments and formatting in a migrated file are lost (Task 10 documents the `.bak` copy). `example.yaml` stays id-less until Task 10. `NameToIDs` omits names that repeat within a kind (provider key names shared by two providers), while `LabelsByID` stays id-keyed and unambiguous. `node.key` is still name-based in the gateway until Task 3.
 
 ---
 
