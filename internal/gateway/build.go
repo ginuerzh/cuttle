@@ -229,6 +229,24 @@ func buildVariantHop(r gwconfig.Route, build string, inbound provider.API, plans
 		if err != nil {
 			return nil, fmt.Errorf("node %q: %w", np.node.Name, err)
 		}
+		if r.Retries > 0 {
+			// x reads the route retry policy from node metadata, and the
+			// selector picks one node per request, so every node built for
+			// the route (per-key and backup alike) must carry it. An explicit
+			// default here keeps builds that bypass config.Load on the same
+			// codes x would use anyway.
+			codes := r.RetryCodes
+			if codes == "" {
+				codes = "429,5xx"
+			}
+			for _, n := range ns {
+				if n.Metadata == nil {
+					n.Metadata = make(map[string]any, 2)
+				}
+				n.Metadata["retry.max"] = r.Retries
+				n.Metadata["retry.codes"] = codes
+			}
+		}
 		nodes = append(nodes, ns...)
 	}
 

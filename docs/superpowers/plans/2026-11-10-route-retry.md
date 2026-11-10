@@ -560,7 +560,7 @@ git commit -m "feat(config): add route retry settings"
 - Consumes: `config.Route.Retries`, `config.Route.RetryCodes` (Task 5).
 - Produces: every node built for a route carries `retry.max` (`int`) and `retry.codes` (`string`) in its x metadata when `Retries > 0`; otherwise neither key exists. An empty `RetryCodes` with `Retries > 0` is stamped as `429,5xx`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `route_retry_test.go` (package `gateway`):
 - Build a config with one provider with two enabled keys, two nodes (one `Backup: true`), and a route `{Name: "r", Nodes: []string{"n1","n2"}, Retries: 2, RetryCodes: "429,502"}`.
@@ -568,23 +568,23 @@ git commit -m "feat(config): add route retry settings"
 - A second config with `Retries: 0` asserts both metadata reads are zero/empty for every node.
 - A third with `Retries: 1, RetryCodes: ""` asserts the stamped codes are `429,5xx`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `GOWORK=off go test ./internal/gateway -run TestRouteRetryMetadata -count=1`
 Expected: FAIL (metadata absent).
 
-- [ ] **Step 3: Implement the stamping**
+- [x] **Step 3: Implement the stamping**
 
 In `buildVariantHop`, after `buildNodes` returns without error:
 - When `r.Retries > 0`, compute `codes := r.RetryCodes`; if empty use `429,5xx`; for every returned `*xconfig.NodeConfig`, ensure `Metadata` is non-nil and set `retry.max`/`retry.codes`.
 - Do not touch `buildNodes`'s signature.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `GOWORK=off go test ./internal/gateway -run TestRouteRetryMetadata -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/gateway/build.go internal/gateway/route_retry_test.go
@@ -592,12 +592,12 @@ git commit -m "feat(gateway): carry route retry policy on nodes"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `cuttle` `feat(gateway): carry route retry policy on nodes` on `feat/route-retry`; the SHA is recorded in the follow-up `docs(plan)` commit because a commit cannot contain its own hash
+- Files changed: `internal/gateway/build.go`, `internal/gateway/route_retry_test.go` (new), `docs/superpowers/plans/2026-11-10-route-retry.md`
+- Tests/commands and results: RED first — `GOWORK=off go test ./internal/gateway -run TestRouteRetryMetadata -count=1` failed with `node r/p/n1/k1 retry.max = 0, want 2` and `retry.max = 0, want 1` (the `Retries: 0` subtest already passed, which is the pre-existing behavior). GREEN after stamping in `buildVariantHop`: same command → `ok`. Full gate `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS (gateway 13.772s, admin 13.892s, stats 16.446s). The test helper pins `node.api: chat` so target resolution stays offline, and asserts the default hop holds 4 nodes (2 provider keys x normal + backup node).
+- Review findings and fixes: (1) stamping lives in `buildVariantHop` after `buildNodes` returns, so every protocol variant, every per-key node and the backup node inherit the policy and `buildNodes` keeps its signature; (2) the `Retries == 0` case writes nothing at all — the test asserts `md.IsExists` is false for both keys, not merely that the reads are zero, so a future "stamp zero" regression fails; (3) each node gets its own metadata map from `buildNodes`, so mutating it cannot leak into another node or another build generation; (4) the build-level `429,5xx` fallback is deliberate because `config.Load` fills the default, but `buildRoutePlan` tests and any future caller construct `config.Route` directly.
+- Deferred items/limitations: a whitespace-only `RetryCodes` stamped by a caller that bypassed `config.Load` would reach x as-is and retry nothing; `config.Load` trims it, and the brief fixes the build-level rule as "empty only", so this stays consistent with the plan. No end-to-end retry assertion here — that is Task 10. Nothing yet records retries in stats (Task 7) or surfaces the fields in the UI (Task 9).
 
 ---
 
