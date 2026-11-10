@@ -222,7 +222,7 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 	_, rel, path, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)
 
-	body := `{"name":"p1","type":"generic","chat":"https://api.example.com/v1","keys":["sk-secret-value"]}`
+	body := `{"name":"p1","type":"generic","chat":"https://api.example.com/v1","keys":[{"name":"key-1","key":"sk-secret-value"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create status = %d: %s", resp.StatusCode, b)
@@ -249,7 +249,7 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p1", update, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("update status = %d", resp.StatusCode)
 	}
-	if len(rel.cfg.Providers[0].Keys) != 1 || rel.cfg.Providers[0].Keys[0] != "sk-secret-value" {
+	if len(rel.cfg.Providers[0].Keys) != 1 || rel.cfg.Providers[0].Keys[0].Key != "sk-secret-value" {
 		t.Fatalf("keys were cleared by an update without keys: %+v", rel.cfg.Providers[0].Keys)
 	}
 
@@ -444,7 +444,7 @@ func TestProbeProviderOpenCodeCatalogIsKeyless(t *testing.T) {
 		Name: "opencode-go",
 		Type: "opencode-go",
 		Chat: up.URL + "/v1",
-		Keys: []string{"invalid-key"},
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "invalid-key"}},
 	}
 	if res := probeHTTP(context.Background(), p); !res.OK || res.Error != "" {
 		t.Fatalf("probe = %+v, want a keyless catalog", res)
@@ -472,7 +472,7 @@ func TestProbeProviderAnthropicAPI(t *testing.T) {
 	}))
 	defer up.Close()
 
-	body := `{"name":"anthropic","type":"generic","anthropic":"` + up.URL + `","keys":["sk-ant"]}`
+	body := `{"name":"anthropic","type":"generic","anthropic":"` + up.URL + `","keys":[{"name":"key-1","key":"sk-ant"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider = %d: %s", resp.StatusCode, b)
@@ -996,7 +996,7 @@ func TestProviderKeyUpdates(t *testing.T) {
 	_, rel, _, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)
 
-	body := `{"name":"p","type":"generic","chat":"https://a.example","keys":["a","b","c"]}`
+	body := `{"name":"p","type":"generic","chat":"https://a.example","keys":[{"name":"key-1","key":"a"},{"name":"key-2","key":"b"},{"name":"key-3","key":"c"}]}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", body, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create provider = %d", resp.StatusCode)
 	}
@@ -1007,7 +1007,7 @@ func TestProviderKeyUpdates(t *testing.T) {
 		t.Fatalf("update keys = %d: %s", resp.StatusCode, b)
 	}
 	got := rel.cfg.Providers[0].Keys
-	if len(got) != 3 || got[0] != "a" || got[1] != "b" || got[2] != "d" {
+	if len(got) != 3 || got[0].Key != "a" || got[1].Key != "b" || got[2].Key != "d" {
 		t.Fatalf("keys = %v, want [a b d]", got)
 	}
 
@@ -1015,7 +1015,7 @@ func TestProviderKeyUpdates(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", replace, csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("replace existing key = %d, want 400", resp.StatusCode)
 	}
-	if got := rel.cfg.Providers[0].Keys; len(got) != 3 || got[0] != "a" {
+	if got := rel.cfg.Providers[0].Keys; len(got) != 3 || got[0].Key != "a" {
 		t.Fatalf("keys changed after rejected replace: %v", got)
 	}
 
@@ -1023,7 +1023,7 @@ func TestProviderKeyUpdates(t *testing.T) {
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", bad, csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid key index = %d, want 400", resp.StatusCode)
 	}
-	if got := rel.cfg.Providers[0].Keys; len(got) != 3 || got[0] != "a" {
+	if got := rel.cfg.Providers[0].Keys; len(got) != 3 || got[0].Key != "a" {
 		t.Fatalf("keys changed after rejected update: %v", got)
 	}
 }
@@ -1032,7 +1032,7 @@ func TestPutStatsCapture(t *testing.T) {
 	_, rel, _, ts := newTestAdmin(t)
 	client, csrf := login(t, ts.URL)
 
-	provider := `{"name":"p","type":"generic","chat":"https://a.example","keys":["sk-keep-me-1234"],"userAgent":"custom/1.0","headers":{"X-Keep":"1"}}`
+	provider := `{"name":"p","type":"generic","chat":"https://a.example","keys":[{"name":"key-1","key":"sk-keep-me-1234"}],"userAgent":"custom/1.0","headers":{"X-Keep":"1"}}`
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers", provider, csrf); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create provider status = %d", resp.StatusCode)
 	}
@@ -1061,7 +1061,7 @@ func TestPutStatsCapture(t *testing.T) {
 		t.Fatalf("capture PUT changed other sections: %+v", rel.cfg)
 	}
 	p := rel.cfg.Providers[0]
-	if len(p.Keys) != 1 || p.Keys[0] != "sk-keep-me-1234" ||
+	if len(p.Keys) != 1 || p.Keys[0].Key != "sk-keep-me-1234" ||
 		p.UserAgent != "custom/1.0" || p.Headers["X-Keep"] != "1" {
 		t.Fatalf("provider fields changed: %+v", p)
 	}

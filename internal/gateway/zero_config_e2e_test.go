@@ -177,7 +177,7 @@ func TestZeroConfigOnboarding(t *testing.T) {
 		return resp.StatusCode
 	}
 
-	provider := `{"name":"p","type":"generic","chat":"` + upstream.URL + `","keys":["sk-zero"]}`
+	provider := `{"name":"p","type":"generic","chat":"` + upstream.URL + `","keys":[{"name":"key-1","key":"sk-zero"}]}`
 	if code := do(http.MethodPost, "/api/providers", provider); code != http.StatusCreated {
 		ts.Close()
 		gw.Close()

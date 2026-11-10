@@ -76,7 +76,7 @@ func probeHTTP(ctx context.Context, p config.Provider) probeResult {
 	}
 	key := ""
 	if len(p.Keys) > 0 && !keyless {
-		key = p.Keys[0]
+		key = p.Keys[0].Key
 	}
 	applyAuthConfig(req, auth, key)
 	provider.ApplyAnthropicVersion(req, api)

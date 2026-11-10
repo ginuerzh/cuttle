@@ -83,7 +83,7 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 		return resp.StatusCode
 	}
 
-	provider := `{"name":"p","type":"generic","chat":"` + upstream.URL + `","keys":["sk-e2e"]}`
+	provider := `{"name":"p","type":"generic","chat":"` + upstream.URL + `","keys":[{"name":"key-1","key":"sk-e2e"}]}`
 	if code := do(http.MethodPost, "/api/providers", provider); code != http.StatusCreated {
 		t.Fatalf("create provider = %d", code)
 	}

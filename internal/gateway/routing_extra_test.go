@@ -45,7 +45,7 @@ func TestMultiKey429Rotation(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := matrixConfig(upstream.URL, provider.Chat)
-	cfg.Providers[0].Keys = []string{"k1", "k2"}
+	cfg.Providers[0].Keys = []gwconfig.ProviderKey{{Name: "key-1", Key: "k1"}, {Name: "key-2", Key: "k2"}}
 	cfg.Routes[0].Strategy = "round"
 	gw := startGateway(t, cfg)
 

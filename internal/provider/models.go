@@ -134,7 +134,7 @@ func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([
 	}
 	key := ""
 	if len(p.cfg.Keys) > 0 {
-		key = p.cfg.Keys[0]
+		key = p.cfg.Keys[0].Key
 	}
 	if p.CatalogKeyless() {
 		key = ""

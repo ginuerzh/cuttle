@@ -61,7 +61,8 @@ providers:
     responses: https://api.deepseek.com/v1
     anthropic: https://api.deepseek.com/anthropic
     keys:
-      - ${DEEPSEEK_API_KEY}
+      - name: default
+        key: "${DEEPSEEK_API_KEY}"
     health:
       api: chat
       interval: 30s
@@ -78,7 +79,9 @@ providers:
   #   chat: https://openrouter.ai/api/v1
   #   responses: https://openrouter.ai/api/v1
   #   anthropic: https://openrouter.ai/api
-  #   keys: ["${OPENROUTER_API_KEY}"]
+  #   keys:
+  #     - name: default
+  #       key: "${OPENROUTER_API_KEY}"
 
 # A node binds one provider model plus routing policy. backup: true makes it a
 # fallback; weight controls the round-robin share.

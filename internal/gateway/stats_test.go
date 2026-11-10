@@ -33,7 +33,7 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 		Name: "p",
 		Type: "generic",
 		Chat: upstreamURL,
-		Keys: []string{"sk-secret"},
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret"}},
 	}}
 	cfg.Nodes = []config.Node{{
 		Name:     "p",

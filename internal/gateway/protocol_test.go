@@ -45,7 +45,7 @@ func matrixConfig(upstreamURL string, api provider.API) *gwconfig.Config {
 	p := gwconfig.Provider{
 		Name: "up",
 		Type: "generic",
-		Keys: []string{"sk-test"},
+		Keys: []gwconfig.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}
 	switch api {
 	case provider.Anthropic:

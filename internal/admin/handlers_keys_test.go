@@ -233,7 +233,7 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 	// Seed a provider key. GET /api/config must not echo it and PUT must
 	// preserve it when the decoded field is absent.
 	if resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/providers",
-		`{"name":"upstream","type":"generic","chat":"https://example.test/v1","keys":["sk-provider-secret"]}`, csrf); resp.StatusCode != http.StatusCreated {
+		`{"name":"upstream","type":"generic","chat":"https://example.test/v1","keys":[{"name":"key-1","key":"sk-provider-secret"}]}`, csrf); resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create provider status = %d: %s", resp.StatusCode, b)
 	}
@@ -269,7 +269,7 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 		t.Fatalf("preserved key = %+v, want name claude-code and the original value", got)
 	}
 	if len(rel.cfg.Providers) != 1 || len(rel.cfg.Providers[0].Keys) != 1 ||
-		rel.cfg.Providers[0].Keys[0] != "sk-provider-secret" {
+		rel.cfg.Providers[0].Keys[0].Key != "sk-provider-secret" {
 		t.Fatalf("providers after read-modify-write = %+v, want the provider key preserved", rel.cfg.Providers)
 	}
 	if rel.cfg.Gateway.ReadTimeout != config.Duration(90*time.Second) || rel.cfg.Gateway.UserAgent != "cuttle-test-agent/1.0" {
@@ -298,7 +298,7 @@ func TestPutConfigPreservesGatewayKeys(t *testing.T) {
 		t.Fatalf("gateway after second round-trip = %+v", rel.cfg.Gateway)
 	}
 	if len(rel.cfg.Providers) != 1 || len(rel.cfg.Providers[0].Keys) != 1 ||
-		rel.cfg.Providers[0].Keys[0] != "sk-provider-secret" {
+		rel.cfg.Providers[0].Keys[0].Key != "sk-provider-secret" {
 		t.Fatalf("providers after second round-trip = %+v", rel.cfg.Providers)
 	}
 

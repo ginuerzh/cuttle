@@ -282,11 +282,12 @@ func buildNodes(p gwconfig.Provider, n gwconfig.Node, route string, target upstr
 
 	keys := p.Keys
 	if len(keys) == 0 {
-		keys = []string{""}
+		keys = []gwconfig.ProviderKey{{}}
 	}
 
 	nodes := make([]*xconfig.NodeConfig, 0, len(keys))
-	for i, key := range keys {
+	for i, k := range keys {
+		key := k.Key
 		headers := make(map[string]string, len(auth.Extra)+len(p.Headers)+6)
 		// The gateway owns upstream authentication. Inbound credentials, such
 		// as the Authorization header Claude Code sends or an SDK's x-api-key,

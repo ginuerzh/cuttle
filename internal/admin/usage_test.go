@@ -43,7 +43,7 @@ func TestProviderUsageAPI(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-secret-1234"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret-1234"}},
 	})
 	if err := rel.store.Insert(context.Background(), stats.Request{
 		ID: "r1", SID: "r1", TS: time.Now().UTC(), Provider: "deepseek",
@@ -89,7 +89,7 @@ func TestProviderUsageCache(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	})
 
 	client, _ := login(t, ts.URL)
@@ -122,7 +122,7 @@ func TestProviderUsageMultipleKeys(t *testing.T) {
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
 		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1",
-		Keys: []string{"sk-secret-1111", "sk-secret-2222"},
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret-1111"}, {Name: "key-2", Key: "sk-secret-2222"}},
 	})
 
 	client, _ := login(t, ts.URL)
@@ -158,7 +158,7 @@ func TestProviderUsageFailureKeepsLastGood(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-secret-1234"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret-1234"}},
 	})
 
 	client, _ := login(t, ts.URL)
@@ -198,7 +198,7 @@ func TestProviderUsageDisabledAndNoKey(t *testing.T) {
 	disabled := false
 	setUsageProviders(t, srv,
 		config.Provider{
-			Name: "off", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-test"},
+			Name: "off", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 			Enabled: &disabled,
 		},
 		config.Provider{
@@ -230,7 +230,7 @@ func TestProviderUsageUnsupported(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "zen", Type: "opencode-zen", Chat: vendor.URL + "/zen/v1", Keys: []string{"sk-test"},
+		Name: "zen", Type: "opencode-zen", Chat: vendor.URL + "/zen/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	})
 
 	client, _ := login(t, ts.URL)
@@ -261,7 +261,7 @@ func TestProviderUsageReloadClearsCache(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	})
 
 	client, _ := login(t, ts.URL)
@@ -290,7 +290,7 @@ func TestProviderUsageLocalError(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	})
 	srv.stats = nil
 
@@ -324,7 +324,7 @@ func TestProviderUsageCacheInvalidationRace(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-old-1111"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-old-1111"}},
 	})
 	client, _ := login(t, ts.URL)
 
@@ -342,7 +342,7 @@ func TestProviderUsageCacheInvalidationRace(t *testing.T) {
 	srv.mu.Lock()
 	next := *srv.cfg
 	next.Providers = []config.Provider{{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-new-2222"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-new-2222"}},
 	}}
 	srv.mu.Unlock()
 	srv.SetConfig(&next)
@@ -379,7 +379,7 @@ func TestProviderUsageCanceledRequestNotCached(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -416,7 +416,7 @@ func TestProviderUsageOpenRouterNote(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "openrouter", Type: "openrouter", Chat: vendor.URL + "/api/v1", Keys: []string{"sk-or-secret"},
+		Name: "openrouter", Type: "openrouter", Chat: vendor.URL + "/api/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-or-secret"}},
 	})
 
 	client, _ := login(t, ts.URL)
@@ -445,7 +445,7 @@ func TestProviderUsageOpenRouterStaleNote(t *testing.T) {
 	}))
 	defer vendor.Close()
 	setUsageProviders(t, srv, config.Provider{
-		Name: "openrouter", Type: "openrouter", Chat: vendor.URL + "/api/v1", Keys: []string{"sk-or-secret"},
+		Name: "openrouter", Type: "openrouter", Chat: vendor.URL + "/api/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-or-secret"}},
 	})
 
 	client, _ := login(t, ts.URL)

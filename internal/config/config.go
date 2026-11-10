@@ -100,17 +100,17 @@ type Entrypoint struct {
 // Type selects the adapter. Each non-empty API base URL advertises one wire
 // API; an empty field means the provider does not serve that API.
 type Provider struct {
-	Name      string   `yaml:"name" json:"name"`
-	Type      string   `yaml:"type" json:"type"`
-	Chat      string   `yaml:"chat,omitempty" json:"chat,omitempty"`
-	Responses string   `yaml:"responses,omitempty" json:"responses,omitempty"`
-	Anthropic string   `yaml:"anthropic,omitempty" json:"anthropic,omitempty"`
-	Gemini    string   `yaml:"gemini,omitempty" json:"gemini,omitempty"`
-	Keys      []string `yaml:"keys,omitempty" json:"keys,omitempty"`
-	Auth      Auth     `yaml:"auth,omitempty" json:"auth,omitempty"`
-	Health    Health   `yaml:"health,omitempty" json:"health,omitempty"`
-	TLS       TLS      `yaml:"tls,omitempty" json:"tls,omitempty"`
-	Enabled   *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Name      string        `yaml:"name" json:"name"`
+	Type      string        `yaml:"type" json:"type"`
+	Chat      string        `yaml:"chat,omitempty" json:"chat,omitempty"`
+	Responses string        `yaml:"responses,omitempty" json:"responses,omitempty"`
+	Anthropic string        `yaml:"anthropic,omitempty" json:"anthropic,omitempty"`
+	Gemini    string        `yaml:"gemini,omitempty" json:"gemini,omitempty"`
+	Keys      []ProviderKey `yaml:"keys,omitempty" json:"keys,omitempty"`
+	Auth      Auth          `yaml:"auth,omitempty" json:"auth,omitempty"`
+	Health    Health        `yaml:"health,omitempty" json:"health,omitempty"`
+	TLS       TLS           `yaml:"tls,omitempty" json:"tls,omitempty"`
+	Enabled   *bool         `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	// UserAgent overrides gateway.userAgent for this provider.
 	UserAgent string `yaml:"userAgent,omitempty" json:"userAgent,omitempty"`
 	// Headers adds or overrides upstream request headers. They are applied
@@ -121,6 +121,20 @@ type Provider struct {
 	// disabling a model. Unknown model IDs are allowed because the catalog can
 	// change at any time.
 	Models map[string]ModelOverride `yaml:"models,omitempty" json:"models,omitempty"`
+}
+
+// ProviderKey is one named upstream account key. The name is the stable
+// handle used by a node pin, the admin API and the console; the value is
+// write-only.
+type ProviderKey struct {
+	Name    string `yaml:"name" json:"name"`
+	Key     string `yaml:"key" json:"key,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// EnabledValue reports whether the key is enabled (default true).
+func (k ProviderKey) EnabledValue() bool {
+	return k.Enabled == nil || *k.Enabled
 }
 
 // ModelOverride holds local policy for one model from a provider's catalog.
@@ -155,9 +169,12 @@ type Node struct {
 	Provider string `yaml:"provider" json:"provider"`
 	Model    string `yaml:"model" json:"model"`
 	API      string `yaml:"api,omitempty" json:"api,omitempty"`
-	Backup   bool   `yaml:"backup,omitempty" json:"backup,omitempty"`
-	Weight   int    `yaml:"weight,omitempty" json:"weight,omitempty"`
-	Enabled  *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Key optionally pins the node to one named provider key. Empty spreads
+	// the node across every enabled key.
+	Key     string `yaml:"key,omitempty" json:"key,omitempty"`
+	Backup  bool   `yaml:"backup,omitempty" json:"backup,omitempty"`
+	Weight  int    `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 // Auth describes how the provider key is injected into upstream requests.
@@ -399,7 +416,8 @@ func (c *Config) expandEnv() {
 		p.Health.API = ExpandEnv(p.Health.API)
 		p.Health.Path = ExpandEnv(p.Health.Path)
 		for j := range p.Keys {
-			p.Keys[j] = ExpandEnv(p.Keys[j])
+			p.Keys[j].Name = ExpandEnv(p.Keys[j].Name)
+			p.Keys[j].Key = ExpandEnv(p.Keys[j].Key)
 		}
 		p.Auth.Header = ExpandEnv(p.Auth.Header)
 		p.Auth.Prefix = ExpandEnv(p.Auth.Prefix)
@@ -491,6 +509,10 @@ func (c *Config) applyDefaults() {
 	}
 	for i := range c.Providers {
 		p := &c.Providers[i]
+		for j := range p.Keys {
+			p.Keys[j].Name = strings.TrimSpace(p.Keys[j].Name)
+			p.Keys[j].Key = strings.TrimSpace(p.Keys[j].Key)
+		}
 		p.Health.API = strings.ToLower(strings.TrimSpace(p.Health.API))
 		if p.TLS.Secure == nil {
 			secure := true
@@ -549,6 +571,7 @@ func (c *Config) applyDefaults() {
 		n := &c.Nodes[i]
 		n.Model = strings.TrimSpace(n.Model)
 		n.API = strings.ToLower(strings.TrimSpace(n.API))
+		n.Key = strings.TrimSpace(n.Key)
 		if n.API == "auto" {
 			n.API = ""
 		}
@@ -705,6 +728,45 @@ func validateGatewayKeys(keys []GatewayKey) error {
 	return nil
 }
 
+const providerKeyNameMax = 64
+
+// validateProviderKeys checks the named upstream account keys. Names are
+// required, unique inside the provider, and safe for the x node name and the
+// environment expansion on reload. Values are write-only and never echoed.
+func validateProviderKeys(providerName string, keys []ProviderKey) error {
+	names := make(map[string]struct{}, len(keys))
+	for i := range keys {
+		name := strings.TrimSpace(keys[i].Name)
+		switch {
+		case name == "":
+			return fmt.Errorf("provider %q: keys[%d]: name is required", providerName, i)
+		case utf8.RuneCountInString(name) > providerKeyNameMax:
+			return fmt.Errorf("provider %q: keys[%d]: name must be at most %d characters", providerName, i, providerKeyNameMax)
+		case strings.Contains(name, "/"):
+			return fmt.Errorf("provider %q: keys[%d]: name must not contain '/'", providerName, i)
+		case strings.Contains(name, "$"):
+			return fmt.Errorf("provider %q: keys[%d]: name must not contain '$'", providerName, i)
+		case strings.ContainsFunc(name, unicode.IsControl):
+			return fmt.Errorf("provider %q: keys[%d]: name contains control characters", providerName, i)
+		}
+		if _, ok := names[name]; ok {
+			return fmt.Errorf("provider %q: keys[%d]: duplicate name %q", providerName, i, name)
+		}
+		names[name] = struct{}{}
+
+		key := strings.TrimSpace(keys[i].Key)
+		switch {
+		case key == "":
+			return fmt.Errorf("provider %q: keys[%d]: key is empty (check the environment variable)", providerName, i)
+		case strings.Contains(key, "$"):
+			return fmt.Errorf("provider %q: keys[%d]: key must not contain '$'", providerName, i)
+		case strings.ContainsFunc(key, unicode.IsControl):
+			return fmt.Errorf("provider %q: keys[%d]: key contains control characters", providerName, i)
+		}
+	}
+	return nil
+}
+
 // Validate checks structural and reference errors.
 func Validate(c *Config) error {
 	if c == nil {
@@ -801,10 +863,8 @@ func Validate(c *Config) error {
 		if p.Health.Path != "" && !strings.HasPrefix(p.Health.Path, "/") {
 			return fmt.Errorf("provider %q: health.path must start with /", name)
 		}
-		for j, k := range p.Keys {
-			if strings.TrimSpace(k) == "" {
-				return fmt.Errorf("provider %q: keys[%d] is empty (check the environment variable)", name, j)
-			}
+		if err := validateProviderKeys(name, p.Keys); err != nil {
+			return err
 		}
 	}
 
@@ -829,6 +889,24 @@ func Validate(c *Config) error {
 		}
 		if !seen[provider] {
 			return fmt.Errorf("node %q: unknown provider %q", name, provider)
+		}
+		if key := strings.TrimSpace(n.Key); key != "" {
+			found := false
+			for pi := range c.Providers {
+				if c.Providers[pi].Name != provider {
+					continue
+				}
+				for _, pk := range c.Providers[pi].Keys {
+					if strings.TrimSpace(pk.Name) == key {
+						found = true
+						break
+					}
+				}
+				break
+			}
+			if !found {
+				return fmt.Errorf("node %q: key %q is not configured on provider %q", name, key, provider)
+			}
 		}
 		if strings.TrimSpace(n.Model) == "" {
 			return fmt.Errorf("node %q: model is required", name)

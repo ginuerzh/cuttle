@@ -40,7 +40,7 @@ func TestUsageDeepSeek(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestUsageCommandCode(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestUsageCommandCodeMonthlyFromPlan(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestUsageCommandCodeGrantWithoutSubscription(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +191,7 @@ func TestUsageCommandCodeSubscriptionFailureKeepsWindows(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestUsageCommandCodeUnknownPlanHasNoMonthly(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []string{"sk-test"},
+		Name: "commandcode", Type: "commandcode", Chat: srv.URL + "/provider/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -247,7 +247,7 @@ func TestUsageOpenCodeGo(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "opencode-go", Type: "opencode-go", Chat: srv.URL + "/zen/go/v1", Keys: []string{"sk-test"},
+		Name: "opencode-go", Type: "opencode-go", Chat: srv.URL + "/zen/go/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +298,7 @@ func TestUsageOpenCodeGoBasePaths(t *testing.T) {
 	for _, tc := range cases {
 		gotPath = ""
 		accounts, err := usageProvider(t, config.Provider{
-			Name: "opencode-go", Type: "opencode-go", Chat: tc.base, Keys: []string{"sk-test"},
+			Name: "opencode-go", Type: "opencode-go", Chat: tc.base, Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 		}).Usage(context.Background())
 		if err != nil {
 			t.Fatalf("%s: %v", tc.base, err)
@@ -353,7 +353,7 @@ func TestUsageMultipleKeys(t *testing.T) {
 
 	accounts, err := usageProvider(t, config.Provider{
 		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1",
-		Keys: []string{"sk-one", "sk-two"},
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-one"}, {Name: "key-2", Key: "sk-two"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -382,7 +382,7 @@ func TestUsageBaseFallback(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "deepseek", Type: "deepseek", Anthropic: srv.URL + "/anthropic", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Anthropic: srv.URL + "/anthropic", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -401,7 +401,7 @@ func TestUsageHTTPErrorRedactsKey(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []string{key},
+		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: key}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -422,7 +422,7 @@ func TestUsageMalformedJSON(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -441,7 +441,7 @@ func TestUsageCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []string{"sk-test"},
+		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 	}).Usage(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -460,7 +460,7 @@ func TestUsageErrorRedactsKeyBeforeTruncating(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []string{key},
+		Name: "deepseek", Type: "deepseek", Chat: srv.URL + "/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: key}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -491,7 +491,7 @@ func TestUsageOpenRouterAnthropicOnlyBase(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "openrouter", Type: "openrouter", Anthropic: srv.URL + "/api", Keys: []string{"sk-or-test"},
+		Name: "openrouter", Type: "openrouter", Anthropic: srv.URL + "/api", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-or-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -514,7 +514,7 @@ func TestUsageOpenRouterLimitedKey(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "openrouter", Type: "openrouter", Chat: srv.URL + "/api/v1", Keys: []string{"sk-or-test"},
+		Name: "openrouter", Type: "openrouter", Chat: srv.URL + "/api/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-or-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -549,7 +549,7 @@ func TestUsageOpenRouterUnlimitedKey(t *testing.T) {
 	defer srv.Close()
 
 	accounts, err := usageProvider(t, config.Provider{
-		Name: "openrouter", Type: "openrouter", Chat: srv.URL + "/api/v1", Keys: []string{"sk-or-test"},
+		Name: "openrouter", Type: "openrouter", Chat: srv.URL + "/api/v1", Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-or-test"}},
 	}).Usage(context.Background())
 	if err != nil {
 		t.Fatal(err)

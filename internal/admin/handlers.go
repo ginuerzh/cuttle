@@ -70,7 +70,7 @@ func (s *Server) viewProvider(p config.Provider) providerView {
 		Models:      maps.Clone(p.Models),
 	}
 	for _, k := range p.Keys {
-		v.KeyPreviews = append(v.KeyPreviews, preview(k))
+		v.KeyPreviews = append(v.KeyPreviews, preview(k.Key))
 	}
 	if pr, ok := s.probes[p.Name]; ok {
 		v.Probe = &pr
@@ -295,10 +295,25 @@ type providerUpdate struct {
 	KeyUpdates []providerKeyUpdate `json:"keyUpdates,omitempty"`
 }
 
+// nextProviderKeyName returns an unused key-N name for callers that append a
+// key without supplying one.
+func nextProviderKeyName(keys []config.ProviderKey) string {
+	used := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		used[strings.TrimSpace(k.Name)] = struct{}{}
+	}
+	for i := 1; ; i++ {
+		name := fmt.Sprintf("key-%d", i)
+		if _, ok := used[name]; !ok {
+			return name
+		}
+	}
+}
+
 // applyProviderKeyUpdates deletes existing keys and appends new ones without
 // exposing the existing secrets to the client. Existing keys are read-only:
 // changing one requires deleting it and adding a replacement.
-func applyProviderKeyUpdates(keys []string, updates []providerKeyUpdate) ([]string, error) {
+func applyProviderKeyUpdates(keys []config.ProviderKey, updates []providerKeyUpdate) ([]config.ProviderKey, error) {
 	deleted := make(map[int]bool, len(updates))
 	var appended []string
 	for _, u := range updates {
@@ -326,14 +341,17 @@ func applyProviderKeyUpdates(keys []string, updates []providerKeyUpdate) ([]stri
 		deleted[i] = true
 	}
 
-	out := make([]string, 0, len(keys)-len(deleted)+len(appended))
+	out := make([]config.ProviderKey, 0, len(keys)-len(deleted)+len(appended))
 	for i, key := range keys {
 		if deleted[i] {
 			continue
 		}
 		out = append(out, key)
 	}
-	return append(out, appended...), nil
+	for _, key := range appended {
+		out = append(out, config.ProviderKey{Name: nextProviderKeyName(out), Key: key})
+	}
+	return out, nil
 }
 
 func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {

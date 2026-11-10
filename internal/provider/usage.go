@@ -131,7 +131,7 @@ func (p *baseProvider) Usage(ctx context.Context) ([]AccountUsage, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			accounts[i] = p.usageAccount(ctx, kind, key, i)
+			accounts[i] = p.usageAccount(ctx, kind, key.Key, i)
 		}()
 	}
 	wg.Wait()

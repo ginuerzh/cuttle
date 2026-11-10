@@ -181,7 +181,7 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 	for _, acc := range accounts {
 		keyPreview := ""
 		if acc.KeyIndex >= 0 && acc.KeyIndex < len(cfg.Keys) {
-			keyPreview = preview(cfg.Keys[acc.KeyIndex])
+			keyPreview = preview(cfg.Keys[acc.KeyIndex].Key)
 		}
 		av := accountUsageView{
 			KeyPreview: keyPreview,

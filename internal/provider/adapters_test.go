@@ -176,7 +176,7 @@ func TestAuthOverride(t *testing.T) {
 				Type: typ,
 				Chat: "https://chat.example/v1",
 				Auth: override,
-				Keys: []string{"sk-test"},
+				Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-test"}},
 			})
 			if got := p.Auth(Anthropic); got.Header != override.Header || got.Prefix != override.Prefix {
 				t.Fatalf("Auth(anthropic) = %+v, want config override", got)
