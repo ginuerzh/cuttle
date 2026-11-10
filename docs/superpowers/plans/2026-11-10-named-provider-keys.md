@@ -220,12 +220,12 @@ git commit -m "feat(gateway): pin nodes to a named provider key"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `3ca4924b` — `feat(gateway): pin nodes to a named provider key`
+- Files changed: `internal/gateway/build.go` (`resolveNodeKeys`, `errNodeKeyDisabled`, `nodePlan.keys`, `buildNodes` takes the resolved keys and suffixes with the key name); `internal/stats/recorder.go` (comment); `internal/gateway/node_keys_test.go` (new); `internal/gateway/provider_capabilities_test.go` (`buildNodes` call sites); `internal/stats/recorder_test.go`.
+- Tests/commands + results: `GOWORK=off go test ./internal/gateway ./internal/stats -count=1` PASS; `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: the new `authUpstream` test helper collided with `auth_test.go`; renamed to `namedKeyUpstream`. `TestParseNodeNameIgnoresKeySegment` pins existing behavior, so it passed before the implementation; it is a regression guard for Review Focus item 1.
+- Deferred/limitations: per-key request attribution is still not recorded; the key name lives only in the x node name and `parseNodeName` strips it (per the spec's non-goals).
 
 ---
 
