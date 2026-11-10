@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ginuerzh/cuttle/internal/identity"
+	"github.com/ginuerzh/cuttle/internal/logging"
 )
 
 // legacyConfig is an id-less configuration whose references are all still
@@ -371,6 +373,99 @@ func TestLoadWritesBackMigratedConfigAndBackup(t *testing.T) {
 	}
 	if baks, err := filepath.Glob(path + ".bak-*"); err != nil || len(baks) != 1 {
 		t.Fatalf("backups after reload = %v, %v; want still one", baks, err)
+	}
+}
+
+// capturedLogger returns a text logger writing into a buffer.
+func capturedLogger(t *testing.T) (*logging.Logger, *bytes.Buffer) {
+	t.Helper()
+	var buf bytes.Buffer
+	l, err := logging.NewWithWriter("info", "text", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l, &buf
+}
+
+// TestLoadLogsWriteBackOutcome pins spec §3: the upgrade that rewrites
+// cuttle.yaml is best-effort but never silent.
+func TestLoadLogsWriteBackOutcome(t *testing.T) {
+	t.Setenv("MIGRATE_KEY", "sk-migrated")
+
+	t.Run("success names the backup", func(t *testing.T) {
+		path := writeMigrateConfig(t, t.TempDir(), legacyConfig)
+		l, buf := capturedLogger(t)
+		if _, err := Load(path, WithLogger(l)); err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "level=info") || !strings.Contains(out, "entity ids written") {
+			t.Fatalf("log = %q, want an info line for the write-back", out)
+		}
+		if !strings.Contains(out, path+".bak-") {
+			t.Fatalf("log = %q, want the backup path", out)
+		}
+	})
+
+	t.Run("backup failure warns", func(t *testing.T) {
+		path := writeMigrateConfig(t, t.TempDir(), legacyConfig)
+		old := writeBackupFile
+		writeBackupFile = func(string, []byte, os.FileMode) error {
+			return errors.New("disk full")
+		}
+		defer func() { writeBackupFile = old }()
+
+		l, buf := capturedLogger(t)
+		if _, err := Load(path, WithLogger(l)); err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "level=warn") || !strings.Contains(out, "disk full") {
+			t.Fatalf("log = %q, want a warning for the failed write-back", out)
+		}
+	})
+}
+
+// TestLoadSymlinkedConfigIsNotRewritten pins the link guard: replacing the
+// link with a regular file would stop the dotfiles source from receiving
+// changes.
+func TestLoadSymlinkedConfigIsNotRewritten(t *testing.T) {
+	t.Setenv("MIGRATE_KEY", "sk-migrated")
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles-cuttle.yaml")
+	if err := os.WriteFile(target, []byte(legacyConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "cuttle.yaml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	l, buf := capturedLogger(t)
+	if _, err := Load(link, WithLogger(l)); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "level=warn") || !strings.Contains(out, "symlink") {
+		t.Fatalf("log = %q, want the symlink skip warning", out)
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("mode = %v, want the config path to stay a symlink", info.Mode())
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != legacyConfig {
+		t.Fatalf("symlink target was rewritten:\n%s", raw)
+	}
+	if baks, err := filepath.Glob(link + ".bak-*"); err != nil || len(baks) != 0 {
+		t.Fatalf("backups = %v, %v; want none", baks, err)
 	}
 }
 

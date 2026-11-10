@@ -505,7 +505,7 @@ func TestGeneratePassword(t *testing.T) {
 
 func TestPreparePrintsPasswordBeforeLoadFailure(t *testing.T) {
 	old := loadConfig
-	loadConfig = func(string) (*config.Config, error) {
+	loadConfig = func(string, ...config.LoadOption) (*config.Config, error) {
 		return nil, errors.New("load failed")
 	}
 	defer func() { loadConfig = old }()
@@ -714,5 +714,46 @@ func TestPrepareDataDirPermissionWarning(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("warnings = %#v, want a chmod 700 warning", res.Warnings)
+	}
+}
+
+// TestPrepareLogsConfigMigration pins the startup write-back signal: the
+// logger main creates needs the config being written, so Prepare must report a
+// migrated config on stderr instead of rewriting it silently.
+func TestPrepareLogsConfigMigration(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(dataDir, ConfigFileName)
+	legacy := `
+admin:
+  listen: "127.0.0.1:0"
+providers:
+  - name: alpha
+    type: generic
+    chat: https://a.example/v1
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	res, err := Prepare(Options{
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": dataDir}),
+		SearchPaths: []string{},
+		Stderr:      &buf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Generated {
+		t.Fatal("Generated = true, want the existing config")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "config migrated") {
+		t.Fatalf("stderr = %q, want the migration info line", out)
+	}
+	for _, want := range []string{"entity ids written", path + ".bak-"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stderr = %q, want %q", out, want)
+		}
 	}
 }

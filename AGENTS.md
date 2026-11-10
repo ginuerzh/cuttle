@@ -152,9 +152,10 @@ Entrypoint -> Route -> Node -> Provider model
   `expandEnv` → `applyDefaults` → `Validate`. The write-back runs before
   expansion, so `${VAR}` placeholders are never persisted as resolved values; it
   copies the previous file to `<path>.bak-<unix>` first, writes the new file as
-  `0600`, and never aborts the load on failure (warn only). Validation runs after
-  the rewrite, so a config rejected for an unrelated reason has already been
-  rewritten on disk.
+  `0600`, and never aborts the load on failure (warn only). A symlinked config
+  path is skipped so the link survives and the real file keeps being edited.
+  Validation runs after the rewrite, so a config rejected for an unrelated
+  reason has already been rewritten on disk.
 - Identity: every provider, provider key, node, route, entrypoint and gateway
   key carries an immutable `id` matching `^[a-z]{1,2}_[0-9a-z]{10}$` with the
   kind's prefix (`p`, `pk`, `n`, `r`, `e`, `gk`). After `MigrateIdentities` an id
@@ -231,7 +232,9 @@ Entrypoint -> Route -> Node -> Provider model
 ## Admin API invariants
 
 - Public routes: `GET /api/health`, `POST /api/login`, `POST /api/logout`.
-  Everything else under `/api/` requires a session cookie.
+  Everything else under `/api/` requires a session cookie. Health stays
+  backward compatible and adds `statsMigrationError` only after a failed stats
+  identity migration.
 - `GET /api/events` is a WebSocket subscription under `requireAuth`. Validate
   `Origin` against `Host` (empty Origin is allowed for non-browser clients),
   accept `range`, `since` or `reset=1`, and push absolute snapshots. Close
@@ -326,9 +329,14 @@ Entrypoint -> Route -> Node -> Provider model
   rewrites the v1 name values in `requests`, `rollups`, `key_rollups`,
   `probe_results` and the `topology_positions` prefixes to ids in one
   transaction, seeds `entity_labels`, then bumps the version. A failed backup
-  aborts the migration. A fresh database is created at version 2 and never runs
-  the rewrite. `migratableRef` treats a value matching `identity.Shape` as
-  already an id, so a v1 name that looks like an id is deliberately left alone.
+  aborts the migration. The copy needs free space equal to the database size
+  (roughly 2× `stats.sqlite`). The gateway attempts the migration once per
+  process with a bounded context; a reload never retries it. Success logs the
+  backup path at info; a failure logs once at error and stays visible as
+  `statsMigrationError` in `GET /api/health` until a later start succeeds. A
+  fresh database is created at version 2 and never runs the rewrite.
+  `migratableRef` treats a value matching `identity.Shape` as already an id, so
+  a v1 name that looks like an id is deliberately left alone.
 - Entrypoint attribution is query-time: resolve each row's `client_model`
   through the current entrypoint list. Never store an entrypoint column.
 - Graph keys use `entrypoint:<id>`; edges use the row's **recorded route id**
@@ -498,8 +506,11 @@ GOWORK=off go test ./internal/stats -count=1
   identity, so history and topology positions no longer follow the entity.
 - The loader migrates a config that is missing ids and writes it back, keeping
   `<path>.bak-<unix>`. The rewrite drops YAML comments and formatting, runs
-  before validation, and is skipped (warn only) when the file or its directory is
-  not writable.
+  before validation, and is skipped with a warning when the config path is a
+  symlink (replacing the link would detach the hand-maintained target). The
+  write-back needs a writable *directory*, not a writable file: a `chmod 400`
+  file in a writable directory is still rewritten and re-chmodded to `0600`.
+  Startup and SIGHUP log the backup at info and a skip/failure as a warning.
 - First-run config and stats live in `$CUTTLE_DATA` (default `/data`). The
   Docker image uses `CMD ["serve"]`; its `CUTTLE_ADMIN_LISTEN=:8788` is a
   first-run default, not an override for an existing config.

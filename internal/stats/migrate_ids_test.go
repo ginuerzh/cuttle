@@ -3,8 +3,11 @@ package stats
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -384,6 +387,143 @@ func TestMigrateIdentitiesSkipsFreshDatabase(t *testing.T) {
 	if backups := backupFiles(t, path); len(backups) != 0 {
 		t.Fatalf("backups = %v, want none for a fresh database", backups)
 	}
+}
+
+// TestMigratePositionsKeepsIDKeyedLayout pins the conflict rule: a layout
+// already saved under the id is newer than a v1 duplicate keyed by name.
+func TestMigratePositionsKeepsIDKeyedLayout(t *testing.T) {
+	s, _ := openStoreAt(t)
+	ctx := context.Background()
+	providerID := "p_0000000001"
+
+	if err := s.SaveTopologyPositions(ctx, map[string]Position{
+		"provider:alpha":         {X: 1, Y: 1},
+		"provider:" + providerID: {X: 9, Y: 9},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	forceVersion(t, s, 1)
+	if err := s.MigrateIdentities(ctx, lookupIDs(map[string]string{"provider/alpha": providerID})); err != nil {
+		t.Fatal(err)
+	}
+
+	positions, err := s.LoadTopologyPositions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := positions["provider:"+providerID], (Position{X: 9, Y: 9}); got != want {
+		t.Fatalf("id-keyed position = %+v, want the saved %+v", got, want)
+	}
+	if _, ok := positions["provider:alpha"]; ok {
+		t.Fatalf("positions = %+v, want the legacy key gone", positions)
+	}
+	if len(positions) != 1 {
+		t.Fatalf("positions = %+v, want exactly one row", positions)
+	}
+}
+
+// TestMigrateKeepsSyncedLabelOverSeed pins the seed rule: a label the config
+// already synced after a rename is newer than the v1 name a row recorded.
+func TestMigrateKeepsSyncedLabelOverSeed(t *testing.T) {
+	s, _ := openStoreAt(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	providerID := "p_0000000001"
+
+	if err := s.Insert(ctx, Request{ID: "old", TS: base, Provider: "alpha", Model: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SyncLabels(ctx, map[string]map[string]string{
+		string(identity.Provider): {providerID: "new"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	forceVersion(t, s, 1)
+	if err := s.MigrateIdentities(ctx, lookupIDs(map[string]string{"provider/alpha": providerID})); err != nil {
+		t.Fatal(err)
+	}
+
+	labels, err := s.Labels(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := labels[string(identity.Provider)][providerID]; got != "new" {
+		t.Fatalf("provider label = %q, want the synced rename %q", got, "new")
+	}
+	row, err := s.Get(ctx, "old")
+	if err != nil || row == nil {
+		t.Fatalf("get old = %+v err=%v", row, err)
+	}
+	if row.Provider != providerID {
+		t.Fatalf("provider = %q, want %q", row.Provider, providerID)
+	}
+}
+
+// TestMigrationStatusRecordsOutcome pins the observability contract: a
+// successful migration reports its backup, and a failed backup leaves the
+// version alone and the error readable through the health accessor.
+func TestMigrationStatusRecordsOutcome(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		s, path := openStoreAt(t)
+		ctx := context.Background()
+		if err := s.Insert(ctx, Request{ID: "s1", TS: time.Now(), Provider: "alpha"}); err != nil {
+			t.Fatal(err)
+		}
+		forceVersion(t, s, 1)
+		if err := s.MigrateIdentities(ctx, lookupIDs(map[string]string{"provider/alpha": "p_0000000001"})); err != nil {
+			t.Fatal(err)
+		}
+		backup, err := s.MigrationStatus()
+		if err != nil {
+			t.Fatalf("status err = %v, want nil", err)
+		}
+		if backup == "" {
+			t.Fatal("status backup is empty, want the v1 copy path")
+		}
+		if _, statErr := os.Stat(backup); statErr != nil {
+			t.Fatalf("backup %s: %v", backup, statErr)
+		}
+		if !strings.HasPrefix(backup, path+".v1.bak-") {
+			t.Fatalf("backup = %q, want %s.v1.bak-*", backup, path)
+		}
+		if got := s.MigrationError(); got != "" {
+			t.Fatalf("MigrationError() = %q, want empty", got)
+		}
+	})
+
+	t.Run("backup failure", func(t *testing.T) {
+		s, _ := openStoreAt(t)
+		ctx := context.Background()
+		if err := s.Insert(ctx, Request{ID: "f1", TS: time.Now(), Provider: "alpha"}); err != nil {
+			t.Fatal(err)
+		}
+		forceVersion(t, s, 1)
+		s.backupV1 = func(context.Context) (string, error) {
+			return "", errors.New("no space left on device")
+		}
+
+		err := s.MigrateIdentities(ctx, lookupIDs(map[string]string{"provider/alpha": "p_0000000001"}))
+		if err == nil || !strings.Contains(err.Error(), "no space left") {
+			t.Fatalf("err = %v, want the backup failure", err)
+		}
+		backup, statusErr := s.MigrationStatus()
+		if backup != "" || statusErr == nil || !strings.Contains(statusErr.Error(), "no space left") {
+			t.Fatalf("status = %q/%v, want the backup failure", backup, statusErr)
+		}
+		if got := s.MigrationError(); !strings.Contains(got, "no space left") {
+			t.Fatalf("MigrationError() = %q, want the backup failure", got)
+		}
+		if got := userVersion(t, s); got != 1 {
+			t.Fatalf("user_version = %d, want 1 after a failed backup", got)
+		}
+		row, err := s.Get(ctx, "f1")
+		if err != nil || row == nil {
+			t.Fatalf("get f1 = %+v err=%v", row, err)
+		}
+		if row.Provider != "alpha" {
+			t.Fatalf("provider = %q, want the untouched v1 name", row.Provider)
+		}
+	})
 }
 
 func TestRenameKeepsRollupsAndLabelsFollow(t *testing.T) {

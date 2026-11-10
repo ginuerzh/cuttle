@@ -53,6 +53,10 @@ type Gateway struct {
 	capture      *capture.Manager
 	authFailures *authfail.Tracker
 	cancel       context.CancelFunc
+	// statsMigrationDone records the one identity-migration attempt this
+	// process makes; a failure is reported once and stays visible through the
+	// admin health endpoint instead of retrying on every reload.
+	statsMigrationDone bool
 }
 
 // New builds the data plane from cfg. The listener is bound but not serving
@@ -336,6 +340,10 @@ func capturePolicy(c gwconfig.Capture) capture.Policy {
 	}
 }
 
+// statsMigrationTimeout bounds the one-time v1 identity rewrite, including the
+// VACUUM INTO backup that copies the whole database.
+const statsMigrationTimeout = 5 * time.Minute
+
 // Reload builds a new hop group and swaps it in. On build errors the old
 // group keeps serving.
 func (g *Gateway) Reload(cfg *gwconfig.Config) error {
@@ -376,14 +384,9 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	}
 	if g.store != nil {
 		g.store.SetCaptureRetain(time.Duration(cfg.Stats.Capture.Retain))
-		names := cfg.NameToIDs()
-		if err := g.store.MigrateIdentities(context.Background(), func(kind, name string) string {
-			if id, ok := names[kind][name]; ok {
-				return id
-			}
-			return identity.Derive(identity.Kind(kind), name)
-		}); err != nil {
-			g.log.Warnf("stats: migrating entity ids: %v", err)
+		if !g.statsMigrationDone {
+			g.statsMigrationDone = true
+			g.migrateStatsIdentities(cfg)
 		}
 		// Migration is idempotent; syncing labels on every apply is what keeps
 		// a rename visible in the history of an unchanged id.
@@ -408,6 +411,30 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 // Stats returns the statistics store, or nil when disabled.
 func (g *Gateway) Stats() *stats.Store {
 	return g.store
+}
+
+// migrateStatsIdentities runs the one-time v1 rewrite and reports both
+// outcomes. A failure is logged at error level and stays visible through
+// stats.Store.MigrationError, which GET /api/health exposes, because a failed
+// backup leaves a deliberately unmigrated database in place.
+func (g *Gateway) migrateStatsIdentities(cfg *gwconfig.Config) {
+	ctx, cancel := context.WithTimeout(context.Background(), statsMigrationTimeout)
+	defer cancel()
+
+	names := cfg.NameToIDs()
+	err := g.store.MigrateIdentities(ctx, func(kind, name string) string {
+		if id, ok := names[kind][name]; ok {
+			return id
+		}
+		return identity.Derive(identity.Kind(kind), name)
+	})
+	if err != nil {
+		g.log.Errorf("stats: entity id migration failed, history keeps v1 names until it succeeds: %v; GET /api/health reports statsMigrationError", err)
+		return
+	}
+	if backup, _ := g.store.MigrationStatus(); backup != "" {
+		g.log.Infof("stats: migrated entity ids, backup %s", backup)
+	}
 }
 
 // Close stops serving and releases the listener, hop and router.

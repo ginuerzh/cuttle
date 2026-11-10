@@ -1,16 +1,17 @@
 package gateway_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	xlogger "github.com/go-gost/x/logger"
-
 	"github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/gateway"
+	"github.com/ginuerzh/cuttle/internal/logging"
 	"github.com/ginuerzh/cuttle/internal/stats"
 )
 
@@ -61,12 +62,25 @@ func TestApplyMigratesStatsAndSyncsLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gw, err := gateway.New(cfg, xlogger.Nop())
+	var logs bytes.Buffer
+	log, err := logging.NewWithWriter("info", "text", &logs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gw, err := gateway.New(cfg, log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { gw.Close() })
 	ctx := context.Background()
+
+	if _, err := gw.Stats().MigrationStatus(); err != nil {
+		t.Fatalf("MigrationStatus err = %v, want a clean migration", err)
+	}
+	if out := logs.String(); !strings.Contains(out, "stats: migrated entity ids, backup ") || !strings.Contains(out, path+".v1.bak-") {
+		t.Fatalf("logs = %q, want the migration info line naming the backup", out)
+	}
 
 	row, err := gw.Stats().Get(ctx, "s1")
 	if err != nil || row == nil {
@@ -113,5 +127,11 @@ func TestApplyMigratesStatsAndSyncsLabels(t *testing.T) {
 	}
 	if row.Provider != cfg.Providers[0].ID {
 		t.Fatalf("row provider after rename = %q, want the unchanged id %q", row.Provider, cfg.Providers[0].ID)
+	}
+
+	// The migration is attempted once per process: a reload must not log or
+	// run it again.
+	if got := strings.Count(logs.String(), "stats: migrated entity ids"); got != 1 {
+		t.Fatalf("migration log lines = %d, want 1 across New and Reload", got)
 	}
 }

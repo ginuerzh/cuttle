@@ -180,17 +180,33 @@ func resolveReference(scope, field, ref string, ids map[string]struct{}, names m
 	return "", fmt.Errorf("%s: %s reference %q is neither an id nor a unique %s name", scope, field, ref, field)
 }
 
+// writeBackupFile writes the pre-migration copy. A test replaces it to force a
+// write-back failure on a host where file permissions cannot (root).
+var writeBackupFile = os.WriteFile
+
 // writeBackMigrated copies path to path.bak-<unix> and rewrites it with the
 // migrated config. Failures never abort a load: a read-only config mount keeps
 // serving, and derived ids stay stable across restarts.
+//
+// A symlinked config is left untouched with a warning. os.Rename over the link
+// would replace the link itself, not the hand-maintained file it points at.
 func writeBackMigrated(path string, c *Config, l logger.Logger) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		migrationWarn(l, "read %s: %v", path, err)
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		migrationWarn(l, "skip write-back for symlinked config %s", path)
+		return
+	}
 	original, err := os.ReadFile(path)
 	if err != nil {
 		migrationWarn(l, "read %s: %v", path, err)
 		return
 	}
 	backup := path + ".bak-" + strconv.FormatInt(time.Now().Unix(), 10)
-	if err := os.WriteFile(backup, original, 0o600); err != nil {
+	if err := writeBackupFile(backup, original, 0o600); err != nil {
 		// Without a backup the rewrite could lose the user's file.
 		migrationWarn(l, "backup %s: %v", backup, err)
 		return

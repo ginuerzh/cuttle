@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -129,6 +130,14 @@ type Store struct {
 	db            *sql.DB
 	path          string
 	captureRetain atomic.Int64
+
+	// backupV1 copies the database before the identity rewrite. It is a field
+	// so a test can force a backup failure on a host where permissions cannot.
+	backupV1 func(context.Context) (string, error)
+
+	migrationMu     sync.Mutex
+	migrationBackup string
+	migrationErr    error
 }
 
 // Open opens or creates the store. Use ":memory:" for tests. A database that
@@ -150,6 +159,7 @@ func Open(path string) (*Store, error) {
 	}
 
 	s := &Store{db: db, path: path}
+	s.backupV1 = s.backupV1ToDisk
 	fresh, err := s.isFresh()
 	if err != nil {
 		db.Close()
@@ -402,24 +412,63 @@ var positionKinds = map[string]identity.Kind{
 // derived from the name, so its history stays in one series. The database is
 // copied to <path>.v1.bak-<unix> first, and a failed copy aborts the migration
 // rather than upgrading without a backup.
+//
+// The outcome is recorded so the health endpoint can report a failure that the
+// data plane already survived; see MigrationStatus.
 func (s *Store) MigrateIdentities(ctx context.Context, lookup func(kind, name string) string) error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+	backup, err := s.migrateIdentities(ctx, lookup)
+
+	s.migrationMu.Lock()
+	s.migrationBackup = backup
+	s.migrationErr = err
+	s.migrationMu.Unlock()
+	return err
+}
+
+// MigrationStatus reports the outcome of the last identity migration: the v1
+// backup path and the failure, if any. Both are empty when the migration
+// succeeded or the database was already current.
+func (s *Store) MigrationStatus() (backupPath string, err error) {
+	if s == nil {
+		return "", nil
+	}
+	s.migrationMu.Lock()
+	defer s.migrationMu.Unlock()
+	return s.migrationBackup, s.migrationErr
+}
+
+// MigrationError returns the identity migration failure as text for the health
+// endpoint, or "" when the migration succeeded or was not needed.
+func (s *Store) MigrationError() string {
+	_, err := s.MigrationStatus()
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func (s *Store) migrateIdentities(ctx context.Context, lookup func(kind, name string) string) (string, error) {
 	version, err := s.userVersion(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if version >= statsVersion {
-		return nil
+		return "", nil
 	}
-	if err := s.backupV1(ctx); err != nil {
-		return err
+	backup := ""
+	if s.backupV1 != nil {
+		backup, err = s.backupV1(ctx)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return backup, err
 	}
 	defer tx.Rollback()
 
@@ -432,38 +481,39 @@ func (s *Store) MigrateIdentities(ctx context.Context, lookup func(kind, name st
 		{"probe_results", "provider", string(identity.Provider)},
 	} {
 		if err := rewriteColumn(ctx, tx, c.table, c.column, c.kind, r); err != nil {
-			return err
+			return backup, err
 		}
 	}
 	if err := rewriteRollups(ctx, tx, r); err != nil {
-		return err
+		return backup, err
 	}
 	if err := rewriteKeyRollups(ctx, tx, r); err != nil {
-		return err
+		return backup, err
 	}
 	if err := rewritePositions(ctx, tx, r); err != nil {
-		return err
+		return backup, err
 	}
 	if err := r.seedLabels(ctx, tx); err != nil {
-		return err
+		return backup, err
 	}
 	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = `+strconv.Itoa(statsVersion)); err != nil {
-		return err
+		return backup, err
 	}
-	return tx.Commit()
+	return backup, tx.Commit()
 }
 
-// backupV1 copies the database before the rewrite. Statistics accumulated over
-// months cannot be rebuilt, so a database that cannot be copied is left alone.
-func (s *Store) backupV1(ctx context.Context) error {
+// backupV1ToDisk copies the database before the rewrite. Statistics accumulated
+// over months cannot be rebuilt, so a database that cannot be copied is left
+// alone. The copy needs free space equal to the size of the database.
+func (s *Store) backupV1ToDisk(ctx context.Context) (string, error) {
 	if s.path == "" || s.path == ":memory:" {
-		return nil
+		return "", nil
 	}
 	target := fmt.Sprintf("%s.v1.bak-%d", s.path, time.Now().Unix())
 	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
-		return fmt.Errorf("stats: back up %s to %s: %w", s.path, target, err)
+		return "", fmt.Errorf("stats: back up %s to %s: %w", s.path, target, err)
 	}
-	return nil
+	return target, nil
 }
 
 func (s *Store) userVersion(ctx context.Context) (int, error) {

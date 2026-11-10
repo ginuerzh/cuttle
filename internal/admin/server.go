@@ -49,6 +49,8 @@ type Server struct {
 	capture      *capture.Manager
 	authFailures *authfail.Tracker
 	routeHealth  func() []health.Route
+	// migrationError reports the stats identity migration failure, if any.
+	migrationError func() string
 
 	wsMu          sync.Mutex
 	wsConns       map[*wsClient]struct{}
@@ -111,6 +113,7 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 		s.authFailures = af.AuthFailures()
 	}
 	if s.stats != nil {
+		s.migrationError = s.stats.MigrationError
 		if saved, err := s.stats.LoadSessions(context.Background(), time.Now()); err != nil {
 			log.Warnf("load sessions: %v", err)
 		} else {
@@ -205,16 +208,23 @@ type healthResponse struct {
 	Version string `json:"version"`
 	Commit  string `json:"commit,omitempty"`
 	BuiltAt string `json:"builtAt,omitempty"`
+	// StatsMigrationError is set when the one-time v1 stats rewrite could not
+	// run (for example a failed backup). Absent when the database is current.
+	StatsMigrationError string `json:"statsMigrationError,omitempty"`
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	info := version.Current()
-	writeJSON(w, http.StatusOK, healthResponse{
+	resp := healthResponse{
 		OK:      true,
 		Version: info.Version,
 		Commit:  info.Commit,
 		BuiltAt: info.BuiltAt,
-	})
+	}
+	if s.migrationError != nil {
+		resp.StatsMigrationError = s.migrationError()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {

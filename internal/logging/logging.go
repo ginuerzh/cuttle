@@ -38,6 +38,12 @@ func New(level, format string) (*Logger, error) {
 	return newLogger(level, format, os.Stderr)
 }
 
+// NewWithWriter creates a logger writing JSON or text to out. Startup paths
+// that must log before the configured logger exists use it.
+func NewWithWriter(level, format string, out io.Writer) (*Logger, error) {
+	return newLogger(level, format, out)
+}
+
 func newLogger(level, format string, out io.Writer) (*Logger, error) {
 	lvl, err := parseLevel(level)
 	if err != nil {

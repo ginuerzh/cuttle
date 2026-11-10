@@ -114,6 +114,15 @@ entity gets a new identity and its history splits. Console edits always need a
 writable config file; with a read-only mount, edit the host file and send
 `SIGHUP`.
 
+The write-back needs a writable *directory*, not a writable file: `config.Write`
+creates a temp file beside the config and renames it over the original, so a
+`chmod 400` file inside a writable directory is still rewritten (and normalized
+to `0600`). A config path that is a symlink is skipped with a warning instead,
+so a file symlinked out of a dotfiles repository keeps its link and receives
+edits through its target. Both outcomes are logged: the startup path (and every
+`SIGHUP` reload) logs the backup path at info on success and a warning when the
+write-back is skipped or fails.
+
 ## Quick start
 
 ### Requirements
@@ -776,11 +785,17 @@ name-based schema, the store copies `stats.sqlite` to
 `stats.sqlite.v1.bak-<unix>` and rewrites the existing name values in
 `requests`, `rollups`, `key_rollups`, `probe_results` and the saved topology
 positions to entity ids, in one transaction; a failed copy aborts the migration
-rather than upgrading without a backup. A fresh database is created at version 2
-and never runs the rewrite. Historical names are kept in `entity_labels`, which
-is never pruned, so a renamed or deleted entity still shows its last known
-label. When a v1 series and an id-keyed series land in the same rollup bucket,
-they are summed rather than one overwriting the other.
+rather than upgrading without a backup. The copy is a `VACUUM INTO`, so the
+filesystem needs free space equal to the database size (roughly 2×
+`stats.sqlite`). A successful migration logs the backup path at info. If the
+copy fails, the database stays at version 1, the data plane keeps recording the
+old names, the binary logs the failure at error level once, retries only on the
+next process start (not on every reload), and reports `statsMigrationError` in
+`GET /api/health` until an attempt succeeds. A fresh database is created at
+version 2 and never runs the rewrite. Historical names are kept in
+`entity_labels`, which is never pruned, so a renamed or deleted entity still
+shows its last known label. When a v1 series and an id-keyed series land in the
+same rollup bucket, they are summed rather than one overwriting the other.
 
 The guard that decides whether a stored value still needs an id checks the id
 *shape* (`p_` or another prefix plus 10 base32 characters), so a v1 **name** that
@@ -841,7 +856,9 @@ provider must match. Stale historical nodes do not show old traffic.
 ## Admin API
 
 All `/api/*` routes except `/api/health`, `/api/login` and `/api/logout`
-require a session cookie.
+require a session cookie. `GET /api/health` returns `ok` and the build identity;
+after a failed stats upgrade it also carries `statsMigrationError`, and that
+field is absent when the migration is clean.
 
 ```text
 GET  /api/health

@@ -13,7 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-gost/core/logger"
+
 	"github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/logging"
 )
 
 const (
@@ -122,7 +125,9 @@ func fileExists(path string) (bool, error) {
 }
 
 // loadConfig is a test seam for the final config round-trip.
-var loadConfig = func(path string) (*config.Config, error) { return config.Load(path) }
+var loadConfig = func(path string, opts ...config.LoadOption) (*config.Config, error) {
+	return config.Load(path, opts...)
+}
 
 // writeConfig is a test seam for the exclusive first-run write.
 var writeConfig = config.WriteNew
@@ -167,13 +172,20 @@ func Prepare(opts Options) (*Result, error) {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	// The configured log level and format live in the config this load may
+	// rewrite, so the load-time migration logs plain text to stderr. Without it
+	// the upgrade that rewrites cuttle.yaml would be silent.
+	migrateLog, err := logging.NewWithWriter("info", "text", stderr)
+	if err != nil {
+		return nil, err
+	}
 
 	paths, err := Resolve(opts.ExplicitPath, getenv, opts.SearchPaths)
 	if err != nil {
 		return nil, err
 	}
 	if paths.Existing {
-		cfg, err := loadConfig(paths.ConfigPath)
+		cfg, err := loadConfig(paths.ConfigPath, config.WithLogger(migrateLog))
 		if err != nil {
 			return nil, err
 		}
@@ -190,10 +202,10 @@ func Prepare(opts Options) (*Result, error) {
 		}, nil
 	}
 
-	return generate(paths, getenv, stderr)
+	return generate(paths, getenv, stderr, migrateLog)
 }
 
-func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Result, error) {
+func generate(paths Paths, getenv func(string) string, stderr io.Writer, migrateLog logger.Logger) (*Result, error) {
 	if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 	}
@@ -252,7 +264,7 @@ func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Resul
 					reset = true
 				}
 			}
-			loaded, err := loadConfig(paths.ConfigPath)
+			loaded, err := loadConfig(paths.ConfigPath, config.WithLogger(migrateLog))
 			if err != nil {
 				return nil, err
 			}
@@ -271,7 +283,7 @@ func generate(paths Paths, getenv func(string) string, stderr io.Writer) (*Resul
 		printGeneratedPassword(stderr, password, adminListen)
 	}
 
-	loaded, err := loadConfig(paths.ConfigPath)
+	loaded, err := loadConfig(paths.ConfigPath, config.WithLogger(migrateLog))
 	if err != nil {
 		return nil, err
 	}
