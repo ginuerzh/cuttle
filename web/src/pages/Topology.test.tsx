@@ -2,7 +2,9 @@ import type { Edge } from '@xyflow/react';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { GraphMetrics } from '../api/types';
-import { canEditTopology, decorateEdge, edgeLabel, viewportInit } from './Topology';
+import type { GraphNode } from '../graph/build';
+import type { NodeRouteHealth } from './routeHealth';
+import { canEditTopology, decorateEdge, edgeLabel, mergeNodeHealth, viewportInit } from './Topology';
 
 describe('viewportInit', () => {
   it('fits the graph on the first visit', () => {
@@ -95,5 +97,48 @@ describe('decorateEdge', () => {
 
     expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
     expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+  });
+});
+
+describe('mergeNodeHealth', () => {
+  const node = (name: string, data: Partial<GraphNode['data']> = {}): GraphNode => ({
+    id: `node:${name}`,
+    type: 'node',
+    position: { x: 0, y: 0 },
+    data: { kind: 'node', label: name, ...data },
+  });
+  const health = (dead: string[], partial: [string, string[]][]): NodeRouteHealth => ({
+    dead: new Set(dead),
+    partial: new Map(partial),
+    edges: new Set(),
+  });
+
+  it('marks a partially dead node with the routes that report it dead', () => {
+    const [got] = mergeNodeHealth([node('a')], health([], [['a', ['r1']]]));
+
+    expect(got.data.dead).toBe(false);
+    expect(got.data.deadRoutes).toEqual(['r1']);
+  });
+
+  it('marks an all-dead node and clears a stale partial state', () => {
+    const [got] = mergeNodeHealth([node('a', { deadRoutes: ['r1'] })], health(['a'], []));
+
+    expect(got.data.dead).toBe(true);
+    expect(got.data.deadRoutes).toEqual([]);
+  });
+
+  it('leaves unchanged and non-binding nodes untouched', () => {
+    const healthy = node('a');
+    const route = {
+      id: 'route:r',
+      type: 'route',
+      position: { x: 0, y: 0 },
+      data: { kind: 'route', label: 'r' },
+    } as GraphNode;
+
+    const got = mergeNodeHealth([healthy, route], health([], []));
+
+    expect(got[0]).toBe(healthy);
+    expect(got[1]).toBe(route);
   });
 });

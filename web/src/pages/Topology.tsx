@@ -84,6 +84,23 @@ function sameRoutes(a?: readonly string[], b?: readonly string[]): boolean {
   return left.length === right.length && left.every((name, i) => name === right[i]);
 }
 
+/**
+ * Folds route health onto the binding nodes: an all-dead node sets `dead`, and
+ * a partially dead node carries the routes where it is dead. Nodes whose state
+ * did not change keep their identity so React Flow does not re-render every
+ * card on each health snapshot.
+ */
+export function mergeNodeHealth(nodes: GraphNode[], nodeHealth?: NodeRouteHealth): GraphNode[] {
+  return nodes.map((n) => {
+    if (!n.id.startsWith('node:')) return n;
+    const name = n.id.slice('node:'.length);
+    const dead = nodeHealth?.dead.has(name) ?? false;
+    const deadRoutes = [...(nodeHealth?.partial.get(name) ?? [])];
+    if ((n.data.dead ?? false) === dead && sameRoutes(n.data.deadRoutes, deadRoutes)) return n;
+    return { ...n, data: { ...n.data, dead, deadRoutes } };
+  });
+}
+
 function edgeColor(m?: { requests: number; errors: number }): string {
   if (!m || m.requests === 0) return '#cbd5e1';
   const r = m.errors / m.requests;
@@ -395,9 +412,11 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
       ),
     );
     // metrics is intentionally read once per structure change; the metrics
-    // effect below keeps labels fresh without touching positions.
+    // effect below keeps labels fresh without touching positions. Dead edges
+    // are re-decorated from the previous edge objects instead: rebuilding them
+    // here would drop the selection state React Flow keeps on each edge.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structure, animate, nodeHealth?.edges]);
+  }, [structure, animate]);
 
   useEffect(() => {
     setNodes((prev) =>
@@ -414,16 +433,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
   }, [metrics, activity, animate, nodeHealth?.edges, setNodes]);
 
   useEffect(() => {
-    setNodes((prev) =>
-      prev.map((n) => {
-        if (!n.id.startsWith('node:')) return n;
-        const name = n.id.slice('node:'.length);
-        const dead = nodeHealth?.dead.has(name) ?? false;
-        const deadRoutes = [...(nodeHealth?.partial.get(name) ?? [])];
-        if ((n.data.dead ?? false) === dead && sameRoutes(n.data.deadRoutes, deadRoutes)) return n;
-        return { ...n, data: { ...n.data, dead, deadRoutes } };
-      }),
-    );
+    setNodes((prev) => mergeNodeHealth(prev, nodeHealth));
   }, [nodeHealth, setNodes]);
 
   const onNodeClick: NodeMouseHandler = (_event, node) => {
