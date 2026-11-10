@@ -1030,6 +1030,79 @@ func TestTopologyIncludes(t *testing.T) {
 	}
 }
 
+// TestTopologyIncludesNameKeyedRowsAfterMigration pins the Task 2 -> Task 3
+// bridge: a migrated config references nodes by id, while the gateway still
+// records stats rows by name, so both spellings must select the same row.
+func TestTopologyIncludesNameKeyedRowsAfterMigration(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+  - name: p2
+    type: generic
+    chat: https://b.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m1
+  - name: n2
+    provider: p2
+    model: m2
+routes:
+  - name: r
+    nodes: [n]
+entrypoints:
+  - name: e
+    match: ["*"]
+    route: r
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeID, nodeID, providerID := c.Routes[0].ID, c.Nodes[0].ID, c.Providers[0].ID
+	if routeID == "" || nodeID == "" || providerID == "" {
+		t.Fatalf("migration did not assign ids: %q %q %q", routeID, nodeID, providerID)
+	}
+	if c.Routes[0].Nodes[0] != nodeID {
+		t.Fatalf("route nodes = %v, want the node id %q", c.Routes[0].Nodes, nodeID)
+	}
+
+	kept := []struct {
+		name              string
+		route, node, prov string
+	}{
+		{"ids", routeID, nodeID, providerID},
+		{"names recorded before Task 3", "r", "n", "p"},
+		{"route id with name refs", routeID, "n", "p"},
+		{"name route with ids", "r", nodeID, providerID},
+	}
+	for _, tc := range kept {
+		if !c.TopologyIncludes(tc.route, tc.node, tc.prov) {
+			t.Fatalf("%s: TopologyIncludes(%q,%q,%q) = false, want true",
+				tc.name, tc.route, tc.node, tc.prov)
+		}
+	}
+
+	dropped := []struct {
+		name              string
+		route, node, prov string
+	}{
+		{"unknown node name", "r", "ghost", "p"},
+		{"unknown node id", routeID, "n_4q7a9x2m3k", providerID},
+		{"node of another route", "r", "n2", "p2"},
+		{"provider mismatch by name", "r", "n", "p2"},
+		{"provider mismatch by id", routeID, nodeID, c.Providers[1].ID},
+		{"unknown route", "r_4q7a9x2m3k", "n", "p"},
+	}
+	for _, tc := range dropped {
+		if c.TopologyIncludes(tc.route, tc.node, tc.prov) {
+			t.Fatalf("%s: TopologyIncludes(%q,%q,%q) = true, want false",
+				tc.name, tc.route, tc.node, tc.prov)
+		}
+	}
+}
+
 func TestRouteFailSettingsDefaultsAndValidation(t *testing.T) {
 	c, err := Load(writeConfig(t, `
 entrypoints:
@@ -1790,6 +1863,118 @@ func TestValidateOptionalIDs(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestValidateDuplicateNameBeatsDuplicateID keeps the error actionable: two
+// entries that share a name would also share the id migration derives from it,
+// and the name is the real problem.
+func TestValidateDuplicateNameBeatsDuplicateID(t *testing.T) {
+	c := validEntityConfig()
+	c.Providers[0].ID = "p_3k9x2m4q7a"
+	dup := c.Providers[0]
+	c.Providers = append(c.Providers, dup)
+
+	err := Validate(c)
+	if err == nil {
+		t.Fatal("duplicate providers should not validate")
+	}
+	if !strings.Contains(err.Error(), `duplicate name "provider"`) {
+		t.Fatalf("err = %v, want the duplicate name to win over the duplicate id", err)
+	}
+}
+
+// TestValidateRejectsDuplicateIDs covers the global id uniqueness rule: a
+// hand-edited or merged config that reuses an id must fail validation with both
+// entities named, not silently resolve to the first or last one.
+func TestValidateRejectsDuplicateIDs(t *testing.T) {
+	base := func() *Config {
+		c := validEntityConfig()
+		c.Providers[0].ID = "p_3k9x2m4q7a"
+		c.Providers[0].Keys[0].ID = "pk_8m2xq7a4k9"
+		c.Nodes[0].ID = "n_4q7a9x2m3k"
+		c.Routes[0].ID = "r_f3k9x2m4qa"
+		c.Entrypoints[0].ID = "e_q7a4m2xk9d"
+		c.Gateway.Keys = []GatewayKey{{ID: "gk_9x2m4q7a3k", Name: "laptop", Key: "sk-gateway-key"}}
+		return c
+	}
+	if err := Validate(base()); err != nil {
+		t.Fatalf("distinct ids should validate: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		mutate func(*Config)
+		want   []string
+	}{
+		{
+			"providers",
+			func(c *Config) {
+				c.Providers = append(c.Providers, Provider{
+					ID: "p_3k9x2m4q7a", Name: "provider2", Type: "generic",
+					Chat: "https://b.example/v1", Keys: []ProviderKey{{Name: "key", Key: "sk-b"}},
+				})
+			},
+			[]string{"duplicate id", "p_3k9x2m4q7a", `provider "provider2"`, `provider "provider"`},
+		},
+		{
+			"provider keys",
+			func(c *Config) {
+				c.Providers[0].Keys = append(c.Providers[0].Keys,
+					ProviderKey{ID: "pk_8m2xq7a4k9", Name: "key2", Key: "sk-b"})
+			},
+			[]string{"duplicate id", "pk_8m2xq7a4k9", "keys[1]", "keys[0]"},
+		},
+		{
+			"nodes",
+			func(c *Config) {
+				c.Nodes = append(c.Nodes, Node{
+					ID: "n_4q7a9x2m3k", Name: "node2", Provider: "provider", Model: "m2",
+				})
+			},
+			[]string{"duplicate id", "n_4q7a9x2m3k", `node "node2"`, `node "node"`},
+		},
+		{
+			"routes",
+			func(c *Config) {
+				c.Routes = append(c.Routes, Route{
+					ID: "r_f3k9x2m4qa", Name: "route2", Nodes: []string{"node"},
+				})
+			},
+			[]string{"duplicate id", "r_f3k9x2m4qa", `route "route2"`, `route "route"`},
+		},
+		{
+			"entrypoints",
+			func(c *Config) {
+				c.Entrypoints = append(c.Entrypoints, Entrypoint{
+					ID: "e_q7a4m2xk9d", Name: "entry2", Match: []string{"*"}, Route: "route",
+				})
+			},
+			[]string{"duplicate id", "e_q7a4m2xk9d", `entrypoint "entry2"`, `entrypoint "entry"`},
+		},
+		{
+			"gateway keys",
+			func(c *Config) {
+				c.Gateway.Keys = append(c.Gateway.Keys,
+					GatewayKey{ID: "gk_9x2m4q7a3k", Name: "phone", Key: "sk-gateway-key-2"})
+			},
+			[]string{"duplicate id", "gk_9x2m4q7a3k", "gateway.keys[1]", "gateway.keys[0]"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := base()
+			tc.mutate(c)
+			err := Validate(c)
+			if err == nil {
+				t.Fatal("duplicate ids should not validate")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want it to contain %q", err, want)
+				}
 			}
 		})
 	}

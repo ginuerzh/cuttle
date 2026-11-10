@@ -775,11 +775,32 @@ func validateEntityID(scope string, kind identity.Kind, id string) error {
 	return nil
 }
 
+// idRegistry collects the ids assigned while a config is validated. Ids are
+// globally unique across the six entity kinds: a merged or hand-edited config
+// that reuses one would resolve to different entities depending on the lookup,
+// so the duplicate is rejected with both entities named. Callers claim after
+// the duplicate-name check, so a shared name keeps reporting as a duplicate
+// name even though migration derives the same id for both entries.
+type idRegistry map[string]string
+
+// claim records scope as the owner of id. Empty ids are optional until
+// migration assigns them, so they are ignored.
+func (r idRegistry) claim(scope, id string) error {
+	if id == "" {
+		return nil
+	}
+	if prev, ok := r[id]; ok {
+		return fmt.Errorf("%s: duplicate id %q, already used by %s", scope, id, prev)
+	}
+	r[id] = scope
+	return nil
+}
+
 // validateGatewayKeys checks the named data-plane access keys. Names and values
 // must survive config.Load's environment expansion on every reload, so a
 // literal "$" is rejected. Error messages name the index and field but never
 // echo a key value.
-func validateGatewayKeys(keys []GatewayKey) error {
+func validateGatewayKeys(keys []GatewayKey, ids idRegistry) error {
 	names := make(map[string]struct{}, len(keys))
 	values := make(map[string]struct{}, len(keys))
 	for i := range keys {
@@ -795,6 +816,9 @@ func validateGatewayKeys(keys []GatewayKey) error {
 			return fmt.Errorf("gateway.keys[%d]: duplicate name %q", i, name)
 		}
 		names[name] = struct{}{}
+		if err := ids.claim(scope, keys[i].ID); err != nil {
+			return err
+		}
 
 		key := strings.TrimSpace(keys[i].Key)
 		switch {
@@ -822,7 +846,7 @@ func validateGatewayKeys(keys []GatewayKey) error {
 // validateProviderKeys checks the named upstream account keys. Names are
 // required, unique inside the provider, and safe for the environment expansion
 // on reload. Values are write-only and never echoed.
-func validateProviderKeys(providerName string, keys []ProviderKey) error {
+func validateProviderKeys(providerName string, keys []ProviderKey, ids idRegistry) error {
 	names := make(map[string]struct{}, len(keys))
 	for i := range keys {
 		name := strings.TrimSpace(keys[i].Name)
@@ -837,6 +861,9 @@ func validateProviderKeys(providerName string, keys []ProviderKey) error {
 			return fmt.Errorf("provider %q: keys[%d]: duplicate name %q", providerName, i, name)
 		}
 		names[name] = struct{}{}
+		if err := ids.claim(scope, keys[i].ID); err != nil {
+			return err
+		}
 
 		key := strings.TrimSpace(keys[i].Key)
 		switch {
@@ -937,7 +964,10 @@ func Validate(c *Config) error {
 	if c.Stats.Capture.Retain < 0 {
 		return fmt.Errorf("stats.capture.retain must be positive")
 	}
-	if err := validateGatewayKeys(c.Gateway.Keys); err != nil {
+	// Ids are claimed in validation order, so the error names the entity that
+	// reuses an id and the entity that already owns it.
+	seenIDs := make(idRegistry)
+	if err := validateGatewayKeys(c.Gateway.Keys, seenIDs); err != nil {
 		return err
 	}
 
@@ -958,6 +988,9 @@ func Validate(c *Config) error {
 			return fmt.Errorf("providers[%d]: duplicate name %q", i, name)
 		}
 		seen[name] = true
+		if err := seenIDs.claim(fmt.Sprintf("provider %q", name), p.ID); err != nil {
+			return err
+		}
 		if p.ID != "" {
 			providerIDs[p.ID] = p
 		}
@@ -1000,7 +1033,7 @@ func Validate(c *Config) error {
 		if p.Health.Path != "" && !strings.HasPrefix(p.Health.Path, "/") {
 			return fmt.Errorf("provider %q: health.path must start with /", name)
 		}
-		if err := validateProviderKeys(name, p.Keys); err != nil {
+		if err := validateProviderKeys(name, p.Keys, seenIDs); err != nil {
 			return err
 		}
 	}
@@ -1020,6 +1053,9 @@ func Validate(c *Config) error {
 			return fmt.Errorf("nodes[%d]: duplicate name %q", i, name)
 		}
 		nodeNames[name] = true
+		if err := seenIDs.claim(fmt.Sprintf("node %q", name), n.ID); err != nil {
+			return err
+		}
 		if n.ID != "" {
 			nodeIDs[n.ID] = true
 		}
@@ -1075,6 +1111,9 @@ func Validate(c *Config) error {
 			return fmt.Errorf("routes[%d]: duplicate name %q", i, name)
 		}
 		routes[name] = true
+		if err := seenIDs.claim(fmt.Sprintf("route %q", name), r.ID); err != nil {
+			return err
+		}
 		if r.ID != "" {
 			routeIDs[r.ID] = true
 		}
@@ -1127,6 +1166,9 @@ func Validate(c *Config) error {
 			return fmt.Errorf("entrypoints[%d]: duplicate name %q", i, name)
 		}
 		entrypointNames[name] = true
+		if err := seenIDs.claim(fmt.Sprintf("entrypoint %q", name), e.ID); err != nil {
+			return err
+		}
 
 		hasMatch := false
 		for _, m := range e.Match {
@@ -1353,9 +1395,9 @@ func (c *Config) LabelsByID() map[string]map[string]string {
 
 // TopologyIncludes reports whether a stats row belongs to the current route
 // topology: the route must exist, reference the node, and the node's provider
-// must match. Rows, routes and nodes are identified by id (the legacy name
-// fallback of the lookups still applies until Task 7). Unrouted rows are always
-// kept.
+// must match. Rows, routes and nodes are identified by id, but a row may still
+// record the legacy display names until Task 3 switches the gateway to ids, so
+// the recorded references are resolved first. Unrouted rows are always kept.
 func (c *Config) TopologyIncludes(routeID, nodeID, providerID string) bool {
 	routeID = strings.TrimSpace(routeID)
 	if routeID == "" {
@@ -1369,9 +1411,13 @@ func (c *Config) TopologyIncludes(routeID, nodeID, providerID string) bool {
 	if nodeID == "" {
 		return true
 	}
+	node, ok := c.Node(nodeID)
+	if !ok {
+		return false
+	}
 	referenced := false
 	for _, ref := range target.Nodes {
-		if strings.TrimSpace(ref) == nodeID {
+		if sameNodeReference(c, ref, node) {
 			referenced = true
 			break
 		}
@@ -1379,12 +1425,47 @@ func (c *Config) TopologyIncludes(routeID, nodeID, providerID string) bool {
 	if !referenced {
 		return false
 	}
-	node, ok := c.Node(nodeID)
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return true
+	}
+	nodeProvider := strings.TrimSpace(node.Provider)
+	if nodeProvider == providerID {
+		return true
+	}
+	configured, ok := c.Provider(nodeProvider)
 	if !ok {
 		return false
 	}
-	providerID = strings.TrimSpace(providerID)
-	return providerID == "" || strings.TrimSpace(node.Provider) == providerID
+	recorded, ok := c.Provider(providerID)
+	if !ok {
+		return false
+	}
+	if configured.ID != "" && recorded.ID != "" {
+		return configured.ID == recorded.ID
+	}
+	return strings.TrimSpace(configured.Name) == strings.TrimSpace(recorded.Name)
+}
+
+// sameNodeReference reports whether ref, an id or until Task 7 a node display
+// name, refers to node. Ids decide when both sides carry one; an id-less config
+// still compares display names.
+func sameNodeReference(c *Config, ref string, node *Node) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return false
+	}
+	if node.ID != "" && ref == node.ID {
+		return true
+	}
+	other, ok := c.Node(ref)
+	if !ok {
+		return false
+	}
+	if node.ID != "" && other.ID != "" {
+		return node.ID == other.ID
+	}
+	return strings.TrimSpace(other.Name) == strings.TrimSpace(node.Name)
 }
 
 // EnabledValue reports whether the node is enabled (default true).
