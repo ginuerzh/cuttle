@@ -167,6 +167,12 @@ func TestNewAttemptReplacesPreviousCapture(t *testing.T) {
 	m.Offer("s1", "request", []byte("a"), []byte("ra"), "", 0, 0)
 	m.Offer("s1", "response", []byte("o"), []byte("ro"), "", 0, 0)
 	m.Offer("s1", "request", []byte("a"), []byte("rb"), "", 0, 1)
+	// Attempt 0 charged 6 bytes (request a/ra, response o/ro); attempt 1 replaces
+	// them and charges 3 (request a/rb). The reset has to happen before this
+	// offer is accounted, otherwise the counter would be wrong here.
+	if m.totalBytes != 3 {
+		t.Fatalf("totalBytes = %d, want 3 after the attempt-1 offer", m.totalBytes)
+	}
 	cap, ok := m.Finish("s1")
 	if !ok {
 		t.Fatal("finish failed")
