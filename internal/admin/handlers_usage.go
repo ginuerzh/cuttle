@@ -17,7 +17,9 @@ const usageCacheTTL = 60 * time.Second
 // accountUsageView is one provider key as the browser sees it. The raw key is
 // never included; KeyPreview is the existing admin mask.
 type accountUsageView struct {
+	Name       string                 `json:"name,omitempty"`
 	KeyPreview string                 `json:"keyPreview,omitempty"`
+	Enabled    bool                   `json:"enabled"`
 	Balance    []provider.BalancePart `json:"balance,omitempty"`
 	Windows    []provider.QuotaWindow `json:"windows,omitempty"`
 	Note       string                 `json:"note,omitempty"`
@@ -180,11 +182,17 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 
 	for _, acc := range accounts {
 		keyPreview := ""
+		name := acc.Name
+		enabled := true
 		if acc.KeyIndex >= 0 && acc.KeyIndex < len(cfg.Keys) {
 			keyPreview = preview(cfg.Keys[acc.KeyIndex].Key)
+			name = cfg.Keys[acc.KeyIndex].Name
+			enabled = cfg.Keys[acc.KeyIndex].EnabledValue()
 		}
 		av := accountUsageView{
+			Name:       name,
 			KeyPreview: keyPreview,
+			Enabled:    enabled,
 			Balance:    acc.Balance,
 			Windows:    acc.Windows,
 			Note:       acc.Note,

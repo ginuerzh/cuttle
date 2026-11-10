@@ -238,7 +238,7 @@ func TestProviderCRUDMasksKeys(t *testing.T) {
 	if strings.Contains(string(b), "sk-secret-value") {
 		t.Fatalf("plaintext key leaked: %s", b)
 	}
-	if !strings.Contains(string(b), `"keysSet":1`) || !strings.Contains(string(b), "sk-...alue") {
+	if !strings.Contains(string(b), `"name":"key-1"`) || !strings.Contains(string(b), "sk-...alue") {
 		t.Fatalf("missing key metadata: %s", b)
 	}
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
@@ -1001,17 +1001,17 @@ func TestProviderKeyUpdates(t *testing.T) {
 		t.Fatalf("create provider = %d", resp.StatusCode)
 	}
 
-	update := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"index":2,"delete":true},{"key":"d"}]}`
+	update := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"name":"key-3","delete":true},{"name":"key-4","key":"d"}]}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", update, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := readAll(resp.Body)
 		t.Fatalf("update keys = %d: %s", resp.StatusCode, b)
 	}
 	got := rel.cfg.Providers[0].Keys
-	if len(got) != 3 || got[0].Key != "a" || got[1].Key != "b" || got[2].Key != "d" {
-		t.Fatalf("keys = %v, want [a b d]", got)
+	if len(got) != 3 || got[0].Key != "a" || got[1].Key != "b" || got[2].Key != "d" || got[2].Name != "key-4" {
+		t.Fatalf("keys = %v, want [a b d] named key-4", got)
 	}
 
-	replace := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"index":0,"key":"x"}]}`
+	replace := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"name":"key-1","key":"x"}]}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", replace, csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("replace existing key = %d, want 400", resp.StatusCode)
 	}
@@ -1019,9 +1019,9 @@ func TestProviderKeyUpdates(t *testing.T) {
 		t.Fatalf("keys changed after rejected replace: %v", got)
 	}
 
-	bad := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"index":9,"delete":true}]}`
+	bad := `{"name":"p","type":"generic","chat":"https://a.example","keyUpdates":[{"name":"nope","delete":true}]}`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/p", bad, csrf); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("invalid key index = %d, want 400", resp.StatusCode)
+		t.Fatalf("unknown key name = %d, want 400", resp.StatusCode)
 	}
 	if got := rel.cfg.Providers[0].Keys; len(got) != 3 || got[0].Key != "a" {
 		t.Fatalf("keys changed after rejected update: %v", got)
