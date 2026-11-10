@@ -506,12 +506,12 @@ git commit -m "feat(web): pin a node to a provider key"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `7d88e7dd` — `feat(web): pin a node to a provider key`
+- Files changed: `web/src/api/types.ts` (`Node.key`, `AccountUsage.name`/`enabled`); `web/src/pages/presets.ts` (`nodeKeyOptions`); `web/src/pages/Edit.tsx` (`NodeForm` key select + save); `web/src/pages/Nodes.tsx` (pinned-key tag); `web/src/pages/Usage.tsx` (name/disabled tags); `web/src/locales/en-US.ts`; tests in `Edit.test.tsx`, `Usage.test.ts`, `Nodes.test.tsx` (new), `presets.test.ts`.
+- Tests/commands + results: focused `npx vitest run ...` PASS; `npx tsc --noEmit` PASS; `npm test` 240/240 PASS; `npm run build` PASS; `GOWORK=off go build ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: `NodeForm` falls back to `node.provider` when `Form.useWatch` is empty, so the key options render on the first pass and under SSR.
+- Deferred/limitations: per-key request stats are still not recorded (spec non-goal); a node pins at most one key.
 
 ---
 
