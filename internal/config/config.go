@@ -778,8 +778,10 @@ func validateProviderKeys(providerName string, keys []ProviderKey) error {
 
 // parseRetryCodes parses a comma-separated list of retry status codes. Each
 // token is either an exact code of at least 100 or a hundred-level wildcard
-// such as "5xx" (a single digit 1-9 followed by "xx"), which parses as the
-// hundred-level prefix, 500 for "5xx".
+// such as "5xx" (a single digit 1-9 followed by "xx"). The result is used for
+// validation only: the configured string is carried to x verbatim, where a
+// wildcard is encoded as its hundred-level prefix (5 for "5xx", matching
+// 500-599), so the numbers returned here are not the matcher encoding.
 func parseRetryCodes(s string) ([]int, error) {
 	tokens := strings.Split(s, ",")
 	codes := make([]int, 0, len(tokens))

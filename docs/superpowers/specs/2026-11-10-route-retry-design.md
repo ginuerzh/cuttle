@@ -267,12 +267,19 @@ Local iteration may use the parent `go.work` to compile cuttle against the
 unreleased x, but the final verification must be `GOWORK=off` against the
 published tag, because that is what the Docker build and release use.
 
+Post-review release: the published tag is `v0.31.1`, cut from x `master` after
+merging the feature branch, because `v0.31.0` was tagged on the unmerged branch
+and the retry marker fix landed after it. See the plan's **Final review fixes**
+section for the commits.
+
 ## Edge cases and failure behavior
 
 - All attempts exhausted: the last response (status and body) is relayed to the
   client; the row shows the last node and `retries = budget spent`.
-- Client disconnects during a retry wait: the next attempt fails fast on the
-  closed client connection; no row corruption.
+- Client disconnects during a retry wait: the code does not probe the client
+  connection between attempts, so the next attempt still runs; its response
+  write then fails and the failure is recorded on the single row. No row is
+  corrupted.
 - The retried request is byte-identical to the original at the wire level
   except for per-node rewrites (which are the point of re-selection).
 - `429` with `Retry-After`: ignored in v1; the retry immediately targets the

@@ -406,11 +406,15 @@ GOWORK=off go test ./internal/stats -count=1
 - Route variants multiply hop entries and rewriters by inbound protocol. Build
   one route plan and register rewriters from that plan; never recompute the
   target API separately, or path, body protocol and stats can diverge.
-- Route retries require `github.com/go-gost/x` `v0.31.0` or newer: the retry
-  loop, the 32 MiB replay buffer and the `retry.max`/`retry.codes` node
-  metadata all live in x. An older tag ignores that metadata silently. The Go
-  gate still runs with `GOWORK=off` inside the parent workspace, so the tagged
-  module is what gets built and tested.
+- Route retries require `github.com/go-gost/x` `v0.31.1` or newer (the version
+  pinned in `go.mod`): the retry loop, the 32 MiB replay buffer and the
+  `retry.max`/`retry.codes` node metadata all live in x. `v0.31.1` also carries
+  the retry marker fix: an exhausted retry budget keeps the node marked even
+  when the retry code is outside `failCodes`. An older tag ignores that
+  metadata silently or clears the marker after the last attempt. The whole
+  retry work is on x `master` as of `v0.31.1`. The Go gate still runs with
+  `GOWORK=off` inside the parent workspace, so the tagged module is what gets
+  built and tested.
 - Admin config writes require a writable config file. With a Docker `:ro` mount,
   console edits fail; edit the host file and send `SIGHUP`.
 - First-run config and stats live in `$CUTTLE_DATA` (default `/data`). The

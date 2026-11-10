@@ -49,7 +49,8 @@ client model
 Entrypoint ──► Route ──► Node ──► Provider model
                  │          │
                  │          └─ one provider + one model
-                 └─ ordered nodes + strategy (fifo / round / random / sticky)
+                 └─ ordered nodes, strategy (fifo / round / random / sticky)
+                    and an optional retry budget (`retries` / `retryCodes`)
 ```
 
 - An **entrypoint** is the client-facing ingress. It has a name, a non-empty
@@ -280,7 +281,7 @@ when `admin.passwordHash` is set.
 | --- | --- |
 | Providers | Provider type, API base URLs, keys, model catalog, disabled models, health probes |
 | Nodes | Provider, one model, backup flag, weight, enabled switch |
-| Routes | Ordered node list and strategy |
+| Routes | Ordered node list, selection strategy and the retry budget (`retries` / `retryCodes`) |
 | Entrypoints | Ordered model globs and the route they select |
 | Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
@@ -709,8 +710,12 @@ Overview notification bell.
 
 `GET /api/routes/health` returns each route's node markers: `failCount`,
 `lastFailure`, `dead` and `deadUntil`. The state is x's in-memory marker,
-resets when the hop is rebuilt, and only reflects the failures x marks (TCP
-dial failures and configured HTTP `failCodes`, currently 429 and 5xx). A
+resets when the hop is rebuilt, and only reflects the failures x marks: TCP
+dial failures, responses matching a node's HTTP `failCodes` (currently 429 and
+5xx), and every status a route retried, including a `retryCodes` match outside
+`failCodes` — the final attempt of an exhausted budget marks the node too, so a
+retried node stays dead for `failTimeout` instead of looking healthy right
+after refusing the request. A
 streaming HTTP 200 truncation is not a marker failure. Because a node can be
 bound by several routes, the marker is per route: the topology marks a node
 dead only when every route that reports it is dead, a node dead in some routes

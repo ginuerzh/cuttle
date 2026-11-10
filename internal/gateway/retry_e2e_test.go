@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -111,5 +112,104 @@ func TestGatewayRetriesRetryableUpstream(t *testing.T) {
 	// One identity across attempts: the header the client sees is the stats row.
 	if got := resp.Header.Get("X-Cuttle-Request-ID"); got != row.ID {
 		t.Fatalf("request id header = %q, stats row id = %q", got, row.ID)
+	}
+}
+
+// TestGatewayRetryUsesProviderCredentials pins the credential boundary of a
+// retry across providers. The replay snapshot is the pristine client request,
+// so each attempt must re-apply the selected node's provider key: the first
+// upstream sees provider a's key, the second provider b's, and the client's
+// inbound credential reaches neither.
+func TestGatewayRetryUsesProviderCredentials(t *testing.T) {
+	var mu sync.Mutex
+	var firstAuth, secondAuth []string
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		firstAuth = append(firstAuth, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		io.WriteString(w, `{"error":{"message":"rate limited","type":"rate_limit_error"}}`)
+	}))
+	defer first.Close()
+
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		secondAuth = append(secondAuth, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
+	}))
+	defer second.Close()
+
+	cfg := &config.Config{}
+	cfg.Gateway.Listen = "127.0.0.1:0"
+	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
+	cfg.Entrypoints = []config.Entrypoint{{Name: "all", Match: []string{"*"}, Route: "r"}}
+	cfg.Providers = []config.Provider{
+		{
+			Name: "a",
+			Type: "generic",
+			Chat: first.URL,
+			Keys: []config.ProviderKey{{Name: "ka", Key: "sk-a"}},
+		},
+		{
+			Name: "b",
+			Type: "generic",
+			Chat: second.URL,
+			Keys: []config.ProviderKey{{Name: "kb", Key: "sk-b"}},
+		},
+	}
+	cfg.Nodes = []config.Node{
+		{Name: "na", Provider: "a", Model: "deepseek-chat"},
+		{Name: "nb", Provider: "b", Model: "deepseek-chat"},
+	}
+	cfg.Routes = []config.Route{{
+		Name:       "r",
+		Nodes:      []string{"na", "nb"},
+		Strategy:   "fifo",
+		Retries:    1,
+		RetryCodes: "429,5xx",
+	}}
+
+	gw, err := gateway.New(cfg, xlogger.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer client-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	mu.Lock()
+	firstGot, secondGot := append([]string(nil), firstAuth...), append([]string(nil), secondAuth...)
+	mu.Unlock()
+
+	if len(firstGot) != 1 || firstGot[0] != "Bearer sk-a" {
+		t.Fatalf("first upstream authorization = %q, want [\"Bearer sk-a\"]", firstGot)
+	}
+	if len(secondGot) != 1 || secondGot[0] != "Bearer sk-b" {
+		t.Fatalf("second upstream authorization = %q, want [\"Bearer sk-b\"]", secondGot)
+	}
+	for _, got := range append(firstGot, secondGot...) {
+		if strings.Contains(got, "client-key") {
+			t.Fatalf("upstream received the client credential %q", got)
+		}
 	}
 }

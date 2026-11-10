@@ -95,8 +95,8 @@ nodes:
     provider: deepseek
     model: deepseek-v4-pro
 
-# A route contains only nodes and a selection strategy. The entrypoint decides
-# which route handles a request.
+# A route holds an ordered node list, a selection strategy and an optional retry
+# budget. The entrypoint decides which route handles a request.
 routes:
   - name: strong
     nodes: [deepseek-strong]
@@ -104,7 +104,9 @@ routes:
     maxFails: 2
     failTimeout: 30s
     # Opt-in retry budget: extra upstream attempts (0 disables, max 10) and the
-    # statuses that trigger a retry. A retry re-selects through the strategy.
+    # statuses that trigger a retry. A retry re-selects through the strategy, so
+    # this single-node route re-selects deepseek-strong for its one retry; use
+    # retries on a multi-node route to fail over to a different node.
     retries: 1
     retryCodes: "429,5xx"
   - name: fast
