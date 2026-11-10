@@ -442,12 +442,12 @@ git commit -m "feat(web): manage named provider keys"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `97c4a7d4` — `feat(web): manage named provider keys`
+- Files changed: `web/src/api/types.ts` (`ProviderKeyView`, `ProviderKeyInput`, `Provider.keys`); `web/src/api/client.ts` (`ProviderInput`); `web/src/pages/presets.ts` (name-based key rows/updates, `providerPayload` drops keys); `web/src/pages/Edit.tsx` (`ProviderKeyEditor`, `ProviderForm`, `KeyField`, `AddProviderModal`); `web/src/pages/Providers.tsx`; `web/src/graph/build.ts`; `web/src/locales/en-US.ts`; tests in `presets.test.ts`, `Edit.test.tsx`, `graph/build.test.ts`, `pages/selection.test.ts`.
+- Tests/commands + results: `cd web && npx tsc --noEmit` PASS; `npm test` 236/236 PASS; `npm run build` PASS; `GOWORK=off go build ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: the `keysSet` fixtures in `graph/build.ts`, `graph/build.test.ts` and `selection.test.ts` moved to `keys`; the create modal now requires a name and a value per key.
+- Deferred/limitations: provider key renaming is still delete+re-add (per the spec); the topology label shows `keys×N`, not key names.
 
 ---
 
