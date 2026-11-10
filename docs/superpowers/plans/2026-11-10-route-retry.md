@@ -771,7 +771,7 @@ git commit -m "feat(web): show route retries and retried sessions"
 **Interfaces:**
 - Consumes: config fields (Task 5), node metadata (Task 6), stats `retries` (Task 7), x retry behavior (Task 4).
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 `TestGatewayRetriesRetryableUpstream`:
 - First `httptest` server counts hits and returns 429 with a small JSON error body; second counts hits and returns a valid chat completion JSON (same body shape as `internal/gateway/stats_test.go`).
@@ -781,12 +781,12 @@ git commit -m "feat(web): show route retries and retried sessions"
 - Use the existing `waitRow` helper (same package) and assert `row.Retries == 1`, `row.Status == 200`, `row.Node == "nb"`.
 - Assert the response header `X-Cuttle-Request-ID` equals `row.ID` (the retried request keeps one identity across attempts).
 
-- [ ] **Step 2: Run the test**
+- [x] **Step 2: Run the test**
 
 Run: `GOWORK=off go test ./internal/gateway -run TestGatewayRetriesRetryableUpstream -count=1`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add internal/gateway/retry_e2e_test.go
@@ -794,12 +794,12 @@ git commit -m "test(gateway): cover end-to-end route retries"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `cuttle` `test(gateway): cover end-to-end route retries` on `feat/route-retry`, containing both the test and this record; the SHA is recorded in a follow-up `docs(plan)` commit because a commit cannot contain its own hash
+- Files changed: `internal/gateway/retry_e2e_test.go` (new), `docs/superpowers/plans/2026-11-10-route-retry.md`
+- Tests/commands and results: `GOWORK=off go test ./internal/gateway -run TestGatewayRetriesRetryableUpstream -count=1` → PASS (0.276s). Verified the test is load-bearing, not vacuous: flipping only `Retries` to `0` makes it fail with `retry_e2e_test.go:91: status = 429, want 200` (the 429 reaches the client), then restored. Repeated `-count=5` → PASS (1.164s) so the FIFO selection is deterministic, and `-race` → PASS (1.369s). Full gate `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS (gateway 14.196s, admin 13.913s, stats 17.073s); `gofmt -l internal/gateway` clean
+- Review findings and fixes: (1) The brief's own wording is honored literally — two providers with one key each and no `node.key` pin, so each node builds exactly one x node named `r/a/na` and `r/b/nb`, and `parseNodeName` yields `row.Node == "nb"`. (2) Hit counters are `atomic.Int32` because the two handlers run on different server goroutines from the client goroutine; a plain `int` would be a data race that `-race` would flag. (3) `RetryCodes` is set explicitly even though `429,5xx` is also the build-level fallback, because the brief pins it: a future change to that fallback must not silently rewrite what this test asserts. (4) The first upstream's 429 is not asserted through the client response: the retried request returns the last attempt, so the 200 plus `firstHits == 1` is what proves the 429 happened and was discarded. (5) The request header assertion compares the client-visible `X-Cuttle-Request-ID` against `row.ID` (the x `sid`), which is the actual "one identity across attempts" check — the second attempt's response header rewriter ran with the same sidecar session, so a per-attempt ID would fail here. (6) Reused `waitRow` unchanged rather than adding a second polling helper, so the stats row is read through the same path the rest of the gateway tests use.
+- Deferred items/limitations: This covers one retryable status (429) with `Retries: 1`; dial-failure retries, `5xx` classes, the retry bound under `retries: 10`, streaming bodies and `Expect: 100-continue` are covered by the x unit tests (Task 2) and stay uncovered end to end here. Attempt-level captures are not asserted; Task 8 pins those at the capture/rewriter layer. The test asserts the final attempt only — there is no row for the discarded 429 by design. Docs, `example.yaml` and the final full gate are Task 11.
 
 ---
 
