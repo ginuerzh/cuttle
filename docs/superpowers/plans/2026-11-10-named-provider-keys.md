@@ -283,12 +283,12 @@ git commit -m "fix(provider): use the first enabled key and name usage accounts"
 ```
 
 **Implementation record:** (fill after completion)
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands + results:
-- Review findings + fixes:
-- Deferred/limitations:
+- Date/status: 2026-11-10 · complete
+- Repository + commit: cuttle `566b090e` — `fix(provider): use the first enabled key and name usage accounts`
+- Files changed: `internal/config/config.go` (`Provider.FirstEnabledKey`); `internal/provider/models.go`; `internal/provider/usage.go` (`AccountUsage.Name`); `internal/admin/probe.go`; tests in `internal/provider/models_test.go`, `internal/provider/usage_test.go`, `internal/admin/probe_test.go`.
+- Tests/commands + results: `GOWORK=off go test ./internal/provider ./internal/admin -count=1` PASS; `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS.
+- Review findings + fixes: none.
+- Deferred/limitations: the admin usage view does not yet carry `name`/`enabled`; Task 4 adds it.
 
 ---
 
