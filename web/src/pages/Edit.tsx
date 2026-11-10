@@ -58,6 +58,7 @@ import {
 import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
 import type { NodeRouteHealth } from './routeHealth';
+import { entityLabel, labelMap, configLabels } from '../labels';
 
 interface Props {
   config: ConfigResponse;
@@ -85,17 +86,22 @@ function ProviderKeyEditor({
   return (
     <Form.Item
       label="keys"
-      extra={tr('已有 key 只读显示名称与掩码；如需更换请删除后添加新 key。一个 node 可以按名称固定使用其中一个。')}
+      extra={tr('已有 key 的名称可随时修改，值继续以掩码显示；如需更换请删除后添加新 key。一个 node 可以按名称固定使用其中一个。')}
       style={{ marginBottom: 12 }}
     >
       {rows.map((row, i) => (
         <div
-          key={row.existing ? `existing-${row.name}` : `new-${i}`}
+          key={row.id ?? `new-${i}`}
           style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center' }}
         >
           {row.existing ? (
             <>
-              <Tag color="blue" style={{ marginInlineEnd: 0 }}>{row.name}</Tag>
+              <Input
+                aria-label={tr('key 名称')}
+                value={row.name}
+                onChange={(e) => onChange(i, { name: e.target.value })}
+                style={{ flex: 1 }}
+              />
               <Tag style={{ flex: 1, marginInlineEnd: 0 }}>{row.preview || '****'}</Tag>
               <Switch
                 size="small"
@@ -379,27 +385,30 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
   const [keyRows, setKeyRows] = useState<ProviderKeyRow[]>(() => providerKeyRows(provider.keys ?? []));
-  const [deletedKeys, setDeletedKeys] = useState<string[]>([]);
+  const [deletedKeyIDs, setDeletedKeyIDs] = useState<string[]>([]);
   const [headersJSON, setHeadersJSON] = useState(() => headersText(provider.headers));
 
   useEffect(() => {
     setKeyRows(providerKeyRows(provider.keys ?? []));
-    setDeletedKeys([]);
+    setDeletedKeyIDs([]);
     setHeadersJSON(headersText(provider.headers));
   }, [provider.id, provider.keys, provider.headers]);
 
   const deleteKey = (i: number) => {
     const row = keyRows[i];
     if (!row) return;
-    if (row.existing) {
-      setDeletedKeys((current) => (current.includes(row.name) ? current : [...current, row.name]));
+    const id = row.id;
+    if (row.existing && id) {
+      setDeletedKeyIDs((current) => (current.includes(id) ? current : [...current, id]));
     }
     setKeyRows((current) => current.filter((_, index) => index !== i));
   };
 
   const save = async () => {
-    const incomplete = keyRows.some(
-      (row) => !row.existing && (row.name.trim() || row.value.trim()) && (!row.name.trim() || !row.value.trim()),
+    const incomplete = keyRows.some((row) =>
+      row.existing
+        ? !row.name.trim()
+        : (row.name.trim() || row.value.trim()) && (!row.name.trim() || !row.value.trim()),
     );
     if (incomplete) {
       message.error(tr('key 名称和值都必须填写'));
@@ -418,6 +427,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       const payload = providerPayload(
         {
           ...provider,
+          name: String(v.name ?? '').trim(),
           type: v.type,
           chat: String(v.chat ?? '').trim(),
           responses: String(v.responses ?? '').trim(),
@@ -428,7 +438,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         },
         { models: provider.models ?? {} },
       );
-      const keyUpdates = providerKeyUpdates(keyRows, deletedKeys);
+      const keyUpdates = providerKeyUpdates(keyRows, deletedKeyIDs);
       if (keyUpdates.length > 0) payload.keyUpdates = keyUpdates;
       await updateProvider(provider.id, payload);
       message.success(tr('已保存'));
@@ -461,6 +471,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
       layout="vertical"
       size="small"
       initialValues={{
+        name: provider.name,
         type: provider.type || 'generic',
         chat: provider.chat ?? '',
         responses: provider.responses ?? '',
@@ -473,6 +484,14 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         {provider.name}
       </Typography.Title>
       <Divider />
+      <Form.Item
+        name="name"
+        label={tr('名称')}
+        rules={[{ required: true, message: tr('请填写名称') }]}
+        extra={tr('仅用于显示，可随时修改；实体 id 不变。')}
+      >
+        <Input placeholder="opencode-go" />
+      </Form.Item>
       <Form.Item name="type" label="type" rules={[{ required: true }]} extra={tr('创建后不可修改')}>
         <Select disabled options={PROVIDER_TYPES.map((v) => ({ value: v, label: v }))} />
       </Form.Item>
@@ -531,7 +550,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
         rows={keyRows}
         onChange={(i, patch) => setKeyRows((rows) => rows.map((row, index) => (index === i ? { ...row, ...patch } : row)))}
         onDelete={deleteKey}
-        onAdd={() => setKeyRows((rows) => [...rows, { name: '', value: '', enabled: true, originalEnabled: true, existing: false }])}
+        onAdd={() => setKeyRows((rows) => [...rows, { name: '', value: '', enabled: true, originalName: '', originalEnabled: true, existing: false }])}
       />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
         {tr('至少填写一个 API base URL。模型映射与 backup/weight 在 Node 上配置；同一个 Provider 可以被多个 Node 引用。')}
@@ -549,7 +568,7 @@ export function ProviderForm({ provider, onSaved }: { provider: Provider; onSave
   );
 }
 
-function RouteNodeList({
+export function RouteNodeList({
   value = [],
   onChange,
   nodes,
@@ -563,11 +582,12 @@ function RouteNodeList({
   health?: RouteHealth;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const labels = labelMap(nodes);
+  const providerLabels = labelMap(providers);
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const providerById = new Map(providers.map((p) => [p.id, p]));
   const healthById = new Map((health?.nodes ?? []).map((n) => [n.id, n]));
   const available = nodes.filter((n) => !value.includes(n.id));
-  const providerLabel = (id: string) => providerById.get(id)?.name ?? id;
+  const providerLabel = (id: string) => entityLabel(id, providerLabels);
   const update = (next: string[]) => onChange?.(next);
 
   return (
@@ -578,6 +598,7 @@ function RouteNodeList({
       {value.map((id, index) => {
         const node = byId.get(id);
         const h = healthById.get(id);
+        const nodeLabel = entityLabel(id, labels);
         return (
           <div
             key={id}
@@ -614,7 +635,7 @@ function RouteNodeList({
             </Typography.Text>
             <div style={{ flex: 1, minWidth: 0 }}>
               <Typography.Text strong style={{ display: 'block', wordBreak: 'break-all' }}>
-                {node?.name ?? id}
+                {nodeLabel}
               </Typography.Text>
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                 {node ? `${providerLabel(node.provider)} · ${node.model}` : 'node'}
@@ -642,7 +663,7 @@ function RouteNodeList({
               type="text"
               size="small"
               danger
-              aria-label={tr('移除 {name}', { name: node?.name ?? id })}
+              aria-label={tr('移除 {name}', { name: nodeLabel })}
               icon={<MinusCircleOutlined />}
               onClick={() => update(value.filter((v) => v !== id))}
             />
@@ -674,7 +695,7 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
     setBusy(true);
     try {
       await updateRoute(route.id, {
-        name: route.name,
+        name: String(v.name ?? '').trim(),
         nodes: v.nodes ?? [],
         strategy: v.strategy,
         maxFails: v.maxFails,
@@ -710,6 +731,7 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
       layout="vertical"
       size="small"
       initialValues={{
+        name: route.name,
         strategy: route.strategy ?? 'round',
         maxFails: route.maxFails ?? 1,
         failTimeout: route.failTimeout ?? '10s',
@@ -721,6 +743,15 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {route.name}
       </Typography.Title>
+      <Form.Item
+        name="name"
+        label={tr('名称')}
+        rules={[{ required: true, message: tr('请填写名称') }]}
+        extra={tr('仅用于显示，可随时修改；实体 id 不变。')}
+        style={{ marginBottom: 12 }}
+      >
+        <Input placeholder="strong" />
+      </Form.Item>
       <Form.Item name="strategy" label="strategy">
         <Select options={['round', 'fifo', 'random', 'sticky'].map((v) => ({ value: v, label: v }))} />
       </Form.Item>
@@ -798,7 +829,7 @@ export function NodeForm({
     setBusy(true);
     try {
       await updateNode(node.id, {
-        name: node.name,
+        name: String(v.name ?? '').trim(),
         provider: v.provider,
         backup: v.backup,
         weight: v.weight,
@@ -843,6 +874,7 @@ export function NodeForm({
       layout="vertical"
       size="small"
       initialValues={{
+        name: node.name,
         provider: node.provider,
         model: node.model,
         api: node.api ?? 'auto',
@@ -856,6 +888,15 @@ export function NodeForm({
       </Typography.Title>
       <Tag color="cyan">node</Tag>
       <Divider />
+      <Form.Item
+        name="name"
+        label={tr('名称')}
+        rules={[{ required: true, message: tr('请填写名称') }]}
+        extra={tr('仅用于显示，可随时修改；实体 id 不变。')}
+        style={{ marginBottom: 12 }}
+      >
+        <Input placeholder="deepseek-fast" />
+      </Form.Item>
       <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
         <Select options={providerOptions} />
       </Form.Item>
@@ -952,7 +993,12 @@ export function EntrypointForm({
       </Typography.Title>
       <Tag color="geekblue">entrypoint</Tag>
       <Divider />
-      <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
+      <Form.Item
+        name="name"
+        label={tr('名称')}
+        rules={[{ required: true }]}
+        extra={tr('仅用于显示，可随时修改；实体 id 不变。')}
+      >
         <Input placeholder="fast" />
       </Form.Item>
       <Form.Item
@@ -1001,13 +1047,13 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
   const parts = id.split('|');
   const source = parts[0] ?? '';
   const target = parts[1] ?? '';
+  const labels = configLabels(config);
 
   if (source.startsWith('route:') && target.startsWith('node:')) {
     const routeId = source.slice('route:'.length);
     const nodeId = target.slice('node:'.length);
     const route = config.routes.find((r) => r.id === routeId);
-    const node = config.nodes.find((n) => n.id === nodeId);
-    const provider = config.providers.find((p) => p.id === node?.provider);
+    const provider = config.providers.find((p) => p.id === config.nodes.find((n) => n.id === nodeId)?.provider);
 
     const remove = async () => {
       if (!route) return;
@@ -1029,7 +1075,7 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
           {tr('连线')}
         </Typography.Title>
         <Typography.Paragraph>
-          {route?.name ?? routeId} → {node?.name ?? nodeId}
+          {entityLabel(routeId, labels.routes)} → {entityLabel(nodeId, labels.nodes)}
           {provider ? `（${provider.name}）` : ''}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
@@ -1045,15 +1091,13 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
   if (source.startsWith('node:') && target.startsWith('provider:')) {
     const nodeId = source.slice('node:'.length);
     const providerId = target.slice('provider:'.length);
-    const node = config.nodes.find((n) => n.id === nodeId);
-    const provider = config.providers.find((p) => p.id === providerId);
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
           {tr('连线')}
         </Typography.Title>
         <Typography.Paragraph>
-          {node?.name ?? nodeId} → {provider?.name ?? providerId}
+          {entityLabel(nodeId, labels.nodes)} → {entityLabel(providerId, labels.providers)}
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {tr('Node 指向哪个 Provider 由 Node 的 provider 字段决定，请在 Node 面板修改。')}

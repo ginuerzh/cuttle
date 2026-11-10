@@ -35,7 +35,8 @@ export function errorClassLabel(r: RequestRow): string {
 }
 
 export function gatewayKeyLabel(row: RequestRow): string {
-  return row.gatewayKey ? `key:${row.gatewayKey}` : '';
+  const key = row.gatewayKeyName || row.gatewayKey;
+  return key ? `key:${key}` : '';
 }
 
 export function retryLabel(row: RequestRow): string {

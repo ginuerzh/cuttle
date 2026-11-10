@@ -12,19 +12,24 @@ export interface PresetFormValues {
   gemini: string;
 }
 
-/** One editable provider-key row. Existing rows keep their name and preview. */
+/** One editable provider-key row. Existing rows keep their id and masked preview. */
 export interface ProviderKeyRow {
+  /** Stored key id; absent for a row that is being added. */
+  id?: string;
   name: string;
   preview?: string;
   value: string;
   enabled: boolean;
+  originalName: string;
   originalEnabled: boolean;
   existing: boolean;
 }
 
-/** One name-based key operation sent to the admin API; no secret is returned. */
+/** One key operation sent to the admin API; no secret is returned. */
 export interface ProviderKeyUpdate {
-  name: string;
+  /** Stored key id; absent when the row appends a new key. */
+  id?: string;
+  name?: string;
   key?: string;
   enabled?: boolean;
   delete?: boolean;
@@ -32,27 +37,37 @@ export interface ProviderKeyUpdate {
 
 export function providerKeyRows(keys: ProviderKeyView[]): ProviderKeyRow[] {
   return keys.map((k) => ({
+    id: k.id,
     name: k.name,
     preview: k.keyPreview,
     value: '',
     enabled: k.enabled,
+    originalName: k.name,
     originalEnabled: k.enabled,
     existing: true,
   }));
 }
 
+/**
+ * Turn the editor rows into key updates. An existing key is addressed by its
+ * id, so a rename, a toggle and a delete all keep the same identity; only a
+ * new row is addressed by name, and the admin API mints its id.
+ */
 export function providerKeyUpdates(rows: ProviderKeyRow[], deleted: string[]): ProviderKeyUpdate[] {
-  const updates: ProviderKeyUpdate[] = deleted.map((name) => ({ name, delete: true }));
+  const updates: ProviderKeyUpdate[] = deleted.map((id) => ({ id, delete: true }));
   for (const row of rows) {
-    if (row.existing && !deleted.includes(row.name) && row.enabled !== row.originalEnabled) {
-      updates.push({ name: row.name, enabled: row.enabled });
+    if (!row.existing || !row.id || deleted.includes(row.id)) continue;
+    const name = row.name.trim();
+    if (!name) continue;
+    if (name !== row.originalName || row.enabled !== row.originalEnabled) {
+      updates.push({ id: row.id, name, enabled: row.enabled });
     }
   }
   for (const row of rows) {
     if (row.existing) continue;
     const name = row.name.trim();
     const key = row.value.trim();
-    if (name && key) updates.push({ name, key });
+    if (name && key) updates.push({ name, key, enabled: row.enabled });
   }
   return updates;
 }

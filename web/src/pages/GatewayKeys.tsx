@@ -23,9 +23,9 @@ import {
   rotateGatewayKey,
   updateGatewayKey,
 } from '../api/client';
-import type { GatewayKeySecret } from '../api/client';
 import type {
   GatewayKey,
+  GatewayKeySecret,
   GatewayKeyUsage,
   GatewayKeyUsageResponse,
   RequestRow,
@@ -66,6 +66,7 @@ export function GatewayKeyCard({
   usage,
   onSessions,
   onToggle,
+  onRename,
   onRotate,
   onDelete,
 }: {
@@ -73,6 +74,7 @@ export function GatewayKeyCard({
   usage?: GatewayKeyUsage;
   onSessions?: () => void;
   onToggle?: (enabled: boolean) => void;
+  onRename?: () => void;
   onRotate?: () => void;
   onDelete?: () => void;
 }) {
@@ -112,6 +114,11 @@ export function GatewayKeyCard({
             <Button size="small" onClick={onSessions}>
               {t('会话')}
             </Button>
+            {onRename ? (
+              <Button size="small" onClick={onRename}>
+                {t('重命名')}
+              </Button>
+            ) : null}
             {onRotate ? (
               <Popconfirm
                 title={t('轮换 {name} 的密钥?', { name: item.name })}
@@ -192,6 +199,8 @@ export function GatewayKeysPage() {
   const [addEnabled, setAddEnabled] = useState(true);
   const [addBusy, setAddBusy] = useState(false);
   const [secret, setSecret] = useState<GatewayKeySecret | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
   const [sessionsKey, setSessionsKey] = useState('');
   const [sessions, setSessions] = useState<RequestRow[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -279,6 +288,25 @@ export function GatewayKeysPage() {
     }
   };
 
+  const submitRename = async () => {
+    if (!renaming) return;
+    const name = renaming.name.trim();
+    if (!name) {
+      message.error(t('必填'));
+      return;
+    }
+    setRenameBusy(true);
+    try {
+      await updateGatewayKey(renaming.id, { name });
+      setRenaming(null);
+      await load();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRenameBusy(false);
+    }
+  };
+
   const rotate = async (id: string) => {
     try {
       setSecret(await rotateGatewayKey(id));
@@ -299,7 +327,7 @@ export function GatewayKeysPage() {
   };
 
   const state = gatewayKeyState(keys);
-  const usageByName = new Map((usage?.keys ?? []).map((item) => [item.name, item]));
+  const usageById = new Map((usage?.keys ?? []).map((item) => [item.id, item]));
   const historical = (usage?.keys ?? []).filter((item) => !item.configured);
 
   return (
@@ -367,20 +395,39 @@ export function GatewayKeysPage() {
         <GatewayKeyCard
           key={item.id}
           item={item}
-          usage={usageByName.get(item.name)}
+          usage={usageById.get(item.id)}
           onSessions={() => void openSessions(item.id, item.name)}
           onToggle={(enabled) => void toggle(item.id, enabled)}
+          onRename={() => setRenaming({ id: item.id, name: item.name })}
           onRotate={() => void rotate(item.id)}
           onDelete={() => void remove(item.id)}
         />
       ))}
       {historical.map((item) => (
         <GatewayKeyCard
-          key={`history-${item.name}`}
-          item={{ id: '', name: item.name, keyPreview: item.keyPreview ?? '', enabled: false }}
+          key={`history-${item.id}`}
+          item={{ id: item.id, name: item.name, keyPreview: item.keyPreview ?? '', enabled: false }}
           usage={item}
         />
       ))}
+
+      <Modal
+        title={t('重命名网关密钥')}
+        open={!!renaming}
+        onCancel={() => setRenaming(null)}
+        onOk={() => void submitRename()}
+        confirmLoading={renameBusy}
+        okText={t('保存')}
+        destroyOnClose
+      >
+        <Input
+          placeholder={t('名称')}
+          aria-label={t('名称')}
+          value={renaming?.name ?? ''}
+          onChange={(e) => setRenaming((cur) => (cur ? { ...cur, name: e.target.value } : cur))}
+          onPressEnter={() => void submitRename()}
+        />
+      </Modal>
 
       <Modal
         title={t('添加网关密钥')}
@@ -435,7 +482,7 @@ export function GatewayKeysPage() {
                   key={row.requestId}
                   dense
                   title={row.clientModel || row.model || row.requestId}
-                  subtitle={`${formatDateTime(row.ts)} · ${row.route || 'unrouted'} · ${formatCount(row.inputTokens)}/${formatCount(row.outputTokens)} tok`}
+                  subtitle={`${formatDateTime(row.ts)} · ${row.route ? row.routeName || row.route : 'unrouted'} · ${formatCount(row.inputTokens)}/${formatCount(row.outputTokens)} tok`}
                   tags={
                     <Tag color={failed ? 'red' : row.status >= 300 ? 'orange' : 'green'}>
                       {row.status}

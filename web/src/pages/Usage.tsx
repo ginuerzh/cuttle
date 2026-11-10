@@ -145,7 +145,7 @@ function ProviderCard({
       style={{ marginBottom: 12 }}
       title={
         <Space wrap>
-          <span>{provider.name}</span>
+          <span>{provider.name || provider.id}</span>
           <Tag>{provider.type}</Tag>
           {!provider.enabled ? <Tag>{t('已禁用')}</Tag> : null}
           {provider.cached ? <Tag color="blue">{t('缓存')}</Tag> : null}
@@ -279,7 +279,12 @@ export function UsagePage() {
       {loading && !data ? <Skeleton active /> : null}
       {data?.providers.length === 0 ? <Empty description={t('没有可显示的账户')} /> : null}
       {data?.providers.map((provider) => (
-        <ProviderCard key={provider.name} provider={provider} isMobile={isMobile} showStats={showStats} />
+        <ProviderCard
+          key={provider.id || provider.name}
+          provider={provider}
+          isMobile={isMobile}
+          showStats={showStats}
+        />
       ))}
     </ListPage>
   );

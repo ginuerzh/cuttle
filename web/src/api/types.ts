@@ -408,6 +408,8 @@ export interface ProviderUsageLocal {
 }
 
 export interface ProviderUsage {
+  /** Provider id; `name` is its current display label. */
+  id: string;
   name: string;
   type: string;
   enabled: boolean;
@@ -446,8 +448,17 @@ export interface KeyUsageCounts {
   cachedTokens: number;
 }
 
+/** The one-time create/rotate response; the raw value appears only here. */
+export interface GatewayKeySecret {
+  id: string;
+  name: string;
+  key: string;
+}
+
 /** Per-key usage row, including keys that were deleted but still have history. */
 export interface GatewayKeyUsage extends KeyUsageCounts {
+  /** Key id the rollups are joined by; `name` is the display label. */
+  id: string;
   name: string;
   configured: boolean;
   enabled: boolean;

@@ -11,7 +11,7 @@ vi.mock('../api/client', () => ({
 }));
 
 import { getProviderModels, updateNode, updateProvider } from '../api/client';
-import { NodeForm, ProviderForm } from './Edit';
+import { NodeForm, ProviderForm, RouteNodeList } from './Edit';
 import { setActiveLang } from '../i18n';
 
 setActiveLang('zh-CN');
@@ -48,6 +48,34 @@ function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
+function mouseDown(el: Element) {
+  act(() => {
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+  });
+}
+
+function click(el: Element) {
+  act(() => {
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+}
+
+/** Open one antd Select by its current label and choose an option by its label. */
+function selectOption(container: HTMLElement, current: string, option: string) {
+  const select = Array.from(container.querySelectorAll<HTMLElement>('.ant-select')).find((el) =>
+    (el.textContent ?? '').includes(current),
+  );
+  if (!select) {
+    const have = Array.from(container.querySelectorAll<HTMLElement>('.ant-select')).map((el) => el.textContent);
+    throw new Error(`select ${current} not found; have ${have.join('|')}`);
+  }
+  mouseDown(select.querySelector('.ant-select-selector') ?? select);
+  const items = Array.from(document.querySelectorAll<HTMLElement>('.ant-select-item-option'));
+  const target = items.find((el) => (el.textContent ?? '').trim() === option);
+  if (!target) throw new Error(`option ${option} not found; have ${items.map((el) => el.textContent).join('|')}`);
+  click(target);
+}
+
 const provider: Provider = {
   id: 'p_0000000001',
   name: 'p',
@@ -66,7 +94,27 @@ describe('ProviderForm key editor', () => {
     }) as unknown as typeof window.matchMedia;
   });
 
-  it('adds a named key and saves name-based keyUpdates', async () => {
+  it('renames a provider without changing its id', async () => {
+    const { container } = render(<ProviderForm provider={provider} onSaved={async () => undefined} />);
+
+    const nameInput = container.querySelector('input#name') as HTMLInputElement;
+    expect(nameInput).not.toBeNull();
+    expect(nameInput.value).toBe('p');
+    expect(container.textContent).toContain('仅用于显示');
+    typeInto(nameInput, '重命名后的提供商');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    expect(updateProviderMock).toHaveBeenCalledTimes(1);
+    const [id, payload] = updateProviderMock.mock.calls[0];
+    expect(id).toBe('p_0000000001');
+    expect(payload.name).toBe('重命名后的提供商');
+    expect(payload.id).toBeUndefined();
+  });
+
+  it('adds a named key and saves id-carrying key updates', async () => {
     const { container } = render(<ProviderForm provider={provider} onSaved={async () => undefined} />);
 
     act(() => {
@@ -84,7 +132,45 @@ describe('ProviderForm key editor', () => {
 
     expect(updateProviderMock).toHaveBeenCalledTimes(1);
     const [, payload] = updateProviderMock.mock.calls[0];
-    expect(payload).toMatchObject({ keyUpdates: [{ name: 'account-c', key: 'sk-c' }] });
+    const updates = (payload as { keyUpdates?: { id?: string; name?: string; key?: string }[] }).keyUpdates;
+    // A new key has no id yet; the admin API mints one.
+    expect(updates).toMatchObject([{ name: 'account-c', key: 'sk-c' }]);
+    expect(updates?.[0].id).toBeUndefined();
+  });
+
+  it('renames an existing key by its id', async () => {
+    const { container } = render(<ProviderForm provider={provider} onSaved={async () => undefined} />);
+
+    const nameInput = container.querySelector('input[aria-label="key 名称"]') as HTMLInputElement;
+    expect(nameInput).not.toBeNull();
+    expect(nameInput.value).toBe('account-a');
+    typeInto(nameInput, 'account-main');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    expect(updateProviderMock).toHaveBeenCalledTimes(1);
+    const [, payload] = updateProviderMock.mock.calls[0];
+    expect(payload).toMatchObject({
+      keyUpdates: [{ id: 'pk_0000000001', name: 'account-main', enabled: true }],
+    });
+  });
+
+  it('deletes an existing key by its id', async () => {
+    const { container } = render(<ProviderForm provider={provider} onSaved={async () => undefined} />);
+
+    act(() => {
+      (container.querySelector('button[aria-label="删除 key"]') as HTMLButtonElement).click();
+    });
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    expect(updateProviderMock).toHaveBeenCalledTimes(1);
+    const [, payload] = updateProviderMock.mock.calls[0];
+    expect(payload).toMatchObject({ keyUpdates: [{ id: 'pk_0000000001', delete: true }] });
   });
 
   it('keeps focus while typing a new key name', async () => {
@@ -151,11 +237,13 @@ describe('NodeForm key pin', () => {
     }) as unknown as typeof window.matchMedia;
   });
 
-  it('saves the pinned key', async () => {
+  it('pins a provider key by id', async () => {
     const { container } = render(<NodeForm node={node} config={config} onSaved={async () => undefined} />);
     await act(async () => {
-      await getProviderModels('p');
+      await getProviderModels('p_0000000001');
     });
+
+    selectOption(container, 'account-a', 'account-b（已禁用）');
 
     await act(async () => {
       buttonByText(container, '保存').click();
@@ -164,6 +252,66 @@ describe('NodeForm key pin', () => {
     expect(updateNodeMock).toHaveBeenCalledTimes(1);
     const [id, payload] = updateNodeMock.mock.calls[0];
     expect(id).toBe('n_0000000001');
-    expect(payload).toMatchObject({ key: 'pk_0000000001' });
+    expect(payload).toMatchObject({ key: 'pk_0000000002' });
+  });
+
+  it('renames a node without changing its id', async () => {
+    const { container } = render(<NodeForm node={node} config={config} onSaved={async () => undefined} />);
+
+    const nameInput = container.querySelector('input#name') as HTMLInputElement;
+    expect(nameInput).not.toBeNull();
+    typeInto(nameInput, 'ds-fast');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [id, payload] = updateNodeMock.mock.calls[0];
+    expect(id).toBe('n_0000000001');
+    expect(payload).toMatchObject({ name: 'ds-fast', provider: 'p_0000000001' });
+  });
+});
+
+describe('RouteNodeList', () => {
+  const nodes: Node[] = [
+    { id: 'n_0000000001', name: 'ds-fast', provider: 'p_0000000001', model: 'm1' },
+    { id: 'n_0000000002', name: 'ds-slow', provider: 'p_0000000001', model: 'm2' },
+  ];
+  const providers: Provider[] = [
+    { id: 'p_0000000001', name: 'DeepSeek 官方', type: 'deepseek', keys: [] },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  it('renders node names and submits node ids', () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <RouteNodeList
+        value={['n_0000000001']}
+        onChange={onChange}
+        nodes={nodes}
+        providers={providers}
+      />,
+    );
+
+    expect(container.textContent).toContain('ds-fast');
+    expect(container.textContent).toContain('DeepSeek 官方');
+    expect(container.textContent).not.toContain('n_0000000001');
+
+    selectOption(container, '添加 node', 'ds-slow (DeepSeek 官方)');
+    expect(onChange).toHaveBeenCalledWith(['n_0000000001', 'n_0000000002']);
+
+    onChange.mockClear();
+    act(() => {
+      (container.querySelector('button[aria-label="移除 ds-fast"]') as HTMLButtonElement).click();
+    });
+    expect(onChange).toHaveBeenCalledWith([]);
   });
 });

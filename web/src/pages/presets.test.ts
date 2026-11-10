@@ -529,30 +529,44 @@ describe('provider headers', () => {
 });
 
 describe('provider keys', () => {
-  it('builds named editable rows from the view', () => {
+  it('builds editable rows from the view, keeping the key ids', () => {
     const keys: ProviderKeyView[] = [
       { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
       { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
     ];
     expect(providerKeyRows(keys)).toEqual([
-      { name: 'account-a', preview: 'sk-...a', value: '', enabled: true, originalEnabled: true, existing: true },
-      { name: 'account-b', preview: 'sk-...b', value: '', enabled: false, originalEnabled: false, existing: true },
+      {
+        id: 'pk_0000000001', name: 'account-a', preview: 'sk-...a', value: '',
+        enabled: true, originalName: 'account-a', originalEnabled: true, existing: true,
+      },
+      {
+        id: 'pk_0000000002', name: 'account-b', preview: 'sk-...b', value: '',
+        enabled: false, originalName: 'account-b', originalEnabled: false, existing: true,
+      },
     ]);
   });
 
-  it('turns deletes, additions and toggles into name-based updates', () => {
+  it('addresses deletes, renames and toggles by key id', () => {
     const rows = providerKeyRows([
       { id: 'pk_0000000001', name: 'account-a', keyPreview: 'sk-...a', enabled: true },
       { id: 'pk_0000000002', name: 'account-b', keyPreview: 'sk-...b', enabled: false },
     ]);
     rows[0].enabled = false;
-    rows.push({ name: 'account-c', value: 'sk-new', enabled: true, originalEnabled: true, existing: false });
-    rows.push({ name: '', value: 'ignored', enabled: true, originalEnabled: true, existing: false });
+    rows[1].name = 'account-renamed';
+    rows.push({
+      name: 'account-c', value: 'sk-new', enabled: true,
+      originalName: '', originalEnabled: true, existing: false,
+    });
+    rows.push({
+      name: '', value: 'ignored', enabled: true,
+      originalName: '', originalEnabled: true, existing: false,
+    });
 
-    expect(providerKeyUpdates(rows, ['account-b'])).toEqual([
-      { name: 'account-b', delete: true },
-      { name: 'account-a', enabled: false },
-      { name: 'account-c', key: 'sk-new' },
+    expect(providerKeyUpdates(rows, ['pk_0000000003'])).toEqual([
+      { id: 'pk_0000000003', delete: true },
+      { id: 'pk_0000000001', name: 'account-a', enabled: false },
+      { id: 'pk_0000000002', name: 'account-renamed', enabled: false },
+      { name: 'account-c', key: 'sk-new', enabled: true },
     ]);
   });
 });

@@ -38,7 +38,7 @@ import { EntrypointsPage } from './pages/Entrypoints';
 import { GatewayKeysPage } from './pages/GatewayKeys';
 import { ProvidersPage } from './pages/Providers';
 import { NodesPage } from './pages/Nodes';
-import { RequestsPage, statusLabel } from './pages/Requests';
+import { RequestsPage, gatewayKeyLabel, statusLabel } from './pages/Requests';
 import { RoutesPage } from './pages/Routes';
 import { SettingsPage } from './pages/Settings';
 import { Edit } from './pages/Edit';
@@ -49,6 +49,7 @@ import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
 import { splitId } from './pages/selection';
 import { nodeRouteHealth } from './pages/routeHealth';
+import { configLabels, entityLabel, graphLabel, type ConfigLabels } from './labels';
 import { useLiveGraph } from './useLiveGraph';
 import { useTheme, type ThemeMode } from './theme';
 import { LANGUAGES, translate, useI18n, type Lang } from './i18n';
@@ -151,6 +152,7 @@ export function SessionCard({ row, onOpen }: { row: RequestRow; onOpen?: (row: R
     row.clientModel && row.model && row.clientModel !== row.model
       ? `${row.clientModel} → ${row.model}`
       : row.clientModel || row.model || row.requestId;
+  const keyLabel = gatewayKeyLabel(row);
 
   return (
     <Card
@@ -184,9 +186,12 @@ export function SessionCard({ row, onOpen }: { row: RequestRow; onOpen?: (row: R
         type="secondary"
         style={{ display: 'block', fontSize: 11, marginTop: 2, wordBreak: 'break-all' }}
       >
-        {row.route || 'unrouted'} · {row.provider}
-        {row.node ? `/${row.node}` : ''} · {formatCount(row.inputTokens)}/{formatCount(row.outputTokens)} tok
+        {row.route ? row.routeName || row.route : 'unrouted'} ·{' '}
+        {row.providerName || row.provider}
+        {row.node ? `/${row.nodeName || row.node}` : ''} · {formatCount(row.inputTokens)}/
+        {formatCount(row.outputTokens)} tok
         {row.effort && row.effort !== 'none' ? ` · effort ${row.effort}` : ''}
+        {keyLabel ? ` · ${keyLabel}` : ''}
       </Typography.Text>
       {row.error ? (
         <Typography.Text
@@ -202,6 +207,7 @@ export function SessionCard({ row, onOpen }: { row: RequestRow; onOpen?: (row: R
 
 export function NodePanel({
   id,
+  label,
   metrics,
   since = '',
   rangeMs,
@@ -209,6 +215,8 @@ export function NodePanel({
   deadRoutes = [],
 }: {
   id: string;
+  /** Display label from the loaded config; the graph id is the fallback. */
+  label?: string;
   metrics?: NodeMetrics;
   since?: string;
   rangeMs: number;
@@ -233,7 +241,7 @@ export function NodePanel({
   return (
     <div>
       <Typography.Title level={5} style={{ marginTop: 0 }}>
-        {id}
+        {label || id}
         {dead ? (
           <ApiOutlined
             aria-label="dead"
@@ -311,7 +319,7 @@ export function NodePanel({
   );
 }
 
-function EdgePanel({ id, metrics }: { id: string; metrics?: EdgeMetrics }) {
+function EdgePanel({ id, metrics, labels }: { id: string; metrics?: EdgeMetrics; labels?: ConfigLabels }) {
   const parts = id.split('|');
   return (
     <div>
@@ -319,7 +327,9 @@ function EdgePanel({ id, metrics }: { id: string; metrics?: EdgeMetrics }) {
         {translate('连线')}
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
-        <Descriptions.Item label={translate('路径')}>{parts.join(' → ')}</Descriptions.Item>
+        <Descriptions.Item label={translate('路径')}>
+          {parts.map((part) => (labels ? graphLabel(part, labels) : part)).join(' → ')}
+        </Descriptions.Item>
         <Descriptions.Item label={translate('会话')}>{formatCount(metrics?.requests ?? 0)}</Descriptions.Item>
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误')}>
@@ -426,6 +436,16 @@ export default function App() {
   const [routeHealth, setRouteHealth] = useState<RouteHealth[]>([]);
   const rangeMs = RANGES.find((item) => item.value === range)?.ms ?? 60 * 60_000;
   const nodeHealth = useMemo(() => nodeRouteHealth(routeHealth), [routeHealth]);
+  const labels = useMemo(() => (config ? configLabels(config) : null), [config]);
+  // Panels are keyed by graph id; the title and the dead-route list are display
+  // labels from the loaded config, with the raw id as the fallback.
+  const panelLabel = (id: string) => (labels ? graphLabel(id, labels) : id);
+  const deadRouteLabels = (id: string) => {
+    if (!id.startsWith('node:')) return undefined;
+    const routeIds = nodeHealth.partial.get(id.slice('node:'.length));
+    if (!routeIds) return undefined;
+    return routeIds.map((routeId) => (labels ? entityLabel(routeId, labels.routes) : routeId));
+  };
 
   const loadConfig = useCallback(async () => {
     try {
@@ -688,7 +708,7 @@ export default function App() {
             ) : page === 'gateway-keys' ? (
               <GatewayKeysPage />
             ) : page === 'requests' ? (
-              <RequestsPage />
+              config ? <RequestsPage config={config} /> : null
             ) : (
               config ? (
                 <SettingsPage
@@ -712,14 +732,15 @@ export default function App() {
                 {selection.kind === 'node' ? (
                   <NodePanel
                     id={selection.id}
+                    label={panelLabel(selection.id)}
                     metrics={metrics?.nodes[selection.id]}
                     since={since}
                     rangeMs={rangeMs}
                     dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
-                    deadRoutes={selection.id.startsWith('node:') ? nodeHealth.partial.get(selection.id.slice('node:'.length)) : undefined}
+                    deadRoutes={deadRouteLabels(selection.id)}
                   />
                 ) : (
-                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
+                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} labels={labels ?? undefined} />
                 )}
               </Drawer>
             ) : (
@@ -735,14 +756,15 @@ export default function App() {
                 {selection.kind === 'node' ? (
                   <NodePanel
                     id={selection.id}
+                    label={panelLabel(selection.id)}
                     metrics={metrics?.nodes[selection.id]}
                     since={since}
                     rangeMs={rangeMs}
                     dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
-                    deadRoutes={selection.id.startsWith('node:') ? nodeHealth.partial.get(selection.id.slice('node:'.length)) : undefined}
+                    deadRoutes={deadRouteLabels(selection.id)}
                   />
                 ) : (
-                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
+                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} labels={labels ?? undefined} />
                 )}
               </aside>
             )

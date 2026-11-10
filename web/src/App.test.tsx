@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NodePanel, SessionCard, sessionQuery } from './App';
 import { setActiveLang } from './i18n';
+import type { RequestRow } from './api/types';
 
 beforeEach(() => setActiveLang('zh-CN'));
 
@@ -11,10 +12,36 @@ const metrics = {
   outputTokensPerSecond: 42.34,
 };
 
+const base: RequestRow = {
+  requestId: 'r1',
+  sid: 's1',
+  ts: '2026-11-07T10:20:30Z',
+  model: 'deepseek-v4-flash',
+  clientModel: 'gpt-4.5',
+  provider: 'p_0000000001',
+  providerName: 'p',
+  route: 'r_0000000001',
+  routeName: 'fast',
+  node: 'n_0000000001',
+  nodeName: 'fast',
+  gatewayKey: 'gk_0000000001',
+  gatewayKeyName: 'claude-code',
+  protocol: 'chat',
+  effort: '',
+  status: 200,
+  durationMs: 10,
+  inputTokens: 10,
+  outputTokens: 20,
+  cachedTokens: 0,
+  stream: true,
+  bytesIn: 100,
+  bytesOut: 200,
+};
+
 describe('NodePanel', () => {
   it('shows output speed for a binding node', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:fast" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel id="node:n_0000000001" label="fast" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
     expect(html).toContain('输出速度');
     expect(html).toContain('42.3 tok/s');
@@ -22,14 +49,29 @@ describe('NodePanel', () => {
 
   it('omits output speed for non-binding nodes', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="provider:p" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel id="provider:p_0000000001" label="p" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
     expect(html).not.toContain('输出速度');
   });
 
+  it('titles the panel with the entity label', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel id="node:n_0000000001" label="fast" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+    expect(html).toContain('fast');
+    expect(html).not.toContain('node:n_0000000001');
+  });
+
+  it('falls back to the raw graph id without a label', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+    expect(html).toContain('node:n_0000000001');
+  });
+
   it('shows recent sessions with an errors-only filter', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:fast" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
 
     expect(html).toContain('最近会话');
@@ -38,7 +80,7 @@ describe('NodePanel', () => {
 
   it('marks a dead node in the panel with a grey icon', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:fast" metrics={metrics} since="" rangeMs={3_600_000} dead />,
+      <NodePanel id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} dead />,
     );
 
     expect(html).toContain('anticon-api');
@@ -47,19 +89,20 @@ describe('NodePanel', () => {
     expect(html).not.toContain('ant-badge-status-error');
   });
 
-  it('lists the routes where a partially dead node is dead', () => {
+  it('lists the routes where a partially dead node is dead by their labels', () => {
     const html = renderToStaticMarkup(
       <NodePanel
-        id="node:fast"
+        id="node:n_0000000001"
+        label="fast"
         metrics={metrics}
         since=""
         rangeMs={3_600_000}
-        deadRoutes={['r1', 'r3']}
+        deadRoutes={['fast', 'backup']}
       />,
     );
 
     expect(html).toContain('dead 路由');
-    expect(html).toContain('r1, r3');
+    expect(html).toContain('fast, backup');
   });
 });
 
@@ -67,16 +110,21 @@ describe('sessionQuery', () => {
   const from = new Date('2026-11-07T00:00:00Z');
   const to = new Date('2026-11-07T01:00:00Z');
 
-  it('filters a binding node and keeps the 100-row cap', () => {
-    expect(sessionQuery('node:fast', from, to, false)).toEqual({
-      from, to, limit: 100, errorsOnly: false, node: 'fast',
+  it('filters a binding node by id and keeps the 100-row cap', () => {
+    expect(sessionQuery('node:n_3k9x2m4q7a', from, to, false)).toEqual({
+      from, to, limit: 100, errorsOnly: false, node: 'n_3k9x2m4q7a',
     });
   });
 
-  it('filters every other graph node kind', () => {
-    expect(sessionQuery('route:r', from, to, true).route).toBe('r');
-    expect(sessionQuery('provider:p', from, to, false).provider).toBe('p');
-    expect(sessionQuery('entrypoint:e', from, to, false).entrypoint).toBe('e');
+  it('filters every other graph node kind by id', () => {
+    expect(sessionQuery('route:r_3k9x2m4q7a', from, to, true).route).toBe('r_3k9x2m4q7a');
+    expect(sessionQuery('provider:p_3k9x2m4q7a', from, to, false).provider).toBe('p_3k9x2m4q7a');
+    expect(sessionQuery('entrypoint:e_3k9x2m4q7a', from, to, false).entrypoint).toBe('e_3k9x2m4q7a');
+  });
+
+  it('never sends a display name as a filter', () => {
+    const query = sessionQuery('provider:p_3k9x2m4q7a', from, to, false);
+    expect(Object.values(query)).not.toContain('DeepSeek 官方');
   });
 });
 
@@ -85,30 +133,10 @@ describe('SessionCard', () => {
     const html = renderToStaticMarkup(
       <SessionCard
         row={{
-          requestId: 'r1',
-          sid: 's1',
-          ts: '2026-11-07T10:20:30Z',
-          model: 'deepseek-v4-flash',
-          clientModel: 'gpt-4.5',
-          provider: 'p_0000000001',
-          providerName: 'p',
-          route: 'r_0000000001',
-          routeName: 'fast',
-          node: 'n_0000000001',
-          nodeName: 'fast',
-          gatewayKey: 'gk_0000000001',
-          gatewayKeyName: 'claude-code',
-          protocol: 'chat',
-          effort: '',
+          ...base,
           status: 502,
           error: 'upstream connect failed',
           durationMs: 1200,
-          inputTokens: 10,
-          outputTokens: 20,
-          cachedTokens: 0,
-          stream: true,
-          bytesIn: 100,
-          bytesOut: 200,
         }}
       />,
     );
@@ -123,35 +151,57 @@ describe('SessionCard', () => {
 
   it('shows the effort when the request specifies one', () => {
     const html = renderToStaticMarkup(
+      <SessionCard row={{ ...base, effort: 'high' }} />,
+    );
+
+    expect(html).toContain('effort high');
+  });
+
+  it('renders request row labels from the backend', () => {
+    const html = renderToStaticMarkup(
       <SessionCard
         row={{
-          requestId: 'r2',
-          sid: 's2',
-          ts: '2026-11-08T08:30:00Z',
-          model: 'deepseek-v4.1-flash',
-          clientModel: 'claude-opus-5-5',
-          provider: 'p_0000000002',
-          providerName: 'opencode-go',
-          route: 'r_0000000002',
-          routeName: 'deepseek-flash',
-          node: 'n_0000000002',
-          nodeName: 'oc-go-dsf',
-          gatewayKey: '',
-          gatewayKeyName: '',
-          protocol: 'chat',
-          effort: 'high',
-          status: 200,
-          durationMs: 10,
-          inputTokens: 0,
-          outputTokens: 0,
-          cachedTokens: 0,
-          stream: true,
-          bytesIn: 0,
-          bytesOut: 0,
+          ...base,
+          provider: 'p_deleted0001',
+          providerName: 'DeepSeek 官方',
+          route: 'r_deleted001',
+          routeName: 'strong',
+          node: 'n_deleted0001',
+          nodeName: 'ds-strong',
+          gatewayKey: 'gk_deleted001',
+          gatewayKeyName: 'claude-code',
         }}
       />,
     );
 
-    expect(html).toContain('effort high');
+    expect(html).toContain('strong');
+    expect(html).toContain('DeepSeek 官方');
+    expect(html).toContain('/ds-strong');
+    expect(html).toContain('key:claude-code');
+    expect(html).not.toContain('p_deleted0001');
+    expect(html).not.toContain('r_deleted001');
+    expect(html).not.toContain('n_deleted0001');
+    expect(html).not.toContain('gk_deleted001');
+  });
+
+  it('falls back to the raw id when the backend has no label', () => {
+    const html = renderToStaticMarkup(
+      <SessionCard
+        row={{
+          ...base,
+          provider: 'p_unknown001',
+          providerName: '',
+          route: '',
+          routeName: '',
+          node: '',
+          nodeName: '',
+          gatewayKey: '',
+          gatewayKeyName: '',
+        }}
+      />,
+    );
+
+    expect(html).toContain('unrouted');
+    expect(html).toContain('p_unknown001');
   });
 });

@@ -4,6 +4,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { deleteRoute, getRouteHealth } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse, Route, RouteHealth } from '../api/types';
+import { configLabels, entityLabel } from '../labels';
 import { AddRouteModal, RouteForm } from './Edit';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
@@ -33,7 +34,8 @@ export function RoutesPage({ config, onReload }: { config: ConfigResponse; onRel
   }, [config]);
 
   const healthById = new Map(health.map((h) => [h.id, h]));
-  const nodeName = (id: string) => config.nodes.find((n) => n.id === id)?.name ?? id;
+  const labels = configLabels(config);
+  const nodeName = (id: string) => entityLabel(id, labels.nodes);
 
   const remove = async (id: string) => {
     try {

@@ -81,7 +81,7 @@ export function canEditTopology(editable?: boolean): boolean {
 function sameRoutes(a?: readonly string[], b?: readonly string[]): boolean {
   const left = a ?? [];
   const right = b ?? [];
-  return left.length === right.length && left.every((name, i) => name === right[i]);
+  return left.length === right.length && left.every((id, i) => id === right[i]);
 }
 
 /**
@@ -93,9 +93,9 @@ function sameRoutes(a?: readonly string[], b?: readonly string[]): boolean {
 export function mergeNodeHealth(nodes: GraphNode[], nodeHealth?: NodeRouteHealth): GraphNode[] {
   return nodes.map((n) => {
     if (!n.id.startsWith('node:')) return n;
-    const name = n.id.slice('node:'.length);
-    const dead = nodeHealth?.dead.has(name) ?? false;
-    const deadRoutes = [...(nodeHealth?.partial.get(name) ?? [])];
+    const nodeId = n.id.slice('node:'.length);
+    const dead = nodeHealth?.dead.has(nodeId) ?? false;
+    const deadRoutes = [...(nodeHealth?.partial.get(nodeId) ?? [])];
     if ((n.data.dead ?? false) === dead && sameRoutes(n.data.deadRoutes, deadRoutes)) return n;
     return { ...n, data: { ...n.data, dead, deadRoutes } };
   });

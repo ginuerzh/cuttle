@@ -3,6 +3,7 @@ import { Button, Drawer, Empty, Popconfirm, Space, Typography, message } from 'a
 import { putEntrypoints } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse } from '../api/types';
+import { entityLabel, labelMap } from '../labels';
 import { AddEntrypointModal, EntrypointForm } from './Edit';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
@@ -10,6 +11,7 @@ import { ListPage } from '../components/ListPage';
 export function EntrypointsPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  const routeNames = labelMap(config.routes);
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
@@ -51,7 +53,7 @@ export function EntrypointsPage({ config, onReload }: { config: ConfigResponse; 
         <ListCard
           key={e.id}
           title={`${i + 1}. ${e.name}`}
-          subtitle={`${(e.match ?? []).join(', ')} → ${config.routes.find((r) => r.id === e.route)?.name ?? e.route}`}
+          subtitle={`${(e.match ?? []).join(', ')} → ${entityLabel(e.route, routeNames)}`}
           actions={
             <>
               <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>

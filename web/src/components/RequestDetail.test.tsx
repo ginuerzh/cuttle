@@ -47,4 +47,30 @@ describe('RequestDetail', () => {
     expect(renderToStaticMarkup(<RequestDetail request={{ ...base, effort: '' }} />)).toContain('—');
     expect(renderToStaticMarkup(<RequestDetail request={{ ...base, effort: 'none' }} />)).toContain('—');
   });
+
+  it('labels the route, provider, node and gateway key from the backend names', () => {
+    const html = renderToStaticMarkup(
+      <RequestDetail
+        request={{
+          ...base,
+          provider: 'p_deleted0001',
+          providerName: 'DeepSeek 官方',
+          route: 'r_deleted0001',
+          routeName: 'strong',
+          node: 'n_deleted0001',
+          nodeName: 'ds-strong',
+          gatewayKey: 'gk_deleted001',
+          gatewayKeyName: 'claude-code',
+        }}
+      />,
+    );
+
+    expect(html).toContain('DeepSeek 官方');
+    expect(html).toContain('strong');
+    expect(html).toContain('ds-strong');
+    expect(html).toContain('claude-code');
+    expect(html).not.toContain('p_deleted0001');
+    expect(html).not.toContain('r_deleted0001');
+    expect(html).not.toContain('gk_deleted001');
+  });
 });

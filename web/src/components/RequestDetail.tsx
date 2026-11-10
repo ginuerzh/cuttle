@@ -73,9 +73,12 @@ export function RequestDetail({ request }: { request: RequestRow }) {
         </Descriptions.Item>
         <Descriptions.Item label="sid">{request.sid}</Descriptions.Item>
         <Descriptions.Item label={t('时间')}>{formatDateTime(request.ts)}</Descriptions.Item>
-        <Descriptions.Item label="route">{request.route || '—'}</Descriptions.Item>
-        <Descriptions.Item label={t('请求密钥')}>{request.gatewayKey || '—'}</Descriptions.Item>
-        <Descriptions.Item label="provider">{request.provider}</Descriptions.Item>
+        <Descriptions.Item label="route">{request.routeName || request.route || '—'}</Descriptions.Item>
+        <Descriptions.Item label={t('请求密钥')}>
+          {request.gatewayKeyName || request.gatewayKey || '—'}
+        </Descriptions.Item>
+        <Descriptions.Item label="provider">{request.providerName || request.provider || '—'}</Descriptions.Item>
+        <Descriptions.Item label="node">{request.nodeName || request.node || '—'}</Descriptions.Item>
         <Descriptions.Item label="client model">{request.clientModel || '—'}</Descriptions.Item>
         <Descriptions.Item label="provider model">{request.model}</Descriptions.Item>
         <Descriptions.Item label="effort">

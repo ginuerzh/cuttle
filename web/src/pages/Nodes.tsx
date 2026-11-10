@@ -4,6 +4,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { deleteNode, updateNode } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse, Node } from '../api/types';
+import { configLabels, entityLabel } from '../labels';
 import { AddNodeModal, NodeForm } from './Edit';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
@@ -19,9 +20,9 @@ export function NodesPage({
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const providerName = (id: string) => config.providers.find((p) => p.id === id)?.name ?? id;
-  const keyName = (providerId: string, keyId: string) =>
-    config.providers.find((p) => p.id === providerId)?.keys?.find((k) => k.id === keyId)?.name ?? keyId;
+  const labels = configLabels(config);
+  const providerName = (id: string) => entityLabel(id, labels.providers);
+  const keyName = (id: string) => entityLabel(id, labels.providerKeys);
 
   const toggle = async (n: Node, enabled: boolean) => {
     setBusy(n.id);
@@ -75,7 +76,7 @@ export function NodesPage({
               tags={
                 <Space direction="vertical" align="end" size={2}>
                   <Tag>{n.api || 'auto'}</Tag>
-                  {n.key ? <Tag color="blue">{keyName(n.provider, n.key)}</Tag> : null}
+                  {n.key ? <Tag color="blue">{keyName(n.key)}</Tag> : null}
                   {n.backup ? <Tag color="purple">backup</Tag> : null}
                   <Switch
                     size="small"

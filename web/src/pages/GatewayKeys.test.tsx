@@ -20,6 +20,7 @@ describe('GatewayKeyCard', () => {
       <GatewayKeyCard
         item={{ id: 'gk_0000000001', name: 'claude-code', keyPreview: 'sk-...abcd', enabled: true }}
         usage={{
+          id: 'gk_0000000001',
           name: 'claude-code',
           configured: true,
           enabled: true,

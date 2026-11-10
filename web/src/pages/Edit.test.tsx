@@ -99,4 +99,11 @@ describe('RouteForm', () => {
     expect(html).toContain('429,502');
     expect(html).toContain('value="2"');
   });
+
+  it('renders the route name as an editable display label', () => {
+    const route: Route = { id: 'r_0000000001', name: 'strong', nodes: [] };
+    const html = renderToStaticMarkup(<RouteForm route={route} config={config} onSaved={async () => undefined} />);
+    expect(html).toContain('value="strong"');
+    expect(html).toContain('仅用于显示');
+  });
 });

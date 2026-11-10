@@ -12,14 +12,15 @@ import {
   Typography,
   message,
 } from 'antd';
-import { createCaptureRule, deleteCaptureRule, getAlerts, getErrorSummary, getRequests, listCaptureRules } from '../api/client';
+import { createCaptureRule, deleteCaptureRule, getAlerts, getErrorSummary, getRequests, listCaptureRules, listGatewayKeys } from '../api/client';
 import { translate as t } from '../i18n';
-import type { Alert, CaptureRule, ErrorSummary, RequestRow } from '../api/types';
+import type { Alert, CaptureRule, ConfigResponse, ErrorSummary, GatewayKey, RequestRow } from '../api/types';
 import { RequestDetailDrawer } from '../components/RequestDetail';
 import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
 import { formatCount } from '../format';
+import { configLabels, entityLabel } from '../labels';
 import { errorClassLabel, errorClassText, gatewayKeyLabel, retryLabel, statusLabel } from '../requestLabels';
 import { formatDateTime } from '../time';
 
@@ -31,12 +32,16 @@ const RANGES = [
   { label: '24 小时', value: 24 * 60 * 60_000 },
 ];
 
-export function RequestsPage() {
+export function RequestsPage({ config }: { config: ConfigResponse }) {
   const isMobile = useIsMobile();
+  const labels = configLabels(config);
   const [rangeMs, setRangeMs] = useState(60 * 60_000);
   const [provider, setProvider] = useState('');
   const [route, setRoute] = useState('');
+  const [node, setNode] = useState('');
+  const [entrypoint, setEntrypoint] = useState('');
   const [gatewayKey, setGatewayKey] = useState('');
+  const [gatewayKeys, setGatewayKeys] = useState<GatewayKey[]>([]);
   const [clientModel, setClientModel] = useState('');
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [capturedOnly, setCapturedOnly] = useState(false);
@@ -65,9 +70,11 @@ export function RequestsPage() {
         getRequests({
           from,
           to,
-          provider: provider.trim() || undefined,
-          route: route.trim() || undefined,
-          gatewayKey: gatewayKey.trim() || undefined,
+          provider: provider || undefined,
+          route: route || undefined,
+          node: node || undefined,
+          entrypoint: entrypoint || undefined,
+          gatewayKey: gatewayKey || undefined,
           clientModel: clientModel.trim() || undefined,
           errorsOnly,
           capturedOnly,
@@ -85,7 +92,7 @@ export function RequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [rangeMs, provider, route, gatewayKey, clientModel, errorsOnly, capturedOnly, errorClass]);
+  }, [rangeMs, provider, route, node, entrypoint, gatewayKey, clientModel, errorsOnly, capturedOnly, errorClass]);
 
   const loadCaptures = useCallback(async () => {
     try {
@@ -99,11 +106,24 @@ export function RequestsPage() {
     void load();
   }, [load, tick]);
 
+  useEffect(() => {
+    // The key filter selects by id; a failed listing leaves the filter empty.
+    let active = true;
+    listGatewayKeys()
+      .then((keys) => {
+        if (active) setGatewayKeys(keys);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const startCapture = async () => {
     setCaptureBusy(true);
     try {
       await createCaptureRule({
-        route: captureRoute.trim() || undefined,
+        route: captureRoute || undefined,
         clientModel: captureModel.trim() || undefined,
         reason: captureReason.trim() || 'investigate',
         limit: captureLimit,
@@ -183,14 +203,65 @@ export function RequestsPage() {
       ) : null}
       <Space wrap style={{ marginBottom: 12 }}>
         <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES.map((r) => ({ ...r, label: t(r.label) }))} style={{ width: isMobile ? '100%' : 110 }} />
-        <Input size="small" placeholder="provider" value={provider} onChange={(e) => setProvider(e.target.value)} style={{ width: isMobile ? '100%' : 140 }} />
-        <Input size="small" placeholder="route" value={route} onChange={(e) => setRoute(e.target.value)} style={{ width: isMobile ? '100%' : 120 }} />
-        <Input
+        <Select
           size="small"
-          placeholder={t('请求密钥')}
-          value={gatewayKey}
-          onChange={(e) => setGatewayKey(e.target.value)}
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder={t('提供商')}
+          aria-label={t('提供商')}
+          value={provider || undefined}
+          onChange={(value?: string) => setProvider(value ?? '')}
+          options={config.providers.map((p) => ({ value: p.id, label: p.name }))}
+          style={{ width: isMobile ? '100%' : 160 }}
+        />
+        <Select
+          size="small"
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder={t('路由')}
+          aria-label={t('路由')}
+          value={route || undefined}
+          onChange={(value?: string) => setRoute(value ?? '')}
+          options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
           style={{ width: isMobile ? '100%' : 140 }}
+        />
+        <Select
+          size="small"
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder={t('节点')}
+          aria-label={t('节点')}
+          value={node || undefined}
+          onChange={(value?: string) => setNode(value ?? '')}
+          options={config.nodes.map((n) => ({ value: n.id, label: n.name }))}
+          style={{ width: isMobile ? '100%' : 140 }}
+        />
+        <Select
+          size="small"
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder={t('入口')}
+          aria-label={t('入口')}
+          value={entrypoint || undefined}
+          onChange={(value?: string) => setEntrypoint(value ?? '')}
+          options={config.entrypoints.map((e) => ({ value: e.id, label: e.name }))}
+          style={{ width: isMobile ? '100%' : 140 }}
+        />
+        <Select
+          size="small"
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          placeholder={t('网关密钥')}
+          aria-label={t('网关密钥')}
+          value={gatewayKey || undefined}
+          onChange={(value?: string) => setGatewayKey(value ?? '')}
+          options={gatewayKeys.map((k) => ({ value: k.id, label: k.name }))}
+          style={{ width: isMobile ? '100%' : 160 }}
         />
         <Input
           size="small"
@@ -225,11 +296,14 @@ export function RequestsPage() {
         const classLabel = errorClassLabel(r);
         const keyLabel = gatewayKeyLabel(r);
         const retry = retryLabel(r);
+        const routeLabel = r.route ? r.routeName || r.route : 'unrouted';
+        const providerLabel = r.providerName || r.provider;
+        const nodeLabel = r.node ? `/${r.nodeName || r.node}` : '';
         return (
           <ListCard
             key={r.requestId}
             title={r.clientModel || r.model || r.requestId}
-            subtitle={`${formatDateTime(r.ts)} · ${r.route || 'unrouted'} · ${r.provider}${r.node ? `/${r.node}` : ''} · ${r.durationMs}ms · ${formatCount(r.inputTokens)}/${formatCount(r.outputTokens)} tok${r.effort && r.effort !== 'none' ? ` · effort ${r.effort}` : ''}${keyLabel ? ` · ${keyLabel}` : ''}${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
+            subtitle={`${formatDateTime(r.ts)} · ${routeLabel} · ${providerLabel}${nodeLabel} · ${r.durationMs}ms · ${formatCount(r.inputTokens)}/${formatCount(r.outputTokens)} tok${r.effort && r.effort !== 'none' ? ` · effort ${r.effort}` : ''}${keyLabel ? ` · ${keyLabel}` : ''}${classLabel ? ` · ${classLabel}` : ''}${r.error ? ` · ${r.error}` : ''}`}
             tags={
               <Space size={4}>
                 {r.truncated ? <Tag color="volcano">{t('已截断')}</Tag> : null}
@@ -256,10 +330,15 @@ export function RequestsPage() {
         width={640}
       >
         <Space direction="vertical" style={{ width: '100%' }}>
-          <Input
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
             placeholder={t('路由（留空表示全部）')}
-            value={captureRoute}
-            onChange={(e) => setCaptureRoute(e.target.value)}
+            value={captureRoute || undefined}
+            onChange={(value?: string) => setCaptureRoute(value ?? '')}
+            options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
+            style={{ width: '100%' }}
           />
           <Input
             placeholder={t('客户端模型 glob（留空表示全部）')}
@@ -297,7 +376,7 @@ export function RequestsPage() {
           ) : (
             rules.map((r) => (
               <Space key={r.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{`${r.route || '*'} · ${r.clientModel || '*'} · ${r.reason} · ${r.used}/${r.limit}`}</span>
+                <span>{`${entityLabel(r.route, labels.routes) || '*'} · ${r.clientModel || '*'} · ${r.reason} · ${r.used}/${r.limit}`}</span>
                 <Button size="small" danger onClick={() => void removeRule(r.id)}>
                   {t('删除')}
                 </Button>

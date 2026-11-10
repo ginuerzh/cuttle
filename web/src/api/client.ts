@@ -1,4 +1,4 @@
-import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
+import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -253,13 +253,6 @@ export function listGatewayKeys(): Promise<GatewayKey[]> {
   return request<GatewayKey[] | null>('GET', '/api/gateway-keys').then((keys) => keys ?? []);
 }
 
-/** The one-time create/rotate response; the raw value appears only here. */
-export interface GatewayKeySecret {
-  id: string;
-  name: string;
-  key: string;
-}
-
 export function createGatewayKey(input: {
   name: string;
   enabled?: boolean;
@@ -267,7 +260,10 @@ export function createGatewayKey(input: {
   return request<GatewayKeySecret>('POST', '/api/gateway-keys', input);
 }
 
-export function updateGatewayKey(id: string, input: { enabled: boolean }): Promise<void> {
+export function updateGatewayKey(
+  id: string,
+  input: { enabled?: boolean; name?: string },
+): Promise<void> {
   return request<void>('PUT', `/api/gateway-keys/${encodeURIComponent(id)}`, input);
 }
 
