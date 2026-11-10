@@ -876,7 +876,7 @@ git commit -m "docs: document route retries"
 - Date/status: 2026-11-10 / complete
 - Repositories + commits:
   - `go-gost/x` `c9019b6` `fix(forward): keep the retry marker after the retry budget is exhausted` on `feat/route-retry`, fast-forwarded into `master` (`b9d895a..c9019b6`) and pushed (`016912a..c9019b6 master`); tag `v0.31.1` → `c9019b690d4965d5fcb48c10ee5eeaa1e70f507c`, pushed. `v0.31.0` (→ `a22bbba`) stays published and is now also in `master` history, but lacks the marker fix.
-  - `ginuerzh/cuttle` `fix(deps): bump go-gost/x to v0.31.1` on `feat/route-retry`; the SHA is recorded in the follow-up `docs(plan)` commit because a commit cannot contain its own hash.
+  - `ginuerzh/cuttle` `3ee1e7fa` `fix(deps): bump go-gost/x to v0.31.1` on `feat/route-retry`; the SHA is named by this follow-up `docs(plan)` commit because a commit cannot contain its own hash.
 - Files changed:
   - x: `internal/util/forwarder/sniffer_http.go`, `internal/util/forwarder/sniffer_http_retry_test.go`.
   - cuttle: `go.mod`, `go.sum`, `internal/gateway/retry_e2e_test.go`, `README.md`, `example.yaml`, `AGENTS.md`, `internal/config/config.go`, `docs/superpowers/specs/2026-11-10-route-retry-design.md`, this plan.

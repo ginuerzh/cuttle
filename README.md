@@ -715,12 +715,12 @@ dial failures, responses matching a node's HTTP `failCodes` (currently 429 and
 5xx), and every status a route retried, including a `retryCodes` match outside
 `failCodes` — the final attempt of an exhausted budget marks the node too, so a
 retried node stays dead for `failTimeout` instead of looking healthy right
-after refusing the request. A
-streaming HTTP 200 truncation is not a marker failure. Because a node can be
-bound by several routes, the marker is per route: the topology marks a node
-dead only when every route that reports it is dead, a node dead in some routes
-shows an amber partial badge, its dead `route -> node` edges are drawn dashed
-red, and the node panel lists the dead routes.
+after refusing the request. A streaming HTTP 200 truncation is not a marker
+failure. Because a node can be bound by several routes, the marker is per
+route: the topology marks a node dead only when every route that reports it is
+dead, a node dead in some routes shows an amber partial badge, its dead
+`route -> node` edges are drawn dashed red, and the node panel lists the dead
+routes.
 
 The graph API attributes each row to an entrypoint at query time by resolving
 the row's `client_model` through the current entrypoint list:
