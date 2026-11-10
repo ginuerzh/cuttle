@@ -46,6 +46,21 @@ describe('NodePanel', () => {
     expect(html).toContain('title="dead"');
     expect(html).not.toContain('ant-badge-status-error');
   });
+
+  it('lists the routes where a partially dead node is dead', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel
+        id="node:fast"
+        metrics={metrics}
+        since=""
+        rangeMs={3_600_000}
+        deadRoutes={['r1', 'r3']}
+      />,
+    );
+
+    expect(html).toContain('dead 路由');
+    expect(html).toContain('r1, r3');
+  });
 });
 
 describe('sessionQuery', () => {

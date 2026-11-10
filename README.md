@@ -682,7 +682,11 @@ Overview notification bell.
 `lastFailure`, `dead` and `deadUntil`. The state is x's in-memory marker,
 resets when the hop is rebuilt, and only reflects the failures x marks (TCP
 dial failures and configured HTTP `failCodes`, currently 429 and 5xx). A
-streaming HTTP 200 truncation is not a marker failure.
+streaming HTTP 200 truncation is not a marker failure. Because a node can be
+bound by several routes, the marker is per route: the topology marks a node
+dead only when every route that reports it is dead, a node dead in some routes
+shows an amber partial badge, its dead `route -> node` edges are drawn dashed
+red, and the node panel lists the dead routes.
 
 The graph API attributes each row to an entrypoint at query time by resolving
 the row's `client_model` through the current entrypoint list:

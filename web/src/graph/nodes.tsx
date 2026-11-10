@@ -21,14 +21,16 @@ function errorRate(m?: NodeMetrics): number {
 }
 
 /**
- * Binding nodes show one of four states in a single badge slot: dead,
- * unhealthy, degraded and healthy. A node with no traffic keeps the neutral
- * border and shows no badge, because it has no health signal yet.
+ * Binding nodes show one of five states in a single badge slot: dead, partial
+ * (dead in some routes only), unhealthy, degraded and healthy. A node with no
+ * traffic keeps the neutral border and shows no badge, because it has no health
+ * signal yet.
  */
-export type NodeMood = 'dead' | 'error' | 'warn' | 'healthy' | 'idle';
+export type NodeMood = 'dead' | 'partial' | 'error' | 'warn' | 'healthy' | 'idle';
 
-export function nodeMood(m?: NodeMetrics, dead = false): NodeMood {
+export function nodeMood(m?: NodeMetrics, dead = false, partial = false): NodeMood {
   if (dead) return 'dead';
+  if (partial) return 'partial';
   if (!m || m.requests === 0) return 'idle';
   const r = errorRate(m);
   if (r > 0.05) return 'error';
@@ -133,6 +135,7 @@ function DeadFaceIcon() {
 
 const MOOD_STYLE: Record<Exclude<NodeMood, 'idle'>, { color: string; label: string }> = {
   dead: { color: '#dc2626', label: 'dead' },
+  partial: { color: '#d97706', label: '部分 dead' },
   error: { color: '#dc2626', label: '错误' },
   warn: { color: '#d97706', label: '警告' },
   healthy: { color: '#16a34a', label: '正常' },
@@ -141,9 +144,10 @@ const MOOD_STYLE: Record<Exclude<NodeMood, 'idle'>, { color: string; label: stri
 /**
  * Health badge pinned inside the card's top-right corner. It is absolutely
  * positioned and pointer-transparent so it never changes the node size or
- * blocks node selection and dragging.
+ * blocks node selection and dragging. `title` overrides the tooltip for states
+ * that carry detail, such as the dead routes of a partially dead node.
  */
-export function NodeMoodBadge({ mood }: { mood: NodeMood }) {
+export function NodeMoodBadge({ mood, title }: { mood: NodeMood; title?: string }) {
   if (mood === 'idle') return null;
   const { color, label } = MOOD_STYLE[mood];
   return (
@@ -151,7 +155,7 @@ export function NodeMoodBadge({ mood }: { mood: NodeMood }) {
       data-status={mood}
       role="img"
       aria-label={t(label)}
-      title={t(label)}
+      title={title ?? t(label)}
       style={{
         position: 'absolute',
         top: 5,
@@ -168,7 +172,7 @@ export function NodeMoodBadge({ mood }: { mood: NodeMood }) {
         zIndex: 1,
       }}
     >
-      {mood === 'dead' ? (
+      {mood === 'dead' || mood === 'partial' ? (
         <DeadFaceIcon />
       ) : mood === 'error' ? (
         <FrownOutlined />
@@ -293,6 +297,13 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
 
 export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   const color = data.dead ? '#dc2626' : healthColor(data.metrics);
+  const deadRoutes = data.deadRoutes ?? [];
+  const partial = !data.dead && deadRoutes.length > 0;
+  const title = data.dead
+    ? 'dead'
+    : partial
+      ? t('dead in {routes}', { routes: deadRoutes.join(', ') })
+      : undefined;
   return (
     <div
       style={{
@@ -304,7 +315,7 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
         minWidth: 220,
         paddingRight: 24,
       }}
-      title={data.dead ? 'dead' : undefined}
+      title={title}
     >
       <IconBadge
         color={data.dead ? 'var(--gw-text-muted)' : '#0891b2'}
@@ -315,7 +326,7 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} showRate />
-      <NodeMoodBadge mood={nodeMood(data.metrics, data.dead)} />
+      <NodeMoodBadge mood={nodeMood(data.metrics, data.dead, partial)} title={title} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>

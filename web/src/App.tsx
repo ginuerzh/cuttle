@@ -206,12 +206,14 @@ export function NodePanel({
   since = '',
   rangeMs,
   dead = false,
+  deadRoutes = [],
 }: {
   id: string;
   metrics?: NodeMetrics;
   since?: string;
   rangeMs: number;
   dead?: boolean;
+  deadRoutes?: readonly string[];
 }) {
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [detail, setDetail] = useState<RequestRow | null>(null);
@@ -242,6 +244,9 @@ export function NodePanel({
       </Typography.Title>
       <Descriptions size="small" column={1} bordered>
         <Descriptions.Item label={translate('会话')}>{formatCount(metrics?.requests ?? 0)}</Descriptions.Item>
+        {deadRoutes.length > 0 ? (
+          <Descriptions.Item label={translate('dead 路由')}>{deadRoutes.join(', ')}</Descriptions.Item>
+        ) : null}
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误率')}>
             <span style={{ color: '#dc2626' }}>{rate(metrics)}</span>
@@ -711,6 +716,7 @@ export default function App() {
                     since={since}
                     rangeMs={rangeMs}
                     dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
+                    deadRoutes={selection.id.startsWith('node:') ? nodeHealth.partial.get(selection.id.slice('node:'.length)) : undefined}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />
@@ -733,6 +739,7 @@ export default function App() {
                     since={since}
                     rangeMs={rangeMs}
                     dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
+                    deadRoutes={selection.id.startsWith('node:') ? nodeHealth.partial.get(selection.id.slice('node:'.length)) : undefined}
                   />
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} />

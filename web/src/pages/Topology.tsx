@@ -77,6 +77,13 @@ export function canEditTopology(editable?: boolean): boolean {
   return editable === true;
 }
 
+/** Compares dead-route name lists so an unchanged health snapshot is a no-op. */
+function sameRoutes(a?: readonly string[], b?: readonly string[]): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  return left.length === right.length && left.every((name, i) => name === right[i]);
+}
+
 function edgeColor(m?: { requests: number; errors: number }): string {
   if (!m || m.requests === 0) return '#cbd5e1';
   const r = m.errors / m.requests;
@@ -410,9 +417,11 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
     setNodes((prev) =>
       prev.map((n) => {
         if (!n.id.startsWith('node:')) return n;
-        const dead = nodeHealth?.dead.has(n.id.slice('node:'.length)) ?? false;
-        if ((n.data.dead ?? false) === dead) return n;
-        return { ...n, data: { ...n.data, dead } };
+        const name = n.id.slice('node:'.length);
+        const dead = nodeHealth?.dead.has(name) ?? false;
+        const deadRoutes = [...(nodeHealth?.partial.get(name) ?? [])];
+        if ((n.data.dead ?? false) === dead && sameRoutes(n.data.deadRoutes, deadRoutes)) return n;
+        return { ...n, data: { ...n.data, dead, deadRoutes } };
       }),
     );
   }, [nodeHealth, setNodes]);

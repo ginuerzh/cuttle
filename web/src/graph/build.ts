@@ -13,8 +13,10 @@ export interface GraphNodeData extends Record<string, unknown> {
   entrypoint?: Entrypoint;
   node?: BindNode;
   metrics?: NodeMetrics;
-  /** The node's x marker is dead in at least one route. */
+  /** The node's x marker is dead in every route that references it. */
   dead?: boolean;
+  /** Routes where the marker is dead; set only for a partially dead node. */
+  deadRoutes?: string[];
   /** One-shot activity pulse id; 0 means idle. */
   pulse?: number;
   error?: boolean;

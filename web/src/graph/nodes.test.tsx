@@ -64,13 +64,19 @@ describe('EntrypointNode', () => {
 });
 
 describe('nodeMood', () => {
-  it('maps traffic health to the four visible states', () => {
+  it('maps traffic health to the visible states', () => {
     expect(nodeMood(undefined)).toBe('idle');
     expect(nodeMood(stats(0, 0))).toBe('idle');
     expect(nodeMood(stats(10, 0))).toBe('healthy');
     expect(nodeMood(stats(100, 1))).toBe('warn');
     expect(nodeMood(stats(10, 2))).toBe('error');
     expect(nodeMood(stats(10, 0), true)).toBe('dead');
+  });
+
+  it('gives partial death its own mood and lets dead win', () => {
+    expect(nodeMood(stats(10, 0), false, true)).toBe('partial');
+    expect(nodeMood(stats(10, 0), true, true)).toBe('dead');
+    expect(nodeMood(stats(10, 2), false, true)).toBe('partial');
   });
 });
 
@@ -153,6 +159,15 @@ describe('BindingNode', () => {
     expect(html).not.toContain('box-shadow:0 1px 2px');
     expect(html).not.toContain('ant-badge-status-error');
     expect(html).not.toContain('>dead<');
+  });
+
+  it('shows an amber dead face naming the dead routes', () => {
+    const html = render({ deadRoutes: ['r1'] });
+
+    expect(html).toContain('data-status="partial"');
+    expect(html).toContain('title="dead in r1"');
+    expect(html).toContain('color:#d97706');
+    expect(html).not.toContain('background:var(--gw-text-muted)');
   });
 
   it('shows a smile for healthy traffic and a meh for elevated errors', () => {
