@@ -308,12 +308,12 @@ git commit -m "feat(web): mark dead route-to-node edges in the topology"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / done
+- Repository + commit: cuttle `47663b0d` — `feat(web): mark dead route-to-node edges in the topology`
+- Files changed: `web/src/pages/Topology.tsx` (`decorateEdge` fifth `deadEdges` argument, dead stroke/dash/label, `nodeHealth?.edges` at all three call sites and in the effect dependencies), `web/src/pages/Topology.test.tsx` (3 cases).
+- Tests/commands and results: `npx vitest run src/pages/Topology.test.tsx` RED (2 failed: label had no `dead`) then GREEN (11 passed); `npx tsc --noEmit` clean.
+- Review findings and fixes: none (native execution, self-review only). The third new test (`leaves a live binding solid`) is a regression guard and passed immediately by design.
+- Deferred items/limitations: the partial badge, node-card title and panel row land in Task 3; the edge label is plain text plus a red `· dead` suffix, no icon.
 
 ---
 
