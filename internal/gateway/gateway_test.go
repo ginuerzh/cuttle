@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -113,6 +114,66 @@ func TestRouteHealthUsesRouteFailSettings(t *testing.T) {
 	}
 	if got := gw.hop.Select(context.Background()); got == nil || configNodeName(got) != "up2" {
 		t.Fatalf("selected = %+v, want up2 after maxFails", got)
+	}
+}
+
+// TestFailMarkerAccumulatesAcrossRequests locks in the x v0.31.0 marker
+// semantics: a successful connect no longer clears a node's failure count, so
+// consecutive failCodes responses reach maxFails, while the next non-failCodes
+// response does clear it.
+func TestFailMarkerAccumulatesAcrossRequests(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if failing.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL)
+	cfg.Routes[0].Strategy = "fifo"
+	cfg.Routes[0].MaxFails = 2
+	cfg.Routes[0].FailTimeout = gwconfig.Duration(30 * time.Second)
+
+	gw := startGateway(t, cfg)
+
+	post := func() int {
+		t.Helper()
+		resp, err := http.Post("http://"+gw.Addr().String()+"/v1/chat/completions",
+			"application/json", strings.NewReader(`{"model":"deepseek-chat","messages":[]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode
+	}
+
+	for i := 0; i < 2; i++ {
+		if got := post(); got != http.StatusInternalServerError {
+			t.Fatalf("request %d status = %d, want 500", i+1, got)
+		}
+	}
+	hr := gw.RouteHealth()
+	if len(hr) != 1 || len(hr[0].Nodes) != 1 {
+		t.Fatalf("route health = %+v", hr)
+	}
+	if got := hr[0].Nodes[0]; got.FailCount != 2 || !got.Dead {
+		t.Fatalf("after two 500 responses = %+v, want failCount=2 and dead", got)
+	}
+
+	failing.Store(false)
+	if got := post(); got != http.StatusOK {
+		t.Fatalf("recovery status = %d, want 200", got)
+	}
+	hr = gw.RouteHealth()
+	if got := hr[0].Nodes[0]; got.FailCount != 0 || got.Dead {
+		t.Fatalf("after a 200 response = %+v, want failCount=0 and alive", got)
 	}
 }
 

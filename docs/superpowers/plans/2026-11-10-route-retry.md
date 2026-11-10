@@ -453,12 +453,12 @@ Record the SHA in this task's implementation record and in the cuttle spec/plan 
 **Interfaces:**
 - Consumes: x `v0.31.0` (Task 3), specifically `HandlerRecorderObject.Retries` and the `b9d895a` marker behavior.
 
-- [ ] **Step 1: Bump the dependency**
+- [x] **Step 1: Bump the dependency**
 
 Run: `GOWORK=off go get github.com/go-gost/x@v0.31.0 && GOWORK=off go mod tidy`
 Expected: `go.mod` shows `github.com/go-gost/x v0.31.0`; no `replace`. If the Go module proxy has not picked up the fresh tag yet, retry, or run the `go get` with `GOPROXY=direct` once.
 
-- [ ] **Step 2: Write the marker regression test**
+- [x] **Step 2: Write the marker regression test**
 
 In `internal/gateway/gateway_test.go` add `TestFailMarkerAccumulatesAcrossRequests`:
 - A single `httptest` upstream controlled by an `atomic.Bool`: `true` returns 500, `false` returns 200.
@@ -466,17 +466,17 @@ In `internal/gateway/gateway_test.go` add `TestFailMarkerAccumulatesAcrossReques
 - Start the gateway and send two requests (`POST /v1/chat/completions`, body `{"model":"deepseek-chat","messages":[]}`). After both, assert `RouteHealth()[0].Nodes[0].FailCount == 2` and `Dead == true`.
 - Flip the upstream to 200, send one request, assert status 200, `FailCount == 0` and `Dead == false`.
 
-- [ ] **Step 3: Run the test**
+- [x] **Step 3: Run the test**
 
 Run: `GOWORK=off go test ./internal/gateway -run TestFailMarkerAccumulatesAcrossRequests -count=1`
 Expected: PASS with `v0.31.0`; it would fail on `v0.30.0` because a successful connect used to reset the marker.
 
-- [ ] **Step 4: Run the cuttle gate**
+- [x] **Step 4: Run the cuttle gate**
 
 Run: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS. Fix any regression caused by the x delta in this task and record it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add go.mod go.sum internal/gateway/gateway_test.go
@@ -484,12 +484,12 @@ git commit -m "chore(deps): bump go-gost/x to v0.31.0"
 ```
 
 **Implementation record** (fill after the task):
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-10 / complete
+- Repository + commit: `cuttle` `chore(deps): bump go-gost/x to v0.31.0` on `feat/route-retry` (the commit that carries this record; its SHA is written in `.superpowers/sdd/2026-11-10-route-retry/task-4-report.md`); dependency tag `github.com/go-gost/x v0.31.0` = x `a22bbba`
+- Files changed: `go.mod`, `go.sum`, `internal/gateway/gateway_test.go`, `docs/superpowers/plans/2026-11-10-route-retry.md`
+- Tests/commands and results: `GOWORK=off go test ./internal/gateway -run TestFailMarkerAccumulatesAcrossRequests -count=1` RED on `v0.30.0` (`FailCount:1 Dead:false` after two 500 responses, the successful re-dial reset the marker), GREEN after the bump; focused run `ok github.com/ginuerzh/cuttle/internal/gateway 0.011s`; full gate `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` PASS with no behavior change outside the marker semantics; `go.mod` diff is the single `x` line, `go.sum` only the `v0.31.0` `h1`/`go.mod` hashes, no `replace` added
+- Review findings and fixes: `goproxy.cn` (the configured proxy) stalled while streaming the fresh `v0.31.0` zip and the first `go get` timed out, so the bump was rerun once with `GOPROXY=https://proxy.golang.org,direct` as the brief allows; the dead node is still reachable for the recovery request because x's selector falls back to a failed node as a last resort when it is the only candidate, which is what lets the 200 reset the marker instead of returning 503
+- Deferred items/limitations: route retries are not configured yet in this task, so the two 500s are relayed unretried and only exercise the `failCodes` marker path; the retry-driven marking path and the `Retries` recorder field are covered in Task 5 and later. This test only stays valid while a route's default `retries` is `0` (no retries), which the design already specifies — Task 5 must keep that default, and the retried-node marking needs its own test
 
 ---
 
