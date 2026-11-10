@@ -77,6 +77,48 @@ func TestInsertQuerySummary(t *testing.T) {
 	}
 }
 
+func TestInsertQueryRetries(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 10, 10, 0, 0, 0, time.UTC)
+
+	for _, r := range []Request{
+		{ID: "r1", SID: "s1", TS: base, Retries: 2, Status: 200},
+		{ID: "r2", SID: "s2", TS: base.Add(time.Minute), Status: 200},
+	} {
+		if err := s.Insert(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	one, err := s.Get(ctx, "r1")
+	if err != nil || one == nil {
+		t.Fatalf("get = %+v err=%v", one, err)
+	}
+	if one.Retries != 2 {
+		t.Fatalf("get retries = %d, want 2", one.Retries)
+	}
+	zero, err := s.Get(ctx, "r2")
+	if err != nil || zero == nil {
+		t.Fatalf("get = %+v err=%v", zero, err)
+	}
+	if zero.Retries != 0 {
+		t.Fatalf("get retries = %d, want 0", zero.Retries)
+	}
+
+	list, err := s.Query(ctx, Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]int, len(list))
+	for _, r := range list {
+		got[r.ID] = r.Retries
+	}
+	if len(got) != 2 || got["r1"] != 2 || got["r2"] != 0 {
+		t.Fatalf("query retries = %+v, want r1=2 r2=0", got)
+	}
+}
+
 func TestQueryNodeAndEntrypointFilters(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -658,6 +700,92 @@ func TestOpenMigratesGatewayKey(t *testing.T) {
 		ID: "new", TS: time.Now(), Provider: "p", GatewayKey: "alpha",
 	}); err != nil {
 		t.Fatalf("insert after migration: %v", err)
+	}
+}
+
+func TestOpenMigratesRetries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE requests (
+		request_id TEXT PRIMARY KEY,
+		sid TEXT NOT NULL DEFAULT '',
+		ts INTEGER NOT NULL,
+		model TEXT NOT NULL DEFAULT '',
+		provider TEXT NOT NULL DEFAULT '',
+		node TEXT NOT NULL DEFAULT '',
+		protocol TEXT NOT NULL DEFAULT '',
+		effort TEXT NOT NULL DEFAULT '',
+		status INTEGER NOT NULL DEFAULT 0,
+		error TEXT NOT NULL DEFAULT '',
+		duration_ms INTEGER NOT NULL DEFAULT 0,
+		input_tokens INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		cached_tokens INTEGER NOT NULL DEFAULT 0,
+		stream INTEGER NOT NULL DEFAULT 0,
+		bytes_in INTEGER NOT NULL DEFAULT 0,
+		bytes_out INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO requests(request_id, sid, ts, provider) VALUES('old', 'old', ?, 'p')`, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ctx := context.Background()
+
+	found := false
+	rows, err := s.db.Query(`PRAGMA table_info(requests)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if name == "retries" {
+			found = true
+			if typ != "INTEGER" || dflt != "0" {
+				t.Fatalf("retries column = %q default %v, want INTEGER default 0", typ, dflt)
+			}
+		}
+	}
+	rows.Close()
+	if !found {
+		t.Fatal("requests table did not gain retries")
+	}
+
+	old, err := s.Get(ctx, "old")
+	if err != nil || old == nil {
+		t.Fatalf("old row = %+v err=%v", old, err)
+	}
+	if old.Retries != 0 {
+		t.Fatalf("old row retries = %d, want 0", old.Retries)
+	}
+
+	if err := s.Insert(ctx, Request{ID: "new", TS: time.Now(), Provider: "p", Retries: 3}); err != nil {
+		t.Fatalf("insert after migration: %v", err)
+	}
+	got, err := s.Get(ctx, "new")
+	if err != nil || got == nil {
+		t.Fatalf("new row = %+v err=%v", got, err)
+	}
+	if got.Retries != 3 {
+		t.Fatalf("new row retries = %d, want 3", got.Retries)
 	}
 }
 

@@ -51,6 +51,7 @@ type Request struct {
 	Stream          bool             `json:"stream"`
 	SawDone         bool             `json:"sawDone,omitempty"`
 	Truncated       bool             `json:"truncated,omitempty"`
+	Retries         int              `json:"retries"`
 	FinishReason    string           `json:"finishReason,omitempty"`
 	BytesIn         uint64           `json:"bytesIn"`
 	BytesOut        uint64           `json:"bytesOut"`
@@ -262,6 +263,7 @@ func (s *Store) migrate() error {
 		"ttft_ms":          "INTEGER NOT NULL DEFAULT 0",
 		"seq":              "INTEGER NOT NULL DEFAULT 0",
 		"gateway_key":      "TEXT NOT NULL DEFAULT ''",
+		"retries":          "INTEGER NOT NULL DEFAULT 0",
 	}); err != nil {
 		return err
 	}
@@ -468,14 +470,14 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 		 effort, status, error, error_class, duration_ms, ttft_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		 uri, method, client_ip, user_agent, upstream, client_status,
-		 finish_reason, saw_done, truncated)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 finish_reason, saw_done, truncated, retries)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, seq, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node, r.GatewayKey,
 		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
 		r.Effort, r.Status, r.Error, r.ErrorClass, r.DurationMS, r.TTFTMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut),
 		r.URI, r.Method, r.ClientIP, r.UserAgent, r.Upstream, r.ClientStatus,
-		r.FinishReason, boolInt(r.SawDone), boolInt(r.Truncated))
+		r.FinishReason, boolInt(r.SawDone), boolInt(r.Truncated), r.Retries)
 	if err != nil {
 		return err
 	}
@@ -580,7 +582,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 		effort, status, error, error_class,
 		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		uri, method, client_ip, user_agent, upstream, client_status,
-		finish_reason, saw_done, truncated,
+		finish_reason, saw_done, truncated, retries,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, max(f.Offset, 0))
@@ -600,7 +602,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 		effort, status, error, error_class,
 		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		uri, method, client_ip, user_agent, upstream, client_status,
-		finish_reason, saw_done, truncated,
+		finish_reason, saw_done, truncated, retries,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests WHERE request_id = ?`
 	rows, err := s.db.QueryContext(ctx, q, id)
@@ -742,7 +744,7 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 			&r.Effort, &r.Status, &r.Error, &r.ErrorClass, &r.DurationMS, &r.TTFTMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut,
 			&r.URI, &r.Method, &r.ClientIP, &r.UserAgent, &r.Upstream, &r.ClientStatus,
-			&r.FinishReason, &sawDone, &truncated, &hasCapture); err != nil {
+			&r.FinishReason, &sawDone, &truncated, &r.Retries, &hasCapture); err != nil {
 			return nil, err
 		}
 		r.TS = time.UnixMilli(ts).UTC()

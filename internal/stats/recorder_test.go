@@ -410,6 +410,34 @@ func TestRecorderCaptureOffWritesNothing(t *testing.T) {
 	}
 }
 
+func TestRecorderRecordsRetries(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	sid := "retried"
+
+	body, err := json.Marshal(map[string]any{
+		"sid":     sid,
+		"node":    "route/provider/node",
+		"time":    time.Now().UTC(),
+		"http":    map[string]any{"statusCode": 200},
+		"retries": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Get(ctx, sid)
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.Retries != 1 {
+		t.Fatalf("retries = %d, want 1", got.Retries)
+	}
+}
+
 func TestParseNodeNameIgnoresKeySegment(t *testing.T) {
 	for _, in := range []string{"route/provider/node/account-a", "route/provider/node/1"} {
 		route, provider, node := parseNodeName(in)

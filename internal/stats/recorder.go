@@ -75,6 +75,7 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		DurationMS: ro.Duration.Milliseconds(),
 		BytesIn:    ro.InputBytes,
 		BytesOut:   ro.OutputBytes,
+		Retries:    ro.Retries,
 	}
 	req.URI, req.Method, req.ClientIP, req.UserAgent, req.Upstream = requestContext(&ro)
 	req.GatewayKey = GatewayKeyFromContext(ctx)
