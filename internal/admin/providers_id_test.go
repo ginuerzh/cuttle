@@ -348,3 +348,113 @@ func TestProviderModelsAndProbeUseID(t *testing.T) {
 		t.Fatalf("persisted probes = %+v, want the provider id", latest)
 	}
 }
+
+// putConfig stores a whole-config payload through the API.
+func putConfig(t *testing.T, client *http.Client, base, csrf, body string) {
+	t.Helper()
+
+	resp := doJSON(t, client, http.MethodPut, base+"/api/config", body, csrf)
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("PUT /api/config = %d: %s", resp.StatusCode, b)
+	}
+}
+
+func TestPutConfigAdoptsStoredProviderID(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	id := createProviderTest(t, client, ts.URL, csrf,
+		`{"name":"alpha","type":"generic","chat":"https://a.example","keys":[{"name":"account-a","key":"sk-keep"}]}`,
+		"alpha")
+	keyID := getProvider(t, client, ts.URL, id).Keys[0].ID
+
+	// The payload carries no ids at all. It must keep the stored provider
+	// identity (matched by name) and the stored key identity, so the key
+	// value is rotated in place instead of a new key appearing.
+	cfg := `{"providers":[{"name":"alpha","type":"generic","chat":"https://a.example","keys":[{"name":"account-a","key":"sk-rotated"}],"health":{"timeout":"3s"}}]}`
+	putConfig(t, client, ts.URL, csrf, cfg)
+
+	got := rel.cfg.Providers
+	if len(got) != 1 || got[0].ID != id {
+		t.Fatalf("providers after an id-less PUT /api/config = %+v, want the stored id %q", got, id)
+	}
+	if len(got[0].Keys) != 1 || got[0].Keys[0].ID != keyID || got[0].Keys[0].Key != "sk-rotated" {
+		t.Fatalf("keys after an id-less PUT /api/config = %+v, want key %q with the rotated value", got[0].Keys, keyID)
+	}
+
+	// The adopted identity is addressable for writes.
+	rename := `{"name":"beta","type":"generic","chat":"https://a.example"}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/"+id, rename, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("update the adopted provider = %d: %s", resp.StatusCode, b)
+	}
+	if got := rel.cfg.Providers[0]; got.ID != id || got.Name != "beta" {
+		t.Fatalf("provider after rename = %+v, want the same id renamed to beta", got)
+	}
+}
+
+func TestPutConfigMintsIDForNewProvider(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	cfg := `{"providers":[{"name":"fresh","type":"generic","chat":"https://b.example","keys":[{"name":"account-a","key":"sk-new"}]}]}`
+	putConfig(t, client, ts.URL, csrf, cfg)
+
+	got := rel.cfg.Providers
+	if len(got) != 1 {
+		t.Fatalf("providers = %+v, want one", got)
+	}
+	id := got[0].ID
+	if !identity.Valid(identity.Provider, id) {
+		t.Fatalf("id = %q, want a minted provider id", id)
+	}
+	if len(got[0].Keys) != 1 || !identity.Valid(identity.ProviderKey, got[0].Keys[0].ID) ||
+		got[0].Keys[0].Key != "sk-new" {
+		t.Fatalf("keys = %+v, want a minted key id and the sent value", got[0].Keys)
+	}
+
+	// A new provider created this way is a first-class entity.
+	if got := getProvider(t, client, ts.URL, id); got.ID != id || got.Name != "fresh" {
+		t.Fatalf("view of the new provider = %+v", got)
+	}
+	update := `{"name":"fresh-2","type":"generic","chat":"https://b.example"}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/providers/"+id, update, csrf); resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("update the new provider = %d: %s", resp.StatusCode, b)
+	}
+	if got := rel.cfg.Providers[0]; got.ID != id || got.Name != "fresh-2" {
+		t.Fatalf("provider after rename = %+v", got)
+	}
+}
+
+func TestPutConfigKeepsStoredKeysWithoutIDOrKeys(t *testing.T) {
+	_, rel, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	id := createProviderTest(t, client, ts.URL, csrf,
+		`{"name":"alpha","type":"generic","chat":"https://a.example","keys":[{"name":"account-a","key":"sk-keep"},{"name":"account-b","key":"sk-keep-2"}]}`,
+		"alpha")
+	keys := getProvider(t, client, ts.URL, id).Keys
+
+	// Neither the provider id nor the keys are sent; the stored key values
+	// and their identities must survive.
+	cfg := `{"providers":[{"name":"alpha","type":"generic","chat":"https://a.example","health":{"timeout":"3s"}}]}`
+	putConfig(t, client, ts.URL, csrf, cfg)
+
+	got := rel.cfg.Providers
+	if len(got) != 1 || got[0].ID != id {
+		t.Fatalf("providers = %+v, want the stored id %q", got, id)
+	}
+	if len(got[0].Keys) != 2 {
+		t.Fatalf("keys = %+v, want the two stored keys preserved", got[0].Keys)
+	}
+	for i, want := range keys {
+		if got[0].Keys[i].ID != want.ID || got[0].Keys[i].Name != want.Name {
+			t.Fatalf("key[%d] = %+v, want id %q and name %q", i, got[0].Keys[i], want.ID, want.Name)
+		}
+	}
+	if got[0].Keys[0].Key != "sk-keep" || got[0].Keys[1].Key != "sk-keep-2" {
+		t.Fatalf("keys = %+v, want the stored values preserved", got[0].Keys)
+	}
+}

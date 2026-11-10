@@ -252,25 +252,52 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		// Provider keys are write-only too. Preserve them per existing
 		// provider id when the decoded field is absent; an explicit []
 		// still clears and a new provider stays keyless.
-		oldProviders := make(map[string]config.Provider, len(dst.Providers))
+		oldByID := make(map[string]config.Provider, len(dst.Providers))
+		oldByName := make(map[string]config.Provider, len(dst.Providers))
 		for _, p := range dst.Providers {
 			if p.ID != "" {
-				oldProviders[p.ID] = p
+				oldByID[p.ID] = p
+			}
+			if name := strings.TrimSpace(p.Name); name != "" {
+				oldByName[name] = p
 			}
 		}
 		for i := range c.Providers {
-			old, ok := oldProviders[c.Providers[i].ID]
-			if !ok {
+			in := &c.Providers[i]
+			old, known := oldByID[in.ID]
+			if in.ID == "" {
+				// An id-less entity is not a new identity: adopt the
+				// stored one when the name matches, so its keys and
+				// its history stay attached. Only a genuinely new
+				// entity gets a freshly minted id.
+				if stored, found := oldByName[strings.TrimSpace(in.Name)]; found {
+					in.ID = stored.ID
+					old, known = stored, true
+				} else {
+					id, err := identity.New(identity.Provider)
+					if err != nil {
+						return err
+					}
+					in.ID = id
+				}
+			}
+			if !known {
+				keys, err := mergeProviderKeys(nil, in.Keys)
+				if err != nil {
+					return fmt.Errorf("provider %q: %w", in.Name, err)
+				}
+				in.Keys = keys
 				continue
 			}
-			keys, err := mergeProviderKeys(old.Keys, c.Providers[i].Keys)
+			adoptKeyIDs(in.Keys, old.Keys)
+			keys, err := mergeProviderKeys(old.Keys, in.Keys)
 			if err != nil {
-				return fmt.Errorf("provider %q: %w", c.Providers[i].Name, err)
+				return fmt.Errorf("provider %q: %w", in.Name, err)
 			}
-			if err := ensureKeysNotPinned(&c, keys, old, c.Providers[i]); err != nil {
-				return fmt.Errorf("provider %q: %w", c.Providers[i].Name, err)
+			if err := ensureKeysNotPinned(&c, keys, old, *in); err != nil {
+				return fmt.Errorf("provider %q: %w", in.Name, err)
 			}
-			c.Providers[i].Keys = keys
+			in.Keys = keys
 		}
 		*dst = c
 		return nil
@@ -441,6 +468,27 @@ func applyProviderKeyUpdates(keys []config.ProviderKey, updates []providerKeyUpd
 		}
 	}
 	return out, nil
+}
+
+// adoptKeyIDs gives every incoming key without an id the id of the stored key
+// with the same name, so an id-less full replacement updates the stored keys
+// instead of minting new identities for them. A name that is not stored keeps
+// its empty id and is minted by mergeProviderKeys.
+func adoptKeyIDs(incoming, stored []config.ProviderKey) {
+	byName := make(map[string]string, len(stored))
+	for _, k := range stored {
+		if k.ID != "" {
+			byName[strings.TrimSpace(k.Name)] = k.ID
+		}
+	}
+	for i := range incoming {
+		if strings.TrimSpace(incoming[i].ID) != "" {
+			continue
+		}
+		if id, ok := byName[strings.TrimSpace(incoming[i].Name)]; ok {
+			incoming[i].ID = id
+		}
+	}
 }
 
 // mergeProviderKeys applies a full key replacement: nil preserves the stored
