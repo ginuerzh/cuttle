@@ -48,6 +48,7 @@ import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
 import { splitId } from './pages/selection';
+import { entityParams } from './pages/entityParams';
 import { nodeRouteHealth } from './pages/routeHealth';
 import { configLabels, entityLabel, graphLabel, type ConfigLabels } from './labels';
 import { useLiveGraph } from './useLiveGraph';
@@ -206,6 +207,7 @@ export function SessionCard({ row, onOpen }: { row: RequestRow; onOpen?: (row: R
 }
 
 export function NodePanel({
+  config,
   id,
   label,
   metrics,
@@ -214,6 +216,7 @@ export function NodePanel({
   dead = false,
   deadRoutes = [],
 }: {
+  config: ConfigResponse;
   id: string;
   /** Display label from the loaded config; the graph id is the fallback. */
   label?: string;
@@ -225,6 +228,7 @@ export function NodePanel({
 }) {
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [detail, setDetail] = useState<RequestRow | null>(null);
+  const params = entityParams(config, id);
   const { rows, loading, failed } = useNodeSessions(
     id,
     since,
@@ -250,6 +254,20 @@ export function NodePanel({
           />
         ) : null}
       </Typography.Title>
+      {params.length > 0 ? (
+        <>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+            {translate('参数')}
+          </Typography.Text>
+          <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
+            {params.map((row) => (
+              <Descriptions.Item key={row.label} label={row.label}>
+                {row.value}
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+        </>
+      ) : null}
       <Descriptions size="small" column={1} bordered>
         <Descriptions.Item label={translate('会话')}>{formatCount(metrics?.requests ?? 0)}</Descriptions.Item>
         {deadRoutes.length > 0 ? (
@@ -446,6 +464,21 @@ export default function App() {
     if (!routeIds) return undefined;
     return routeIds.map((routeId) => (labels ? entityLabel(routeId, labels.routes) : routeId));
   };
+  // The parameter block reads the config, and monitor mode only renders the
+  // topology (and therefore a selection) once the config has loaded.
+  const renderNodePanel = (id: string) =>
+    config ? (
+      <NodePanel
+        config={config}
+        id={id}
+        label={panelLabel(id)}
+        metrics={metrics?.nodes[id]}
+        since={since}
+        rangeMs={rangeMs}
+        dead={id.startsWith('node:') && nodeHealth.dead.has(id.slice('node:'.length))}
+        deadRoutes={deadRouteLabels(id)}
+      />
+    ) : null;
 
   const loadConfig = useCallback(async () => {
     try {
@@ -730,15 +763,7 @@ export default function App() {
                 styles={{ body: { padding: 16 } }}
               >
                 {selection.kind === 'node' ? (
-                  <NodePanel
-                    id={selection.id}
-                    label={panelLabel(selection.id)}
-                    metrics={metrics?.nodes[selection.id]}
-                    since={since}
-                    rangeMs={rangeMs}
-                    dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
-                    deadRoutes={deadRouteLabels(selection.id)}
-                  />
+                  renderNodePanel(selection.id)
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} labels={labels ?? undefined} />
                 )}
@@ -754,15 +779,7 @@ export default function App() {
                 }}
               >
                 {selection.kind === 'node' ? (
-                  <NodePanel
-                    id={selection.id}
-                    label={panelLabel(selection.id)}
-                    metrics={metrics?.nodes[selection.id]}
-                    since={since}
-                    rangeMs={rangeMs}
-                    dead={selection.id.startsWith('node:') && nodeHealth.dead.has(selection.id.slice('node:'.length))}
-                    deadRoutes={deadRouteLabels(selection.id)}
-                  />
+                  renderNodePanel(selection.id)
                 ) : (
                   <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} labels={labels ?? undefined} />
                 )}

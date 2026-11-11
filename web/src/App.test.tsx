@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NodePanel, SessionCard, sessionQuery } from './App';
 import { setActiveLang } from './i18n';
-import type { RequestRow } from './api/types';
+import type { ConfigResponse, RequestRow } from './api/types';
 
 beforeEach(() => setActiveLang('zh-CN'));
 
@@ -11,6 +11,15 @@ const metrics = {
   inputTokens: 0, outputTokens: 80, cachedTokens: 0,
   outputTokensPerSecond: 42.34,
 };
+
+const cfg = {
+  gateway: { listen: ':8787' },
+  admin: { listen: ':8788', sessionTTL: '12h' },
+  providers: [{ id: 'p_0000000001', name: 'DeepSeek 官方', type: 'deepseek', keys: [] }],
+  nodes: [{ id: 'n_0000000001', name: 'fast', provider: 'p_0000000001', model: 'deepseek-v4-flash' }],
+  routes: [{ id: 'r_0000000001', name: 'strong', nodes: ['n_0000000001'] }],
+  entrypoints: [{ id: 'e_0000000001', name: 'all', match: ['*'], route: 'r_0000000001' }],
+} as unknown as ConfigResponse;
 
 const base: RequestRow = {
   requestId: 'r1',
@@ -41,7 +50,7 @@ const base: RequestRow = {
 describe('NodePanel', () => {
   it('shows output speed for a binding node', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:n_0000000001" label="fast" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel config={cfg} id="node:n_0000000001" label="fast" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
     expect(html).toContain('输出速度');
     expect(html).toContain('42.3 tok/s');
@@ -49,14 +58,14 @@ describe('NodePanel', () => {
 
   it('omits output speed for non-binding nodes', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="provider:p_0000000001" label="p" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel config={cfg} id="provider:p_0000000001" label="p" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
     expect(html).not.toContain('输出速度');
   });
 
   it('titles the panel with the entity label', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:n_0000000001" label="fast" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel config={cfg} id="node:n_0000000001" label="fast" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
     expect(html).toContain('fast');
     expect(html).not.toContain('node:n_0000000001');
@@ -64,14 +73,14 @@ describe('NodePanel', () => {
 
   it('falls back to the raw graph id without a label', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel config={cfg} id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
     expect(html).toContain('node:n_0000000001');
   });
 
   it('shows recent sessions with an errors-only filter', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
+      <NodePanel config={cfg} id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
 
     expect(html).toContain('最近会话');
@@ -80,7 +89,7 @@ describe('NodePanel', () => {
 
   it('marks a dead node in the panel with a grey icon', () => {
     const html = renderToStaticMarkup(
-      <NodePanel id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} dead />,
+      <NodePanel config={cfg} id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} dead />,
     );
 
     expect(html).toContain('anticon-api');
@@ -92,6 +101,7 @@ describe('NodePanel', () => {
   it('lists the routes where a partially dead node is dead by their labels', () => {
     const html = renderToStaticMarkup(
       <NodePanel
+        config={cfg}
         id="node:n_0000000001"
         label="fast"
         metrics={metrics}
@@ -103,6 +113,36 @@ describe('NodePanel', () => {
 
     expect(html).toContain('dead 路由');
     expect(html).toContain('fast, backup');
+  });
+
+  it('shows the node parameters above the metrics', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel config={cfg} id="node:n_0000000001" label="fast" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+    expect(html).toContain('参数');
+    expect(html).toContain('deepseek-v4-flash');
+    expect(html).toContain('全部 key（轮询）');
+    expect(html.indexOf('参数')).toBeLessThan(html.indexOf('P50 / P95'));
+  });
+
+  it('shows the provider parameters', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel config={cfg} id="provider:p_0000000001" label="p" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+    expect(html).toContain('类型');
+    expect(html).toContain('deepseek');
+    expect(html).toContain('0 个 key');
+  });
+
+  it('renders no parameter block for unrouted or unknown ids', () => {
+    const unrouted = renderToStaticMarkup(
+      <NodePanel config={cfg} id="unrouted" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+    const gone = renderToStaticMarkup(
+      <NodePanel config={cfg} id="node:n_gone000001" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+    expect(unrouted).not.toContain('参数');
+    expect(gone).not.toContain('参数');
   });
 });
 

@@ -31,4 +31,11 @@ describe('translateFor', () => {
   it('falls back to the key when a translation is missing', () => {
     expect(translateFor('en-US', 'not-translated')).toBe('not-translated');
   });
+
+  it('translates the monitor parameter labels', () => {
+    expect(translateFor('en-US', '参数')).toBe('Parameters');
+    expect(translateFor('en-US', '模型匹配')).toBe('Model match');
+    expect(translateFor('en-US', '{count} 个 key', { count: 2 })).toBe('2 keys');
+    expect(translateFor('en-US', '（{count} 个禁用）', { count: 1 })).toBe(' (1 disabled)');
+  });
 });
