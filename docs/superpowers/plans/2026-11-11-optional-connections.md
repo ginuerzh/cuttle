@@ -808,12 +808,12 @@ git commit -m "docs: describe draft entrypoints and nodes"
 ```
 
 **Implementation record (Task 6)** — fill in after the task is complete:
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-11 complete
+- Repository + commit: cuttle `7c3a51ad` — `docs: describe draft entrypoints and nodes`
+- Files changed: `AGENTS.md` (route/provider optional, draft compile behavior, `count_tokens` pass-through, new gotcha for a `*` draft entrypoint), `README.md` (routing bullets, the draft paragraph, console page table rows, edit-canvas drag/`断开`, `entrypoints[].route` and `nodes[].provider`/`model`/`api`/`key` field tables).
+- Tests/commands and results: full gate on the docs commit — `cd web && npm run build` ok (39.85s, pre-existing chunk-size warning); `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` all green (no failing package, `internal/health` has no test files); web sources were unchanged since `npm test` 43 files / 316 tests passed and `npx tsc --noEmit` was clean.
+- Review findings and fixes: none in this task.
+- Deferred items/limitations: the `README` promises 502 for a draft request, which matches x's `errNodeNotAvailable` mapping; if x changes that mapping the sentence needs an update.
 
 ---
 
