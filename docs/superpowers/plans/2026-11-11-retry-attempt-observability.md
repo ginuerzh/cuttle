@@ -830,7 +830,17 @@ git commit -m "feat(web): show retry attempts and explain a dead node"
 - [x] **Step 1:** build and push the image, `kubectl --context pi -n llm rollout restart deploy/llm-gw`, verify `/api/health`.
 - [x] **Step 2:** trigger a `deepseek-flash` request that lands on `oc-go-free`; confirm the node panel lists a `重试尝试` card with the 429 message, the dead tooltip shows counts, and `SELECT count(*) FROM request_attempts` grows.
 - [x] **Step 3:** confirm `rollups`, `summary` and the 请求 list are unchanged in shape (one row per client request).
-- [x] **Step 4: Implementation record** with the verified numbers, or the deferred reason if the deploy is postponed.
+- [x] **Step 4: Implementation record**
+
+**Implementation record (Task 8)**
+- Date/status: 2026-11-11 / complete (approved by the user: "上线")
+- Repos/commits: `cuttle` `main` pushed `339725c6..d569a8ee` (CI run `43036827715` success), image `ghcr.io/ginuerzh/cuttle:latest` → digest `sha256:86d294cf53518a41fadfdcbb379fc63788900fea702ea0b1aa22df8082d552c2`; deployed pod `llm-gw-b59c9994c-4knwv`; `GET /api/health` → `{"version":"main-d569a8e","commit":"d569a8ee…","builtAt":"2026-11-11T14:16:23Z"}`.
+- Verification: the live DB has `request_attempts` with all three indexes and `user_version 2`; after two natural `deepseek-flash` retries (log `retryable status 429 for node r_pwld6zor5u/p_tjk7i2rga4/n_zcyfy5lhpq` at 14:21:00 and 14:22:10) the table holds two rows:
+  - `dbq7jj6…`: attempt 0, node `n_zcyfy5lhpq` (oc-go-free), 429, `upstream_quota`, "Rate limit exceeded. Please try again later.", 981 ms, headers `cf-ray` + `retry-after: 34739`, body preview the upstream JSON error; parent row ended 200 on `n_yd3tois3gy` (cc-dsf) with `retries: 1`.
+  - `dbq7k4m…`: same shape, 1,009,494 B request, 1,665 ms, `retry-after: 34669`.
+  These are exactly the "retried and recovered" requests that previously left no trace, and the `retry-after` values (~9.6 h) confirm the multi-hour quota window behind the dead flapping.
+- UI: the console bundle shipped in the image; the attempt cards / tooltip / drawer were verified by Vitest, SSR and jsdom tests only — no browser check was performed (stated per `AGENTS.md`).
+- Deferred: none from this task; the earlier deferred minors remain as recorded.
 
 ---
 
