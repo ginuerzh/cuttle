@@ -9,6 +9,8 @@ import { setActiveLang } from '../i18n';
 const stats = (requests: number, errors: number) => ({
   requests,
   errors,
+  attempts: 0,
+  retriedRequests: 0,
   p50Ms: 0,
   p95Ms: 0,
   inputTokens: 0,
@@ -233,6 +235,8 @@ describe('NodeStats', () => {
         metrics={{
           requests: 10,
           errors: 0,
+          attempts: 0,
+          retriedRequests: 0,
           p50Ms: 3,
           p95Ms: 5,
           inputTokens: 0,
@@ -258,6 +262,8 @@ describe('NodeStats', () => {
         metrics={{
           requests: 10,
           errors: 2,
+          attempts: 0,
+          retriedRequests: 0,
           p50Ms: 3,
           p95Ms: 5,
           inputTokens: 0,
@@ -281,6 +287,8 @@ describe('NodeStats', () => {
         metrics={{
           requests: 10,
           errors: 0,
+          attempts: 0,
+          retriedRequests: 0,
           p50Ms: 3,
           p95Ms: 5,
           inputTokens: 0,
@@ -301,6 +309,8 @@ describe('NodeStats', () => {
         metrics={{
           requests: 10,
           errors: 0,
+          attempts: 0,
+          retriedRequests: 0,
           p50Ms: 800,
           p95Ms: 1500,
           inputTokens: 0,
@@ -317,7 +327,7 @@ describe('NodeStats', () => {
 
   it('shows the token rate only when asked and available', () => {
     const metrics = {
-      requests: 10, errors: 0, p50Ms: 3, p95Ms: 5,
+      requests: 10, errors: 0, attempts: 0, retriedRequests: 0, p50Ms: 3, p95Ms: 5,
       inputTokens: 0, outputTokens: 80, cachedTokens: 0,
       outputTokensPerSecond: 42.34,
     };
@@ -332,7 +342,7 @@ describe('NodeStats', () => {
     const html = renderToStaticMarkup(
       <NodeStats
         metrics={{
-          requests: 10, errors: 0, p50Ms: 3, p95Ms: 5,
+          requests: 10, errors: 0, attempts: 0, retriedRequests: 0, p50Ms: 3, p95Ms: 5,
           inputTokens: 0, outputTokens: 0, cachedTokens: 0,
           outputTokensPerSecond: 0,
         }}

@@ -29,8 +29,8 @@ import {
   SettingOutlined,
   SunOutlined,
 } from '@ant-design/icons';
-import { clearAuthFailures, getConfig, getHealth, getRequests, getRouteHealth, logout, UnauthorizedError, type RequestQuery } from './api/client';
-import type { AuthFailureSnapshot, ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
+import { clearAuthFailures, getAttempts, getConfig, getHealth, getRequest, getRequests, getRouteHealth, logout, UnauthorizedError, type AttemptQuery, type RequestQuery } from './api/client';
+import type { AttemptRow, AuthFailureSnapshot, ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
 import type { SnapshotMessage } from './api/events';
 import { authFailureNotifications, sameAuthFailures } from './notifications';
 import { Login } from './pages/Login';
@@ -147,6 +147,168 @@ function useNodeSessions(id: string, since: string, rangeMs: number, errorsOnly:
   return { rows, loading, failed };
 }
 
+/**
+ * The attempts filter for one graph id. An attempt carries no client model, so
+ * the admin API cannot filter attempts by entrypoint; an entrypoint panel shows
+ * no discarded attempts instead of every attempt in the window.
+ */
+function attemptQuery(id: string, from: Date, to: Date): AttemptQuery | null {
+  const [kind, entityId] = splitId(id);
+  const query: AttemptQuery = { from, to, limit: SESSION_LIMIT };
+  if (kind === 'node') query.node = entityId;
+  else if (kind === 'route') query.route = entityId;
+  else if (kind === 'provider') query.provider = entityId;
+  else return null;
+  return query;
+}
+
+function useNodeAttempts(id: string, since: string, rangeMs: number, refreshKey: number) {
+  const [rows, setRows] = useState<AttemptRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const to = new Date();
+    const from = since ? new Date(since) : new Date(to.getTime() - rangeMs);
+    const query = attemptQuery(id, from, to);
+    if (!query) {
+      setRows([]);
+      setLoading(false);
+      setFailed(false);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setFailed(false);
+    void getAttempts(query)
+      .then((list) => {
+        if (active) setRows(list);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, since, rangeMs, refreshKey]);
+
+  return { rows, loading, failed };
+}
+
+/** One row of the node panel's activity list: a request or a discarded attempt. */
+export type NodeActivity =
+  | { kind: 'request'; ts: string; request: RequestRow }
+  | { kind: 'attempt'; ts: string; attempt: AttemptRow };
+
+/**
+ * Merge the request list with the discarded attempts newest first. An attempt
+ * keeps its parent's timestamp, so the parent is listed before its attempts.
+ */
+export function mergeNodeActivity(requests: RequestRow[], attempts: AttemptRow[]): NodeActivity[] {
+  const merged: NodeActivity[] = [
+    ...requests.map((row) => ({ kind: 'request' as const, ts: row.ts, request: row })),
+    ...attempts.map((row) => ({ kind: 'attempt' as const, ts: row.ts, attempt: row })),
+  ];
+  return merged.sort((a, b) => {
+    const byTime = (Date.parse(b.ts) || 0) - (Date.parse(a.ts) || 0);
+    if (byTime !== 0) return byTime;
+    return a.kind === b.kind ? 0 : a.kind === 'request' ? -1 : 1;
+  });
+}
+
+/** `429×2, 503×1` in numeric order; an empty input gives an empty string. */
+function formatStatusCounts(counts?: Record<string, number>): string {
+  return Object.entries(counts ?? {})
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([status, count]) => `${status}×${count}`)
+    .join(', ');
+}
+
+/**
+ * The dead badge tooltip: the final failures of the window with their status
+ * breakdown, then the discarded retry attempts. A section with a zero count is
+ * omitted, and a window with neither says so instead of showing an empty title.
+ */
+export function deadTitle(metrics?: NodeMetrics): string {
+  const failures = formatStatusCounts(metrics?.failureStatus);
+  const failed = Object.values(metrics?.failureStatus ?? {}).reduce((sum, count) => sum + count, 0);
+  const discarded = metrics?.attempts ?? 0;
+  if (failed > 0 && discarded > 0) {
+    return translate('失败 {failed}（{statuses}）· 重试丢弃 {discarded}', {
+      failed,
+      statuses: failures,
+      discarded,
+    });
+  }
+  if (failed > 0) {
+    return translate('失败 {failed}（{statuses}）', { failed, statuses: failures });
+  }
+  if (discarded > 0) {
+    return translate('重试丢弃 {discarded}', { discarded });
+  }
+  return translate('窗口内没有失败记录');
+}
+
+/**
+ * One discarded upstream attempt: the response asked for a retry, so the client
+ * never saw it. It opens the parent request's detail, which owns the row.
+ */
+export function AttemptCard({ row, onOpen }: { row: AttemptRow; onOpen?: (row: AttemptRow) => void }) {
+  const failed = row.status === 0 || row.status >= 400 || !!row.error;
+
+  return (
+    <Card
+      size="small"
+      hoverable={!!onOpen}
+      onClick={onOpen ? () => onOpen(row) : undefined}
+      style={{
+        cursor: onOpen ? 'pointer' : undefined,
+        borderInlineStart: '3px dashed #d97706',
+      }}
+      styles={{ body: { padding: '8px 10px' } }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+          {translate('重试尝试')}
+        </Tag>
+        <Tag
+          color={failed ? 'red' : row.status >= 300 ? 'orange' : 'green'}
+          style={{ marginInlineEnd: 0 }}
+        >
+          {row.status === 0 ? translate('连接失败') : row.status}
+        </Tag>
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          {formatDateTime(row.ts)}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 11, marginInlineStart: 'auto' }}>
+          {formatDurationMs(row.durationMs)}
+        </Typography.Text>
+      </div>
+      <Typography.Text
+        type="secondary"
+        style={{ display: 'block', fontSize: 11, wordBreak: 'break-all' }}
+      >
+        {translate('上游尝试')} #{row.attempt + 1} ·{' '}
+        {row.route ? row.routeName || row.route : 'unrouted'} ·{' '}
+        {row.providerName || row.provider}
+        {row.node ? `/${row.nodeName || row.node}` : ''}
+      </Typography.Text>
+      {row.error ? (
+        <Typography.Text
+          type="danger"
+          style={{ display: 'block', fontSize: 12, marginTop: 4, wordBreak: 'break-word' }}
+        >
+          {row.error}
+        </Typography.Text>
+      ) : null}
+    </Card>
+  );
+}
+
 export function SessionCard({ row, onOpen }: { row: RequestRow; onOpen?: (row: RequestRow) => void }) {
   const failed = row.status === 0 || row.status >= 400 || !!row.error;
   const model =
@@ -236,11 +398,25 @@ export function NodePanel({
     errorsOnly,
     metrics?.requests ?? 0,
   );
+  const {
+    rows: attempts,
+    loading: attemptsLoading,
+    failed: attemptsFailed,
+  } = useNodeAttempts(id, since, rangeMs, metrics?.attempts ?? 0);
+  const activity = useMemo(() => mergeNodeActivity(rows, attempts), [rows, attempts]);
+  const attemptStatuses = formatStatusCounts(metrics?.attemptStatus);
 
   // Selecting another graph node must not keep the previous node's open detail.
   useEffect(() => {
     setDetail(null);
   }, [id]);
+
+  // A discarded attempt has no row of its own: its detail is the parent request.
+  const openAttempt = (row: AttemptRow) => {
+    void getRequest(row.requestId)
+      .then((request) => setDetail(request))
+      .catch(() => undefined);
+  };
 
   return (
     <div>
@@ -249,7 +425,7 @@ export function NodePanel({
         {dead ? (
           <ApiOutlined
             aria-label="dead"
-            title="dead"
+            title={deadTitle(metrics)}
             style={{ color: 'var(--gw-text-muted)', marginInlineStart: 8, fontSize: 16 }}
           />
         ) : null}
@@ -276,6 +452,21 @@ export function NodePanel({
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误率')}>
             <span style={{ color: '#dc2626' }}>{rate(metrics)}</span>
+          </Descriptions.Item>
+        ) : null}
+        {(metrics?.attempts ?? 0) > 0 ? (
+          <Descriptions.Item label={translate('重试尝试')}>
+            {attemptStatuses
+              ? translate('{count} 次（{statuses}）', {
+                  count: formatCount(metrics!.attempts),
+                  statuses: attemptStatuses,
+                })
+              : translate('{count} 次', { count: formatCount(metrics!.attempts) })}
+          </Descriptions.Item>
+        ) : null}
+        {(metrics?.retriedRequests ?? 0) > 0 ? (
+          <Descriptions.Item label={translate('重试请求')}>
+            {formatCount(metrics!.retriedRequests)}
           </Descriptions.Item>
         ) : null}
         <Descriptions.Item label="P50 / P95">
@@ -315,21 +506,31 @@ export function NodePanel({
           {translate('仅错误')}
         </Button>
       </div>
-      {failed && rows.length === 0 ? (
-        <Typography.Text type="secondary">{translate('加载失败')}</Typography.Text>
-      ) : rows.length === 0 ? (
-        <Typography.Text type="secondary">
-          {loading
-            ? translate('加载中…')
-            : errorsOnly
-              ? translate('最近窗口内没有错误')
-              : translate('没有会话')}
-        </Typography.Text>
+      {activity.length === 0 ? (
+        failed || attemptsFailed ? (
+          <Typography.Text type="secondary">{translate('加载失败')}</Typography.Text>
+        ) : (
+          <Typography.Text type="secondary">
+            {loading || attemptsLoading
+              ? translate('加载中…')
+              : errorsOnly
+                ? translate('最近窗口内没有错误')
+                : translate('没有会话')}
+          </Typography.Text>
+        )
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          {rows.map((row) => (
-            <SessionCard key={row.requestId} row={row} onOpen={setDetail} />
-          ))}
+          {activity.map((item) =>
+            item.kind === 'request' ? (
+              <SessionCard key={`request:${item.request.requestId}`} row={item.request} onOpen={setDetail} />
+            ) : (
+              <AttemptCard
+                key={`attempt:${item.attempt.requestId}:${item.attempt.attempt}`}
+                row={item.attempt}
+                onOpen={openAttempt}
+              />
+            ),
+          )}
         </Space>
       )}
       <RequestDetailDrawer request={detail} onClose={() => setDetail(null)} />

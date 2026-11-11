@@ -250,6 +250,16 @@ Entrypoint -> Route -> Node -> Provider model
   sockets with 4401 on logout or session expiry, 4408 when an open session
   exceeds `wsMaxAge`, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
+- `GET /api/attempts` lists the discarded upstream attempts of the window
+  newest first, filtered by `from`/`to`, `route=<id>`, `node=<id>`,
+  `provider=<id>`, `status=<code>`, `errorClass=<class>`, `limit` and `offset`.
+  An attempt row is `stats.Attempt` plus resolved
+  `providerName`/`nodeName`/`routeName` labels; it keeps its parent's `ts`,
+  carries no client model (so there is no entrypoint filter) and is never a
+  request row. `status` filters only a positive value, because an attempt that
+  failed before a response stores `0` and `0` therefore means "any status".
+  `GET /api/requests/{id}` carries its attempts as an `attempts` array and omits
+  the key when there are none; `GET /api/requests` never carries the key.
 - Create endpoints return `201 Created` with an empty body. The web client must
   tolerate empty success responses.
 - Errors are JSON objects with an `error` string.
@@ -454,6 +464,14 @@ Entrypoint -> Route -> Node -> Provider model
   preset sets the initial lookback (`since = now - range`); Reset clears the
   display and reconnects with `reset=1`; the status shows the last update and
   the session start.
+- The node panel merges the window's sessions with the discarded attempts,
+  newest first, listing a request before its own attempts. An attempt card
+  (`重试尝试`) opens its parent request's detail through `getRequest`, because an
+  attempt has no row of its own. An entrypoint panel fetches no attempts: the
+  admin API cannot filter attempts by entrypoint. The dead badge keeps
+  `aria-label="dead"` and its `title` is `deadTitle(metrics)` —
+  `失败 N（429×2, 503×1）· 重试丢弃 M`, a section with a zero count omitted and
+  `窗口内没有失败记录` when the window has neither.
 - Requests show client model and target model; there is no logical model.
 - The navigation labels the `gateway-keys` page `密钥` between Entrypoints and
   Sessions. The page heading, dialogs and Sessions filter keep `网关密钥`. It

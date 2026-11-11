@@ -191,6 +191,14 @@ export interface ConfigResponse {
 export interface NodeMetrics {
   requests: number;
   errors: number;
+  /** Discarded upstream attempts in the window; one per retried response. */
+  attempts: number;
+  /** Distinct client requests that had at least one discarded attempt. */
+  retriedRequests: number;
+  /** Discarded attempts by upstream status; `"0"` is an attempt that failed before a response. */
+  attemptStatus?: Record<string, number>;
+  /** Final failed requests by status; `"0"` is a failed dial, so a node with retries disabled still has a number. */
+  failureStatus?: Record<string, number>;
   p50Ms: number;
   p95Ms: number;
   inputTokens: number;
@@ -202,6 +210,10 @@ export interface NodeMetrics {
 export interface EdgeMetrics {
   requests: number;
   errors: number;
+  /** Discarded upstream attempts that crossed this edge. */
+  attempts: number;
+  /** Distinct client requests behind those attempts. */
+  retriedRequests: number;
 }
 
 export interface ErrorRow {
@@ -370,6 +382,39 @@ export interface RequestRow {
   bytesOut: number;
   hasCapture?: boolean;
   capture?: RequestCapture;
+  /** Discarded attempts of this request, present on the detail only. */
+  attempts?: AttemptRow[];
+}
+
+/** One discarded upstream attempt: it opted into a retry, so the client never saw it. */
+export interface AttemptRow {
+  /** Parent request id; the console keys by it and opens the request detail. */
+  requestId: string;
+  /** Upstream attempt index of the parent request; the served attempt is not listed. */
+  attempt: number;
+  /** The parent request's start time; an attempt is never timed on its own. */
+  ts: string;
+  /** Route id the attempt ran under; `routeName` is its label. */
+  route?: string;
+  routeName: string;
+  /** Node id that served the attempt; `nodeName` is its label. */
+  node?: string;
+  nodeName: string;
+  /** Provider id of that node; `providerName` is its label. */
+  provider?: string;
+  providerName: string;
+  /** Gateway key id that authenticated the parent request. */
+  gatewayKey?: string;
+  /** Upstream status; 0 means the attempt failed before a response. */
+  status: number;
+  error?: string;
+  errorClass?: string;
+  durationMs: number;
+  bytesIn: number;
+  bytesOut: number;
+  upstream?: string;
+  bodyPreview?: string;
+  responseHeaders?: Record<string, string>;
 }
 
 

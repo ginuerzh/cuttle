@@ -13,11 +13,11 @@ function metrics(nodes: Record<string, [number, number]>, edges: Record<string, 
   const nodeMap = Object.fromEntries(
     Object.entries(nodes).map(([id, [requests, errors]]) => [
       id,
-      { requests, errors, p50Ms: 0, p95Ms: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, outputTokensPerSecond: 0 },
+      { requests, errors, attempts: 0, retriedRequests: 0, p50Ms: 0, p95Ms: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0, outputTokensPerSecond: 0 },
     ]),
   );
   const edgeMap = Object.fromEntries(
-    Object.entries(edges).map(([id, [requests, errors]]) => [id, { requests, errors }]),
+    Object.entries(edges).map(([id, [requests, errors]]) => [id, { requests, errors, attempts: 0, retriedRequests: 0 }]),
   );
   return { nodes: nodeMap, edges: edgeMap, errors: [] };
 }

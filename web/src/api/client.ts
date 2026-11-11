@@ -1,4 +1,4 @@
-import type { Alert, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
+import type { Alert, AttemptRow, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -219,6 +219,35 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
   if (q.capturedOnly) params.set('captured', '1');
   if (q.errorClass) params.set('errorClass', q.errorClass);
   return request<RequestRow[] | null>('GET', `/api/requests?${params.toString()}`).then((rows) => rows ?? []);
+}
+
+/** Every attempt filter takes the id; an attempt carries no client model, so no entrypoint. */
+export interface AttemptQuery {
+  from: Date;
+  to: Date;
+  route?: string;
+  node?: string;
+  provider?: string;
+  /** Upstream status; 0 means any status, matching the admin API. */
+  status?: number;
+  errorClass?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function getAttempts(q: AttemptQuery): Promise<AttemptRow[]> {
+  const params = new URLSearchParams({
+    from: q.from.toISOString(),
+    to: q.to.toISOString(),
+    limit: String(q.limit ?? 100),
+  });
+  if (q.route) params.set('route', q.route);
+  if (q.node) params.set('node', q.node);
+  if (q.provider) params.set('provider', q.provider);
+  if (q.status) params.set('status', String(q.status));
+  if (q.errorClass) params.set('errorClass', q.errorClass);
+  if (q.offset) params.set('offset', String(q.offset));
+  return request<AttemptRow[] | null>('GET', `/api/attempts?${params.toString()}`).then((rows) => rows ?? []);
 }
 
 export function getErrorSummary(q: { from: Date; to: Date }): Promise<ErrorSummary> {
