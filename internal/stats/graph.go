@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -19,6 +20,16 @@ type NodeMetrics struct {
 
 	OutputTokensPerSecond float64 `json:"outputTokensPerSecond"`
 
+	// Attempts counts discarded upstream attempts, RetriedRequests the distinct
+	// parent requests behind them, and AttemptStatus those attempts by status.
+	// FailureStatus counts final failed parent rows by status, with "0" for a
+	// failed dial. Entrypoint nodes get the failure counts but no attempts: an
+	// attempt carries no client model to attribute.
+	Attempts        int64            `json:"attempts"`
+	RetriedRequests int64            `json:"retriedRequests"`
+	AttemptStatus   map[string]int64 `json:"attemptStatus,omitempty"`
+	FailureStatus   map[string]int64 `json:"failureStatus,omitempty"`
+
 	streamOutputTokens int64
 	streamGenerationMS int64
 }
@@ -27,6 +38,9 @@ type NodeMetrics struct {
 type EdgeMetrics struct {
 	Requests int64 `json:"requests"`
 	Errors   int64 `json:"errors"`
+
+	Attempts        int64 `json:"attempts"`
+	RetriedRequests int64 `json:"retriedRequests"`
 }
 
 // ErrorRow is one recent failure for the monitor panel.
@@ -71,6 +85,18 @@ type GraphRow struct {
 	CachedTokens int64
 }
 
+// GraphAttemptRow is the subset of a discarded attempt row needed by the live
+// aggregator.
+type GraphAttemptRow struct {
+	RequestID string
+	Attempt   int
+	TS        int64
+	Route     string
+	Node      string
+	Provider  string
+	Status    int
+}
+
 type comboKey struct {
 	route       string
 	node        string
@@ -81,6 +107,7 @@ type comboKey struct {
 type comboStats struct {
 	requests     int64
 	errors       int64
+	failures     map[int]int64
 	inputTokens  int64
 	outputTokens int64
 	cachedTokens int64
@@ -88,6 +115,14 @@ type comboStats struct {
 
 	streamOutputTokens int64
 	streamGenerationMS int64
+}
+
+// attemptStats accumulates discarded attempts for one combo. retried holds the
+// parent request ids so RetriedRequests stays a distinct count.
+type attemptStats struct {
+	attempts int64
+	retried  map[string]struct{}
+	status   map[int]int64
 }
 
 type errorSample struct {
@@ -103,18 +138,55 @@ type errorSample struct {
 
 const (
 	maxSeenRequestIDs = 200_000
+	maxSeenAttempts   = 200_000
 	maxErrorSamples   = 200
 )
+
+// seenSet remembers at most max keys and evicts them in insertion order, so a
+// live session that runs for days keeps its deduplication memory bounded.
+type seenSet struct {
+	keys  map[string]struct{}
+	order []string
+	max   int
+	next  int
+}
+
+// newSeenSet bounds the set to max keys. max must be positive.
+func newSeenSet(max int) *seenSet {
+	return &seenSet{
+		keys: make(map[string]struct{}),
+		max:  max,
+	}
+}
+
+// add records key and reports whether it was new. A key evicted by the bound is
+// reported as new again: the bound caps memory, not exactness over a session
+// long enough to evict.
+func (s *seenSet) add(key string) bool {
+	if _, ok := s.keys[key]; ok {
+		return false
+	}
+	s.keys[key] = struct{}{}
+	if len(s.order) < s.max {
+		s.order = append(s.order, key)
+	} else if len(s.order) > 0 {
+		evicted := s.order[s.next]
+		delete(s.keys, evicted)
+		s.order[s.next] = key
+		s.next = (s.next + 1) % len(s.order)
+	}
+	return true
+}
 
 // Aggregator accumulates request rows by their raw dimensions. Entrypoint
 // attribution and topology filtering are applied in Metrics, so a config
 // change is reflected without rebuilding the aggregate.
 type Aggregator struct {
-	combos    map[comboKey]*comboStats
-	errors    []errorSample
-	seen      map[string]struct{}
-	seenOrder []string
-	seenNext  int
+	combos       map[comboKey]*comboStats
+	attempts     map[comboKey]*attemptStats
+	errors       []errorSample
+	seen         *seenSet
+	seenAttempts *seenSet
 }
 
 // NewAggregator returns an empty aggregator.
@@ -122,7 +194,7 @@ func NewAggregator() *Aggregator {
 	return &Aggregator{
 		combos: make(map[comboKey]*comboStats),
 		errors: make([]errorSample, 0),
-		seen:   make(map[string]struct{}),
+		seen:   newSeenSet(maxSeenRequestIDs),
 	}
 }
 
@@ -134,22 +206,11 @@ func (a *Aggregator) Add(row GraphRow) {
 		a.combos = make(map[comboKey]*comboStats)
 	}
 	if a.seen == nil {
-		a.seen = make(map[string]struct{})
+		a.seen = newSeenSet(maxSeenRequestIDs)
 	}
 
-	if row.ID != "" {
-		if _, ok := a.seen[row.ID]; ok {
-			return
-		}
-		a.seen[row.ID] = struct{}{}
-		if len(a.seenOrder) < maxSeenRequestIDs {
-			a.seenOrder = append(a.seenOrder, row.ID)
-		} else {
-			evicted := a.seenOrder[a.seenNext]
-			delete(a.seen, evicted)
-			a.seenOrder[a.seenNext] = row.ID
-			a.seenNext = (a.seenNext + 1) % maxSeenRequestIDs
-		}
+	if row.ID != "" && !a.seen.add(row.ID) {
+		return
 	}
 
 	key := comboKey{
@@ -167,6 +228,10 @@ func (a *Aggregator) Add(row GraphRow) {
 	failed := row.Status >= 400 || row.Error != ""
 	if failed {
 		c.errors++
+		if c.failures == nil {
+			c.failures = make(map[int]int64)
+		}
+		c.failures[row.Status]++
 	}
 	c.inputTokens += row.InputTokens
 	c.outputTokens += row.OutputTokens
@@ -200,6 +265,50 @@ func (a *Aggregator) Add(row GraphRow) {
 	}
 }
 
+// AddAttempt accumulates one discarded attempt row. Repeated (request ID,
+// attempt index) deliveries are ignored: the recorder writes attempts beside
+// their parent, and INSERT OR REPLACE reinserts both with a new sequence, so
+// the live tail can hand the same attempt over twice.
+func (a *Aggregator) AddAttempt(row GraphAttemptRow) {
+	if a.attempts == nil {
+		a.attempts = make(map[comboKey]*attemptStats)
+	}
+	if a.seenAttempts == nil {
+		a.seenAttempts = newSeenSet(maxSeenAttempts)
+	}
+	if row.RequestID != "" && !a.seenAttempts.add(row.RequestID+"\x00"+strconv.Itoa(row.Attempt)) {
+		return
+	}
+
+	key := comboKey{route: row.Route, node: row.Node, provider: row.Provider}
+	s := a.attempts[key]
+	if s == nil {
+		s = &attemptStats{retried: make(map[string]struct{}), status: make(map[int]int64)}
+		a.attempts[key] = s
+	}
+	s.attempts++
+	s.status[row.Status]++
+	if row.RequestID != "" {
+		s.retried[row.RequestID] = struct{}{}
+	}
+}
+
+// mergeStatus adds integer-keyed counters into a string-keyed status map,
+// allocating dst on first use. Status maps serialize as JSON objects, so their
+// keys are decimal strings.
+func mergeStatus(dst map[string]int64, src map[int]int64) map[string]int64 {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]int64, len(src))
+	}
+	for status, count := range src {
+		dst[strconv.Itoa(status)] += count
+	}
+	return dst
+}
+
 // Metrics expands the aggregate into graph nodes/edges. When
 // recomputePercentiles is false, percentiles are copied from prev for keys
 // that already exist; new keys are still computed.
@@ -222,6 +331,7 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		n := g.Nodes[key]
 		n.Requests += c.requests
 		n.Errors += c.errors
+		n.FailureStatus = mergeStatus(n.FailureStatus, c.failures)
 		n.InputTokens += c.inputTokens
 		n.OutputTokens += c.outputTokens
 		n.CachedTokens += c.cachedTokens
@@ -237,6 +347,37 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		e.Requests += c.requests
 		e.Errors += c.errors
 		g.Edges[key] = e
+	}
+	// A parent request can appear in several combos (two nodes behind one
+	// provider, two providers behind one route), so retriedRequests is the size
+	// of the union per graph key, not a sum of combo counts.
+	nodeParents := make(map[string]map[string]struct{})
+	edgeParents := make(map[string]map[string]struct{})
+	unionParents := func(dst map[string]map[string]struct{}, key string, src map[string]struct{}) {
+		if len(src) == 0 {
+			return
+		}
+		parents := dst[key]
+		if parents == nil {
+			parents = make(map[string]struct{}, len(src))
+			dst[key] = parents
+		}
+		for id := range src {
+			parents[id] = struct{}{}
+		}
+	}
+	addAttemptNode := func(key string, s *attemptStats) {
+		n := g.Nodes[key]
+		n.Attempts += s.attempts
+		n.AttemptStatus = mergeStatus(n.AttemptStatus, s.status)
+		g.Nodes[key] = n
+		unionParents(nodeParents, key, s.retried)
+	}
+	addAttemptEdge := func(key string, s *attemptStats) {
+		e := g.Edges[key]
+		e.Attempts += s.attempts
+		g.Edges[key] = e
+		unionParents(edgeParents, key, s.retried)
 	}
 
 	for key, c := range a.combos {
@@ -271,6 +412,45 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		} else if key.node != "" {
 			addEdge("route:"+key.route+"|node:"+key.node, c)
 			addEdge("node:"+key.node+"|provider:"+key.provider, c)
+		}
+	}
+
+	// Attempts mirror the request combos, minus entrypoint attribution: an
+	// attempt carries no client model. They obey the same topology filter, so a
+	// node removed from the graph cannot reappear through a stale attempt.
+	for key, s := range a.attempts {
+		if include != nil && !include(key.route, key.node, key.provider) {
+			continue
+		}
+
+		addAttemptNode("provider:"+key.provider, s)
+		if key.node != "" {
+			addAttemptNode("node:"+key.node, s)
+		}
+		routeKey := "route:" + key.route
+		if key.route == "" {
+			routeKey = "unrouted"
+		}
+		addAttemptNode(routeKey, s)
+
+		if key.route == "" {
+			addAttemptEdge("unrouted|provider:"+key.provider, s)
+		} else if key.node != "" {
+			addAttemptEdge("route:"+key.route+"|node:"+key.node, s)
+			addAttemptEdge("node:"+key.node+"|provider:"+key.provider, s)
+		}
+	}
+
+	for key, n := range g.Nodes {
+		if parents := nodeParents[key]; len(parents) > 0 {
+			n.RetriedRequests = int64(len(parents))
+			g.Nodes[key] = n
+		}
+	}
+	for key, e := range g.Edges {
+		if parents := edgeParents[key]; len(parents) > 0 {
+			e.RetriedRequests = int64(len(parents))
+			g.Edges[key] = e
 		}
 	}
 
@@ -384,6 +564,31 @@ func (s *Store) GraphAggregate(ctx context.Context, from, to time.Time) (*Aggreg
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
+	// The pool holds a single connection, so the request rows must be released
+	// before the attempt read can run.
+	if err := rows.Close(); err != nil {
+		return nil, 0, err
+	}
+
+	attempts, err := s.db.QueryContext(ctx, `SELECT request_id, attempt, ts, route, node, provider, status
+		FROM request_attempts WHERE seq <= ? AND seq > 0 AND ts >= ? AND ts < ?`,
+		high, from.UnixMilli(), to.UnixMilli())
+	if err != nil {
+		return nil, 0, err
+	}
+	defer attempts.Close()
+
+	for attempts.Next() {
+		var row GraphAttemptRow
+		if err := attempts.Scan(&row.RequestID, &row.Attempt, &row.TS, &row.Route, &row.Node,
+			&row.Provider, &row.Status); err != nil {
+			return nil, 0, err
+		}
+		agg.AddAttempt(row)
+	}
+	if err := attempts.Err(); err != nil {
+		return nil, 0, err
+	}
 	return agg, high, nil
 }
 
@@ -410,6 +615,38 @@ func (s *Store) ForEachRequestAfter(ctx context.Context, afterSeq int64, fn func
 			return last, err
 		}
 		row.Error = errStr
+		if seq > last {
+			last = seq
+		}
+		fn(row)
+	}
+	if err := rows.Err(); err != nil {
+		return last, err
+	}
+	return last, nil
+}
+
+// ForEachAttemptAfter visits every discarded attempt above afterSeq in
+// insertion order and returns the highest sequence scanned. An attempt reuses
+// its parent request's sequence, so the live path tails both tables with the
+// same watermark; like ForEachRequestAfter it does not filter by ts, because a
+// row outside the window must still advance the cursor.
+func (s *Store) ForEachAttemptAfter(ctx context.Context, afterSeq int64, fn func(GraphAttemptRow)) (int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, request_id, attempt, ts, route, node, provider, status
+		FROM request_attempts WHERE seq > ? ORDER BY seq`, afterSeq)
+	if err != nil {
+		return afterSeq, err
+	}
+	defer rows.Close()
+
+	last := afterSeq
+	for rows.Next() {
+		var seq int64
+		var row GraphAttemptRow
+		if err := rows.Scan(&seq, &row.RequestID, &row.Attempt, &row.TS, &row.Route, &row.Node,
+			&row.Provider, &row.Status); err != nil {
+			return last, err
+		}
 		if seq > last {
 			last = seq
 		}

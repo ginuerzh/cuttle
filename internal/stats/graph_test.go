@@ -251,6 +251,141 @@ func TestGraphTopologyFilter(t *testing.T) {
 	}
 }
 
+func TestGraphCountsAttemptsAndFailures(t *testing.T) {
+	s := newStore(t)
+	ts := time.Now().Add(-time.Minute)
+	// parent request that failed once and was retried into a 502
+	if err := s.Insert(context.Background(), Request{
+		ID: "r1", SID: "r1", TS: ts, Route: "r", Node: "n2", Provider: "p", Status: 502,
+		Attempts: []Attempt{
+			{RequestID: "r1", Attempt: 0, TS: ts, Route: "r", Node: "n1", Provider: "p", Status: 429},
+			{RequestID: "r1", Attempt: 1, TS: ts, Route: "r", Node: "n2", Provider: "p", Status: 503},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.Graph(context.Background(), ts.Add(-time.Hour), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n1 := g.Nodes["node:n1"]
+	if n1.Attempts != 1 || n1.RetriedRequests != 1 || n1.AttemptStatus["429"] != 1 {
+		t.Fatalf("node:n1 = %+v", n1)
+	}
+	n2 := g.Nodes["node:n2"]
+	if n2.Attempts != 1 || n2.FailureStatus["502"] != 1 || n2.AttemptStatus["503"] != 1 {
+		t.Fatalf("node:n2 = %+v", n2)
+	}
+	edge := g.Edges["route:r|node:n1"]
+	if edge.Attempts != 1 || edge.RetriedRequests != 1 {
+		t.Fatalf("edge = %+v", edge)
+	}
+	if got := g.Nodes["provider:p"]; got.Attempts != 2 || got.RetriedRequests != 1 {
+		t.Fatalf("provider:p = %+v", got)
+	}
+}
+
+func TestAggregatorDedupesAttempts(t *testing.T) {
+	a := NewAggregator()
+	row := GraphAttemptRow{RequestID: "r1", TS: 1, Route: "r", Node: "n", Provider: "p", Status: 429}
+	a.AddAttempt(row)
+	a.AddAttempt(row)
+	g := a.Metrics(nil, nil, GraphMetrics{}, true)
+	if n := g.Nodes["node:n"].Attempts; n != 1 {
+		t.Fatalf("attempts = %d, want 1", n)
+	}
+	if n := g.Nodes["node:n"].RetriedRequests; n != 1 {
+		t.Fatalf("retried requests = %d, want 1", n)
+	}
+}
+
+func TestGraphDropsAttemptsOutsideTopology(t *testing.T) {
+	s := newStore(t)
+	ts := time.Now().Add(-time.Minute)
+	if err := s.Insert(context.Background(), Request{
+		ID: "r1", SID: "r1", TS: ts, Route: "r", Node: "n1", Provider: "p", Status: 200,
+		Attempts: []Attempt{{RequestID: "r1", Attempt: 0, TS: ts, Route: "r", Node: "n1", Provider: "p", Status: 429}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hide := func(route, node, provider string) bool { return node != "n1" }
+	g, err := s.GraphWithFilter(context.Background(), ts.Add(-time.Hour), time.Now(), nil, hide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Nodes["node:n1"].Attempts; got != 0 {
+		t.Fatalf("node:n1 attempts = %d, want 0", got)
+	}
+	if _, ok := g.Edges["route:r|node:n1"]; ok {
+		t.Fatal("edge for a filtered-out node must not exist")
+	}
+}
+
+// TestGraphCountsFinalFailuresByStatus pins failureStatus to the final parent
+// row: a failed dial carries status 0 and is keyed as "0", and a request that
+// reached the client is never counted.
+func TestGraphCountsFinalFailuresByStatus(t *testing.T) {
+	s := newStore(t)
+	ts := time.Now().Add(-time.Minute)
+	for _, r := range []Request{
+		{ID: "dial", SID: "dial", TS: ts, Route: "r", Node: "n1", Provider: "p", Error: "dial tcp: connection refused"},
+		{ID: "rate", SID: "rate", TS: ts.Add(time.Second), Route: "r", Node: "n1", Provider: "p", Status: 429, Error: "rate limited"},
+		{ID: "ok", SID: "ok", TS: ts.Add(2 * time.Second), Route: "r", Node: "n1", Provider: "p", Status: 200},
+	} {
+		if err := s.Insert(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := s.Graph(context.Background(), ts.Add(-time.Hour), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := g.Nodes["node:n1"]
+	if len(n.FailureStatus) != 2 || n.FailureStatus["0"] != 1 || n.FailureStatus["429"] != 1 {
+		t.Fatalf("node:n1 failure status = %+v", n.FailureStatus)
+	}
+	if got := g.Nodes["provider:p"].FailureStatus["429"]; got != 1 {
+		t.Fatalf("provider:p failure status = %+v", g.Nodes["provider:p"].FailureStatus)
+	}
+	if got := g.Nodes["route:r"].FailureStatus["0"]; got != 1 {
+		t.Fatalf("route:r failure status = %+v", g.Nodes["route:r"].FailureStatus)
+	}
+
+	// Attempt counters are for discarded attempts only: no attempt rows here.
+	if got := g.Nodes["node:n1"].Attempts; got != 0 {
+		t.Fatalf("node:n1 attempts = %d, want 0", got)
+	}
+	if got := g.Edges["route:r|node:n1"].Attempts; got != 0 {
+		t.Fatalf("route->n1 edge attempts = %d, want 0", got)
+	}
+}
+
+// TestGraphCountsUnroutedAttempts covers a retried request that never had a
+// route: attempts follow the same `unrouted` key and edge as request rows.
+func TestGraphCountsUnroutedAttempts(t *testing.T) {
+	s := newStore(t)
+	ts := time.Now().Add(-time.Minute)
+	if err := s.Insert(context.Background(), Request{
+		ID: "r1", SID: "r1", TS: ts, Provider: "p", Status: 502,
+		Attempts: []Attempt{{RequestID: "r1", Attempt: 0, TS: ts, Provider: "p", Status: 429}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.Graph(context.Background(), ts.Add(-time.Hour), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Nodes["unrouted"]; got.Attempts != 1 || got.RetriedRequests != 1 || got.AttemptStatus["429"] != 1 {
+		t.Fatalf("unrouted = %+v", got)
+	}
+	if got := g.Nodes["provider:p"]; got.Attempts != 1 || got.FailureStatus["502"] != 1 {
+		t.Fatalf("provider:p = %+v", got)
+	}
+	if got := g.Edges["unrouted|provider:p"]; got.Attempts != 1 || got.RetriedRequests != 1 {
+		t.Fatalf("unrouted edge = %+v", got)
+	}
+}
+
 func TestGraphComputesStreamingTokenRate(t *testing.T) {
 	base := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	rows := []GraphRow{

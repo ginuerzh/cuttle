@@ -369,6 +369,14 @@ Entrypoint -> Route -> Node -> Provider model
 - The graph emits `entrypoint:<id>`, `route:<id>`, `node:<id>` and
   `provider:<id>` keys; rows without a route use the literal `unrouted` key.
   Keep the web graph and stats tests aligned.
+- The graph also counts discarded attempts beside requests: `attempts` is one
+  per `request_attempts` row, `retriedRequests` counts distinct parents per
+  graph key, `attemptStatus` is attempts by status, and `failureStatus` is
+  final failed parent rows by status (`"0"` for a failed dial, so a node with
+  retries disabled still has a number). Attempts obey the same `RowFilter` and
+  reach `provider:<id>`, `route:<id>`, `node:<id>` and their edges; entrypoint
+  nodes get the failure counts but no attempt counters, because an attempt
+  carries no client model.
 - Node-forwarded responses carry `X-Cuttle-Request-ID` equal to the stats
   `requestId` (the x `sid`). Gateway-generated 502/503 responses and request-side
   failures without a response are a documented v1 gap.
@@ -401,7 +409,11 @@ Entrypoint -> Route -> Node -> Provider model
   `request_seq`, never by `ts` or `rowid`; a long request can complete after
   its start time, and retention can reuse rowids. `GraphAggregate` seeds the
   window and `ForEachRequestAfter` reads new rows. Deduplicate by request ID
-  so a replaced row cannot double count.
+  so a replaced row cannot double count. `request_attempts` reuses its parent's
+  `seq`, so `ForEachAttemptAfter` tails attempts with the same watermark and
+  they are deduplicated by `(request_id, attempt)`; the two tails keep separate
+  cursors, because a commit landing between the two reads would otherwise let
+  one table's cursor skip the other's row at the same sequence.
 - A live snapshot is cumulative from a fixed `since`. Counts and tokens are
   monotonic between resets; P50/P95 are percentiles over the same window and
   may move either way. Error samples are bounded to 200, and cached
