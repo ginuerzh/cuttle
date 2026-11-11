@@ -102,6 +102,10 @@ type requestView struct {
 	NodeName       string `json:"nodeName"`
 	RouteName      string `json:"routeName"`
 	GatewayKeyName string `json:"gatewayKeyName"`
+	// Attempts shadows stats.Request.Attempts, which is a write-side field. The
+	// request detail fills it; the list leaves it empty, so the key stays out of
+	// list payloads.
+	Attempts []attemptView `json:"attempts,omitempty"`
 }
 
 func (l labelSet) requestView(row stats.Request) requestView {
@@ -111,5 +115,23 @@ func (l labelSet) requestView(row stats.Request) requestView {
 		NodeName:       l.node(row.Node),
 		RouteName:      l.route(row.Route),
 		GatewayKeyName: l.gatewayKey(row.GatewayKey),
+	}
+}
+
+// attemptView is one discarded attempt with the display names of the route,
+// node and provider that served it.
+type attemptView struct {
+	stats.Attempt
+	ProviderName string `json:"providerName"`
+	NodeName     string `json:"nodeName"`
+	RouteName    string `json:"routeName"`
+}
+
+func (l labelSet) attemptView(row stats.Attempt) attemptView {
+	return attemptView{
+		Attempt:      row,
+		ProviderName: l.provider(row.Provider),
+		NodeName:     l.node(row.Node),
+		RouteName:    l.route(row.Route),
 	}
 }

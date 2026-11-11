@@ -1,15 +1,27 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { NodePanel, SessionCard, sessionQuery } from './App';
+import { AttemptCard, mergeNodeActivity, NodePanel, SessionCard, sessionQuery } from './App';
 import { setActiveLang } from './i18n';
-import type { ConfigResponse, RequestRow } from './api/types';
+import type { AttemptRow, ConfigResponse, RequestRow } from './api/types';
 
 beforeEach(() => setActiveLang('zh-CN'));
 
 const metrics = {
-  requests: 10, errors: 0, p50Ms: 3, p95Ms: 5,
+  requests: 10, errors: 0, attempts: 0, retriedRequests: 0, p50Ms: 3, p95Ms: 5,
   inputTokens: 0, outputTokens: 80, cachedTokens: 0,
-  outputTokensPerSecond: 42.34,
+  outputTokensPerSecond: 42.34, lastFailureStatus: 0, lastAttemptStatus: 0,
+};
+
+// A node in a 1h window: one final 429 and two discarded attempts behind two
+// client requests.
+const retryMetrics = {
+  ...metrics,
+  requests: 12,
+  errors: 3,
+  attempts: 2,
+  retriedRequests: 1,
+  attemptStatus: { '429': 2 },
+  failureStatus: { '429': 1 },
 };
 
 const cfg = {
@@ -54,6 +66,93 @@ const base: RequestRow = {
   bytesIn: 100,
   bytesOut: 200,
 };
+
+const attempt: AttemptRow = {
+  requestId: 'r1',
+  attempt: 0,
+  ts: '2026-11-07T10:20:30Z',
+  route: 'r_0000000001',
+  routeName: 'fast',
+  node: 'n_0000000001',
+  nodeName: 'fast',
+  provider: 'p_0000000001',
+  providerName: 'deepseek',
+  status: 429,
+  error: 'rate limit exceeded',
+  errorClass: 'quota',
+  durationMs: 40,
+  bytesIn: 120,
+  bytesOut: 60,
+};
+
+// SSR renders the first pass only: the panel's hooks never run, so the fetch-loaded
+// session and attempt cards are asserted in App.dom.test.tsx. The metrics-derived
+// summary and the dead-badge tooltip are visible here.
+describe('NodePanel retry attempts', () => {
+  it('summarises the discarded attempts of the window', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel config={cfg} id="node:n_0000000001" label="fast" metrics={retryMetrics} since="" rangeMs={3_600_000} />,
+    );
+
+    expect(html).toContain('重试尝试');
+    expect(html).toContain('429×2');
+    expect(html).toContain('重试请求');
+  });
+
+  it('omits the attempt summary when the window has none', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel config={cfg} id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+
+    expect(html).not.toContain('重试尝试');
+  });
+
+  it('explains the dead badge with the failures and the discarded attempts', () => {
+    const html = renderToStaticMarkup(
+      <NodePanel config={cfg} id="node:n_0000000001" metrics={retryMetrics} since="" rangeMs={3_600_000} dead />,
+    );
+
+    expect(html).toContain('aria-label="dead"');
+    expect(html).toContain('title="失败 1（429×1）· 重试丢弃 2"');
+  });
+});
+
+describe('AttemptCard', () => {
+  it('marks the card as a retry attempt with the upstream status and message', () => {
+    const html = renderToStaticMarkup(<AttemptCard row={attempt} />);
+
+    expect(html).toContain('ant-card');
+    expect(html).toContain('重试尝试');
+    expect(html).toContain('429');
+    expect(html).toContain('上游尝试');
+    expect(html).toContain('rate limit exceeded');
+    expect(html).toContain('deepseek');
+  });
+
+  it('shows a failed dial without a status', () => {
+    const html = renderToStaticMarkup(
+      <AttemptCard row={{ ...attempt, status: 0, error: 'dial tcp: connection refused', errorClass: 'network' }} />,
+    );
+
+    expect(html).toContain('连接失败');
+    expect(html).toContain('dial tcp: connection refused');
+  });
+});
+
+describe('mergeNodeActivity', () => {
+  it('lists requests and attempts newest first and keeps a request before its own attempts', () => {
+    const older = { ...base, requestId: 'r0', ts: '2026-11-07T10:00:00Z' };
+    const newer = { ...base, requestId: 'r2', ts: '2026-11-07T11:00:00Z' };
+    const merged = mergeNodeActivity([base, older, newer], [attempt]);
+
+    expect(merged.map((item) => (item.kind === 'request' ? item.request.requestId : `attempt:${item.attempt.requestId}`))).toEqual([
+      'r2',
+      'r1',
+      'attempt:r1',
+      'r0',
+    ]);
+  });
+});
 
 describe('NodePanel', () => {
   it('shows output speed for a binding node', () => {
@@ -102,7 +201,8 @@ describe('NodePanel', () => {
 
     expect(html).toContain('anticon-api');
     expect(html).toContain('var(--gw-text-muted)');
-    expect(html).toContain('title="dead"');
+    expect(html).toContain('aria-label="dead"');
+    expect(html).toContain('title="窗口内没有失败记录"');
     expect(html).not.toContain('ant-badge-status-error');
   });
 

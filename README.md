@@ -812,11 +812,22 @@ entity an explicit id if that matters to you.
 
 Each row carries `retries`, the number of extra upstream attempts made for that
 client request (`0` when the first attempt was the only one). It counts extra
-attempts only: one client request is always one row, a discarded attempt creates
-no row and no rollup entry, and rollups, graphs and filters are unchanged.
-Sessions tags a retried row with `重试 N 次`, and the detail panel repeats the
-count. Body capture keeps only the final attempt, so a captured pair describes
-the response the client actually received.
+attempts only: one client request is always one row, and rollups, graphs and
+filters are unchanged. The discarded attempts themselves are stored beside the
+row and exposed through `GET /api/attempts` and the request detail's `attempts`
+array. Sessions tags a retried row with `重试 N 次`, and the detail panel repeats
+the count and lists the discarded attempts under `上游尝试`. The node panel merges
+the discarded attempts of the window into the session list newest first, tagging
+them `重试尝试` (clicking one opens its parent request), and summarises them beside
+the request count; the dead badge's tooltip explains the node with
+`失败 N（…）· 重试丢弃 M · 最后 HH:MM:SS <status>`, or `窗口内没有失败记录` when
+the window has neither.
+Body capture keeps only the final attempt, so a captured pair describes the
+response the client actually received.
+
+Attempts are emitted by the `github.com/go-gost/x` release that writes the
+`http.attempts` recorder field: with the pinned `v0.31.1` these lists stay empty
+and the attempt counters read zero, so cuttle behaves exactly as before.
 
 Hourly `key_rollups` store requests, errors and input/output/cached tokens per
 gateway key id for the per-key usage view. They use the same
@@ -902,6 +913,7 @@ GET  /api/alerts
 GET|PUT /api/topology/positions
 GET  /api/requests
 GET  /api/requests/{id}
+GET  /api/attempts
 GET  /api/provider-usage
 GET|POST      /api/captures
 DELETE        /api/captures/{id}
@@ -914,7 +926,16 @@ PUT  /api/admin/password
 `providerName`/`nodeName`/`routeName`/`gatewayKeyName` labels (the current config
 wins over the last stored label; an unknown entity falls back to its id); the
 Sessions list and detail show those names. Request detail includes an optional
-`capture` object; the list only reports a cheap `hasCapture` flag.
+`capture` object and an optional `attempts` array of the discarded upstream
+attempts of that request (absent when there were none); the list only reports a
+cheap `hasCapture` flag and never carries `attempts`.
+`GET /api/attempts` lists the discarded attempts of the window newest first with
+`from`/`to` plus the `route=<id>`, `node=<id>`, `provider=<id>`,
+`errorClass=<class>`, `status=<code>`, `limit` and `offset` filters. An attempt
+adds `providerName`/`nodeName`/`routeName` labels, keeps its parent's `ts`, and
+is never a request row of its own: one client request stays one row in
+`GET /api/requests`. `status` filters only on a positive value, because an
+attempt that failed before a response stores `0`.
 `GET /api/stats/errors` aggregates the window by `error_class`, provider, route
 and client model, and returns top message fingerprints plus hourly buckets.
 `GET /api/alerts` evaluates the last 15 minutes for auth failures, an error-rate

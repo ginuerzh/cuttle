@@ -6,7 +6,7 @@ import { isTruncated } from '../capture';
 import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { errorClassLabel, statusLabel } from '../requestLabels';
-import { formatDateTime } from '../time';
+import { formatDateTime, formatDurationMs } from '../time';
 import { useIsMobile } from './useIsMobile';
 
 function Preview({ label, text, truncated }: { label: string; text?: string; truncated?: boolean }) {
@@ -49,6 +49,7 @@ async function copyID(id: string) {
 /** One request's full detail; shared by the Sessions page and the monitor panel. */
 export function RequestDetail({ request }: { request: RequestRow }) {
   const cap = request.capture;
+  const attempts = request.attempts ?? [];
   const hasPreview = !!(
     cap?.requestOriginal ||
     cap?.requestRewritten ||
@@ -122,6 +123,32 @@ export function RequestDetail({ request }: { request: RequestRow }) {
             : '—'}
         </Descriptions.Item>
       </Descriptions>
+
+      {attempts.length > 0 ? (
+        <>
+          <Typography.Title level={5} style={{ marginTop: 20 }}>
+            {t('上游尝试')}
+          </Typography.Title>
+          <Descriptions size="small" column={1} bordered style={{ marginBottom: 12 }}>
+            {attempts.map((attempt) => (
+              <Descriptions.Item
+                key={`${attempt.requestId}:${attempt.attempt}`}
+                label={`#${attempt.attempt + 1}`}
+              >
+                <div style={{ wordBreak: 'break-word' }}>
+                  <Tag color={attempt.status === 0 || attempt.status >= 400 ? 'red' : attempt.status >= 300 ? 'orange' : 'green'}>
+                    {attempt.status === 0 ? t('连接失败') : attempt.status}
+                  </Tag>
+                  {attempt.error || '—'}
+                </div>
+                <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
+                  {`${formatDurationMs(attempt.durationMs)} · ${attempt.routeName || attempt.route || 'unrouted'} · ${attempt.providerName || attempt.provider || '—'}${attempt.node ? `/${attempt.nodeName || attempt.node}` : ''}`}
+                </Typography.Text>
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+        </>
+      ) : null}
 
       <Typography.Title level={5} style={{ marginTop: 20 }}>
         {t('捕获详情')}

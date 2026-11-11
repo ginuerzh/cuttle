@@ -5,8 +5,19 @@ export function formatDateTime(value?: string | Date | null): string {
   if (Number.isNaN(date.getTime())) {
     return typeof value === 'string' ? value : '—';
   }
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${formatClock(date)}`;
+}
+
+/** Format a timestamp as local HH:mm:ss, for a label that already names the day. */
+export function formatClock(value?: string | Date | number | null): string {
+  if (value === undefined || value === null || value === '') return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
 }
 
 /** Format a duration in milliseconds, switching to seconds to avoid a "kms" suffix. */

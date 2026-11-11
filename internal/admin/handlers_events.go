@@ -134,7 +134,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		client.close(websocket.CloseInternalServerErr, err.Error())
 		return
 	}
-	lastRowID := high
+	lastRequestSeq := high
+	// Attempts reuse their parent's sequence, but the two tables are tailed
+	// with separate cursors: a transaction committing between the two reads
+	// would otherwise let one table's cursor skip the other's row.
+	lastAttemptSeq := high
 	prev := agg.Metrics(cfg.ResolveEntrypointID, cfg.TopologyIncludes, stats.GraphMetrics{}, true)
 	lastPct := time.Now()
 	if err := writeEvent(client, eventMessage{
@@ -177,7 +181,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			sinceMs := since.UnixMilli()
-			last, err := s.stats.ForEachRequestAfter(ctx, lastRowID, func(row stats.GraphRow) {
+			last, err := s.stats.ForEachRequestAfter(ctx, lastRequestSeq, func(row stats.GraphRow) {
 				// Requests are attributed by start time. Rows inserted above the
 				// cursor are safe to consider; a start time in the future would
 				// require a clock jump, and dropping it here would lose it
@@ -192,7 +196,21 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				}
 				continue
 			}
-			lastRowID = last
+			lastRequestSeq = last
+
+			attemptsLast, err := s.stats.ForEachAttemptAfter(ctx, lastAttemptSeq, func(row stats.GraphAttemptRow) {
+				// Attempts share the parent's start time; the same rule applies.
+				if row.TS >= sinceMs {
+					agg.AddAttempt(row)
+				}
+			})
+			if err != nil {
+				if writeEvent(client, eventMessage{Type: "error", Error: err.Error()}) != nil {
+					return
+				}
+				continue
+			}
+			lastAttemptSeq = attemptsLast
 
 			cfg := s.monitorConfig()
 			recompute := s.wsPctInterval <= 0 || time.Since(lastPct) >= s.wsPctInterval

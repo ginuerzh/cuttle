@@ -250,6 +250,16 @@ Entrypoint -> Route -> Node -> Provider model
   sockets with 4401 on logout or session expiry, 4408 when an open session
   exceeds `wsMaxAge`, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
+- `GET /api/attempts` lists the discarded upstream attempts of the window
+  newest first, filtered by `from`/`to`, `route=<id>`, `node=<id>`,
+  `provider=<id>`, `status=<code>`, `errorClass=<class>`, `limit` and `offset`.
+  An attempt row is `stats.Attempt` plus resolved
+  `providerName`/`nodeName`/`routeName` labels; it keeps its parent's `ts`,
+  carries no client model (so there is no entrypoint filter) and is never a
+  request row. `status` filters only a positive value, because an attempt that
+  failed before a response stores `0` and `0` therefore means "any status".
+  `GET /api/requests/{id}` carries its attempts as an `attempts` array and omits
+  the key when there are none; `GET /api/requests` never carries the key.
 - Create endpoints return `201 Created` with an empty body. The web client must
   tolerate empty success responses.
 - Errors are JSON objects with an `error` string.
@@ -369,6 +379,14 @@ Entrypoint -> Route -> Node -> Provider model
 - The graph emits `entrypoint:<id>`, `route:<id>`, `node:<id>` and
   `provider:<id>` keys; rows without a route use the literal `unrouted` key.
   Keep the web graph and stats tests aligned.
+- The graph also counts discarded attempts beside requests: `attempts` is one
+  per `request_attempts` row, `retriedRequests` counts distinct parents per
+  graph key, `attemptStatus` is attempts by status, and `failureStatus` is
+  final failed parent rows by status (`"0"` for a failed dial, so a node with
+  retries disabled still has a number). Attempts obey the same `RowFilter` and
+  reach `provider:<id>`, `route:<id>`, `node:<id>` and their edges; entrypoint
+  nodes get the failure counts but no attempt counters, because an attempt
+  carries no client model.
 - Node-forwarded responses carry `X-Cuttle-Request-ID` equal to the stats
   `requestId` (the x `sid`). Gateway-generated 502/503 responses and request-side
   failures without a response are a documented v1 gap.
@@ -384,9 +402,9 @@ Entrypoint -> Route -> Node -> Provider model
   id, and `Filter.GatewayKey` maps to `GET /api/requests?key=<id>` (exact id).
 - `requests.retries` is additive (`INTEGER NOT NULL DEFAULT 0`) and counts extra
   upstream attempts only: `0` means the first attempt served the request. One
-  client request is one row and one set of rollups; never insert a row per
-  attempt. Body capture keeps the final attempt only, selected through the
-  rewriter's `attempt` metadata.
+  `requests` row per client request; discarded attempts go to `request_attempts`
+  and never to `requests`/`rollups`. Body capture keeps the final attempt only,
+  selected through the rewriter's `attempt` metadata.
 - Hourly `key_rollups` (bucket + gateway_key id) store per-key requests, errors
   and token counters. Insert them only for authenticated requests, in the same
   transaction as `rollups`. `Cleanup` deletes them with the same
@@ -401,7 +419,11 @@ Entrypoint -> Route -> Node -> Provider model
   `request_seq`, never by `ts` or `rowid`; a long request can complete after
   its start time, and retention can reuse rowids. `GraphAggregate` seeds the
   window and `ForEachRequestAfter` reads new rows. Deduplicate by request ID
-  so a replaced row cannot double count.
+  so a replaced row cannot double count. `request_attempts` reuses its parent's
+  `seq`, so `ForEachAttemptAfter` tails attempts with the same watermark and
+  they are deduplicated by `(request_id, attempt)`; the two tails keep separate
+  cursors, because a commit landing between the two reads would otherwise let
+  one table's cursor skip the other's row at the same sequence.
 - A live snapshot is cumulative from a fixed `since`. Counts and tokens are
   monotonic between resets; P50/P95 are percentiles over the same window and
   may move either way. Error samples are bounded to 200, and cached
@@ -442,6 +464,18 @@ Entrypoint -> Route -> Node -> Provider model
   preset sets the initial lookback (`since = now - range`); Reset clears the
   display and reconnects with `reset=1`; the status shows the last update and
   the session start.
+- The node panel merges the window's sessions with the discarded attempts,
+  newest first, listing a request before its own attempts. An attempt card
+  (`重试尝试`) opens its parent request's detail through `getRequest`, because an
+  attempt has no row of its own. An entrypoint panel fetches no attempts: the
+  admin API cannot filter attempts by entrypoint. The request detail drawer
+  (shared with the Sessions page) lists the loaded `attempts` array under
+  `上游尝试` and omits the section when there are none. The dead badge keeps
+  `aria-label="dead"` and its `title` is `deadTitle(metrics)` (shared with the
+  topology node, which falls back to the plain `dead` when the window has no
+  failure data) — `失败 N（429×2, 503×1）· 重试丢弃 M · 最后 03:00:16 429`, a
+  section with a zero count omitted, `最后 …` only when the window has a
+  timestamp, and `窗口内没有失败记录` when the window has neither.
 - Requests show client model and target model; there is no logical model.
 - The navigation labels the `gateway-keys` page `密钥` between Entrypoints and
   Sessions. The page heading, dialogs and Sessions filter keep `网关密钥`. It
@@ -521,6 +555,10 @@ GOWORK=off go test ./internal/stats -count=1
   retry work is on x `master` as of `v0.31.1`. The Go gate still runs with
   `GOWORK=off` inside the parent workspace, so the tagged module is what gets
   built and tested.
+- Recording discarded attempts requires a newer `github.com/go-gost/x` that
+  emits the `http.attempts` recorder field; with the pinned `v0.31.1` the
+  attempt lists stay empty, the attempt counters read zero, and cuttle behaves
+  exactly as before.
 - Admin config writes require a writable config file. With a Docker `:ro` mount,
   console edits fail; edit the host file and send `SIGHUP`. Such a hand-written
   file must keep its `id` lines when renaming: dropping one changes the derived

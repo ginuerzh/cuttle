@@ -7,6 +7,7 @@ import {
   deleteNode,
   deleteProvider,
   deleteRoute,
+  getAttempts,
   getGatewayKeyUsage,
   getProviderModels,
   getProviderUsage,
@@ -238,6 +239,46 @@ it('addresses every entity mutation and lookup by id', async () => {
     'POST /api/gateway-keys/gk_3k9x2m4q7a/rotate',
     'DELETE /api/gateway-keys/gk_3k9x2m4q7a',
   ]);
+});
+
+it('builds the attempts query from the present filters only', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  await getAttempts({
+    from: new Date('2026-11-11T00:00:00Z'),
+    to: new Date('2026-11-11T01:00:00Z'),
+    limit: 50,
+    node: 'n_0000000001',
+    status: 429,
+  });
+
+  const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
+  expect(url.startsWith('/api/attempts?')).toBe(true);
+  const params = new URL(url, 'http://localhost').searchParams;
+  expect(params.get('from')).toBe('2026-11-11T00:00:00.000Z');
+  expect(params.get('to')).toBe('2026-11-11T01:00:00.000Z');
+  expect(params.get('limit')).toBe('50');
+  expect(params.get('node')).toBe('n_0000000001');
+  expect(params.get('status')).toBe('429');
+  expect(params.get('route')).toBeNull();
+  expect(params.get('provider')).toBeNull();
+  expect(params.get('errorClass')).toBeNull();
+  expect(params.get('offset')).toBeNull();
+});
+
+it('omits the attempt status filter for 0, which means any status', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () => new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  await getAttempts({ from: new Date(0), to: new Date(0), status: 0 });
+
+  const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
+  const params = new URL(url, 'http://localhost').searchParams;
+  expect(params.get('status')).toBeNull();
+  expect(params.get('limit')).toBe('100');
 });
 
 it('sends entity ids as request filters', async () => {

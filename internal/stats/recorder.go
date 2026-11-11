@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -21,6 +22,72 @@ type Recorder struct {
 	facts   *Facts
 	log     logger.Logger
 	capture *capture.Manager
+}
+
+// recordedAttempt, recordedHTTP and recordedAttemptHost decode the discarded
+// attempts an upstream retry leaves in the recorder payload. The mapping is
+// local on purpose: cuttle is pinned to an x version whose recorder package has
+// no attempt type, and a payload from an older x simply has no http.attempts.
+type recordedAttempt struct {
+	Attempt        int                 `json:"attempt"`
+	Node           string              `json:"node"`
+	StatusCode     int                 `json:"statusCode"`
+	Error          string              `json:"error,omitempty"`
+	DurationMS     int64               `json:"durationMs"`
+	BytesIn        int64               `json:"bytesIn"`
+	BytesOut       int64               `json:"bytesOut"`
+	ResponseHeader map[string][]string `json:"responseHeader,omitempty"`
+	ResponseBody   []byte              `json:"responseBody,omitempty"`
+}
+
+type recordedHTTP struct {
+	Attempts []recordedAttempt `json:"attempts"`
+}
+
+type recordedAttemptHost struct {
+	HTTP *recordedHTTP `json:"http"`
+}
+
+// decodeAttempts maps the recorded attempts onto the parent request, falling
+// back to its route, node and provider for any component an attempt did not
+// name.
+func decodeAttempts(req Request, b []byte) []Attempt {
+	var host recordedAttemptHost
+	if err := json.Unmarshal(b, &host); err != nil || host.HTTP == nil || len(host.HTTP.Attempts) == 0 {
+		return nil
+	}
+	out := make([]Attempt, 0, len(host.HTTP.Attempts))
+	for _, a := range host.HTTP.Attempts {
+		route, provider, node := parseNodeName(a.Node)
+		if route == "" {
+			route = req.Route
+		}
+		if provider == "" {
+			provider = req.Provider
+		}
+		if node == "" {
+			node = req.Node
+		}
+		msg := firstNonEmpty(a.Error, attemptMessage(a.ResponseBody))
+		out = append(out, Attempt{
+			RequestID:       req.ID,
+			Attempt:         a.Attempt,
+			TS:              req.TS,
+			Route:           route,
+			Node:            node,
+			Provider:        provider,
+			GatewayKey:      req.GatewayKey,
+			Status:          a.StatusCode,
+			Error:           msg,
+			ErrorClass:      ClassifyError(a.StatusCode, msg, ""),
+			DurationMS:      a.DurationMS,
+			BytesIn:         a.BytesIn,
+			BytesOut:        a.BytesOut,
+			ResponseHeaders: captureHeaders(http.Header(a.ResponseHeader)),
+			BodyPreview:     string(a.ResponseBody),
+		})
+	}
+	return out
 }
 
 // NewRecorder creates a recorder that writes one request row per call.
@@ -125,6 +192,7 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 	}
 	req.Truncated = isTruncation(strings.ToLower(req.Error)) ||
 		(req.Stream && req.Error == "" && req.Status == 200 && !req.SawDone && req.FinishReason == "")
+	req.Attempts = decodeAttempts(req, b)
 
 	var cap *capture.Capture
 	if r.capture != nil {

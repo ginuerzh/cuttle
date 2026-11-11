@@ -188,6 +188,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/provider-usage", s.handleProviderUsage)
 	api.HandleFunc("GET /api/requests", s.handleRequests)
 	api.HandleFunc("GET /api/requests/{id}", s.handleRequest)
+	api.HandleFunc("GET /api/attempts", s.handleAttempts)
 	api.HandleFunc("GET /api/captures", s.handleListCaptures)
 	api.HandleFunc("POST /api/captures", s.handleCreateCapture)
 	api.HandleFunc("DELETE /api/captures/{id}", s.handleDeleteCapture)

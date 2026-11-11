@@ -276,6 +276,69 @@ func TestEventsResetReconnectsAtZero(t *testing.T) {
 	waitForRequests(t, conn, 1)
 }
 
+// TestEventsTailsAttempts pins the live attempt tail: a retried request
+// recorded after the snapshot must carry its discarded attempt, its final
+// failure status and the attempt edge into the next snapshot.
+func TestEventsTailsAttempts(t *testing.T) {
+	s, rel, ts := newEventsAdmin(t)
+	s.mu.Lock()
+	s.cfg.Routes = []gwconfig.Route{{ID: "r_0000000001", Name: "route", Nodes: []string{"n_0000000001"}}}
+	s.cfg.Nodes = []gwconfig.Node{{ID: "n_0000000001", Name: "node", Provider: "p_0000000001"}}
+	s.mu.Unlock()
+
+	client, _ := login(t, ts.URL)
+	conn, _, err := dialEvents(t, ts.URL, client.Jar, "?range=1h", ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	first := readSnapshot(t, conn)
+	if got := first.Metrics.Nodes["node:n_0000000001"].Attempts; got != 0 {
+		t.Fatalf("initial attempts = %d, want 0", got)
+	}
+
+	if err := rel.store.Insert(context.Background(), stats.Request{
+		ID: "retried", TS: time.Now(), Route: "r_0000000001", Node: "n_0000000001",
+		Provider: "p_0000000001", Status: 502,
+		Attempts: []stats.Attempt{{
+			RequestID: "retried", Attempt: 0, Route: "r_0000000001",
+			Node: "n_0000000001", Provider: "p_0000000001", Status: 429,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	snap := waitForNodeAttempts(t, conn, "node:n_0000000001", 1)
+	node := snap.Metrics.Nodes["node:n_0000000001"]
+	if node.AttemptStatus["429"] != 1 || node.RetriedRequests != 1 || node.FailureStatus["502"] != 1 {
+		t.Fatalf("node = %+v", node)
+	}
+	if got := snap.Metrics.Edges["route:r_0000000001|node:n_0000000001"]; got.Attempts != 1 || got.RetriedRequests != 1 {
+		t.Fatalf("edge = %+v", got)
+	}
+}
+
+func waitForNodeAttempts(t *testing.T, conn *websocket.Conn, node string, want int64) eventSnapshot {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	last := int64(0)
+	for {
+		snap := readSnapshot(t, conn)
+		got := snap.Metrics.Nodes[node].Attempts
+		if got < last {
+			t.Fatalf("attempts decreased: %d -> %d", last, got)
+		}
+		last = got
+		if got == want {
+			return snap
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("attempts on %s = %d, want %d", node, got, want)
+		}
+	}
+}
+
 func TestEventsClosesOnLogout(t *testing.T) {
 	_, _, ts := newEventsAdmin(t)
 	client, csrf := login(t, ts.URL)

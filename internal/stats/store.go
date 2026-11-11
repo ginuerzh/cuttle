@@ -60,6 +60,9 @@ type Request struct {
 	BytesOut        uint64           `json:"bytesOut"`
 	HasCapture      bool             `json:"hasCapture,omitempty"`
 	Capture         *capture.Capture `json:"capture,omitempty"`
+	// Attempts holds the discarded attempts of this client request when it
+	// arrived for recording; it is never selected back into Request.
+	Attempts []Attempt `json:"attempts,omitempty"`
 }
 
 // Filter selects requests. Provider, Route, Node and GatewayKey are entity ids:
@@ -267,6 +270,29 @@ func (s *Store) migrate(fresh bool) error {
 			cached_tokens INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (bucket, gateway_key)
 		)`,
+		`CREATE TABLE IF NOT EXISTS request_attempts (
+			request_id TEXT NOT NULL,
+			attempt    INTEGER NOT NULL,
+			seq        INTEGER NOT NULL DEFAULT 0,
+			ts         INTEGER NOT NULL,
+			route      TEXT NOT NULL DEFAULT '',
+			node       TEXT NOT NULL DEFAULT '',
+			provider   TEXT NOT NULL DEFAULT '',
+			gateway_key TEXT NOT NULL DEFAULT '',
+			status     INTEGER NOT NULL DEFAULT 0,
+			error      TEXT NOT NULL DEFAULT '',
+			error_class TEXT NOT NULL DEFAULT '',
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			bytes_in   INTEGER NOT NULL DEFAULT 0,
+			bytes_out  INTEGER NOT NULL DEFAULT 0,
+			upstream   TEXT NOT NULL DEFAULT '',
+			response_headers TEXT NOT NULL DEFAULT '{}',
+			body_preview TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (request_id, attempt)
+		)`,
+		`CREATE INDEX IF NOT EXISTS request_attempts_seq ON request_attempts(seq)`,
+		`CREATE INDEX IF NOT EXISTS request_attempts_node ON request_attempts(node, ts)`,
+		`CREATE INDEX IF NOT EXISTS request_attempts_ts ON request_attempts(ts)`,
 		`CREATE TABLE IF NOT EXISTS request_seq (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			value INTEGER NOT NULL DEFAULT 0
@@ -938,6 +964,9 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 	if err != nil {
 		return err
 	}
+	if err := insertAttempts(ctx, tx, r, seq); err != nil {
+		return err
+	}
 
 	bucket := r.TS.UTC().Truncate(time.Hour).Format(time.RFC3339)
 	failed := 0
@@ -1297,10 +1326,14 @@ func (s *Store) percentile(ctx context.Context, from, to time.Time, n int64, p f
 	return v
 }
 
-// Cleanup deletes detail rows older than requestsBefore and rollups older than
-// rollupsBefore.
+// Cleanup deletes detail rows (requests and their attempts) older than
+// requestsBefore and rollups older than rollupsBefore.
 func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore, capturesBefore time.Time) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM requests WHERE ts < ?`,
+		requestsBefore.UnixMilli()); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM request_attempts WHERE ts < ?`,
 		requestsBefore.UnixMilli()); err != nil {
 		return err
 	}

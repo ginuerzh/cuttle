@@ -158,6 +158,85 @@ func TestGraphAggregateCursorAdvancesPastOutOfWindowRows(t *testing.T) {
 	}
 }
 
+// TestForEachAttemptAfterFollowsTheParentSequence covers the live attempt
+// tail: an attempt recorded after the snapshot is delivered with its parent's
+// sequence, a row outside the window still advances the cursor, and a parent
+// reinserted by INSERT OR REPLACE does not double count its attempt.
+func TestForEachAttemptAfterFollowsTheParentSequence(t *testing.T) {
+	s := newStore(t)
+	base := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	from, to := base, base.Add(time.Hour)
+
+	if err := s.Insert(context.Background(), Request{
+		ID: "first", TS: base.Add(time.Minute), Route: "r", Node: "n", Provider: "p", Status: 200,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	agg, high, err := s.GraphAggregate(context.Background(), from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := agg.Metrics(nil, nil, GraphMetrics{}, true).Nodes["node:n"]; got.Attempts != 0 {
+		t.Fatalf("snapshot attempts = %d, want 0", got.Attempts)
+	}
+
+	for _, r := range []Request{
+		{ID: "live", TS: base.Add(2 * time.Minute), Route: "r", Node: "n2", Provider: "p", Status: 502,
+			Attempts: []Attempt{{RequestID: "live", Attempt: 1, Route: "r", Node: "n1", Provider: "p", Status: 429}}},
+		{ID: "stale", TS: base.Add(-2 * time.Hour), Route: "r", Node: "n3", Provider: "p", Status: 429,
+			Attempts: []Attempt{{RequestID: "stale", Attempt: 0, Route: "r", Node: "n3", Provider: "p", Status: 429}}},
+	} {
+		if err := s.Insert(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var rows []GraphAttemptRow
+	last, err := s.ForEachAttemptAfter(context.Background(), high, func(row GraphAttemptRow) {
+		rows = append(rows, row)
+		if row.TS >= from.UnixMilli() {
+			agg.AddAttempt(row)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("tail rows = %d, want 2", len(rows))
+	}
+	if got := rows[0]; got.RequestID != "live" || got.Attempt != 1 || got.Node != "n1" || got.Status != 429 {
+		t.Fatalf("first tail row = %+v", got)
+	}
+	if last <= high {
+		t.Fatalf("cursor = %d, want greater than %d", last, high)
+	}
+	got := agg.Metrics(nil, nil, GraphMetrics{}, true)
+	if n := got.Nodes["node:n1"].Attempts; n != 1 {
+		t.Fatalf("node:n1 attempts = %d, want 1", n)
+	}
+	if _, ok := got.Nodes["node:n3"]; ok {
+		t.Fatalf("out-of-window attempt was counted: %+v", got.Nodes["node:n3"])
+	}
+
+	// The recorder replaces the parent row, so both rows get a new sequence and
+	// the same attempt is handed over again.
+	if err := s.Insert(context.Background(), Request{
+		ID: "live", TS: base.Add(2 * time.Minute), Route: "r", Node: "n2", Provider: "p", Status: 502,
+		Attempts: []Attempt{{RequestID: "live", Attempt: 1, Route: "r", Node: "n1", Provider: "p", Status: 429}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ForEachAttemptAfter(context.Background(), last, func(row GraphAttemptRow) {
+		agg.AddAttempt(row)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got = agg.Metrics(nil, nil, GraphMetrics{}, true)
+	if n := got.Nodes["node:n1"].Attempts; n != 1 {
+		t.Fatalf("reinserted attempt double counted: attempts = %d, want 1", n)
+	}
+}
+
 func TestAggregatorDeduplicatesRequestID(t *testing.T) {
 	agg := NewAggregator()
 	row := GraphRow{
