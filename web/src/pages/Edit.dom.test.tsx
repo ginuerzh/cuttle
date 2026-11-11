@@ -39,6 +39,13 @@ function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
+function selectValue(container: HTMLElement, label: string): string {
+  const item = Array.from(container.querySelectorAll('.ant-form-item')).find(
+    (el) => el.querySelector('.ant-form-item-label')?.textContent?.trim() === label,
+  );
+  return item?.querySelector('.ant-select-selection-item')?.textContent?.trim() ?? '';
+}
+
 function typeInto(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
   act(() => {
@@ -253,6 +260,26 @@ describe('NodeForm key pin', () => {
     const [id, payload] = updateNodeMock.mock.calls[0];
     expect(id).toBe('n_0000000001');
     expect(payload).toMatchObject({ key: 'pk_0000000002' });
+  });
+
+  it('fills the provider select when the node is connected from the topology', async () => {
+    const draft: Node = { ...node, provider: '', model: 'm1', key: '' };
+    const { container, root } = render(
+      <NodeForm node={draft} config={config} onSaved={async () => undefined} />,
+    );
+    expect(selectValue(container, 'provider')).toBe('');
+
+    await act(async () => {
+      root.render(
+        <NodeForm
+          node={{ ...draft, provider: 'p_0000000001' }}
+          config={config}
+          onSaved={async () => undefined}
+        />,
+      );
+    });
+
+    expect(selectValue(container, 'provider')).toBe('p');
   });
 
   it('renames a node without changing its id', async () => {

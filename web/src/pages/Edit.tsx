@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -866,7 +866,19 @@ export function NodeForm({
 
   const providerOptions = config.providers.map((p) => ({ value: p.id, label: p.name }));
   const watchedProvider = Form.useWatch('provider', form) as string | undefined;
-  const [initialProvider] = useState(node.provider || undefined);
+  const [initialProvider, setInitialProvider] = useState(node.provider || undefined);
+  // A topology drag-connect saves the provider outside this form. Re-sync the
+  // field so the open panel shows the provider the line was drawn to, without
+  // remounting (which would drop the operator's unsaved edits).
+  const syncedProvider = useRef(node.provider);
+  useEffect(() => {
+    if (syncedProvider.current === node.provider) return;
+    syncedProvider.current = node.provider;
+    setInitialProvider(node.provider || undefined);
+    // The connect helper drops a key that the new provider does not own, so the
+    // field must follow it or the next save would send a foreign key id.
+    form.setFieldsValue({ provider: node.provider || undefined, key: node.key ?? '' });
+  }, [form, node.provider]);
   // Only fall back to the stored id before the field is touched: a cleared
   // provider must read as cleared, or the model stays required and the draft
   // can never be saved.
