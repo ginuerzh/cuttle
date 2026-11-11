@@ -57,15 +57,15 @@ Entrypoint ──► Route ──► Node ──► Provider model
 ```
 
 - An **entrypoint** is the client-facing ingress. It has a name, a non-empty
-  list of model globs, and exactly one route.
+  list of model globs, and one route. The route may be empty while drafting.
 - Entrypoints are evaluated in declaration order. The first entrypoint with a
   matching glob wins; `*` is the explicit catch-all.
 - Globs are case-insensitive. `*` is the only wildcard.
 - A **route** contains only nodes, a selection strategy and an optional retry
   budget. It does not match anything by itself.
-- A **node** binds one provider and one provider model. `backup` marks fallback
-  nodes; `weight` controls the round-robin share. `key` optionally pins one
-  provider key by id; without it the node spreads across every enabled key.
+- A **node** binds at most one provider and one provider model. `backup` marks
+  fallback nodes; `weight` controls the round-robin share. `key` optionally pins
+  one provider key by id; without it the node spreads across every enabled key.
 - A node's target API is `auto` by default. The gateway matches the inbound wire
   API (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, or
   `/v1beta/models/...`) to a configured provider API and converts only when the
@@ -73,6 +73,11 @@ Entrypoint ──► Route ──► Node ──► Provider model
 - Disabling a provider, a node, or a provider model removes that node from the
   compiled route. A route with no usable nodes fails the request instead of
   passing the client model through.
+- An entrypoint without a route, or a node without a provider, is a **draft**:
+  it is saved, shown on the topology and shared with every admin, but it serves
+  no traffic. A request that matches a draft entrypoint fails (502) and is
+  recorded as unrouted; it never falls through to a later entrypoint. Skip a
+  trailing `*` draft entrypoint or it will claim every model.
 - If no entrypoint matches, the request is unrouted and returns an error.
 
 > The routing model is intentionally strict. Old configurations using
@@ -345,9 +350,9 @@ when `admin.passwordHash` is set.
 | Page | What it manages |
 | --- | --- |
 | Providers | Provider type, API base URLs, keys, model catalog, disabled models, health probes |
-| Nodes | Provider, one model, backup flag, weight, enabled switch |
+| Nodes | Provider (empty while drafting), one model, backup flag, weight, enabled switch |
 | Routes | Ordered node list, selection strategy and the retry budget (`retries` / `retryCodes`) |
-| Entrypoints | Ordered model globs and the route they select |
+| Entrypoints | Ordered model globs and the route they select (empty while drafting) |
 | Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
@@ -373,8 +378,10 @@ creation. Delete and recreate the provider to change them, or edit the config
 file and reload.
 
 The topology view has monitor and edit modes. In monitor mode nodes are fixed;
-in edit mode you can drag an entrypoint onto a route or a route onto a node to
-change the configuration. Node positions are stored in the stats SQLite
+in edit mode you can drag an entrypoint onto a route, a route onto a node or a
+node onto a provider to change the configuration. A draft card is tagged
+`未连接` (not connected); its edge panel offers `断开` to clear the reference
+again. Node positions are stored in the stats SQLite
 database and shared by every admin; `localStorage` keeps a local backup and is
 used if the server cannot be reached.
 
@@ -590,7 +597,7 @@ for short debugging sessions and protect the log stream.
 | `id` | yes | Immutable entrypoint id; assigned by the loader or the console |
 | `name` | yes | Unique display label |
 | `match` | yes | Non-empty list of client model globs |
-| `route` | yes | Existing route id |
+| `route` | no | Existing route id; empty while drafting (the entrypoint then serves no traffic) |
 
 Declaration order is the matching precedence. Globs inside one entrypoint are a
 union.
@@ -715,10 +722,10 @@ Messages to the native endpoint.
 | --- | --- | --- |
 | `id` | yes | Immutable node id |
 | `name` | yes | Unique node display label |
-| `provider` | yes | Existing provider id |
-| `model` | yes | Exactly one provider model ID |
-| `api` | no | `auto` (default), `chat`, `responses`, `anthropic` or `gemini`; a pinned API requires the matching base URL |
-| `key` | no | Pin one provider key id; empty spreads across every enabled key |
+| `provider` | no | Existing provider id; empty while drafting (the node is skipped when its route compiles) |
+| `model` | with a provider | Exactly one provider model ID; optional on a providerless draft |
+| `api` | no | `auto` (default), `chat`, `responses`, `anthropic` or `gemini`; a pinned API requires the matching base URL and a provider |
+| `key` | no | Pin one provider key id; empty spreads across every enabled key; requires a provider |
 | `backup` | no | Mark as a fallback node |
 | `weight` | no | Selection weight; default `1`, must be `>= 0` |
 | `enabled` | no | Set `false` to remove the node from routing |

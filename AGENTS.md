@@ -78,7 +78,10 @@ Entrypoint -> Route -> Node -> Provider model
 - Entrypoint declaration order is the only precedence rule. Never make route
   order semantic.
 - An entrypoint has an immutable id, a display name, a non-empty list of
-  client-model globs and exactly one route id. `*` is an explicit catch-all.
+  client-model globs and an **optional** route id. An empty route is a draft:
+  the entrypoint still claims its models in declaration order, but every
+  matching request fails with a 5xx (x returns 502 for the zero-node hop) and is
+  recorded as unrouted. `*` is an explicit catch-all.
 - Only the request body's `model` field is matched for routing. Paths never
   affect entrypoint precedence or route choice; they only select the upstream
   wire API inside a matched entrypoint. There is no host matching and no
@@ -90,9 +93,11 @@ Entrypoint -> Route -> Node -> Provider model
   `retry.max` (int) and `retry.codes` (string); absent or `retry.max <= 0`
   disables retries. Cuttle only carries the policy: x owns the retry loop, the
   replay buffer and the retry status matching.
-- A node binds exactly one provider and exactly one provider model.
-  `Node.Models`, `EffectiveModel`, logical models and `*` model fallbacks must
-  not come back.
+- A node binds at most one provider and one provider model. `provider` is
+  optional: a providerless node is a draft, skipped at compile time with a
+  warning, and it may omit `model`. A node with a provider still requires a
+  model, and `key`/`api` require a provider. `Node.Models`, `EffectiveModel`,
+  logical models and `*` model fallbacks must not come back.
 - `node.api` is `auto` by default. Auto matches the inbound protocol group
   (`chat`, `responses`, `anthropic`, `gemini`) to a configured provider API and
   falls back to the model's default API. A pinned `api` bypasses default
@@ -100,9 +105,13 @@ Entrypoint -> Route -> Node -> Provider model
 - `node.key` is optional. When it is a provider-key id, the node builds only
   that key; when it is empty the node builds every enabled provider key and the
   route selector spreads across them. The id must exist on the node's provider.
-- Disabled providers, disabled nodes and provider-disabled models are skipped at
-  compile time. If every node is skipped, the request fails; never fall through
-  to another route or send the client model upstream.
+- Disabled providers, disabled nodes, providerless nodes and provider-disabled
+  models are skipped at compile time. If every node is skipped, the request
+  fails; never fall through to another route or send the client model upstream.
+- Entrypoints without a route compile against one shared zero-node hop. That hop
+  keeps the matcher in declaration order on purpose: a draft entrypoint must not
+  fall through to a later entrypoint. A draft entrypoint therefore makes
+  `count_tokens` pass through too (no local estimate).
 - Do not edit the sibling repositories (`../core`, `../x`,
   `../llm-api-converter`) as part of cuttle work. Publish a tag in the sibling
   repository, then bump the tagged dependency here; record that repository's
@@ -485,6 +494,10 @@ GOWORK=off go test ./internal/stats -count=1
   and restate the context and report paths.
 
 ## Gotchas
+
+- A draft entrypoint with `*` declared before working entrypoints blackholes
+  every model by design (no fallthrough). The console tags it `未连接`; fix its
+  route or delete it. The same warning is logged at build time.
 
 - `internal/admin/dist` is ignored but required by `go:embed all:dist`. A plain
   `go build` fails on a fresh checkout until the web bundle is built.
