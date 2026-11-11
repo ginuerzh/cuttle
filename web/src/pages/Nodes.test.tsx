@@ -50,4 +50,15 @@ describe('NodesPage', () => {
     expect(html).toContain('p_deleted0001');
     expect(html).toContain('pk_deleted001');
   });
+
+  it('labels a node without a provider', () => {
+    const config = {
+      providers: [],
+      nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: '' }],
+      routes: [],
+      entrypoints: [],
+    } as unknown as ConfigResponse;
+    const html = renderToStaticMarkup(<NodesPage config={config} onReload={async () => undefined} />);
+    expect(html).toContain('未连接');
+  });
 });

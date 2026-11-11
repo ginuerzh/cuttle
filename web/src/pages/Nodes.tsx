@@ -72,7 +72,7 @@ export function NodesPage({
             <ListCard
               key={n.id}
               title={n.name}
-              subtitle={`${providerName(n.provider)} · ${n.model}`}
+              subtitle={[providerName(n.provider) || t('未连接'), n.model].filter(Boolean).join(' · ')}
               tags={
                 <Space direction="vertical" align="end" size={2}>
                   <Tag>{n.api || 'auto'}</Tag>

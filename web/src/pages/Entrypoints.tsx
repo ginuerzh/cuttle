@@ -53,7 +53,7 @@ export function EntrypointsPage({ config, onReload }: { config: ConfigResponse; 
         <ListCard
           key={e.id}
           title={`${i + 1}. ${e.name}`}
-          subtitle={`${(e.match ?? []).join(', ')} → ${entityLabel(e.route, routeNames)}`}
+          subtitle={`${(e.match ?? []).join(', ')} → ${entityLabel(e.route, routeNames) || t('未连接')}`}
           actions={
             <>
               <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
