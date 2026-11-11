@@ -25,10 +25,18 @@ type NodeMetrics struct {
 	// FailureStatus counts final failed parent rows by status, with "0" for a
 	// failed dial. Entrypoint nodes get the failure counts but no attempts: an
 	// attempt carries no client model to attribute.
-	Attempts        int64            `json:"attempts"`
-	RetriedRequests int64            `json:"retriedRequests"`
-	AttemptStatus   map[string]int64 `json:"attemptStatus,omitempty"`
-	FailureStatus   map[string]int64 `json:"failureStatus,omitempty"`
+	//
+	// LastFailure* and LastAttempt* describe the newest of each, in unix
+	// milliseconds, so the dead badge can say when the node last failed. A
+	// zero LastFailureTS/LastAttemptTS means the window has none.
+	Attempts          int64            `json:"attempts"`
+	RetriedRequests   int64            `json:"retriedRequests"`
+	AttemptStatus     map[string]int64 `json:"attemptStatus,omitempty"`
+	FailureStatus     map[string]int64 `json:"failureStatus,omitempty"`
+	LastFailureTS     int64            `json:"lastFailureTs,omitempty"`
+	LastFailureStatus int              `json:"lastFailureStatus"`
+	LastAttemptTS     int64            `json:"lastAttemptTs,omitempty"`
+	LastAttemptStatus int              `json:"lastAttemptStatus"`
 
 	streamOutputTokens int64
 	streamGenerationMS int64
@@ -113,6 +121,11 @@ type comboStats struct {
 	cachedTokens int64
 	durations    []int64
 
+	// lastFailureTS/lastFailureStatus are the newest failed parent row of this
+	// combo, so the graph node can report when it last failed.
+	lastFailureTS     int64
+	lastFailureStatus int
+
 	streamOutputTokens int64
 	streamGenerationMS int64
 }
@@ -123,6 +136,13 @@ type attemptStats struct {
 	attempts int64
 	retried  map[string]struct{}
 	status   map[int]int64
+
+	// lastTS/lastStatus/lastAttempt are the newest discarded attempt of this
+	// combo. One parent's attempts share its timestamp, so the attempt index
+	// breaks the tie.
+	lastTS      int64
+	lastStatus  int
+	lastAttempt int
 }
 
 type errorSample struct {
@@ -232,6 +252,10 @@ func (a *Aggregator) Add(row GraphRow) {
 			c.failures = make(map[int]int64)
 		}
 		c.failures[row.Status]++
+		if row.TS >= c.lastFailureTS {
+			c.lastFailureTS = row.TS
+			c.lastFailureStatus = row.Status
+		}
 	}
 	c.inputTokens += row.InputTokens
 	c.outputTokens += row.OutputTokens
@@ -288,6 +312,11 @@ func (a *Aggregator) AddAttempt(row GraphAttemptRow) {
 	}
 	s.attempts++
 	s.status[row.Status]++
+	if row.TS > s.lastTS || (row.TS == s.lastTS && row.Attempt >= s.lastAttempt) {
+		s.lastTS = row.TS
+		s.lastStatus = row.Status
+		s.lastAttempt = row.Attempt
+	}
 	if row.RequestID != "" {
 		s.retried[row.RequestID] = struct{}{}
 	}
@@ -332,6 +361,11 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		n.Requests += c.requests
 		n.Errors += c.errors
 		n.FailureStatus = mergeStatus(n.FailureStatus, c.failures)
+		// A key merges several combos, so the newest failure of them wins.
+		if c.lastFailureTS > n.LastFailureTS {
+			n.LastFailureTS = c.lastFailureTS
+			n.LastFailureStatus = c.lastFailureStatus
+		}
 		n.InputTokens += c.inputTokens
 		n.OutputTokens += c.outputTokens
 		n.CachedTokens += c.cachedTokens
@@ -370,6 +404,11 @@ func (a *Aggregator) Metrics(resolve EntrypointResolver, include RowFilter, prev
 		n := g.Nodes[key]
 		n.Attempts += s.attempts
 		n.AttemptStatus = mergeStatus(n.AttemptStatus, s.status)
+		// A key merges several combos, so the newest attempt of them wins.
+		if s.lastTS > n.LastAttemptTS {
+			n.LastAttemptTS = s.lastTS
+			n.LastAttemptStatus = s.lastStatus
+		}
 		g.Nodes[key] = n
 		unionParents(nodeParents, key, s.retried)
 	}

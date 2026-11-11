@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -428,5 +429,108 @@ func TestGraphOmitsTokenRateWithoutStreamingRows(t *testing.T) {
 	g := agg.Metrics(nil, nil, GraphMetrics{}, true)
 	if got := g.Nodes["node:n"].OutputTokensPerSecond; got != 0 {
 		t.Fatalf("token rate = %v, want 0 for no streaming rows", got)
+	}
+}
+
+// TestGraphReportsNewestFailureAndAttempt pins the data behind the dead badge
+// tooltip's "最后 …" section: the newest failed parent row and the newest
+// discarded attempt. A graph node merges several combos, so the newest of those
+// keys has to win rather than whichever the loop visited last.
+func TestGraphReportsNewestFailureAndAttempt(t *testing.T) {
+	s := newStore(t)
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	newer := old.Add(2 * time.Minute)
+	for _, r := range []Request{
+		{
+			ID: "old", SID: "old", TS: old, Route: "r", Node: "n1", Provider: "p",
+			Status: 429, Error: "rate limited",
+			Attempts: []Attempt{{RequestID: "old", Attempt: 0, Route: "r", Node: "n1", Provider: "p", Status: 429}},
+		},
+		{
+			ID: "new", SID: "new", TS: newer, Route: "r", Node: "n2", Provider: "p",
+			Status: 502, Error: "overloaded",
+			Attempts: []Attempt{{RequestID: "new", Attempt: 0, Route: "r", Node: "n2", Provider: "p", Status: 503}},
+		},
+	} {
+		if err := s.Insert(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	g, err := s.Graph(context.Background(), old.Add(-time.Hour), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n1 := g.Nodes["node:n1"]
+	if n1.LastFailureTS != old.UnixMilli() || n1.LastFailureStatus != 429 {
+		t.Fatalf("node:n1 failure = %d/%d, want %d/429", n1.LastFailureTS, n1.LastFailureStatus, old.UnixMilli())
+	}
+	if n1.LastAttemptTS != old.UnixMilli() || n1.LastAttemptStatus != 429 {
+		t.Fatalf("node:n1 attempt = %d/%d, want %d/429", n1.LastAttemptTS, n1.LastAttemptStatus, old.UnixMilli())
+	}
+
+	n2 := g.Nodes["node:n2"]
+	if n2.LastFailureTS != newer.UnixMilli() || n2.LastFailureStatus != 502 {
+		t.Fatalf("node:n2 failure = %d/%d, want %d/502", n2.LastFailureTS, n2.LastFailureStatus, newer.UnixMilli())
+	}
+	if n2.LastAttemptTS != newer.UnixMilli() || n2.LastAttemptStatus != 503 {
+		t.Fatalf("node:n2 attempt = %d/%d, want %d/503", n2.LastAttemptTS, n2.LastAttemptStatus, newer.UnixMilli())
+	}
+
+	// provider:p and route:r merge both parents: the newer one wins.
+	for _, key := range []string{"provider:p", "route:r"} {
+		got := g.Nodes[key]
+		if got.LastFailureTS != newer.UnixMilli() || got.LastFailureStatus != 502 {
+			t.Fatalf("%s failure = %d/%d, want %d/502", key, got.LastFailureTS, got.LastFailureStatus, newer.UnixMilli())
+		}
+		if got.LastAttemptTS != newer.UnixMilli() || got.LastAttemptStatus != 503 {
+			t.Fatalf("%s attempt = %d/%d, want %d/503", key, got.LastAttemptTS, got.LastAttemptStatus, newer.UnixMilli())
+		}
+	}
+}
+
+// TestAggregatorNewestAttemptBreaksTiesByIndex covers one parent's attempts,
+// which all share the parent's timestamp: the last attempt is the newest even
+// when the rows arrive newest index first.
+func TestAggregatorNewestAttemptBreaksTiesByIndex(t *testing.T) {
+	a := NewAggregator()
+	ts := time.Now().UnixMilli()
+	a.AddAttempt(GraphAttemptRow{RequestID: "r", Attempt: 1, TS: ts, Route: "r", Node: "n", Provider: "p", Status: 503})
+	a.AddAttempt(GraphAttemptRow{RequestID: "r", Attempt: 0, TS: ts, Route: "r", Node: "n", Provider: "p", Status: 429})
+
+	if got := a.Metrics(nil, nil, GraphMetrics{}, true).Nodes["node:n"]; got.LastAttemptStatus != 503 {
+		t.Fatalf("last attempt status = %d, want 503 (attempt 1)", got.LastAttemptStatus)
+	}
+}
+
+// TestGraphPayloadCarriesLastFailureFields pins the JSON the console decodes.
+func TestGraphPayloadCarriesLastFailureFields(t *testing.T) {
+	ts := time.Now().Truncate(time.Second)
+	agg := NewAggregator()
+	agg.Add(GraphRow{ID: "r", TS: ts.UnixMilli(), Route: "r", Node: "n", Provider: "p", Status: 429, Error: "rate limited"})
+
+	b, err := json.Marshal(agg.Metrics(nil, nil, GraphMetrics{}, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Nodes map[string]map[string]json.RawMessage `json:"nodes"`
+	}
+	if err := json.Unmarshal(b, &payload); err != nil {
+		t.Fatal(err)
+	}
+	node := payload.Nodes["node:n"]
+	want := map[string]bool{
+		"lastFailureTs":     true,
+		"lastFailureStatus": true,
+		"lastAttemptTs":     false, // omitted when nothing failed as an attempt
+		"lastAttemptStatus": true,
+	}
+	for key, present := range want {
+		_, ok := node[key]
+		if ok != present {
+			t.Fatalf("node:n payload key %q present = %v, want %v (payload %s)", key, ok, present, b)
+		}
 	}
 }
