@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AttemptCard, mergeNodeActivity, NodePanel, SessionCard, sessionQuery } from './App';
+import { AttemptCard, EdgePanel, mergeNodeActivity, NodePanel, SessionCard, sessionQuery } from './App';
 import { setActiveLang } from './i18n';
 import type { AttemptRow, ConfigResponse, RequestRow } from './api/types';
 
@@ -11,6 +11,29 @@ const metrics = {
   inputTokens: 0, outputTokens: 80, cachedTokens: 0,
   outputTokensPerSecond: 42.34, lastFailureStatus: 0, lastAttemptStatus: 0,
 };
+
+describe('EdgePanel', () => {
+  it('reports the discarded attempts of a binding that served no requests', () => {
+    const html = renderToStaticMarkup(
+      <EdgePanel
+        id="route:r_0000000001|node:n_0000000001"
+        metrics={{ requests: 0, errors: 0, attempts: 2, retriedRequests: 2 }}
+      />,
+    );
+
+    expect(html).toContain('重试尝试');
+    expect(html).toContain('2');
+    expect(html).toContain('重试请求');
+  });
+
+  it('adds no attempt row when nothing was discarded', () => {
+    const html = renderToStaticMarkup(
+      <EdgePanel id="route:r_0000000001|node:n_0000000001" metrics={{ requests: 5, errors: 0, attempts: 0, retriedRequests: 0 }} />,
+    );
+
+    expect(html).not.toContain('重试尝试');
+  });
+});
 
 // A node in a 1h window: one final 429 and two discarded attempts behind two
 // client requests.

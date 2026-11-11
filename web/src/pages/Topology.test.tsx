@@ -44,6 +44,35 @@ describe('edgeLabel', () => {
     expect(html).toContain('10');
     expect(html).not.toContain('#dc2626');
   });
+
+  it('shows the discarded attempts instead of a zero request count', () => {
+    const html = renderToStaticMarkup(
+      <>{edgeLabel({ requests: 0, errors: 0, attempts: 2, retriedRequests: 2 })}</>,
+    );
+    const text = html.replace(/<[^>]+>/g, '');
+
+    expect(text).toContain('↻2');
+    expect(text.trim().startsWith('0')).toBe(false);
+  });
+
+  it('appends the attempt count after requests and errors', () => {
+    const html = renderToStaticMarkup(
+      <>{edgeLabel({ requests: 10, errors: 2, attempts: 3, retriedRequests: 2 })}</>,
+    );
+    const text = html.replace(/<[^>]+>/g, '');
+
+    expect(text).toContain('10');
+    expect(text).toContain('2');
+    expect(text).toContain('↻3');
+  });
+
+  it('adds no attempt segment when nothing was discarded', () => {
+    const html = renderToStaticMarkup(
+      <>{edgeLabel({ requests: 10, errors: 0, attempts: 0, retriedRequests: 0 })}</>,
+    );
+
+    expect(html).not.toContain('↻');
+  });
 });
 
 describe('decorateEdge', () => {
@@ -79,15 +108,31 @@ describe('decorateEdge', () => {
     const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
     const metrics = {
       nodes: {},
-      edges: { [edge.id]: { requests: 10, errors: 2 } },
+      edges: { [edge.id]: { requests: 10, errors: 2, attempts: 3, retriedRequests: 2 } },
     } as unknown as GraphMetrics;
 
     const decorated = decorateEdge(edge, metrics, undefined, true, new Set([edge.id]));
     const html = renderToStaticMarkup(<>{decorated.label}</>);
 
     expect(html).toContain('10');
+    expect(html).toContain('↻3');
     expect(html).toContain('dead');
     expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
+  });
+
+  it('labels a dead binding that only ever discarded attempts', () => {
+    const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
+    const metrics = {
+      nodes: {},
+      edges: { [edge.id]: { requests: 0, errors: 0, attempts: 2, retriedRequests: 2 } },
+    } as unknown as GraphMetrics;
+
+    const decorated = decorateEdge(edge, metrics, undefined, true, new Set([edge.id]));
+    const text = renderToStaticMarkup(<>{decorated.label}</>).replace(/<[^>]+>/g, '');
+
+    expect(text).toContain('↻2');
+    expect(text).toContain('dead');
+    expect((decorated.style as { strokeWidth?: number }).strokeWidth ?? 0).toBeGreaterThan(1.5);
   });
 
   it('leaves a live binding solid', () => {

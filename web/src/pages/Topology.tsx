@@ -109,14 +109,38 @@ function edgeColor(m?: { requests: number; errors: number }): string {
   return '#16a34a';
 }
 
-export function edgeLabel(m: { requests: number; errors: number }): ReactNode {
-  if (!m.errors) return `${m.requests}`;
-  return (
-    <>
-      {`${m.requests} · `}
-      <span style={{ color: '#dc2626' }}>{m.errors}</span>
-    </>
-  );
+export function edgeLabel(m: {
+  requests: number;
+  errors: number;
+  attempts?: number;
+  retriedRequests?: number;
+}): ReactNode {
+  const attempts = m.attempts ?? 0;
+  let label: ReactNode = null;
+  const append = (node: ReactNode) => {
+    label = label === null ? node : <>{label} · {node}</>;
+  };
+  // A binding that only ever discarded attempts has no request row of its own,
+  // so a bare "0" would hide the only evidence the edge carries any traffic.
+  if (m.requests > 0 || attempts === 0) {
+    append(`${m.requests}`);
+  }
+  if (m.errors) {
+    append(<span style={{ color: '#dc2626' }}>{m.errors}</span>);
+  }
+  if (attempts > 0) {
+    append(
+      <span
+        title={t('重试尝试 {attempts} · 重试请求 {requests}', {
+          attempts,
+          requests: m.retriedRequests ?? 0,
+        })}
+      >
+        {`↻${attempts}`}
+      </span>,
+    );
+  }
+  return label;
 }
 
 interface EdgeData extends Record<string, unknown> {
@@ -144,7 +168,9 @@ export function decorateEdge(
       ? <>{trafficLabel}<span style={{ color: '#dc2626' }}> · dead</span></>
       : <span style={{ color: '#dc2626' }}>dead</span>
     : trafficLabel;
-  const width = m ? Math.min(4, 1.5 + Math.log10(m.requests + 1)) : 1.5;
+  const width = m
+    ? Math.min(4, 1.5 + Math.log10(Math.max(m.requests, m.attempts ?? 0) + 1))
+    : 1.5;
   const color = dead ? '#dc2626' : m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
   return {
     ...e,

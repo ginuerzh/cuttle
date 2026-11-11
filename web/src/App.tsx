@@ -506,7 +506,7 @@ export function NodePanel({
   );
 }
 
-function EdgePanel({ id, metrics, labels }: { id: string; metrics?: EdgeMetrics; labels?: ConfigLabels }) {
+export function EdgePanel({ id, metrics, labels }: { id: string; metrics?: EdgeMetrics; labels?: ConfigLabels }) {
   const parts = id.split('|');
   return (
     <div>
@@ -521,6 +521,11 @@ function EdgePanel({ id, metrics, labels }: { id: string; metrics?: EdgeMetrics;
         {metrics && metrics.errors > 0 ? (
           <Descriptions.Item label={translate('错误')}>
             <span style={{ color: '#dc2626' }}>{formatCount(metrics.errors)}（{rate(metrics)}）</span>
+          </Descriptions.Item>
+        ) : null}
+        {metrics && (metrics.attempts ?? 0) > 0 ? (
+          <Descriptions.Item label={translate('重试尝试')}>
+            {formatCount(metrics.attempts)} · {translate('重试请求')} {formatCount(metrics.retriedRequests ?? 0)}
           </Descriptions.Item>
         ) : null}
       </Descriptions>

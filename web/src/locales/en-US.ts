@@ -301,6 +301,7 @@ export const enUS: Record<string, string> = {
   '重试 {count} 次': 'retried {count}×',
   '重试尝试': 'Retry attempt',
   '重试请求': 'Retried requests',
+  '重试尝试 {attempts} · 重试请求 {requests}': 'Retried attempts {attempts} · retried requests {requests}',
   '上游尝试': 'Upstream attempt',
   '连接失败': 'Dial failed',
   '{count} 次（{statuses}）': '{count} attempts ({statuses})',
