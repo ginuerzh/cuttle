@@ -166,6 +166,17 @@ func TestQueryNodeAndEntrypointFilters(t *testing.T) {
 		t.Fatalf("catchall rows = %d, want 4", len(got))
 	}
 
+	shadowed := window
+	shadowed.ClientModelPatterns = []string{"*"}
+	shadowed.ClientModelExcludes = []string{"gpt-4.5", "gpt_*"}
+	got, err = s.Query(ctx, shadowed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "r3" || got[1].ID != "r2" {
+		t.Fatalf("shadowed catchall rows = %+v, want r3 and r2", got)
+	}
+
 	literal := window
 	literal.ClientModelPatterns = []string{"gpt_*"}
 	got, err = s.Query(ctx, literal)

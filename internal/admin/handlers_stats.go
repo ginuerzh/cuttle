@@ -46,15 +46,21 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		Offset:      atoi(q.Get("offset")),
 	}
 	// The entrypoint filter is a client-model match, so it resolves the id
-	// against the current entrypoint list instead of a stored column.
+	// against the current entrypoint list instead of a stored column. Order is
+	// precedence, so the globs of every earlier entrypoint shadow this one.
 	if id := q.Get("entrypoint"); id != "" {
+		cfg := s.monitorConfig()
 		found := false
-		for _, ep := range s.monitorConfig().Entrypoints {
-			if ep.ID == id {
-				f.ClientModelPatterns = ep.Match
-				found = true
-				break
+		for i, ep := range cfg.Entrypoints {
+			if ep.ID != id {
+				continue
 			}
+			f.ClientModelPatterns = ep.Match
+			for _, earlier := range cfg.Entrypoints[:i] {
+				f.ClientModelExcludes = append(f.ClientModelExcludes, earlier.Match...)
+			}
+			found = true
+			break
 		}
 		if !found {
 			writeJSON(w, http.StatusOK, []requestView{})

@@ -71,6 +71,11 @@ type Filter struct {
 	Model               string
 	ClientModel         string
 	ClientModelPatterns []string
+	// ClientModelExcludes holds globs that shadow ClientModelPatterns. Entrypoint
+	// attribution follows declaration order, so a row belongs to the first
+	// entrypoint whose glob matches; the globs of every earlier entrypoint are
+	// excluded here so a catch-all lists only the rows no earlier one handled.
+	ClientModelExcludes []string
 	Route               string
 	Node                string
 	GatewayKey          string
@@ -1384,6 +1389,14 @@ func (f Filter) where() (string, []any) {
 			args = append(args, globToLike(pattern))
 		}
 		conds = append(conds, "("+strings.Join(likes, " OR ")+")")
+	}
+	if len(f.ClientModelExcludes) > 0 {
+		likes := make([]string, 0, len(f.ClientModelExcludes))
+		for _, pattern := range f.ClientModelExcludes {
+			likes = append(likes, "client_model LIKE ? ESCAPE '\\'")
+			args = append(args, globToLike(pattern))
+		}
+		conds = append(conds, "NOT ("+strings.Join(likes, " OR ")+")")
 	}
 	if f.Route != "" {
 		conds = append(conds, "route = ?")

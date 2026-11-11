@@ -338,7 +338,10 @@ Entrypoint -> Route -> Node -> Provider model
   `migratableRef` treats a value matching `identity.Shape` as already an id, so
   a v1 name that looks like an id is deliberately left alone.
 - Entrypoint attribution is query-time: resolve each row's `client_model`
-  through the current entrypoint list. Never store an entrypoint column.
+  through the current entrypoint list. Never store an entrypoint column. The
+  `?entrypoint=` filter follows the same first-match rule, so the globs of every
+  earlier entrypoint shadow the selected one: a catch-all lists only the rows no
+  earlier entrypoint claimed.
 - Graph keys use `entrypoint:<id>`; edges use the row's **recorded route id**
   (`entrypoint:<id>->route:<id>` or `->unrouted`), never the entrypoint's
   current route.
