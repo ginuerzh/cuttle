@@ -521,6 +521,52 @@ func TestValidateEntrypoints(t *testing.T) {
 	})
 }
 
+func TestValidateAllowsDraftEntrypoint(t *testing.T) {
+	c := topologyFixture()
+	c.Entrypoints[0].Route = ""
+	if err := Validate(c); err != nil {
+		t.Fatalf("an entrypoint without a route should validate as a draft: %v", err)
+	}
+}
+
+func TestValidateAllowsProviderlessNode(t *testing.T) {
+	c := topologyFixture()
+	c.Nodes[0].Provider = ""
+	c.Nodes[0].Model = ""
+	if err := Validate(c); err != nil {
+		t.Fatalf("a node without a provider should validate as a draft: %v", err)
+	}
+}
+
+func TestValidateDraftNodeKeepsModelHint(t *testing.T) {
+	c := topologyFixture()
+	c.Nodes[0].Provider = ""
+	if err := Validate(c); err != nil {
+		t.Fatalf("a providerless node may keep its model text: %v", err)
+	}
+}
+
+func TestValidateProviderlessNodeRejectsKey(t *testing.T) {
+	c := topologyFixture()
+	c.Nodes[0].Provider = ""
+	c.Nodes[0].Key = fixtureID(identity.ProviderKey, "key")
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "node") || !strings.Contains(err.Error(), "key") {
+		t.Fatalf("err = %v, want the node rejected for a pinned key without a provider", err)
+	}
+}
+
+func TestValidateProviderlessNodeRejectsAPI(t *testing.T) {
+	c := topologyFixture()
+	c.Nodes[0].Provider = ""
+	c.Nodes[0].Model = ""
+	c.Nodes[0].API = "chat"
+	err := Validate(c)
+	if err == nil || !strings.Contains(err.Error(), "node") || !strings.Contains(err.Error(), "api") {
+		t.Fatalf("err = %v, want the node rejected for a pinned api without a provider", err)
+	}
+}
+
 func TestValidateNodeRequiresModel(t *testing.T) {
 	c := topologyFixture()
 	c.Nodes[0].Model = ""

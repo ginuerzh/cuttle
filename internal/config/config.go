@@ -92,8 +92,9 @@ type Log struct {
 }
 
 // Entrypoint is the client-facing ingress: it owns the model globs that select
-// it and exactly one route. The id is the stable handle; the name is a display
-// label.
+// it and one optional route. The id is the stable handle; the name is a display
+// label. An empty route is a draft: the entrypoint still claims its models in
+// declaration order but every matching request fails as unrouted.
 type Entrypoint struct {
 	ID    string   `yaml:"id" json:"id"`
 	Name  string   `yaml:"name" json:"name"`
@@ -171,10 +172,11 @@ func IsProviderType(typ string) bool {
 	return ok
 }
 
-// Node is one concrete use of a provider: exactly one provider model plus the
-// local routing policy (backup, weight). The same provider can back several
-// nodes with different models. The id is the stable handle; the name is a
-// display label.
+// Node is one concrete use of a provider: one provider model plus the local
+// routing policy (backup, weight). The same provider can back several nodes
+// with different models. The id is the stable handle; the name is a display
+// label. An empty provider is a draft: the node keeps its card and name but is
+// skipped when its route is compiled.
 type Node struct {
 	ID       string `yaml:"id" json:"id"`
 	Name     string `yaml:"name" json:"name"`
@@ -1073,25 +1075,33 @@ func Validate(c *Config) error {
 
 		provider := strings.TrimSpace(n.Provider)
 		if provider == "" {
-			return fmt.Errorf("node %q: provider is required", name)
-		}
-		owner := providerIDs[provider]
-		if owner == nil {
-			return nameRefError(fmt.Sprintf("node %q", name), "provider", provider, providerIDByName)
-		}
-		if key := strings.TrimSpace(n.Key); key != "" {
-			keyIDs := make(map[string]bool, len(owner.Keys))
-			keyIDByName := make(map[string]string, len(owner.Keys))
-			for _, pk := range owner.Keys {
-				keyIDs[pk.ID] = true
-				keyIDByName[strings.TrimSpace(pk.Name)] = pk.ID
+			// A node without a provider is a draft: it keeps its card and name
+			// but is skipped when a route is compiled.
+			if strings.TrimSpace(n.Key) != "" {
+				return fmt.Errorf("node %q: key requires a provider", name)
 			}
-			if !keyIDs[key] {
-				return nameRefError(fmt.Sprintf("node %q", name), "key", key, keyIDByName)
+			if n.API != "" {
+				return fmt.Errorf("node %q: api requires a provider", name)
 			}
-		}
-		if strings.TrimSpace(n.Model) == "" {
-			return fmt.Errorf("node %q: model is required", name)
+		} else {
+			owner := providerIDs[provider]
+			if owner == nil {
+				return nameRefError(fmt.Sprintf("node %q", name), "provider", provider, providerIDByName)
+			}
+			if key := strings.TrimSpace(n.Key); key != "" {
+				keyIDs := make(map[string]bool, len(owner.Keys))
+				keyIDByName := make(map[string]string, len(owner.Keys))
+				for _, pk := range owner.Keys {
+					keyIDs[pk.ID] = true
+					keyIDByName[strings.TrimSpace(pk.Name)] = pk.ID
+				}
+				if !keyIDs[key] {
+					return nameRefError(fmt.Sprintf("node %q", name), "key", key, keyIDByName)
+				}
+			}
+			if strings.TrimSpace(n.Model) == "" {
+				return fmt.Errorf("node %q: model is required", name)
+			}
 		}
 		switch n.API {
 		case "", "chat", "responses", "anthropic", "gemini":
@@ -1189,7 +1199,9 @@ func Validate(c *Config) error {
 		}
 		route := strings.TrimSpace(e.Route)
 		if route == "" {
-			return fmt.Errorf("entrypoint %q: route is required", name)
+			// An entrypoint without a route is a draft: it claims its models in
+			// declaration order but serves no traffic.
+			continue
 		}
 		if !routeIDs[route] {
 			return nameRefError(fmt.Sprintf("entrypoint %q", name), "route", route, routeIDByName)
