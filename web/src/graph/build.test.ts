@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildGraph } from './build';
+import { setActiveLang } from '../i18n';
 import type { ConfigResponse } from '../api/types';
 
 const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
@@ -62,5 +63,32 @@ describe('buildGraph', () => {
     const { nodes, edges } = buildGraph(missing);
     expect(nodes.some((n) => n.id === 'unrouted')).toBe(true);
     expect(edges.some((e) => e.id === 'entrypoint:e_0000000003->unrouted')).toBe(true);
+  });
+
+  it('marks a providerless node as a draft without a provider edge', () => {
+    setActiveLang('zh-CN');
+    const draft = {
+      ...cfg,
+      nodes: [...cfg.nodes, { id: 'n_0000000003', name: 'draft', provider: '', model: '' }],
+    };
+    const { nodes, edges } = buildGraph(draft);
+    const node = nodes.find((n) => n.id === 'node:n_0000000003');
+    expect(node?.data.unconnected).toBe(true);
+    expect(node?.data.sub).toContain('未连接');
+    expect(edges.some((e) => e.id.startsWith('node:n_0000000003|'))).toBe(false);
+  });
+
+  it('marks a routeless entrypoint as a draft with a dashed amber unrouted edge', () => {
+    setActiveLang('zh-CN');
+    const draft = {
+      ...cfg,
+      entrypoints: [...cfg.entrypoints, { id: 'e_0000000003', name: 'draft', match: ['mystery*'], route: '' }],
+    };
+    const { nodes, edges } = buildGraph(draft);
+    expect(nodes.find((n) => n.id === 'entrypoint:e_0000000003')?.data.unconnected).toBe(true);
+    expect(nodes.find((n) => n.id === 'entrypoint:e_0000000003')?.data.sub).toContain('未连接');
+    const edge = edges.find((e) => e.id === 'entrypoint:e_0000000003->unrouted');
+    expect(edge?.data?.color).toBe('#d97706');
+    expect(edge?.data?.draft).toBe(true);
   });
 });

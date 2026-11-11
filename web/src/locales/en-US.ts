@@ -38,6 +38,7 @@ export const enUS: Record<string, string> = {
   '最近会话': 'Recent sessions',
   '最近窗口内没有错误': 'No errors in the recent window',
   '连线': 'Edge',
+  '未连接': 'Not connected',
   '路径': 'Path',
   '错误': 'Errors',
   '键': 'key',

@@ -108,7 +108,7 @@ export interface Node {
   id: string;
   /** Display label. */
   name: string;
-  /** Provider id this node binds. */
+  /** Provider id this node binds; empty while drafting (it serves no traffic). */
   provider: string;
   model: string;
   /** Upstream API; 'auto' or absent matches the client protocol. */
@@ -162,7 +162,7 @@ export interface Entrypoint {
   /** Display label. */
   name: string;
   match: string[];
-  /** Route id this entrypoint points at. */
+  /** Route id this entrypoint points at; empty while drafting. */
   route: string;
 }
 

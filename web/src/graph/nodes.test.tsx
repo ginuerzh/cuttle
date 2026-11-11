@@ -4,6 +4,7 @@ import type { NodeProps } from '@xyflow/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { GraphNode } from './build';
 import { BindingNode, EntrypointNode, NodeBody, NodeStats, ProviderNode, RouteNode, handleStyle, nodeMood, selectionStyle } from './nodes';
+import { setActiveLang } from '../i18n';
 
 const stats = (requests: number, errors: number) => ({
   requests,
@@ -339,5 +340,45 @@ describe('NodeStats', () => {
       />,
     );
     expect(html).not.toContain('tok/s');
+  });
+});
+
+describe('DraftBadge', () => {
+  it('marks an unconnected entrypoint and node', () => {
+    setActiveLang('zh-CN');
+    const entryProps = {
+      id: 'entrypoint:e_0000000001',
+      type: 'entrypoint',
+      data: { kind: 'entrypoint', label: 'draft', unconnected: true },
+      selected: false,
+      isConnectable: false,
+    } as unknown as NodeProps<GraphNode>;
+    const entry = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <EntrypointNode {...entryProps} />
+      </ReactFlowProvider>,
+    );
+    expect(entry).toContain('data-status="draft"');
+    expect(entry).toContain('未连接');
+
+    const nodeProps = {
+      id: 'node:n_0000000001',
+      type: 'node',
+      data: {
+        kind: 'node',
+        label: 'draft',
+        unconnected: true,
+        node: { id: 'n_0000000001', name: 'draft', provider: '', model: '' },
+      },
+      selected: false,
+      isConnectable: false,
+    } as unknown as NodeProps<GraphNode>;
+    const node = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <BindingNode {...nodeProps} />
+      </ReactFlowProvider>,
+    );
+    expect(node).toContain('data-status="draft"');
+    expect(node).toContain('未连接');
   });
 });

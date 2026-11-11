@@ -1,5 +1,6 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type { ConfigResponse, Entrypoint, Node as BindNode, NodeMetrics, Provider, Route } from '../api/types';
+import { translate as t } from '../i18n';
 
 export type NodeKind = 'entrypoint' | 'route' | 'node' | 'provider' | 'unrouted';
 
@@ -20,6 +21,8 @@ export interface GraphNodeData extends Record<string, unknown> {
   /** One-shot activity pulse id; 0 means idle. */
   pulse?: number;
   error?: boolean;
+  /** The entity has no reference yet (draft): it serves no traffic. */
+  unconnected?: boolean;
 }
 
 export type GraphNode = Node<GraphNodeData>;
@@ -37,6 +40,7 @@ const PALETTE = [
 
 const ENTRYPOINT_COLOR = '#6366f1';
 const UNROUTED_COLOR = '#dc2626';
+const DRAFT_COLOR = '#d97706';
 
 /** Stable colour per route, so every edge of a route shares one identity. */
 export function routeColor(name: string): string {
@@ -49,6 +53,8 @@ export function routeColor(name: string): string {
 
 interface EdgeData extends Record<string, unknown> {
   color: string;
+  /** A draft edge is dashed and amber instead of a fault. */
+  draft?: boolean;
 }
 
 function edge(
@@ -58,6 +64,7 @@ function edge(
   sourceHandle?: string,
   label?: string,
   data?: EdgeData,
+  dashed = false,
 ): Edge {
   const color = data?.color ?? '#94a3b8';
   return {
@@ -71,6 +78,7 @@ function edge(
     style: {
       stroke: color,
       strokeWidth: 1.5,
+      strokeDasharray: dashed ? '6 4' : undefined,
     },
     markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
   };
@@ -125,9 +133,10 @@ export function buildGraph(
       data: {
         kind: 'node',
         label: n.name,
-        sub: [p?.name ?? n.provider, n.model].filter(Boolean).join(' · '),
+        sub: [p?.name ?? n.provider, n.model].filter(Boolean).join(' · ') || t('未连接'),
         node: n,
         disabled: n.enabled === false || (p ? p.enabled === false : false),
+        unconnected: !n.provider,
       },
     });
     if (p) {
@@ -181,8 +190,9 @@ export function buildGraph(
       data: {
         kind: 'entrypoint',
         label: e.name,
-        sub: `${(e.match ?? []).join(', ')} → ${routeById.get(e.route)?.name ?? e.route}`,
+        sub: `${(e.match ?? []).join(', ')} → ${routeById.get(e.route)?.name ?? (e.route || t('未连接'))}`,
         entrypoint: e,
+        unconnected: !e.route,
       },
     });
 
@@ -191,7 +201,18 @@ export function buildGraph(
       edges.push(edge(`${id}->route:${target.id}`, id, `route:${target.id}`, undefined, undefined, { color: ENTRYPOINT_COLOR }));
     } else {
       needsUnrouted = true;
-      edges.push(edge(`${id}->unrouted`, id, 'unrouted', undefined, undefined, { color: UNROUTED_COLOR }));
+      const draft = !e.route;
+      edges.push(
+        edge(
+          `${id}->unrouted`,
+          id,
+          'unrouted',
+          undefined,
+          undefined,
+          { color: draft ? DRAFT_COLOR : UNROUTED_COLOR, draft },
+          draft,
+        ),
+      );
     }
   }
   if (needsUnrouted) {

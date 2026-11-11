@@ -124,6 +124,8 @@ interface EdgeData extends Record<string, unknown> {
   pulse?: number;
   error?: boolean;
   duration?: number;
+  /** A draft edge stays dashed while it carries no traffic. */
+  draft?: boolean;
 }
 
 export function decorateEdge(
@@ -154,7 +156,7 @@ export function decorateEdge(
       error: animate ? !!activity?.error : false,
       duration: activity?.duration ?? 0,
     },
-    style: { ...e.style, stroke: color, strokeWidth: width, strokeDasharray: dead ? '6 4' : undefined },
+    style: { ...e.style, stroke: color, strokeWidth: width, strokeDasharray: dead || data?.draft ? '6 4' : undefined },
     markerEnd: undefined,
   } as Edge;
 }

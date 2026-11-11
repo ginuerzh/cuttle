@@ -185,6 +185,40 @@ export function NodeMoodBadge({ mood, title }: { mood: NodeMood; title?: string 
   );
 }
 
+/**
+ * Marks a draft: an entity with no reference yet. It is amber and sits in the
+ * same slot as the mood badge, which a draft never shows because it serves no
+ * traffic.
+ */
+export function DraftBadge({ show }: { show?: boolean }) {
+  if (!show) return null;
+  return (
+    <span
+      data-status="draft"
+      role="img"
+      aria-label={t('未连接')}
+      title={t('未连接')}
+      style={{
+        position: 'absolute',
+        top: 3,
+        right: 6,
+        height: 16,
+        padding: '0 4px',
+        borderRadius: 4,
+        background: 'rgba(217, 119, 6, 0.12)',
+        color: '#d97706',
+        fontSize: 10,
+        fontWeight: 600,
+        lineHeight: '16px',
+        pointerEvents: 'none',
+        zIndex: 1,
+      }}
+    >
+      {t('未连接')}
+    </span>
+  );
+}
+
 const HANDLE_SIZE = 14;
 
 /** The endpoint dot size; also the connection start target in edit mode. */
@@ -268,6 +302,7 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
+      <DraftBadge show={data.unconnected} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#6366f1')} />
     </div>
   );
@@ -327,6 +362,7 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} showRate />
       <NodeMoodBadge mood={nodeMood(data.metrics, data.dead, partial)} title={title} />
+      <DraftBadge show={data.unconnected} />
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
       <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
     </div>
