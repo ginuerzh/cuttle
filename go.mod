@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/ginuerzh/llm-api-converter v0.6.1
 	github.com/go-gost/core v0.6.1
-	github.com/go-gost/x v0.31.1
+	github.com/go-gost/x v0.32.0
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.58.0

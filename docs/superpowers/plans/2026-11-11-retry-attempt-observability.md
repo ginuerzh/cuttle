@@ -815,7 +815,15 @@ git commit -m "feat(web): show retry attempts and explain a dead node"
 - [x] **Step 2:** `cd x && git tag vX.Y.Z && git push origin vX.Y.Z`, then `cd cuttle && GOWORK=off go get github.com/go-gost/x@vX.Y.Z && GOWORK=off go mod tidy`.
 - [x] **Step 3:** `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`.
 - [x] **Step 4: Commit** `chore(deps): bump go-gost/x to vX.Y.Z`.
-- [x] **Step 5: Implementation record** — same rule.
+- [x] **Step 5: Implementation record**
+
+**Implementation record (Task 7)**
+- Date/status: 2026-11-11 / complete (approved by the user: "x打tag", "上线")
+- Repos/commits: `go-gost/x` tag `v0.32.0` (annotated, tag object `65969ba`, commit `7856886` = the merge of `feat/record-retry-attempts`; `master` had moved on to unrelated mux/mTLS work, so the tag pins the feature commit rather than HEAD); `cuttle` `chore(deps): bump go-gost/x to v0.32.0` on `main`.
+- Files changed: `cuttle/go.mod`, `cuttle/go.sum` (`go-gost/x v0.31.1` → `v0.32.0`).
+- Tests: `GOWORK=off go build ./...`, `go vet ./...`, `go test ./... -count=1` → all packages ok with the tagged x; `GOWORK=off go mod tidy` left `core v0.6.1` and `llm-api-converter v0.6.1` unchanged.
+- Review findings: none (dependency bump only; the cuttle side had been building against `v0.31.1` with an empty attempt list, so the bump only switches the producer on).
+- Deferred: the local decode structs in `internal/stats/recorder.go` could now be replaced by `xrecorder.HTTPAttemptRecorderObject`; kept deliberately (no `replace`, no need to re-pin cuttle when x moves again).
 
 ### Task 8 (blocked on approval): production verification
 
