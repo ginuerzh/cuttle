@@ -81,11 +81,11 @@ func TestAttemptsQueryOrderAndFilters(t *testing.T) {
 
 	for _, r := range []Request{
 		{ID: "a", TS: base, Route: "r", Node: "n1", Provider: "p", Attempts: []Attempt{
-			{Attempt: 0, TS: base, Node: "n1", Status: 429, ErrorClass: "upstream_quota"},
-			{Attempt: 1, TS: base.Add(time.Second), Node: "n2", Status: 503, ErrorClass: "upstream_unavailable"},
+			{Attempt: 0, Node: "n1", Status: 429, ErrorClass: "upstream_quota"},
+			{Attempt: 1, Node: "n2", Status: 503, ErrorClass: "upstream_unavailable"},
 		}},
 		{ID: "b", TS: base.Add(time.Minute), Route: "r", Node: "n1", Provider: "p", Attempts: []Attempt{
-			{Attempt: 0, TS: base.Add(time.Minute), Node: "n1", Status: 429, ErrorClass: "upstream_quota"},
+			{Attempt: 0, Node: "n1", Status: 429, ErrorClass: "upstream_quota"},
 		}},
 	} {
 		if err := s.Insert(ctx, r); err != nil {
@@ -100,8 +100,11 @@ func TestAttemptsQueryOrderAndFilters(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("attempts = %d, want 3", len(all))
 	}
-	if all[0].RequestID != "b" || all[1].RequestID != "a" || all[2].TS.UnixMilli() != base.UnixMilli() {
-		t.Fatalf("attempts = %+v, want newest first", all)
+	if all[0].RequestID != "b" || all[1].RequestID != "a" || all[1].Attempt != 1 || all[2].Attempt != 0 {
+		t.Fatalf("attempts = %+v, want newest request first, newest attempt first", all)
+	}
+	if !all[1].TS.Equal(base) || !all[2].TS.Equal(base) {
+		t.Fatalf("attempt ts = %v/%v, want the parent's %v", all[1].TS, all[2].TS, base)
 	}
 
 	node, err := s.Attempts(ctx, AttemptFilter{Node: "n2"})
@@ -145,6 +148,89 @@ func TestAttemptsQueryOrderAndFilters(t *testing.T) {
 	}
 }
 
+// TestAttemptsShareParentTimestamp pins the design rule that an attempt is
+// stored with its parent's start time: retention and the graph windows filter
+// on it, so a caller-supplied Attempt.TS must never reach the table.
+func TestAttemptsShareParentTimestamp(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	parent := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+
+	if err := s.Insert(ctx, Request{ID: "r", SID: "r", TS: parent, Node: "n1", Attempts: []Attempt{
+		{Attempt: 0, TS: parent.Add(-time.Hour), Status: 429},
+		{Attempt: 1, TS: parent.Add(48 * time.Hour), Status: 503},
+		{Attempt: 2, Status: 429},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.AttemptsForRequest(ctx, "r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("attempts = %+v, want 3", got)
+	}
+	for _, a := range got {
+		if !a.TS.Equal(parent) {
+			t.Fatalf("attempt %d ts = %v, want the parent's %v", a.Attempt, a.TS, parent)
+		}
+	}
+
+	// A far-future Attempt.TS must not keep a row alive past its parent.
+	if err := s.Cleanup(ctx, parent.Add(time.Minute), parent, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.AttemptsForRequest(ctx, "r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("attempts after cleanup = %+v, want none", got)
+	}
+}
+
+func TestAttemptsLimitIsCapped(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	ts := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+
+	attempts := make([]Attempt, 0, 1005)
+	for i := 0; i < 1005; i++ {
+		attempts = append(attempts, Attempt{Attempt: i, Status: 429})
+	}
+	if err := s.Insert(ctx, Request{ID: "r", SID: "r", TS: ts, Attempts: attempts}); err != nil {
+		t.Fatal(err)
+	}
+
+	capped, err := s.Attempts(ctx, AttemptFilter{Limit: 5000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(capped) != 1000 {
+		t.Fatalf("limit=5000 rows = %d, want the 1000-row cap", len(capped))
+	}
+	if capped[0].Attempt != 1004 {
+		t.Fatalf("first row attempt = %d, want the newest 1004", capped[0].Attempt)
+	}
+
+	exact, err := s.Attempts(ctx, AttemptFilter{Limit: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exact) != 1000 {
+		t.Fatalf("limit=1000 rows = %d, want 1000", len(exact))
+	}
+
+	def, err := s.Attempts(ctx, AttemptFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def) != 100 {
+		t.Fatalf("default rows = %d, want 100", len(def))
+	}
+}
+
 func TestOpenAddsAttemptTableToExistingDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "stats.sqlite")
 	seed, err := Open(path)
@@ -172,6 +258,7 @@ func TestOpenAddsAttemptTableToExistingDatabase(t *testing.T) {
 		{"table", "request_attempts"},
 		{"index", "request_attempts_seq"},
 		{"index", "request_attempts_node"},
+		{"index", "request_attempts_ts"},
 	} {
 		var n int
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = ? AND name = ?`,

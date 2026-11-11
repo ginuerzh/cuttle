@@ -292,6 +292,7 @@ func (s *Store) migrate(fresh bool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS request_attempts_seq ON request_attempts(seq)`,
 		`CREATE INDEX IF NOT EXISTS request_attempts_node ON request_attempts(node, ts)`,
+		`CREATE INDEX IF NOT EXISTS request_attempts_ts ON request_attempts(ts)`,
 		`CREATE TABLE IF NOT EXISTS request_seq (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			value INTEGER NOT NULL DEFAULT 0

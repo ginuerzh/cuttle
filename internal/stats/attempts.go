@@ -10,6 +10,10 @@ import (
 
 // Attempt is one discarded upstream attempt: the response opted into a retry,
 // so it never reached the client and is stored beside its parent request.
+//
+// TS is the parent request's start time. Insert always stores the parent's ts
+// and ignores any value set here, because retention and the graph time windows
+// filter on it; the read side scans it back.
 type Attempt struct {
 	RequestID       string            `json:"requestId"`
 	Attempt         int               `json:"attempt"`
@@ -47,7 +51,8 @@ const attemptColumns = `request_id, attempt, ts, route, node, provider, gateway_
 
 // insertAttempts writes the discarded attempts of one client request inside the
 // parent's transaction, with the parent's seq so the live event path can tail
-// them with the same watermark. Attempts never touch rollups.
+// them with the same watermark. Every attempt carries the parent's ts, which
+// retention and the graph windows rely on. Attempts never touch rollups.
 func insertAttempts(ctx context.Context, tx *sql.Tx, r Request, seq int64) error {
 	if len(r.Attempts) == 0 {
 		return nil
@@ -67,10 +72,6 @@ func insertAttempts(ctx context.Context, tx *sql.Tx, r Request, seq int64) error
 		if requestID == "" {
 			requestID = r.ID
 		}
-		ts := a.TS
-		if ts.IsZero() {
-			ts = r.TS
-		}
 		route := a.Route
 		if route == "" {
 			route = r.Route
@@ -87,7 +88,7 @@ func insertAttempts(ctx context.Context, tx *sql.Tx, r Request, seq int64) error
 		if gatewayKey == "" {
 			gatewayKey = r.GatewayKey
 		}
-		if _, err := stmt.ExecContext(ctx, requestID, a.Attempt, seq, ts.UnixMilli(),
+		if _, err := stmt.ExecContext(ctx, requestID, a.Attempt, seq, r.TS.UnixMilli(),
 			route, node, provider, gatewayKey, a.Status, a.Error, a.ErrorClass,
 			a.DurationMS, a.BytesIn, a.BytesOut, a.Upstream,
 			marshalHeaders(a.ResponseHeaders), a.BodyPreview); err != nil {
@@ -113,8 +114,10 @@ func (s *Store) AttemptsForRequest(ctx context.Context, requestID string) ([]Att
 func (s *Store) Attempts(ctx context.Context, f AttemptFilter) ([]Attempt, error) {
 	where, args := f.where()
 	limit := f.Limit
-	if limit <= 0 || limit > 1000 {
+	if limit <= 0 {
 		limit = 100
+	} else if limit > 1000 {
+		limit = 1000
 	}
 	q := `SELECT ` + attemptColumns + ` FROM request_attempts` + where +
 		` ORDER BY ts DESC, request_id, attempt DESC LIMIT ? OFFSET ?`
