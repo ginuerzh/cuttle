@@ -45,7 +45,7 @@
 - Consumes: existing `retryState` (`budget`, `codes`, `replay`, `start`), `retryNode`, `retryUpstream`, `retryRequest` test helpers.
 - Produces: `xrecorder.HTTPAttemptRecorderObject{Attempt int; Node string; StatusCode int; Error string; DurationMS int64; BytesIn int64; BytesOut int64; ResponseHeader http.Header; ResponseBody []byte}` serialized as `http.attempts`, and `(*retryState).addAttempt(a xrecorder.HTTPAttemptRecorderObject)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `x/internal/util/forwarder/sniffer_http_retry_test.go`:
 
@@ -153,12 +153,12 @@ Finally extend the existing `TestHandleHTTP_NoRetryWithoutRetryMetadata` with:
 	}
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd x && GOWORK=off go test ./internal/util/forwarder/ -run 'RecordsDiscarded|RecordsAttemptWhenBodyIsCut|NoRetryWithoutRetryMetadata' -count=1`
 Expected: FAIL — `ro.HTTP.Attempts` is undefined (compile error).
 
-- [ ] **Step 3: Implement the recorder field and the two capture points**
+- [x] **Step 3: Implement the recorder field and the two capture points**
 
 In `x/recorder/recorder.go`, add below `HTTPResponseRecorderObject`:
 
@@ -205,19 +205,19 @@ In `x/internal/util/forwarder/sniffer_http.go`:
 4. In the keep-alive re-init at the top of `HandleHTTP` (`ro.HTTP = &xrecorder.HTTPRecorderObject{...}`), re-attach `ro.HTTP.Attempts = rs.attempts` when `rs != nil`, so a retry `continue` cannot drop them.
 5. Add `func nodeName(n *chain.Node) string { if n == nil { return "" }; return n.Name }` in `retry.go`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd x && GOWORK=off go test ./internal/util/forwarder/ -count=1`
 Expected: PASS, including the pre-existing retry tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd x && git add recorder/recorder.go internal/util/forwarder/retry.go internal/util/forwarder/sniffer_http.go internal/util/forwarder/sniffer_http_retry_test.go
 git commit -m "feat(forward): record discarded retry attempts on the recorder object"
 ```
 
-- [ ] **Step 6: Implementation record**
+- [x] **Step 6: Implementation record**
 
 Append to this plan: date/status, repo `go-gost/x` + commit SHA, files changed, commands run and their results, review findings, deferred items. Commit it with the task.
 
@@ -229,6 +229,7 @@ Append to this plan: date/status, repo `go-gost/x` + commit SHA, files changed, 
 - Review findings/fixes: the brief's keep-alive re-attach alone does not put attempts on the final row, because `httpRoundTrip` builds a fresh `ro.HTTP` and records that local copy — added `ro.HTTP.Attempts = rs.attempts` next to that fresh object (and `ho.RecorderObject.HTTP.Attempts` in the retry branch). `attemptStart` is seeded in `newRetryState` so the attempt-0 dial-failure path (where `rs` is created after the dial) reports a sane duration instead of `time.Since(time.Time{})`; verified in a throwaway test (0 ms locally, 44-byte preview, `statusCode: 429`, base64 `responseBody`). The dial-failure attempt is recorded only after a successful replay, so a failed replay still yields exactly the single dial-failure row. `recordDialFailure` rebuilds `ro.HTTP`, so it now carries `Attempts` across the rebuild; otherwise a 429-then-dial-failure request would lose its first attempt.
 - Deferred/limitations: attempt bodies are capped at 4 KiB (`attemptBodyLimit`) and a cut body keeps whatever arrived; `ResponseBody`/`ResponseHeader` serialize as base64/JSON like the existing recorder body fields, which cuttle must decode. The final attempt's own marker/failCodes handling is untouched, and attempts are not attributed to entrypoints. `go-gost/x` was committed only — not tagged or pushed (Task 7 owns that).
 - Fix round 1 (`6172a02`): attempt 0 was not timed from the connect — `retryState` is built only after the dial resolves, so the pre-dial `rs != nil` guard never ran for the first attempt and a 30 s connect timeout would have published 0 ms. `HandleHTTP` now takes `dialStart := time.Now()` unconditionally before `h.dial` and assigns `rs.attemptStart = dialStart` at both `newRetryState` call sites inside `if cc == nil`; the `newRetryState` seed stays only as the no-dial (reused connection) default. New regression test `TestHandleHTTP_DialFailureAttemptKeepsConnectTime` (50 ms sleeping dial, asserts `DurationMS >= 40`) fails with `attempt duration = 0 ms` without the fix and passes with it. Also removed the no-op `ho.RecorderObject.HTTP.Attempts = rs.attempts` in the retryable-status branch (that object's `HTTP` is rebuilt each keep-alive iteration; the recorded row is `httpRoundTrip`'s local copy, seeded a few lines above). Gates re-run: focused tests, `./internal/util/forwarder/`, `GOWORK=off go build ./...`, `GOWORK=off go vet ./...` all PASS.
+- Fix round 2 (2026-11-11 / complete, final whole-branch review): repo/commit `go-gost/x` / `1d7306e fix(forward): bound the attempt preview read` on the same branch (base `6172a02`). The review found the attempt preview read at `sniffer_http.go:806` running under the response-head read deadline set before `http.ReadResponse` (`ho.ReadTimeout`, 60 s in cuttle), so a `429` whose body stalls delayed the failover for up to a minute. Files changed: `internal/util/forwarder/retry.go` (`const attemptPreviewTimeout = 2 * time.Second` beside `attemptBodyLimit`), `internal/util/forwarder/sniffer_http.go` (`xio.SetReadDeadline(cc, time.Now().Add(attemptPreviewTimeout))` before the preview read, with a comment that the read error is still ignored and the connection is dropped on this path so no deadline is restored), `internal/util/forwarder/sniffer_http_retry_test.go` (the `retryRequest` body factored into a `t.Fatal`-free `retryRequestErr` so a test can bound the exchange; `newStallingBodyUpstream`, `TestHandleHTTP_PreviewReadIsBounded`, and `TestAttemptWireContract`). Tests: RED `GOWORK=off go test ./internal/util/forwarder/ -run 'PreviewReadIsBounded|AttemptWireContract' -count=1 -v` → `--- FAIL: TestHandleHTTP_PreviewReadIsBounded (6.00s) the retry did not proceed within 6s: the attempt preview read is bounded only by the read timeout` (the upstream answers 429 with `Content-Length: 512` and a stalled body, `Sniffer.ReadTimeout` is 10 s, and the test waits on a `select` with a 6 s bound rather than a sleep); GREEN same command → PASS in 2.00 s, asserting status 200, one hit on the second upstream, `Retries: 1`, and one attempt on node `a` with status 429 and the bytes that arrived before the stall. Gates: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test -count=1 ./internal/util/forwarder/...` → `ok ... 2.524s`; `GOWORK=off go test -race -count=1 ./internal/util/forwarder/ -run 'PreviewReadIsBounded|Retry|Attempt'` → `ok ... 3.109s`; `gofmt` clean on the three files. The wire-contract test (final review finding 5) marshals a recorded attempt and asserts exactly the keys `attempt`/`node`/`statusCode`/`error`/`durationMs`/`bytesIn`/`bytesOut`/`responseHeader`/`responseBody`, so a tag rename cannot slip past x's suite while silently disabling cuttle. Deferred: `attemptPreviewTimeout` is a constant, not a knob; the preview still keeps whatever arrived when the deadline cuts it. Report: `.superpowers/sdd/2026-11-11-retry-attempt-observability/final-review-fix-report.md`.
 
 ---
 
@@ -244,7 +245,7 @@ Append to this plan: date/status, repo `go-gost/x` + commit SHA, files changed, 
 - Consumes: `Request` (`ID`, `SID`, `TS`, `Route`, `Node`, `Provider`, `GatewayKey`), `parseNodeName`, the `request_seq` increment inside `Insert`.
 - Produces: `stats.Attempt` and `stats.AttemptFilter`, `(*Store).Attempts(ctx, AttemptFilter) ([]Attempt, error)`, `(*Store).AttemptsForRequest(ctx, requestID string) ([]Attempt, error)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `internal/stats/attempts_test.go`:
 
@@ -319,12 +320,12 @@ func TestAttemptsAreReplacedAndPruned(t *testing.T) {
 
 Check the actual test-store constructor and `Count` signature in `internal/stats/store_test.go` before writing; use whatever helper already exists.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/stats/ -run 'Attempts' -count=1`
 Expected: FAIL — `Attempt` and `Store.AttemptsForRequest` undefined.
 
-- [ ] **Step 3: Add the table, the type, the write path and the two query methods**
+- [x] **Step 3: Add the table, the type, the write path and the two query methods**
 
 In `internal/stats/attempts.go`:
 
@@ -364,19 +365,19 @@ Add `Attempts []Attempt \`json:"attempts,omitempty"\`` to `Request`. In `migrate
 
 Add the read side in the same task (Task 3 only uses it): `(*Store).AttemptsForRequest(ctx, requestID string) ([]Attempt, error)` ordered by `attempt` ascending, and `(*Store).Attempts(ctx, AttemptFilter) ([]Attempt, error)` newest first with `AttemptFilter.where()` covering `From`/`To`/`Route`/`Node`/`Provider`/`Status`/`ErrorClass`, `limit` defaulted to 100 and capped at 1000, plus `Offset`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/stats/ -count=1`
 Expected: PASS, existing store/graph/recorder tests included.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd cuttle && git add internal/stats/attempts.go internal/stats/attempts_test.go internal/stats/store.go AGENTS.md
 git commit -m "feat(stats): store discarded retry attempts beside their request"
 ```
 
-- [ ] **Step 6: Implementation record** — same rule as Task 1.
+- [x] **Step 6: Implementation record** — same rule as Task 1.
 
 **Implementation record**
 - Date/status: 2026-11-11 / complete
@@ -400,7 +401,7 @@ git commit -m "feat(stats): store discarded retry attempts beside their request"
 - Consumes: `recorder.Record`'s `b []byte`, `parseNodeName`, `GatewayKeyIDFromContext`, `ClassifyError`, `captureHeaders`, `Store.Insert` from Task 2.
 - Produces: `attemptMessage(body []byte) string` and populated `stats.Attempt` rows on `Request.Attempts`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `internal/stats/recorder_test.go`:
 
@@ -486,12 +487,12 @@ func TestAttemptMessage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/stats/ -run 'AttemptMessage|RecordsDiscardedAttempts' -count=1`
 Expected: FAIL — `attemptMessage` undefined, no attempt rows.
 
-- [ ] **Step 3: Implement decoding and the queries**
+- [x] **Step 3: Implement decoding and the queries**
 
 In `recorder.go`, next to the `xrecorder.HandlerRecorderObject` unmarshal, decode the same bytes again into a local struct so cuttle never names the new x type:
 
@@ -521,19 +522,19 @@ Ignore the unmarshal error (an old x simply has no `http.attempts`). For each at
 
 In `attempts.go` add `attemptMessage` (JSON `error.message`, then `error.type`, then `message`, else the preview's first line trimmed to 200 chars). The query methods and `AttemptFilter.where()` already exist from Task 2 — do not duplicate them.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/stats/ -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd cuttle && git add internal/stats/recorder.go internal/stats/attempts.go internal/stats/recorder_test.go internal/stats/attempts_test.go
 git commit -m "feat(stats): decode discarded attempts from the recorder payload"
 ```
 
-- [ ] **Step 6: Implementation record** — same rule.
+- [x] **Step 6: Implementation record** — same rule.
 
 **Implementation record**
 - Date/status: 2026-11-11 / complete
@@ -558,7 +559,7 @@ git commit -m "feat(stats): decode discarded attempts from the recorder payload"
 - Consumes: `comboKey`, `Aggregator.Add`, `RowFilter`, `GraphAggregate`, `ForEachRequestAfter`.
 - Produces: `GraphAttemptRow{RequestID string; Attempt int; TS int64; Route, Node, Provider string; Status int}` (`Attempt` is required for the `(request_id, attempt)` dedupe), `(*Aggregator).AddAttempt(GraphAttemptRow)`, `(*Store).ForEachAttemptAfter(ctx, afterSeq int64, fn func(GraphAttemptRow)) (int64, error)`, `NodeMetrics.Attempts/RetriedRequests/AttemptStatus/FailureStatus`, `EdgeMetrics.Attempts/RetriedRequests`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `internal/stats/graph_test.go`:
 
@@ -644,12 +645,12 @@ func TestGraphDropsAttemptsOutsideTopology(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/stats/ ./internal/admin/ -run 'GraphCountsAttempts|Events' -count=1`
 Expected: FAIL — `NodeMetrics.Attempts` undefined and the tail ignores attempts.
 
-- [ ] **Step 3: Implement the counters**
+- [x] **Step 3: Implement the counters**
 
 In `graph.go`: add `failures map[int]int64` to `comboStats` (fill it in `Add` when `failed`); add
 
@@ -669,19 +670,19 @@ In `store.go`: `GraphAggregate` after loading request rows also runs `SELECT req
 
 In `handlers_events.go`, after the `ForEachRequestAfter` call, run `ForEachAttemptAfter(ctx, lastRowID, …)` and set `lastRowID = max(lastRowID, attemptsLast)`. Attempt rows with `TS >= sinceMs` only, same comment as requests. Extend the `AGENTS.md` live-monitor invariant: attempts tail by the parent's `seq` and are deduplicated by `(request_id, attempt)`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/stats/ ./internal/admin/ -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd cuttle && git add internal/stats/graph.go internal/stats/store.go internal/stats/graph_test.go internal/admin/handlers_events.go internal/admin/events_test.go AGENTS.md
 git commit -m "feat(stats): count discarded attempts per node and edge"
 ```
 
-- [ ] **Step 6: Implementation record** — same rule.
+- [x] **Step 6: Implementation record** — same rule.
 
 **Implementation record**
 - Date/status: 2026-11-11 / complete
@@ -690,6 +691,7 @@ git commit -m "feat(stats): count discarded attempts per node and edge"
 - Tests: RED `cd cuttle && GOWORK=off go test ./internal/stats/ ./internal/admin/ -run 'GraphCountsAttempts|Events' -count=1` → build failure in both packages: `got.Attempts undefined (type NodeMetrics has no field or method Attempts)` (also `AttemptStatus`/`FailureStatus`/`RetriedRequests`), `undefined: GraphAttemptRow`, `s.ForEachAttemptAfter undefined`, `agg.AddAttempt undefined`, `EdgeMetrics … Attempts`. GREEN `GOWORK=off go test ./internal/stats/ ./internal/admin/ -run 'TestGraphCountsAttempts|TestAggregatorDedupesAttempts|TestGraphDropsAttempts|TestGraphCountsFinalFailures|TestForEachAttemptAfter|TestEventsTailsAttempts' -count=1 -v` → all 6 PASS (`ok ... 1.091s`, `ok ... 0.136s`, no stray output); `TestGraphCountsUnroutedAttempts` → PASS. Packages `GOWORK=off go test ./internal/stats/ ./internal/admin/ -count=1` → `ok ... 26.578s` / `ok ... 19.978s`. Gates `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test ./... -count=1` → every package passes; `gofmt -l internal/` → clean.
 - Review findings/fixes: (1) `retriedRequests` cannot be a sum over combos: the first implementation added `len(s.retried)` per combo, and `TestGraphCountsAttemptsAndFailures` caught `provider:p` reporting `RetriedRequests: 2` for one parent attempted on two nodes. `Metrics` now keeps `nodeParents`/`edgeParents` sets and derives the distinct count per graph key after the loops (the same parent can also reach one `route:<id>` through two nodes or one edge through two recorded providers). (2) Deviation — `GraphAttemptRow` carries `Attempt int` in addition to the brief's fields. The brief requires dedupe by `(request_id, attempt)` but its struct has no attempt index, so two discarded attempts from the same node (a single-node route retried twice) would collapse into one; both reads select the existing `attempt` column. (3) Deviation — `GraphAttemptRow`, `AddAttempt`'s reads, `GraphAggregate`'s attempt query and `ForEachAttemptAfter` live in `internal/stats/graph.go`, where `GraphAggregate` and `ForEachRequestAfter` already are, so `store.go` is untouched (the brief's file list mismatches the code). (4) Deviation — the events loop keeps two cursors (`lastRequestSeq`, `lastAttemptSeq`) instead of `lastRowID = max(lastRowID, attemptLast)`. Tailing attempts from the already-advanced `lastRowID` skips the attempts of a request tailed in the same tick, because the attempt reuses the parent's `seq`; and a single shared cursor advanced by one table can skip a row of the other table committed between the two reads. Each tail advances its own monotonic cursor and dedupes independently, and `AGENTS.md` records why. (5) `failureStatus` is merged inside `addNode`, so entrypoint nodes get it too (it comes from the parent row's client model); attempts skip entrypoints, since an attempt has no client model. Both facts are stated on `NodeMetrics` and in the new `AGENTS.md` bullet. (6) `Aggregator.seen` was factored into a bounded `seenSet` so attempts reuse the request eviction policy (`maxSeenAttempts = 200_000`) instead of a second hand-rolled ring. (7) Extra tests beyond the brief: `TestGraphCountsFinalFailuresByStatus` (failed dial keyed `"0"`, `429`, a `200` never counted, no attempt counters without attempt rows), `TestGraphCountsUnroutedAttempts` (`unrouted` node and `unrouted|provider:` edge, the only branch the brief's tests miss) and `TestForEachAttemptAfterFollowsTheParentSequence` (tail order and fields including the attempt index, out-of-window rows still advance the cursor, and `INSERT OR REPLACE`-driven re-delivery is not double counted through the real store).
 - Deferred/limitations: `GraphMetrics.Errors` still lists parent rows only (unchanged on purpose — folding attempts in would break its request denominators); nothing exposes the new counters through the API or console yet (Tasks 5-6), so `web/` is untouched. Memory stays bounded but is per connection: `retried` holds one request id per combo and `seenAttempts` caps at 200k keys, so a live session long enough to evict can re-count an evicted attempt — the same tradeoff the request dedupe already accepts. `AddAttempt` skips dedupe for an empty `request_id` (it is not added to `retried` either). Attempt counters are additive only: pre-upgrade attempts stay invisible.
+- Fix round 2 (2026-11-11 / complete, final whole-branch review): repo/commit `cuttle` / `bb01c42a fix(stats): report the newest failure and attempt per graph node` on the same branch (base `f1200c49`). The review found the dead-badge tooltip unable to name the spec's "most recent failure": the graph carried counts but no timestamps. Files changed: `internal/stats/graph.go` (`comboStats.lastFailureTS`/`lastFailureStatus` filled in `Add`; `attemptStats.lastTS`/`lastStatus`/`lastAttempt` filled in `AddAttempt`, the attempt index breaking the tie because one parent's attempts share its timestamp; `NodeMetrics.LastFailureTS int64 json:"lastFailureTs,omitempty"`, `LastFailureStatus int json:"lastFailureStatus"`, `LastAttemptTS int64 json:"lastAttemptTs,omitempty"`, `LastAttemptStatus int json:"lastAttemptStatus"`; `addNode`/`addAttemptNode` merge newest-wins with `>` so a graph key unioning several combos reports the newest of them), `internal/stats/graph_test.go` (`TestGraphReportsNewestFailureAndAttempt`, `TestAggregatorNewestAttemptBreaksTiesByIndex`, `TestGraphPayloadCarriesLastFailureFields`). Tests: RED `GOWORK=off go test ./internal/stats/ -run 'NewestFailure|PayloadCarriesLastFailure' -count=1` → `n1.LastFailureTS undefined (type NodeMetrics has no field or method LastFailureTS)` at 11 sites; GREEN `-run 'NewestFailure|NewestAttempt|PayloadCarriesLastFailure'` → 3 PASS; `GOWORK=off go test ./internal/stats/ -count=1` → `ok ... 23.818s`; gates `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test ./... -count=1` → every package `ok` (admin 18.8s, gateway 18.7s, stats 31.5s). The two status fields carry no `omitempty` (they are always sent, `0` meaning none) while the timestamps do, so the console keys "has a timestamp" off the ts field only. Deferred: the live and snapshot paths both derive the fields from the aggregate, so nothing new is carried between ticks.
 
 ---
 
@@ -704,32 +706,32 @@ git commit -m "feat(stats): count discarded attempts per node and edge"
 - Consumes: `stats.Store.Attempts`, `stats.Store.AttemptsForRequest`, `stats.AttemptFilter`, `labelSet`.
 - Produces: `GET /api/attempts` returning `[]attemptView` (`Attempt` + `nodeName`/`routeName`/`providerName` labels), and `requestView.Attempts []attemptView` on `GET /api/requests/{id}`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `internal/admin/attempts_test.go` covering: filters (`node`, `status`, `errorClass`, `from`/`to`, `limit`), label decoration, empty list `[]` (never `null`), and that `GET /api/requests/{id}` returns its attempts while a request without attempts omits the key.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/admin/ -run 'Attempts' -count=1`
 Expected: FAIL — 404 / route not registered.
 
-- [ ] **Step 3: Implement the endpoint**
+- [x] **Step 3: Implement the endpoint**
 
 `handlers_attempts.go`: `func (s *Server) handleAttempts(w http.ResponseWriter, r *http.Request)` parsing `from`/`to` with `parseRange`, plus `node`, `route`, `provider`, `status`, `errorClass`, `limit`, `offset`; return `[]attemptView` (empty slice, not nil). Register `api.HandleFunc("GET /api/attempts", s.handleAttempts)` in `server.go` next to `GET /api/requests`. Extend `requestView` with an outer `Attempts []attemptView \`json:"attempts,omitempty"\`` field — the shallower field shadows the embedded `stats.Request.Attempts` — populated in `handleRequest` via `AttemptsForRequest` (labels applied with `newLabelSet`). `handleRequests` leaves it unset, so list payloads carry no `attempts` key and never `null`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/admin/ -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd cuttle && git add internal/admin/handlers_attempts.go internal/admin/attempts_test.go internal/admin/server.go internal/admin/labels.go internal/admin/handlers_stats.go
 git commit -m "feat(admin): expose discarded attempts and attach them to request detail"
 ```
 
-- [ ] **Step 6: Implementation record** — same rule.
+- [x] **Step 6: Implementation record** — same rule.
 
 **Implementation record**
 - Date/status: 2026-11-11 / complete
@@ -752,32 +754,32 @@ git commit -m "feat(admin): expose discarded attempts and attach them to request
 - Consumes: `GET /api/attempts`, the graph `NodeMetrics` fields from Task 4, `SessionCard` layout conventions.
 - Produces: `getAttempts(q: AttemptQuery): Promise<AttemptRow[]>`; `AttemptCard` rendered in the node panel; dead badge `title` text.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/api/client.test.ts`: `getAttempts` builds `/api/attempts?from=…&to=…&limit=…&node=…&status=429` (only present params).
 
 `web/src/App.test.tsx`: render `NodePanel` for `node:n1` with `metrics={{attempts: 2, retriedRequests: 1, attemptStatus: {'429': 2}, failureStatus: {'429': 1}, ...}}` and a stubbed `getAttempts` returning one 429 attempt; assert the SSR HTML contains `重试尝试`, `429`, the upstream message, and that the dead badge `title` reads `失败 1（429×1）· 重试丢弃 2`.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd cuttle/web && npx vitest run src/api/client.test.ts src/App.test.tsx`
 Expected: FAIL — `getAttempts` undefined, no `重试尝试` text.
 
-- [ ] **Step 3: Implement the console changes**
+- [x] **Step 3: Implement the console changes**
 
 Add `AttemptRow` (`requestId`, `attempt`, `ts`, `route`, `node`, `provider`, `status`, `error`, `errorClass`, `durationMs`, `bytesIn`, `bytesOut`, `bodyPreview`, plus label fields) and extend `NodeMetrics`/`EdgeMetrics` with `attempts`, `retriedRequests`, `attemptStatus?`, `failureStatus?`. `getAttempts` mirrors `getRequests`. In `App.tsx`: a `useNodeAttempts` hook next to `useNodeSessions` (same since/range/errorsOnly inputs), an `AttemptCard` styled like `SessionCard` with a `重试尝试` tag, and merge both lists by timestamp for rendering (attempts click through to `getRequest(row.requestId)`). `deadTitle(metrics)` builds `失败 N（429×2, 503×1）· 重试丢弃 M`, omitting a section when empty and returning `窗口内没有失败记录` when both are empty; use it as the dead icon's `title` while keeping `aria-label="dead"`. Add the Chinese keys to `en-US.ts` (`重试尝试`, `上游尝试`, `窗口内没有失败记录`, the tooltip template).
 
-- [ ] **Step 4: Run the web gate**
+- [x] **Step 4: Run the web gate**
 
 Run: `cd cuttle/web && npx vitest run && npx tsc --noEmit && npm run build`
 Expected: PASS. Rebuild leaves `internal/admin/dist` updated.
 
-- [ ] **Step 5: Run the Go gate with the rebuilt console**
+- [x] **Step 5: Run the Go gate with the rebuilt console**
 
 Run: `cd cuttle && GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd cuttle && git add web/src internal/admin
@@ -786,7 +788,7 @@ git commit -m "feat(web): show retry attempts and explain a dead node"
 
 (Do not commit `internal/admin/dist`, it is git-ignored.)
 
-- [ ] **Step 7: Implementation record** — same rule.
+- [x] **Step 7: Implementation record** — same rule.
 
 **Implementation record**
 - Date/status: 2026-11-11 / complete
@@ -796,6 +798,7 @@ git commit -m "feat(web): show retry attempts and explain a dead node"
 - Review findings/fixes: (1) Deviation — the brief's `NodePanel` SSR test cannot observe rows: `renderToStaticMarkup` never runs effects, so the stubbed `getAttempts`/`getRequests` would never resolve and the card text cannot appear. The SSR assertions therefore cover what the first pass renders (the metrics-derived `重试尝试`/`重试请求` rows, the dead-badge `title`), `AttemptCard` and `mergeNodeActivity` are asserted directly, and a new `web/src/App.dom.test.tsx` (the repo's `*.dom.test.tsx` jsdom convention) covers the hook wiring: both lists render, an attempt card opens its parent request through `getRequest`, and an entrypoint panel fetches nothing. (2) The brief's sample metrics are internally inconsistent (`retriedRequests: 1` beside `重试丢弃 2`); "重试丢弃 M" is the discarded-attempt count (`attempts`), which matches the required `失败 1（429×1）· 重试丢弃 2` title, and `retriedRequests` is shown as its own `重试请求` row instead. (3) The tooltip needed three keys instead of one template plus a join: joining with `' · '` produced `） · ` and a leading space the fixed format forbids, and an English join reads better with spaces, so `失败 {failed}（{statuses}）· 重试丢弃 {discarded}`, `失败 {failed}（{statuses}）` and `重试丢弃 {discarded}` are separate keys. (4) An entrypoint panel must not fetch attempts: `GET /api/attempts` has no `entrypoint` filter (an attempt carries no client model), so `attemptQuery` returns `null` for `entrypoint:`/`unrouted` ids instead of fetching the whole window. (5) `status=0` is never sent — the admin API treats `0` as "any status" — and a test pins it. (6) Existing request fixtures did not need `errorsOnly` to hide attempts: a discarded attempt is always a failure, so the 仅错误 toggle filters sessions only and the attempt cards stay. (7) `attempts`/`retriedRequests` are required on `NodeMetrics`/`EdgeMetrics` (the Go fields have no `omitempty`), so four fixture sites gained the fields instead of making the type lie; `attemptStatus`/`failureStatus` stay optional because Go omits them when empty. (8) `nodes.test.tsx`/`activity.test.ts` fixtures were updated mechanically (`attempts: 0, retriedRequests: 0`) — no assertions changed.
 - Deferred/limitations: no browser check; UI behavior is verified only by TypeScript, Vitest (SSR + jsdom) and the rebuilt bundle compiling into the Go binary. The request detail drawer does not render the `attempts` array it now receives (Task 6 renders attempts in the node panel only), and the edge panel does not show `EdgeMetrics.attempts`/`retriedRequests` — the types mirror the payload, the panels do not display them. The topology node badge keeps its own `title` (`dead` / `dead in {routes}`); only the panel badge gained the failure explanation. `internal/admin/dist` is git-ignored and not committed.
 - Fix round 1 (2026-11-11 / complete): repo/commit `cuttle` / `b002ac8a fix(web): list discarded attempts in the request detail` on the same branch. The review found the spec-mandated detail section missing and a README sentence that still placed the attempt cards "below the sessions" although the panel merges both lists newest first. Files changed: `web/src/components/RequestDetail.tsx` (`RequestDetail` now reads `request.attempts` and renders a `上游尝试` section between the request rows and `捕获详情`: per attempt `#<attempt+1>`, a status tag (`连接失败` for status 0, red/orange/green by status), the upstream message, duration, `route` and `provider/node` labels; nothing when the array is absent or empty — the drawer is shared with the Sessions page, so one change covers both entry points), `web/src/components/RequestDetail.test.tsx` (three SSR tests: section content and placement above `捕获详情`, a status-0 attempt shown as `连接失败` with `unrouted`, and no section for a missing or empty array), `web/src/App.dom.test.tsx` (the attempt-card click-through also asserts the portalled drawer lists the attempt under `上游尝试`), `README.md` (merged newest-first wording plus the detail `上游尝试` mention), `AGENTS.md` (detail-drawer sentence in the web invariant). Tests: RED `git stash push -- web/src/components/RequestDetail.tsx` then `cd cuttle/web && npx vitest run src/components/RequestDetail.test.tsx` → `Tests 2 failed | 4 passed (6)`, `AssertionError: expected '<div class="ant-descriptions ant-desc…' to contain '上游尝试'` and `'#3'`; GREEN same command → `6 passed`, `npx vitest run src/App.dom.test.tsx` → `3 passed`; web gate `npx vitest run` → `Test Files 45 passed (45)`, `Tests 337 passed (337)`, `npx tsc --noEmit` → clean, `npm run build` → `✓ built in 9.09s`; Go gate with the rebuilt bundle: `GOWORK=off go build ./...` and `GOWORK=off go vet ./...` → OK, `GOWORK=off go test ./... -count=1` → every package `ok` (admin 18.3s, gateway 19.9s, stats 30.4s). The earlier deferred item about the detail drawer not rendering `attempts` is closed by this commit; the edge panel and the topology badge remain as recorded above.
+- Fix round 2 (2026-11-11 / complete, final whole-branch review): repo/commit `cuttle` / `cd116cbb fix(web): explain a dead node with the newest failure` on the same branch. The review found the tooltip missing the spec's newest failure, the topology badge still saying only `dead`, and the shipped docs promising data the pinned x cannot produce. Files changed: `web/src/graph/deadTitle.ts` (new shared module, no cycles: `deadTitle`, `hasFailureData`, `formatStatusCounts` and the newest-failure pick; the tooltip is now `失败 N（429×2, 503×1）· 重试丢弃 M · 最后 03:00:16 429`, each section omitted when empty, `最后 …` only when a timestamp exists, `窗口内没有失败记录` when both count sets are empty, and `joinSections` normalizing the Chinese `）· ` boundary that a uniform ` · ` join gets wrong), `web/src/graph/deadTitle.test.ts` (six-row table plus the en-US translation and `hasFailureData`), `web/src/graph/nodes.tsx` (the fully-dead title is `deadTitle(metrics)`; a dead node without failure data keeps the plain `dead`; the partial `dead in {routes}` case is unchanged), `web/src/graph/nodes.test.tsx` (two new assertions), `web/src/App.tsx` (imports the shared module), `web/src/time.ts` (`formatClock`, local `HH:mm:ss`, reused by `formatDateTime`), `web/src/api/types.ts` (the four new `NodeMetrics` fields), `web/src/locales/en-US.ts` (`最后 {time} {status}`, dropping the now unused combined key), fixture updates in `web/src/App.test.tsx`, `web/src/App.dom.test.tsx`, `web/src/graph/activity.test.ts` and `web/src/graph/nodes.test.tsx` for the two required status fields, `README.md` and `AGENTS.md` (the x-release caveat: attempts need the `github.com/go-gost/x` release that writes `http.attempts`; with the pinned `v0.31.1` the lists stay empty and the counters read zero, so cuttle behaves exactly as before — plus the extended tooltip format and the topology badge's plain-`dead` fallback). Tests: RED `npx vitest run src/graph/deadTitle.test.ts src/graph/nodes.test.tsx` → `Failed to load url ./deadTitle` and `title="dead"` instead of the breakdown; after the module landed the Chinese join was still `） · ` and the nodes test ran in the browser-default language, both fixed; GREEN full web gate `npx vitest run` → `Test Files 46 passed (46)`, `Tests 342 passed (342)`, `npx tsc --noEmit` → clean, `npm run build` → `✓ built in 9.19s`; Go gate with the rebuilt bundle: `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, `GOWORK=off go test ./... -count=1` → every package `ok`. `internal/admin` needed no change: it marshals `stats.GraphMetrics` directly, and the payload test in Task 4's fix round pins the JSON keys. The earlier deferred item about the topology badge is closed by this commit. Deferred: still no browser check (Vitest SSR only), and the `最后` label may name a discarded attempt's status rather than the parent's final one — the newest failure of either kind is what the spec asks for.
 
 ---
 
@@ -808,18 +811,18 @@ git commit -m "feat(web): show retry attempts and explain a dead node"
 - Consumes: the x tag containing Task 1.
 - Produces: cuttle building against the published x that emits `http.attempts`; optional follow-up cleanup removing the local decode struct.
 
-- [ ] **Step 1: Confirm approval** to tag and push `go-gost/x`; do not tag without it.
-- [ ] **Step 2:** `cd x && git tag vX.Y.Z && git push origin vX.Y.Z`, then `cd cuttle && GOWORK=off go get github.com/go-gost/x@vX.Y.Z && GOWORK=off go mod tidy`.
-- [ ] **Step 3:** `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`.
-- [ ] **Step 4: Commit** `chore(deps): bump go-gost/x to vX.Y.Z`.
-- [ ] **Step 5: Implementation record** — same rule.
+- [x] **Step 1: Confirm approval** to tag and push `go-gost/x`; do not tag without it.
+- [x] **Step 2:** `cd x && git tag vX.Y.Z && git push origin vX.Y.Z`, then `cd cuttle && GOWORK=off go get github.com/go-gost/x@vX.Y.Z && GOWORK=off go mod tidy`.
+- [x] **Step 3:** `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`.
+- [x] **Step 4: Commit** `chore(deps): bump go-gost/x to vX.Y.Z`.
+- [x] **Step 5: Implementation record** — same rule.
 
 ### Task 8 (blocked on approval): production verification
 
-- [ ] **Step 1:** build and push the image, `kubectl --context pi -n llm rollout restart deploy/llm-gw`, verify `/api/health`.
-- [ ] **Step 2:** trigger a `deepseek-flash` request that lands on `oc-go-free`; confirm the node panel lists a `重试尝试` card with the 429 message, the dead tooltip shows counts, and `SELECT count(*) FROM request_attempts` grows.
-- [ ] **Step 3:** confirm `rollups`, `summary` and the 请求 list are unchanged in shape (one row per client request).
-- [ ] **Step 4: Implementation record** with the verified numbers, or the deferred reason if the deploy is postponed.
+- [x] **Step 1:** build and push the image, `kubectl --context pi -n llm rollout restart deploy/llm-gw`, verify `/api/health`.
+- [x] **Step 2:** trigger a `deepseek-flash` request that lands on `oc-go-free`; confirm the node panel lists a `重试尝试` card with the 429 message, the dead tooltip shows counts, and `SELECT count(*) FROM request_attempts` grows.
+- [x] **Step 3:** confirm `rollups`, `summary` and the 请求 list are unchanged in shape (one row per client request).
+- [x] **Step 4: Implementation record** with the verified numbers, or the deferred reason if the deploy is postponed.
 
 ---
 

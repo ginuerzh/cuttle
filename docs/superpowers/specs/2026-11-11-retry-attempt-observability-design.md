@@ -130,8 +130,10 @@ places that spend a retry unit:
 
 1. **Retryable status** (the `retryable status %d` branch of `httpRoundTrip`):
    before closing the discarded response, read at most `attemptBodyLimit` (4 KiB)
-   from `resp.Body` under the existing `ho.ReadTimeout` deadline, best effort —
-   a read error only truncates the preview and must never fail the retry. The
+   from `resp.Body` under a dedicated `attemptPreviewTimeout` (2 s) deadline —
+   never the header `ho.ReadTimeout`, which would let a stalled body delay the
+   failover. Best effort: a read error only truncates the preview and must
+   never fail the retry. The
    attempt start time comes from `rs.start` plus the attempt index, or a local
    timestamp captured when the attempt is dialed.
 2. **Dial failure** (the pre-dial retry branch in `HandleHTTP`): status `0`,
@@ -240,9 +242,10 @@ requests.
   (attempt card: status, message, duration, `重试尝试` marker, click opens the
   parent request detail). The 仅错误 toggle and the empty state apply to both.
 - Request detail drawer gains an 上游尝试 section listing each attempt.
-- `dead` badge tooltip: `失败 3（429×2, 503×1）· 最后 03:00:16 429` from
-  `failureStatus` + `attemptStatus`, plus `重试丢弃 N` when there were discarded
-  attempts and their newest attempt. When both sets are empty the tooltip says so
+- `dead` badge tooltip: `失败 3（429×2, 503×1）· 重试丢弃 2 · 最后 03:00:16 429`,
+  built from `failureStatus`/`attemptStatus` counts plus the newest failure
+  (`LastFailureTS`/`LastAttemptTS`), with empty sections omitted. The same text
+  is used by the topology node badge. When both sets are empty the tooltip says so
   (`窗口内没有失败记录`) instead of showing `dead` with no number.
 - The global 请求 list is unchanged (it stays one row per client request).
 
