@@ -191,12 +191,12 @@ git commit -m "feat(config): accept an entrypoint without a route and a node wit
 ```
 
 **Implementation record (Task 1)** — fill in after the task is complete:
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-11 complete
+- Repository + commit: cuttle `c2011f70` — `feat(config): accept an entrypoint without a route and a node without a provider`
+- Files changed: `internal/config/config.go` (`Entrypoint`/`Node` doc comments, node loop: empty provider → reject `key`/`api`, require `model` only with a provider; entrypoint loop: empty route is a draft, dangling non-empty route still rejected), `internal/config/config_test.go` (5 new cases), `internal/admin/draft_test.go` (new; draft node + entrypoint create, `GET /api/config` → `PUT /api/config` round-trip).
+- Tests/commands and results: `GOWORK=off go test ./internal/config -run 'TestValidateAllowsDraft|TestValidateAllowsProviderless|TestValidateDraftNode|TestValidateProviderless'` RED (4 failed: `route is required` / `provider is required`) then GREEN; the `api` case was strengthened from `node` to `node`+`api` after it passed against the old error. `GOWORK=off go test ./internal/admin -run TestDraftNodeAndEntrypointAreAccepted` RED with `internal/config/config.go` stashed (`create draft node = 400`) then GREEN. Whole packages: `GOWORK=off go test ./internal/config ./internal/admin -count=1` → ok / ok (15.4s).
+- Review findings and fixes: the first `TestValidateProviderlessNodeRejectsAPI` assertion only matched `node`, so it passed against the old `provider is required` error; tightened to require `api` in the message before implementing.
+- Deferred items/limitations: `node.model` on a providerless node is kept unvalidated as a hint (spec's settled call); the console clears it instead.
 
 ---
 
