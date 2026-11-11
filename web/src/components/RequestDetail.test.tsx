@@ -73,4 +73,77 @@ describe('RequestDetail', () => {
     expect(html).not.toContain('r_deleted0001');
     expect(html).not.toContain('gk_deleted001');
   });
+
+  it('lists the discarded upstream attempts with their status and message', () => {
+    const html = renderToStaticMarkup(
+      <RequestDetail
+        request={{
+          ...base,
+          retries: 1,
+          attempts: [
+            {
+              requestId: 'r',
+              attempt: 0,
+              ts: '2026-11-06T00:00:00Z',
+              route: 'r_0000000001',
+              routeName: 'strong',
+              node: 'n_0000000001',
+              nodeName: 'ds-strong',
+              provider: 'p_0000000001',
+              providerName: 'DeepSeek 官方',
+              status: 429,
+              error: 'rate limit exceeded',
+              errorClass: 'quota',
+              durationMs: 40,
+              bytesIn: 100,
+              bytesOut: 20,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain('上游尝试');
+    expect(html).toContain('#1');
+    expect(html).toContain('429');
+    expect(html).toContain('rate limit exceeded');
+    expect(html).toContain('40ms');
+    expect(html).toContain('DeepSeek 官方/ds-strong');
+    expect(html.indexOf('上游尝试')).toBeLessThan(html.indexOf('捕获详情'));
+  });
+
+  it('shows a failed dial as a status-less attempt', () => {
+    const html = renderToStaticMarkup(
+      <RequestDetail
+        request={{
+          ...base,
+          attempts: [
+            {
+              requestId: 'r',
+              attempt: 2,
+              ts: '2026-11-06T00:00:00Z',
+              routeName: '',
+              nodeName: '',
+              providerName: '',
+              status: 0,
+              error: 'dial tcp: connection refused',
+              durationMs: 5,
+              bytesIn: 0,
+              bytesOut: 0,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain('#3');
+    expect(html).toContain('连接失败');
+    expect(html).toContain('dial tcp: connection refused');
+    expect(html).toContain('unrouted');
+  });
+
+  it('omits the attempt section when the row carries none', () => {
+    expect(renderToStaticMarkup(<RequestDetail request={base} />)).not.toContain('上游尝试');
+    expect(renderToStaticMarkup(<RequestDetail request={{ ...base, attempts: [] }} />)).not.toContain('上游尝试');
+  });
 });

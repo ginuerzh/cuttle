@@ -468,7 +468,9 @@ Entrypoint -> Route -> Node -> Provider model
   newest first, listing a request before its own attempts. An attempt card
   (`重试尝试`) opens its parent request's detail through `getRequest`, because an
   attempt has no row of its own. An entrypoint panel fetches no attempts: the
-  admin API cannot filter attempts by entrypoint. The dead badge keeps
+  admin API cannot filter attempts by entrypoint. The request detail drawer
+  (shared with the Sessions page) lists the loaded `attempts` array under
+  `上游尝试` and omits the section when there are none. The dead badge keeps
   `aria-label="dead"` and its `title` is `deadTitle(metrics)` —
   `失败 N（429×2, 503×1）· 重试丢弃 M`, a section with a zero count omitted and
   `窗口内没有失败记录` when the window has neither.

@@ -816,9 +816,10 @@ attempts only: one client request is always one row, and rollups, graphs and
 filters are unchanged. The discarded attempts themselves are stored beside the
 row and exposed through `GET /api/attempts` and the request detail's `attempts`
 array. Sessions tags a retried row with `重试 N 次`, and the detail panel repeats
-the count. The node panel lists the discarded attempts of the window as `重试尝试`
-cards below the sessions (clicking one opens its parent request) and summarises
-them beside the request count; the dead badge's tooltip explains the node with
+the count and lists the discarded attempts under `上游尝试`. The node panel merges
+the discarded attempts of the window into the session list newest first, tagging
+them `重试尝试` (clicking one opens its parent request), and summarises them beside
+the request count; the dead badge's tooltip explains the node with
 `失败 N（…）· 重试丢弃 M`, or `窗口内没有失败记录` when the window has neither.
 Body capture keeps only the final attempt, so a captured pair describes the
 response the client actually received.

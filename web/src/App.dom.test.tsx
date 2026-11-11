@@ -117,7 +117,7 @@ describe('NodePanel activity list', () => {
     }) as unknown as typeof window.matchMedia;
     getRequestsMock.mockImplementation(async () => [session]);
     getAttemptsMock.mockImplementation(async () => [attempt]);
-    getRequestMock.mockImplementation(async () => session);
+    getRequestMock.mockImplementation(async () => ({ ...session, attempts: [attempt] }));
   });
 
   it('lists the discarded attempts with the sessions of the node', async () => {
@@ -136,7 +136,7 @@ describe('NodePanel activity list', () => {
     act(() => root.unmount());
   });
 
-  it('opens the parent request when an attempt card is clicked', async () => {
+  it('opens the parent request, including its discarded attempts, when an attempt card is clicked', async () => {
     const { container, root } = render(
       <NodePanel config={config} id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
     );
@@ -149,6 +149,11 @@ describe('NodePanel activity list', () => {
     await settle();
 
     expect(getRequestMock).toHaveBeenCalledWith(session.requestId);
+    // The drawer is portalled to the body and lists the same attempt again in
+    // the request detail, which the Sessions page shares.
+    const drawer = document.body.textContent ?? '';
+    expect(drawer).toContain('上游尝试');
+    expect(drawer).toContain('quota exhausted for this key');
     act(() => root.unmount());
   });
 
