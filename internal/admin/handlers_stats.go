@@ -97,7 +97,17 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "request not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.newLabelSet(r.Context()).requestView(*row))
+	labels := s.newLabelSet(r.Context())
+	view := labels.requestView(*row)
+	attempts, err := s.stats.AttemptsForRequest(r.Context(), row.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, attempt := range attempts {
+		view.Attempts = append(view.Attempts, labels.attemptView(attempt))
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleErrorSummary(w http.ResponseWriter, r *http.Request) {
