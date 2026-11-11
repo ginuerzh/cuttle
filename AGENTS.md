@@ -384,9 +384,9 @@ Entrypoint -> Route -> Node -> Provider model
   id, and `Filter.GatewayKey` maps to `GET /api/requests?key=<id>` (exact id).
 - `requests.retries` is additive (`INTEGER NOT NULL DEFAULT 0`) and counts extra
   upstream attempts only: `0` means the first attempt served the request. One
-  client request is one row and one set of rollups; never insert a row per
-  attempt. Body capture keeps the final attempt only, selected through the
-  rewriter's `attempt` metadata.
+  `requests` row per client request; discarded attempts go to `request_attempts`
+  and never to `requests`/`rollups`. Body capture keeps the final attempt only,
+  selected through the rewriter's `attempt` metadata.
 - Hourly `key_rollups` (bucket + gateway_key id) store per-key requests, errors
   and token counters. Insert them only for authenticated requests, in the same
   transaction as `rollups`. `Cleanup` deletes them with the same
