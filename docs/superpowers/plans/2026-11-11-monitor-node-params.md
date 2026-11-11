@@ -231,12 +231,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): map a graph id to read-on
 
 #### Implementation record — Task 1
 
-- Date / status:
-- Repository + commit:
-- Files changed:
-- Tests run / results:
-- Review findings / fixes:
-- Deferred / limitations:
+- Date / status: 2026-11-11 — DONE (code in `2435991c`); this record is added by the follow-up plan commit.
+- Repository + commit: `github.com/ginuerzh/cuttle` @ `2435991c` (`feat(web): map a graph id to read-only entity parameters`).
+- Files changed: `web/src/pages/entityParams.ts` (new), `web/src/pages/entityParams.test.ts` (new).
+- Tests/commands and results: RED `npx vitest run src/pages/entityParams.test.ts` → `Failed to load url ./entityParams` (no tests collected). GREEN the same command, 9/9 passing. `npx tsc --noEmit` exit 0.
+- Review findings and fixes: none yet (no review on this task; the whole-branch review covers it). Two details settled while implementing: the return type is `ParamRow[]` with both sides translated, so `NodePanel` can render rows verbatim; `configuredAPIs` from `presets.ts` is reused so the provider rows list exactly the APIs the node API select offers.
+- Deferred items/limitations: the row order and omission rules live in this module only; the panel renders whatever it returns next task. `entrypoint.match` is joined with `, ` and a single-glob entrypoint therefore reads the same as a multi-glob one.
 
 ---
 
