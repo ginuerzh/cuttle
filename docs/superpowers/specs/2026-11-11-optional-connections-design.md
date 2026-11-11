@@ -61,7 +61,7 @@ drafts would vanish for other admins).
   semantic.
 - x `hop_parser.ParseHop` accepts a hop with no nodes and its `Select` returns
   `nil`; x's local forward handler then returns `errNodeNotAvailable`, which the
-  gateway answers with `503` and records as an error row with no route (the row
+  gateway answers with a 5xx (`502` for an empty hop) and records an error row with no route (the row
   therefore lands in `unrouted`). This is the mechanism the draft data plane
   relies on; a gateway test must pin it rather than assume it.
 
@@ -123,7 +123,7 @@ drafts would vanish for other admins).
   empty hop and fails like any other request instead of being answered by a
   local estimate.
 - Reloads that contain drafts must succeed; a build with drafts logs warnings
-  and serves 503 for the affected models.
+  and serves a 5xx (502) for the affected models.
 
 ### Admin API
 
@@ -170,7 +170,7 @@ through". `example.yaml` stays fully connected (it must keep loading as is).
 - Config: drafts validate; a dangling non-empty id still fails with a message
   naming the entity; `node.key` without a provider fails; a non-empty `api`
   without a provider fails; `example.yaml` still loads unchanged.
-- Gateway: an entrypoint with no route answers `503` and records one request
+- Gateway: an entrypoint with no route answers `502` and records one request
   row with no route (unrouted); a *later* entrypoint matching the same model is
   not used; a route whose only node has no provider behaves the same; a
   `count_tokens` request to a draft entrypoint fails instead of being answered
@@ -187,7 +187,7 @@ through". `example.yaml` stays fully connected (it must keep loading as is).
   consequence of "no fallthrough". The canvas tags it `未连接`, the README
   states it, and the build logs a warning per draft entrypoint.
 - A config with a connected entrypoint whose route has only providerless nodes
-  serves 503 with no upstream attempt; route health shows no nodes for it,
+  serves 502 with no upstream attempt; route health shows no nodes for it,
   which can look like an empty route rather than a draft. The node cards are
   tagged `未连接`, which is the operator-facing signal.
 - Drafts are compiled into the data plane as failing hops; the cost is one

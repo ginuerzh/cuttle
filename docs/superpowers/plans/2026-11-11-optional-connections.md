@@ -26,7 +26,7 @@
 
 1. A draft entrypoint declared before working entrypoints must not leak its models upstream — pinned by `TestDraftEntrypointDoesNotFallThrough` (Task 2).
 2. `count_tokens` owned by a draft entrypoint must fail, not be answered by a local estimate — pinned by `TestDraftEntrypointCountTokensFails` and `TestBuildCountTokensPolicyDraftEntrypoint` (Task 2).
-3. A route whose only node has no provider must answer 503 instead of failing the reload — pinned by `TestDraftNodeRouteFails` (Task 2).
+3. A route whose only node has no provider must answer a 5xx (502) instead of failing the reload — pinned by `TestDraftNodeRouteFails` (Task 2).
 4. A hand-written YAML node with no provider but a pinned `key` (or a non-auto `api`) must be rejected with the node named — pinned by `TestValidateProviderlessNodeRejectsKey` / `...RejectsAPI` (Task 1).
 5. Disconnecting a node's provider in the console must clear the pinned key so reconnecting elsewhere cannot leave a key that belongs to another provider — pinned by `connectNodeProvider` / `disconnectNodeProvider` tests (Task 4).
 
@@ -247,14 +247,14 @@ func TestDraftEntrypointDoesNotFallThrough(t *testing.T) {
 	gw := startGateway(t, cfg)
 
 	if code := postModel(t, gw, "/v1/chat/completions", `{"model":"anything","messages":[]}`); code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", code)
+		t.Fatalf("status = %d, want 502", code)
 	}
 	if hit.path != "" {
 		t.Fatalf("a draft entrypoint leaked to the later entrypoint's upstream: %q", hit.path)
 	}
 	row := waitRow(t, gw)
 	if row.Route != "" || row.Status != http.StatusServiceUnavailable {
-		t.Fatalf("row route/status = %q/%d, want empty/503 (unrouted)", row.Route, row.Status)
+		t.Fatalf("row route/status = %q/%d, want empty/502 (unrouted)", row.Route, row.Status)
 	}
 }
 
@@ -266,7 +266,7 @@ func TestDraftNodeRouteFails(t *testing.T) {
 	gw := startGateway(t, cfg)
 
 	if code := postModel(t, gw, "/v1/chat/completions", `{"model":"anything","messages":[]}`); code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", code)
+		t.Fatalf("status = %d, want 502", code)
 	}
 	if hit.path != "" {
 		t.Fatalf("a providerless node reached an upstream: %q", hit.path)
@@ -280,7 +280,7 @@ func TestDraftEntrypointCountTokensFails(t *testing.T) {
 	gw := startGateway(t, cfg)
 
 	if code := postModel(t, gw, "/v1/messages/count_tokens", `{"model":"anything","messages":[]}`); code != http.StatusServiceUnavailable {
-		t.Fatalf("count_tokens status = %d, want 503 instead of a local estimate", code)
+		t.Fatalf("count_tokens status = %d, want 502 instead of a local estimate", code)
 	}
 	if hit.path != "" {
 		t.Fatalf("count_tokens reached an upstream: %q", hit.path)
@@ -359,12 +359,12 @@ git commit -m "feat(gateway): compile draft entrypoints and nodes as unrouted ho
 ```
 
 **Implementation record (Task 2)** — fill in after the task is complete:
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-11 complete
+- Repository + commit: cuttle `6edbb29c` — `feat(gateway): compile draft entrypoints and nodes as unrouted hops`
+- Files changed: `internal/gateway/build.go` (`draftPlanKey`, `buildDraftPlan` with a zero-node hop, `buildHopGroup` draft branch + warn, `buildRoutePlan` skips a providerless node), `internal/gateway/count_tokens_policy.go` (empty route → `estimate: false`, `strings` import), `internal/gateway/draft_test.go` (4 tests + `waitRow`), `internal/gateway/count_tokens_policy_test.go` (draft precedence case); the spec and this plan now say 502 instead of 503.
+- Tests/commands and results: RED `go test ./internal/gateway -run 'TestDraft|TestReloadAcceptsDraft|TestBuildCountTokensPolicyDraft'` → 5 failures (`entrypoint "draft": unknown route ""`, `node "up": unknown provider ""`); after implementing, 3 failures remained on the status code (`status = 502, want 503`) → GREEN once the tests and docs pin 502; `go test ./internal/gateway -count=1` ok (10.0s); `go test ./internal/... -count=1` all ok.
+- Review findings and fixes: x answers `502` (not 503) for a hop with no nodes (`errNodeNotAvailable`), so the draft failure status is 502; the tests and both documents were corrected rather than bending x. Direction (`match` still claims the model in declaration order, no fallthrough, unrouted row) confirmed by `TestDraftEntrypointDoesNotFallThrough`.
+- Deferred items/limitations: a draft entrypoint's `count_tokens` is pass-through by construction (policy entry without `estimate`), so any future local-estimate feature must keep that branch.
 
 ---
 
@@ -782,7 +782,7 @@ git commit -m "feat(web): label unconnected entrypoints and nodes on the list pa
 
 - [ ] **Step 1: Update `AGENTS.md` routing invariants**
 
-- Entrypoint bullet: "a display name, a non-empty list of client-model globs and an **optional** route id; an empty route is a draft that still claims its models in declaration order and fails every matching request as unrouted (503). `*` is an explicit catch-all."
+- Entrypoint bullet: "a display name, a non-empty list of client-model globs and an **optional** route id; an empty route is a draft that still claims its models in declaration order and fails every matching request as unrouted (502). `*` is an explicit catch-all."
 - Node bullet: "A node binds **at most** one provider and one provider model: `provider` is optional, and a providerless node is a draft skipped at compile time (with a warning); a node with a provider still requires a model, and `key` requires a provider."
 - Gotcha: "A draft entrypoint with `*` declared before working entrypoints blackholes every model by design (no fallthrough). The console tags it `未连接`; fix its route or delete it."
 
@@ -821,5 +821,5 @@ git commit -m "docs: describe draft entrypoints and nodes"
 
 - [ ] `cd cuttle && GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 - [ ] `cd cuttle/web && npm test && npx tsc --noEmit && npm run build`
-- [ ] Manual check against the spec: create a provider, a node without a provider, a route, an entrypoint without a route; confirm the topology tags both `未连接`, a request to the draft entrypoint answers 503 and the Sessions page shows it without a route; then drag `node→provider` and `entrypoint→route` and confirm real traffic flows.
+- [ ] Manual check against the spec: create a provider, a node without a provider, a route, an entrypoint without a route; confirm the topology tags both `未连接`, a request to the draft entrypoint answers 502 and the Sessions page shows it without a route; then drag `node→provider` and `entrypoint→route` and confirm real traffic flows.
 - [ ] Confirm `example.yaml` still loads: `cd cuttle && GOWORK=off go test ./internal/config -run TestExampleConfigLoads -count=1`
