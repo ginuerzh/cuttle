@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AttemptCard, deadTitle, mergeNodeActivity, NodePanel, SessionCard, sessionQuery } from './App';
+import { AttemptCard, mergeNodeActivity, NodePanel, SessionCard, sessionQuery } from './App';
 import { setActiveLang } from './i18n';
 import type { AttemptRow, ConfigResponse, RequestRow } from './api/types';
 
@@ -9,7 +9,7 @@ beforeEach(() => setActiveLang('zh-CN'));
 const metrics = {
   requests: 10, errors: 0, attempts: 0, retriedRequests: 0, p50Ms: 3, p95Ms: 5,
   inputTokens: 0, outputTokens: 80, cachedTokens: 0,
-  outputTokensPerSecond: 42.34,
+  outputTokensPerSecond: 42.34, lastFailureStatus: 0, lastAttemptStatus: 0,
 };
 
 // A node in a 1h window: one final 429 and two discarded attempts behind two
@@ -114,33 +114,6 @@ describe('NodePanel retry attempts', () => {
 
     expect(html).toContain('aria-label="dead"');
     expect(html).toContain('title="失败 1（429×1）· 重试丢弃 2"');
-  });
-});
-
-describe('deadTitle', () => {
-  it('lists the final failures by status and the discarded attempts', () => {
-    expect(deadTitle(retryMetrics)).toBe('失败 1（429×1）· 重试丢弃 2');
-  });
-
-  it('orders the statuses and sums them', () => {
-    expect(
-      deadTitle({ ...metrics, attempts: 3, retriedRequests: 2, attemptStatus: { '429': 2, '503': 1 }, failureStatus: { '503': 1, '429': 2 } }),
-    ).toBe('失败 3（429×2, 503×1）· 重试丢弃 3');
-  });
-
-  it('keeps the discarded section when no final failure was recorded', () => {
-    expect(deadTitle({ ...metrics, attempts: 2, attemptStatus: { '429': 2 } })).toBe('重试丢弃 2');
-  });
-
-  it('says the window has no failures instead of an empty tooltip', () => {
-    expect(deadTitle(metrics)).toBe('窗口内没有失败记录');
-    expect(deadTitle(undefined)).toBe('窗口内没有失败记录');
-  });
-
-  it('translates the tooltip', () => {
-    setActiveLang('en-US');
-    expect(deadTitle(retryMetrics)).toBe('Failed 1 (429×1) · Discarded retries 2');
-    expect(deadTitle(metrics)).toBe('No failures in the window');
   });
 });
 

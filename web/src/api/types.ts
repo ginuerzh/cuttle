@@ -199,6 +199,14 @@ export interface NodeMetrics {
   attemptStatus?: Record<string, number>;
   /** Final failed requests by status; `"0"` is a failed dial, so a node with retries disabled still has a number. */
   failureStatus?: Record<string, number>;
+  /** Newest failed request of the window (unix ms); absent when none failed. */
+  lastFailureTs?: number;
+  /** Status of that failure; `0` is a failed dial. */
+  lastFailureStatus: number;
+  /** Newest discarded attempt of the window (unix ms); absent when there was none. */
+  lastAttemptTs?: number;
+  /** Status of that attempt; `0` is a failed dial. */
+  lastAttemptStatus: number;
   p50Ms: number;
   p95Ms: number;
   inputTokens: number;

@@ -471,9 +471,11 @@ Entrypoint -> Route -> Node -> Provider model
   admin API cannot filter attempts by entrypoint. The request detail drawer
   (shared with the Sessions page) lists the loaded `attempts` array under
   `上游尝试` and omits the section when there are none. The dead badge keeps
-  `aria-label="dead"` and its `title` is `deadTitle(metrics)` —
-  `失败 N（429×2, 503×1）· 重试丢弃 M`, a section with a zero count omitted and
-  `窗口内没有失败记录` when the window has neither.
+  `aria-label="dead"` and its `title` is `deadTitle(metrics)` (shared with the
+  topology node, which falls back to the plain `dead` when the window has no
+  failure data) — `失败 N（429×2, 503×1）· 重试丢弃 M · 最后 03:00:16 429`, a
+  section with a zero count omitted, `最后 …` only when the window has a
+  timestamp, and `窗口内没有失败记录` when the window has neither.
 - Requests show client model and target model; there is no logical model.
 - The navigation labels the `gateway-keys` page `密钥` between Entrypoints and
   Sessions. The page heading, dialogs and Sessions filter keep `网关密钥`. It
@@ -553,6 +555,10 @@ GOWORK=off go test ./internal/stats -count=1
   retry work is on x `master` as of `v0.31.1`. The Go gate still runs with
   `GOWORK=off` inside the parent workspace, so the tagged module is what gets
   built and tested.
+- Recording discarded attempts requires a newer `github.com/go-gost/x` that
+  emits the `http.attempts` recorder field; with the pinned `v0.31.1` the
+  attempt lists stay empty, the attempt counters read zero, and cuttle behaves
+  exactly as before.
 - Admin config writes require a writable config file. With a Docker `:ro` mount,
   console edits fail; edit the host file and send `SIGHUP`. Such a hand-written
   file must keep its `id` lines when renaming: dropping one changes the derived

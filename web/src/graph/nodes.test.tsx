@@ -17,6 +17,8 @@ const stats = (requests: number, errors: number) => ({
   outputTokens: 0,
   cachedTokens: 0,
   outputTokensPerSecond: 0,
+  lastFailureStatus: 0,
+  lastAttemptStatus: 0,
 });
 
 describe('selectionStyle', () => {
@@ -173,6 +175,29 @@ describe('BindingNode', () => {
     expect(html).not.toContain('background:var(--gw-text-muted)');
   });
 
+  it('explains a dead node with the window failures, like the panel badge', () => {
+    setActiveLang('zh-CN');
+    const html = render({
+      dead: true,
+      metrics: {
+        ...stats(12, 3),
+        attempts: 2,
+        attemptStatus: { '429': 2 },
+        failureStatus: { '429': 2, '503': 1 },
+        lastFailureTs: new Date(2026, 10, 11, 3, 0, 16).getTime(),
+        lastFailureStatus: 429,
+      },
+    });
+
+    expect(html).toContain('aria-label="dead"');
+    expect(html).toContain('title="失败 3（429×2, 503×1）· 重试丢弃 2 · 最后 03:00:16 429"');
+  });
+
+  it('keeps the plain dead title when the window has no failure data', () => {
+    expect(render({ dead: true })).toContain('title="dead"');
+    expect(render({ dead: true, metrics: stats(10, 0) })).toContain('title="dead"');
+  });
+
   it('shows a smile for healthy traffic and a meh for elevated errors', () => {
     expect(render({ metrics: stats(10, 0) })).toContain('anticon-smile');
     expect(render({ metrics: stats(10, 0) })).toContain('data-status="healthy"');
@@ -243,6 +268,8 @@ describe('NodeStats', () => {
           outputTokens: 0,
           cachedTokens: 0,
           outputTokensPerSecond: 0,
+          lastFailureStatus: 0,
+          lastAttemptStatus: 0,
         }}
       />,
     );
@@ -270,6 +297,8 @@ describe('NodeStats', () => {
           outputTokens: 0,
           cachedTokens: 0,
           outputTokensPerSecond: 0,
+          lastFailureStatus: 0,
+          lastAttemptStatus: 0,
         }}
       />,
     );
@@ -295,6 +324,8 @@ describe('NodeStats', () => {
           outputTokens: 0,
           cachedTokens: 0,
           outputTokensPerSecond: 0,
+          lastFailureStatus: 0,
+          lastAttemptStatus: 0,
         }}
       />,
     );
@@ -317,6 +348,8 @@ describe('NodeStats', () => {
           outputTokens: 0,
           cachedTokens: 0,
           outputTokensPerSecond: 0,
+          lastFailureStatus: 0,
+          lastAttemptStatus: 0,
         }}
       />,
     );
@@ -329,7 +362,7 @@ describe('NodeStats', () => {
     const metrics = {
       requests: 10, errors: 0, attempts: 0, retriedRequests: 0, p50Ms: 3, p95Ms: 5,
       inputTokens: 0, outputTokens: 80, cachedTokens: 0,
-      outputTokensPerSecond: 42.34,
+      outputTokensPerSecond: 42.34, lastFailureStatus: 0, lastAttemptStatus: 0,
     };
     const withRate = renderToStaticMarkup(<NodeStats metrics={metrics} showRate />);
     expect(withRate).toContain('42.3 tok/s');
@@ -345,6 +378,8 @@ describe('NodeStats', () => {
           requests: 10, errors: 0, attempts: 0, retriedRequests: 0, p50Ms: 3, p95Ms: 5,
           inputTokens: 0, outputTokens: 0, cachedTokens: 0,
           outputTokensPerSecond: 0,
+          lastFailureStatus: 0,
+          lastAttemptStatus: 0,
         }}
         showRate
       />,

@@ -820,9 +820,14 @@ the count and lists the discarded attempts under `上游尝试`. The node panel 
 the discarded attempts of the window into the session list newest first, tagging
 them `重试尝试` (clicking one opens its parent request), and summarises them beside
 the request count; the dead badge's tooltip explains the node with
-`失败 N（…）· 重试丢弃 M`, or `窗口内没有失败记录` when the window has neither.
+`失败 N（…）· 重试丢弃 M · 最后 HH:MM:SS <status>`, or `窗口内没有失败记录` when
+the window has neither.
 Body capture keeps only the final attempt, so a captured pair describes the
 response the client actually received.
+
+Attempts are emitted by the `github.com/go-gost/x` release that writes the
+`http.attempts` recorder field: with the pinned `v0.31.1` these lists stay empty
+and the attempt counters read zero, so cuttle behaves exactly as before.
 
 Hourly `key_rollups` store requests, errors and input/output/cached tokens per
 gateway key id for the per-key usage view. They use the same

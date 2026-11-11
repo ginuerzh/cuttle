@@ -82,6 +82,8 @@ const metrics = {
   requests: 1, errors: 1, attempts: 1, retriedRequests: 1, p50Ms: 40, p95Ms: 40,
   inputTokens: 1, outputTokens: 0, cachedTokens: 0, outputTokensPerSecond: 0,
   attemptStatus: { '429': 1 }, failureStatus: { '429': 1 },
+  lastFailureTs: Date.UTC(2026, 10, 11, 3, 0, 16), lastFailureStatus: 429,
+  lastAttemptTs: Date.UTC(2026, 10, 11, 3, 0, 10), lastAttemptStatus: 429,
 };
 
 function render(el: React.ReactNode) {

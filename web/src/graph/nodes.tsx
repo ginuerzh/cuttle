@@ -14,6 +14,7 @@ import type { GraphNode } from './build';
 import { formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { formatDurationMs, formatTokenRate } from '../time';
+import { deadTitle, hasFailureData } from './deadTitle';
 
 function errorRate(m?: NodeMetrics): number {
   if (!m || m.requests === 0) return 0;
@@ -334,8 +335,12 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
   const color = data.dead ? '#dc2626' : healthColor(data.metrics);
   const deadRoutes = data.deadRoutes ?? [];
   const partial = !data.dead && deadRoutes.length > 0;
+  // A fully dead node explains itself with the same tooltip as the panel badge;
+  // without failure data it keeps the plain label.
   const title = data.dead
-    ? 'dead'
+    ? hasFailureData(data.metrics)
+      ? deadTitle(data.metrics)
+      : 'dead'
     : partial
       ? t('dead in {routes}', { routes: deadRoutes.join(', ') })
       : undefined;

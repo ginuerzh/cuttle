@@ -58,6 +58,7 @@ import { NAV_LABELS, NAV_ORDER, type Page } from './nav';
 import { loadAnimationEnabled, saveAnimationEnabled } from './animation';
 import { formatCount } from './format';
 import { formatDateTime, formatDurationMs, formatTokenRate } from './time';
+import { deadTitle, formatStatusCounts } from './graph/deadTitle';
 
 const { Header, Content } = Layout;
 
@@ -220,39 +221,6 @@ export function mergeNodeActivity(requests: RequestRow[], attempts: AttemptRow[]
 }
 
 /** `429×2, 503×1` in numeric order; an empty input gives an empty string. */
-function formatStatusCounts(counts?: Record<string, number>): string {
-  return Object.entries(counts ?? {})
-    .filter(([, count]) => count > 0)
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([status, count]) => `${status}×${count}`)
-    .join(', ');
-}
-
-/**
- * The dead badge tooltip: the final failures of the window with their status
- * breakdown, then the discarded retry attempts. A section with a zero count is
- * omitted, and a window with neither says so instead of showing an empty title.
- */
-export function deadTitle(metrics?: NodeMetrics): string {
-  const failures = formatStatusCounts(metrics?.failureStatus);
-  const failed = Object.values(metrics?.failureStatus ?? {}).reduce((sum, count) => sum + count, 0);
-  const discarded = metrics?.attempts ?? 0;
-  if (failed > 0 && discarded > 0) {
-    return translate('失败 {failed}（{statuses}）· 重试丢弃 {discarded}', {
-      failed,
-      statuses: failures,
-      discarded,
-    });
-  }
-  if (failed > 0) {
-    return translate('失败 {failed}（{statuses}）', { failed, statuses: failures });
-  }
-  if (discarded > 0) {
-    return translate('重试丢弃 {discarded}', { discarded });
-  }
-  return translate('窗口内没有失败记录');
-}
-
 /**
  * One discarded upstream attempt: the response asked for a retry, so the client
  * never saw it. It opens the parent request's detail, which owns the row.
