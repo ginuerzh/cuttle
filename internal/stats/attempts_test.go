@@ -3,6 +3,7 @@ package stats
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -285,5 +286,35 @@ func TestOpenAddsAttemptTableToExistingDatabase(t *testing.T) {
 	}
 	if seq == 0 {
 		t.Fatal("attempt row did not inherit the parent's seq")
+	}
+}
+
+func TestAttemptMessage(t *testing.T) {
+	cases := map[string]string{
+		`{"error":{"type":"rate_limit_error","message":"Rate limit exceeded."}}`: "Rate limit exceeded.",
+		`{"error":{"message":"boom"}}`:                                           "boom",
+		`{"message":"plain"}`:                                                    "plain",
+		`not json at all`:                                                        "not json at all",
+	}
+	for body, want := range cases {
+		if got := attemptMessage([]byte(body)); got != want {
+			t.Fatalf("attemptMessage(%q) = %q, want %q", body, got, want)
+		}
+	}
+}
+
+func TestAttemptMessageFallbacks(t *testing.T) {
+	if got := attemptMessage([]byte(`{"error":{"type":"overloaded_error"}}`)); got != "overloaded_error" {
+		t.Fatalf("error type fallback = %q, want overloaded_error", got)
+	}
+	if got := attemptMessage(nil); got != "" {
+		t.Fatalf("empty body = %q, want empty", got)
+	}
+	long := strings.Repeat("x", 300)
+	if got := attemptMessage([]byte(long)); len(got) != 200 {
+		t.Fatalf("long preview = %d chars, want 200", len(got))
+	}
+	if got := attemptMessage([]byte("<html>bad gateway</html>\nsecond line")); got != "<html>bad gateway</html>" {
+		t.Fatalf("multi-line preview = %q, want the first line", got)
 	}
 }

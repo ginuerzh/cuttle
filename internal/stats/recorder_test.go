@@ -446,3 +446,118 @@ func TestParseNodeNameIgnoresKeySegment(t *testing.T) {
 		}
 	}
 }
+
+func TestRecorderRecordsDiscardedAttempts(t *testing.T) {
+	s := newStore(t)
+	body, err := json.Marshal(map[string]any{
+		"sid":  "rid",
+		"node": "r1/p1/n2",
+		"time": time.Now().UTC(),
+		"http": map[string]any{
+			"statusCode": 200,
+			"attempts": []map[string]any{{
+				"attempt":        0,
+				"node":           "r1/p1/n1",
+				"statusCode":     429,
+				"responseHeader": map[string][]string{"Retry-After": {"79477"}},
+				"responseBody":   []byte(`{"error":{"type":"rate_limit_error","message":"Rate limit exceeded."}}`),
+				"durationMs":     9000,
+				"bytesIn":        1000,
+				"bytesOut":       60,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(context.Background(), body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.AttemptsForRequest(context.Background(), "rid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("attempts = %+v, want 1", got)
+	}
+	a := got[0]
+	if a.Node != "n1" || a.Provider != "p1" || a.Route != "r1" || a.Status != 429 {
+		t.Fatalf("attempt = %+v", a)
+	}
+	if a.Error != "Rate limit exceeded." || a.ErrorClass != "upstream_quota" {
+		t.Fatalf("attempt message/class = %q/%q", a.Error, a.ErrorClass)
+	}
+	if a.ResponseHeaders["retry-after"] != "79477" {
+		t.Fatalf("attempt headers = %+v", a.ResponseHeaders)
+	}
+	if a.DurationMS != 9000 || a.BytesIn != 1000 || a.BytesOut != 60 {
+		t.Fatalf("attempt duration/bytes = %d/%d/%d", a.DurationMS, a.BytesIn, a.BytesOut)
+	}
+	if a.BodyPreview != `{"error":{"type":"rate_limit_error","message":"Rate limit exceeded."}}` {
+		t.Fatalf("attempt preview = %q", a.BodyPreview)
+	}
+}
+
+func TestRecorderIgnoresPayloadWithoutAttempts(t *testing.T) {
+	s := newStore(t)
+	body := []byte(`{"sid":"rid2","node":"r1/p1/n1","http":{"statusCode":429}}`)
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(context.Background(), body); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AttemptsForRequest(context.Background(), "rid2")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("attempts = %+v err = %v, want none", got, err)
+	}
+	row, err := s.Get(context.Background(), "rid2")
+	if err != nil || row == nil || row.Status != 429 {
+		t.Fatalf("parent row = %+v err = %v", row, err)
+	}
+}
+
+func TestRecorderAttemptFallsBackToParent(t *testing.T) {
+	s := newStore(t)
+	ts := time.Now().UTC().Truncate(time.Millisecond)
+	ctx := WithGatewayKeyID(context.Background(), "gk_0123456789")
+	body, err := json.Marshal(map[string]any{
+		"sid":  "rid3",
+		"node": "r1/p1/n1",
+		"time": ts,
+		"http": map[string]any{
+			"statusCode": 200,
+			"attempts": []map[string]any{{
+				"attempt":    0,
+				"error":      "dial tcp: connect: connection refused",
+				"statusCode": 0,
+				"node":       "",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.AttemptsForRequest(context.Background(), "rid3")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("attempts = %+v err = %v, want 1", got, err)
+	}
+	a := got[0]
+	if a.Route != "r1" || a.Provider != "p1" || a.Node != "n1" {
+		t.Fatalf("attempt node = %q/%q/%q, want the parent's r1/p1/n1", a.Route, a.Provider, a.Node)
+	}
+	if a.GatewayKey != "gk_0123456789" {
+		t.Fatalf("attempt gateway key = %q", a.GatewayKey)
+	}
+	if a.Error != "dial tcp: connect: connection refused" || a.ErrorClass != ErrorClassNetwork {
+		t.Fatalf("attempt message/class = %q/%q", a.Error, a.ErrorClass)
+	}
+	if !a.TS.Equal(ts) {
+		t.Fatalf("attempt ts = %v, want the parent's %v", a.TS, ts)
+	}
+	if len(a.ResponseHeaders) != 0 || a.BodyPreview != "" {
+		t.Fatalf("dial failure headers/preview = %+v/%q", a.ResponseHeaders, a.BodyPreview)
+	}
+}

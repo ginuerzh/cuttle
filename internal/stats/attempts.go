@@ -33,6 +33,44 @@ type Attempt struct {
 	BodyPreview     string            `json:"bodyPreview,omitempty"`
 }
 
+// attemptMessage is the short human-readable reason stored with an attempt. It
+// prefers the upstream error object (error.message, then error.type), then a
+// top-level message, and otherwise falls back to the raw body: a non-JSON body
+// (an HTML error page, a plain-text refusal) is kept as its first line, trimmed
+// to 200 characters. The full body stays in the preview.
+func attemptMessage(body []byte) string {
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil {
+		if msg := firstNonEmpty(payload.Error.Message, payload.Error.Type, payload.Message); msg != "" {
+			return msg
+		}
+	}
+	line := string(body)
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	line = strings.TrimSpace(line)
+	if runes := []rune(line); len(runes) > 200 {
+		line = string(runes[:200])
+	}
+	return line
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // AttemptFilter selects attempts for the admin API and the node panel. Route,
 // Node and Provider are entity ids, like Filter.
 type AttemptFilter struct {
