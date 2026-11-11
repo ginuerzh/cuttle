@@ -262,6 +262,15 @@ describe('NodeForm key pin', () => {
     expect(payload).toMatchObject({ key: 'pk_0000000002' });
   });
 
+  it('stages a provider the topology drag picked before a model exists', async () => {
+    const draft: Node = { ...node, provider: '', model: '', key: '' };
+    const { container } = render(
+      <NodeForm node={draft} config={config} pendingProvider="p_0000000001" onSaved={async () => undefined} />,
+    );
+
+    expect(selectValue(container, 'provider')).toBe('p');
+  });
+
   it('fills the provider select when the node is connected from the topology', async () => {
     const draft: Node = { ...node, provider: '', model: 'm1', key: '' };
     const { container, root } = render(
@@ -394,7 +403,7 @@ describe('draft affordance', () => {
 });
 
 describe('draft round trip against the panel', () => {
-  it('does not send a model-less node to a provider and asks for a model first', async () => {
+  it('stages the provider in the panel when the node has no model yet', async () => {
     updateNodeMock.mockClear();
     const config = {
       gateway: { listen: ':8787' },
@@ -405,11 +414,18 @@ describe('draft round trip against the panel', () => {
       entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
     } as unknown as ConfigResponse;
     const { container } = render(<Edit config={config} onReload={async () => undefined} />);
+
     await act(async () => {
       buttonByText(container, 'connect-draft').click();
     });
+
+    // Nothing is saved (a provider without a model is rejected), but the panel
+    // opens on the node with the provider already chosen, so the operator only
+    // has to pick a model.
     expect(updateNodeMock).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('还没有模型');
+    expect(container.textContent).toContain('已选好提供商');
+    // The panel renders in a Drawer portal in jsdom, so query the document.
+    expect(selectValue(document.body, 'provider')).toBe('p');
   });
 
   it('saves the node as a draft after the provider is cleared', async () => {

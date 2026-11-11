@@ -302,6 +302,7 @@ export const enUS: Record<string, string> = {
   '重试尝试': 'Retry attempt',
   '重试请求': 'Retried requests',
   '重试尝试 {attempts} · 重试请求 {requests}': 'Retried attempts {attempts} · retried requests {requests}',
+  '已选好提供商：请在节点面板选择模型后保存，连线才会生效。': 'Provider selected: choose a model in the node panel and save to make the connection live.',
   '上游尝试': 'Upstream attempt',
   '连接失败': 'Dial failed',
   '{count} 次（{statuses}）': '{count} attempts ({statuses})',

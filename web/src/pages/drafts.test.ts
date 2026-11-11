@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { connectNodeProvider, disconnectEntrypointRoute, disconnectNodeProvider } from './drafts';
+import { connectNodeProvider, disconnectEntrypointRoute, disconnectNodeProvider, planNodeProviderConnect } from './drafts';
 import type { Entrypoint, Node, Provider } from '../api/types';
 
 const provider: Provider = {
@@ -11,6 +11,21 @@ const provider: Provider = {
 };
 
 const draft: Node = { id: 'n_0000000001', name: 'draft', provider: '', model: '', key: '' };
+
+describe('planNodeProviderConnect', () => {
+  it('asks for a model instead of saving when the node has none', () => {
+    const { next, needsModel } = planNodeProviderConnect({ ...draft, model: '' }, provider);
+
+    expect(next.provider).toBe('p_0000000001');
+    expect(needsModel).toBe(true);
+  });
+
+  it('saves directly when the node already has a model', () => {
+    const { needsModel } = planNodeProviderConnect({ ...draft, model: 'm1' }, provider);
+
+    expect(needsModel).toBe(false);
+  });
+});
 
 describe('connectNodeProvider', () => {
   it('binds the provider and drops a key that does not belong to it', () => {

@@ -57,7 +57,7 @@ import {
 } from './presets';
 import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
-import { connectNodeProvider, disconnectEntrypointRoute, disconnectNodeProvider } from './drafts';
+import { disconnectEntrypointRoute, disconnectNodeProvider, planNodeProviderConnect } from './drafts';
 import type { NodeRouteHealth } from './routeHealth';
 import { entityLabel, labelMap, configLabels } from '../labels';
 
@@ -818,10 +818,13 @@ export function RouteForm({ route, config, onSaved, health }: { route: Route; co
 export function NodeForm({
   node,
   config,
+  pendingProvider,
   onSaved,
 }: {
   node: BindNode;
   config: ConfigResponse;
+  /** A provider a topology drag picked that is not saved yet (no model chosen). */
+  pendingProvider?: string;
   onSaved: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -870,6 +873,14 @@ export function NodeForm({
   // A topology drag-connect saves the provider outside this form. Re-sync the
   // field so the open panel shows the provider the line was drawn to, without
   // remounting (which would drop the operator's unsaved edits).
+  // A staged topology connect fills the provider without saving it, so the
+  // operator only has to pick a model.
+  useEffect(() => {
+    if (!pendingProvider) return;
+    setInitialProvider(pendingProvider);
+    form.setFieldsValue({ provider: pendingProvider });
+  }, [form, pendingProvider]);
+
   const syncedProvider = useRef(node.provider);
   useEffect(() => {
     if (syncedProvider.current === node.provider) return;
@@ -1226,6 +1237,10 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A drag-connect on a node without a model cannot be saved (the server
+  // requires a model once a provider is set), so it is staged in the panel.
+  const [pendingProvider, setPendingProvider] = useState<{ nodeId: string; providerId: string } | null>(null);
+  const [notice, setNotice] = useState('');
 
   const openAdd = async (kind: AddKind) => {
     setError('');
@@ -1244,6 +1259,7 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
     const [skind, sid] = splitId(c.source);
     const [tkind, tid] = splitId(c.target);
     setError('');
+    setNotice('');
     setBusy(true);
     try {
       if (skind === 'route' && tkind === 'node') {
@@ -1265,12 +1281,14 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
         if (!node) throw new Error('node not found');
         const provider = config.providers.find((p) => p.id === tid);
         if (!provider) throw new Error('provider not found');
-        const next = connectNodeProvider(node, provider);
-        if (!next.model.trim()) {
-          // A node with a provider must carry a model, so ask for it instead of
-          // sending an update the server would reject.
+        const { next, needsModel } = planNodeProviderConnect(node, provider);
+        if (needsModel) {
+          // A node with a provider must carry a model, so stage the connection in
+          // the panel: the provider is filled in and the operator only picks a
+          // model before saving.
           setSelection({ kind: 'node', id: c.source });
-          setError(tr('该节点还没有模型：请先在节点面板选择模型，再拖线接提供商。'));
+          setPendingProvider({ nodeId: node.id, providerId: provider.id });
+          setNotice(tr('已选好提供商：请在节点面板选择模型后保存，连线才会生效。'));
           return;
         }
         await updateNode(node.id, next);
@@ -1301,7 +1319,19 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
     }
     if (kind === 'node') {
       const n = config.nodes.find((x) => x.id === entityId);
-      return n ? <NodeForm key={n.id} node={n} config={config} onSaved={onReload} /> : null;
+      return n ? (
+        <NodeForm
+          key={n.id}
+          node={n}
+          config={config}
+          pendingProvider={pendingProvider?.nodeId === n.id ? pendingProvider.providerId : undefined}
+          onSaved={async () => {
+            setPendingProvider(null);
+            setNotice('');
+            await onReload();
+          }}
+        />
+      ) : null;
     }
     if (kind === 'entrypoint') {
       const found = entrypointFromNodeId(config.entrypoints, selection.id);
@@ -1316,7 +1346,7 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
       ) : null;
     }
     return null;
-  }, [selection, config, onReload]);
+  }, [selection, config, onReload, pendingProvider]);
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
@@ -1328,6 +1358,9 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
           </Space>
           {error ? (
             <Alert style={{ marginTop: 8, maxWidth: 520 }} type="error" message={error} showIcon closable onClose={() => setError('')} />
+          ) : null}
+          {notice ? (
+            <Alert style={{ marginTop: 8, maxWidth: 520 }} type="info" message={notice} showIcon closable onClose={() => setNotice('')} />
           ) : null}
         </div>
         <Topology config={config} metrics={null} onSelect={setSelection} editable onConnect={connect} nodeHealth={nodeHealth} />

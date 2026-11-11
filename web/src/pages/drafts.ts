@@ -10,6 +10,16 @@ export function connectNodeProvider(node: Node, provider: Provider): Node {
   return { ...node, provider: provider.id, key: owned ? node.key : '' };
 }
 
+/**
+ * The topology drag-connect outcome. The server rejects a node that carries a
+ * provider without a model, so when the node has no model the connection is
+ * staged in the panel instead of being saved.
+ */
+export function planNodeProviderConnect(node: Node, provider: Provider): { next: Node; needsModel: boolean } {
+  const next = connectNodeProvider(node, provider);
+  return { next, needsModel: !next.model.trim() };
+}
+
 /** Turns a node back into a draft: nothing that pointed at the provider survives. */
 export function disconnectNodeProvider(node: Node): Node {
   return { ...node, provider: '', model: '', key: '', api: undefined };
