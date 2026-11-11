@@ -334,6 +334,7 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
 export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNode>) {
   const color = data.dead ? '#dc2626' : healthColor(data.metrics);
   const deadRoutes = data.deadRoutes ?? [];
+  const deadRouteLabels = data.deadRouteLabels ?? deadRoutes;
   const partial = !data.dead && deadRoutes.length > 0;
   // A fully dead node explains itself with the same tooltip as the panel badge;
   // without failure data it keeps the plain label.
@@ -342,7 +343,7 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
       ? deadTitle(data.metrics)
       : 'dead'
     : partial
-      ? t('dead in {routes}', { routes: deadRoutes.join(', ') })
+      ? t('dead in {routes}', { routes: deadRouteLabels.join(', ') })
       : undefined;
   return (
     <div

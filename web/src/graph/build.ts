@@ -18,6 +18,8 @@ export interface GraphNodeData extends Record<string, unknown> {
   dead?: boolean;
   /** Routes where the marker is dead; set only for a partially dead node. */
   deadRoutes?: string[];
+  /** Display names of `deadRoutes`, in the same order, for the badge tooltip. */
+  deadRouteLabels?: string[];
   /** One-shot activity pulse id; 0 means idle. */
   pulse?: number;
   error?: boolean;

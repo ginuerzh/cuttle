@@ -158,6 +158,20 @@ describe('mergeNodeHealth', () => {
     edges: new Set(),
   });
 
+  it('resolves the dead routes to display names for the badge tooltip', () => {
+    const [got] = mergeNodeHealth([node('a')], health([], [['a', ['r_0000000001']]]), (id) => `route ${id}`);
+
+    expect(got.data.deadRoutes).toEqual(['r_0000000001']);
+    expect(got.data.deadRouteLabels).toEqual(['route r_0000000001']);
+  });
+
+  it('refreshes the dead-route labels when a route is renamed', () => {
+    const first = mergeNodeHealth([node('a')], health([], [['a', ['r1']]]), () => 'old');
+    const renamed = mergeNodeHealth(first, health([], [['a', ['r1']]]), () => 'new');
+
+    expect(renamed[0].data.deadRouteLabels).toEqual(['new']);
+  });
+
   it('marks a partially dead node with the routes that report it dead', () => {
     const [got] = mergeNodeHealth([node('a')], health([], [['a', ['r1']]]));
 

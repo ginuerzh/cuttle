@@ -32,6 +32,7 @@ import {
   type PositionMap,
 } from '../graph/positions';
 import { nodeTypes } from '../graph/nodes';
+import { configLabels, graphLabel } from '../labels';
 import {
   accumulateActivity,
   emptyActivity,
@@ -90,14 +91,27 @@ function sameRoutes(a?: readonly string[], b?: readonly string[]): boolean {
  * did not change keep their identity so React Flow does not re-render every
  * card on each health snapshot.
  */
-export function mergeNodeHealth(nodes: GraphNode[], nodeHealth?: NodeRouteHealth): GraphNode[] {
+export function mergeNodeHealth(
+  nodes: GraphNode[],
+  nodeHealth?: NodeRouteHealth,
+  labelRoute?: (id: string) => string,
+): GraphNode[] {
   return nodes.map((n) => {
     if (!n.id.startsWith('node:')) return n;
     const nodeId = n.id.slice('node:'.length);
     const dead = nodeHealth?.dead.has(nodeId) ?? false;
     const deadRoutes = [...(nodeHealth?.partial.get(nodeId) ?? [])];
-    if ((n.data.dead ?? false) === dead && sameRoutes(n.data.deadRoutes, deadRoutes)) return n;
-    return { ...n, data: { ...n.data, dead, deadRoutes } };
+    // The badge tooltip shows display names; the ids stay in `deadRoutes` so the
+    // edge set and the equality check keep working on identities.
+    const deadRouteLabels = labelRoute ? deadRoutes.map((id) => labelRoute(id)) : deadRoutes;
+    if (
+      (n.data.dead ?? false) === dead &&
+      sameRoutes(n.data.deadRoutes, deadRoutes) &&
+      sameRoutes(n.data.deadRouteLabels, deadRouteLabels)
+    ) {
+      return n;
+    }
+    return { ...n, data: { ...n.data, dead, deadRoutes, deadRouteLabels } };
   });
 }
 
@@ -258,6 +272,9 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
   const activityRef = useRef(activity);
   activityRef.current = activity;
   const pulseRef = useRef(0);
+  // Dead-route names for the badge tooltip; ids stay in the node data.
+  const routeLabels = useMemo(() => configLabels(config), [config]);
+  const labelRoute = useCallback((id: string) => graphLabel(`route:${id}`, routeLabels), [routeLabels]);
 
   useEffect(() => {
     if (!metrics) {
@@ -461,8 +478,8 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
   }, [metrics, activity, animate, nodeHealth?.edges, setNodes]);
 
   useEffect(() => {
-    setNodes((prev) => mergeNodeHealth(prev, nodeHealth));
-  }, [nodeHealth, setNodes]);
+    setNodes((prev) => mergeNodeHealth(prev, nodeHealth, labelRoute));
+  }, [nodeHealth, labelRoute, setNodes]);
 
   const onNodeClick: NodeMouseHandler = (_event, node) => {
     onSelect({ kind: 'node', id: node.id });

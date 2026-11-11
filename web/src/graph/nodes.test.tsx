@@ -166,6 +166,13 @@ describe('BindingNode', () => {
     expect(html).not.toContain('>dead<');
   });
 
+  it('names the dead routes in the badge tooltip instead of their ids', () => {
+    const html = render({ deadRoutes: ['r_0000000001'], deadRouteLabels: ['deepseek-flash'] });
+
+    expect(html).toContain('title="dead in deepseek-flash"');
+    expect(html).not.toContain('r_0000000001');
+  });
+
   it('shows an amber dead face naming the dead routes', () => {
     const html = render({ deadRoutes: ['r1'] });
 
