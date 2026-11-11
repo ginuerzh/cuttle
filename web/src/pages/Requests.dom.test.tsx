@@ -17,6 +17,7 @@ vi.mock('../api/client', () => ({
     topMessages: [],
     hourly: [],
   })),
+  getSeries: vi.fn(async () => ({ bucket: '2m0s', points: [] })),
   getAlerts: vi.fn(async () => []),
   listCaptureRules: vi.fn(async () => []),
   createCaptureRule: vi.fn(async () => ({
@@ -34,7 +35,7 @@ vi.mock('../api/client', () => ({
   ]),
 }));
 
-import { createCaptureRule, getRequests } from '../api/client';
+import { createCaptureRule, getRequests, getSeries } from '../api/client';
 import { RequestsPage } from './Requests';
 import { setActiveLang } from '../i18n';
 
@@ -43,6 +44,7 @@ setActiveLang('zh-CN');
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const getRequestsMock = vi.mocked(getRequests);
+const getSeriesMock = vi.mocked(getSeries);
 const createCaptureMock = vi.mocked(createCaptureRule);
 
 const config = {
@@ -147,6 +149,65 @@ describe('RequestsPage filters', () => {
       const input = container.querySelector(`input[placeholder="${placeholder}"]`);
       expect(input).toBeNull();
     }
+  });
+});
+
+describe('RequestsPage trend', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  it('clears the zoom when the range preset changes', async () => {
+    const now = Date.now();
+    getSeriesMock.mockResolvedValue({
+      bucket: '2m0s',
+      points: [{ bucket: new Date(now - 60_000).toISOString(), requests: 3, errors: 0 }],
+    });
+    const { container } = render(<RequestsPage config={config} />);
+    await settle();
+
+    const bar = container.querySelector('rect[data-bar]') as unknown as SVGRectElement;
+    act(() => {
+      bar.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await settle();
+
+    const zoomed = getSeriesMock.mock.calls.at(-1)?.[0];
+    expect((zoomed!.to.getTime() - zoomed!.from.getTime())).toBeLessThanOrEqual(2 * 60_000);
+
+    selectOption(container, '1 小时', '24 小时');
+    await settle();
+
+    const reset = getSeriesMock.mock.calls.at(-1)?.[0];
+    expect(reset!.to.getTime() - reset!.from.getTime()).toBeGreaterThan(60 * 60_000);
+  });
+
+  it('keeps the session rows when the trend request fails', async () => {
+    getRequestsMock.mockResolvedValueOnce([
+      {
+        requestId: 'req-1',
+        ts: new Date().toISOString(),
+        clientModel: 'claude-sonnet',
+        model: 'deepseek-v4.1-flash',
+        status: 200,
+        durationMs: 10,
+        inputTokens: 1,
+        outputTokens: 1,
+        cachedTokens: 0,
+      } as never,
+    ]);
+    getSeriesMock.mockRejectedValueOnce(new Error('boom'));
+
+    const { container } = render(<RequestsPage config={config} />);
+    await settle();
+
+    expect(container.textContent).toContain('趋势加载失败');
+    expect(container.textContent).toContain('claude-sonnet');
   });
 });
 

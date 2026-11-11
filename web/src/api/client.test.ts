@@ -12,6 +12,7 @@ import {
   getProviderModels,
   getProviderUsage,
   getRequests,
+  getSeries,
   getTopologyPositions,
   listCaptureRules,
   putStatsCapture,
@@ -51,6 +52,28 @@ it('normalizes topology positions', async () => {
     ),
   );
   await expect(getTopologyPositions()).resolves.toEqual({ a: { x: 1, y: 2 } });
+});
+
+it('requests the session series with the bucket and the list filters', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () =>
+    new Response(JSON.stringify({ bucket: '2m0s', points: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const from = new Date(Date.UTC(2026, 10, 11, 10, 0, 0));
+  const to = new Date(from.getTime() + 60 * 60_000);
+
+  await getSeries({ from, to, bucket: 120_000, node: 'n1', errorsOnly: true });
+
+  const url = String((fetchMock.mock.calls[0] as unknown as [string])[0]);
+  expect(url).toContain('/api/stats/series?');
+  expect(url).toContain('bucket=120000ms');
+  expect(url).toContain('node=n1');
+  expect(url).toContain('errors=1');
+  expect(url).toContain(`from=${encodeURIComponent(from.toISOString())}`);
 });
 
 it('loads capture rules as an array', async () => {

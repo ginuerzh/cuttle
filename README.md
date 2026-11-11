@@ -908,6 +908,7 @@ GET  /api/stats/summary
 PUT  /api/stats/capture
 GET  /api/stats/errors
 GET  /api/stats/graph
+GET  /api/stats/series
 GET  /api/events                      (WebSocket)
 GET  /api/alerts
 GET|PUT /api/topology/positions
@@ -929,6 +930,13 @@ Sessions list and detail show those names. Request detail includes an optional
 `capture` object and an optional `attempts` array of the discarded upstream
 attempts of that request (absent when there were none); the list only reports a
 cheap `hasCapture` flag and never carries `attempts`.
+`GET /api/stats/series` returns the session trend for a window as
+`{"bucket":"<duration>","points":[{"bucket":"<RFC3339>","requests":n,"errors":m}]}`.
+It accepts `from`/`to`, `bucket=<duration>` (default `1h`, clamped to `1s..24h`,
+`400` when unparsable) and exactly the same filters as `GET /api/requests`, so
+the Sessions chart and its list can never disagree. Only non-empty buckets are
+returned; the console pads the gaps so a quiet bucket renders at zero height.
+
 `GET /api/attempts` lists the discarded attempts of the window newest first with
 `from`/`to` plus the `route=<id>`, `node=<id>`, `provider=<id>`,
 `errorClass=<class>`, `status=<code>`, `limit` and `offset` filters. An attempt

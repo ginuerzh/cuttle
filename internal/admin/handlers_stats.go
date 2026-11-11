@@ -1,8 +1,10 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ginuerzh/cuttle/internal/config"
@@ -23,14 +25,14 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sum)
 }
 
-func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
-	if s.stats == nil {
-		writeError(w, http.StatusServiceUnavailable, "stats disabled")
-		return
-	}
+// requestFilter builds the stats filter shared by the list and series
+// endpoints. ok is false when the request names an entrypoint that no longer
+// exists: the caller answers with an empty result instead of an error, exactly
+// as the list endpoint always has.
+func (s *Server) requestFilter(r *http.Request) (f stats.Filter, ok bool) {
 	from, to := parseRange(r)
 	q := r.URL.Query()
-	f := stats.Filter{
+	f = stats.Filter{
 		From:        from,
 		To:          to,
 		Provider:    q.Get("provider"),
@@ -63,12 +65,24 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if !found {
-			writeJSON(w, http.StatusOK, []requestView{})
-			return
+			return f, false
 		}
 	}
 	if v := q.Get("status"); v != "" {
 		f.Status = atoi(v)
+	}
+	return f, true
+}
+
+func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
+	if s.stats == nil {
+		writeError(w, http.StatusServiceUnavailable, "stats disabled")
+		return
+	}
+	f, ok := s.requestFilter(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, []requestView{})
+		return
 	}
 	rows, err := s.stats.Query(r.Context(), f)
 	if err != nil {
@@ -81,6 +95,77 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 		views = append(views, labels.requestView(row))
 	}
 	writeJSON(w, http.StatusOK, nonNilSlice(views))
+}
+
+// seriesResponse is the wire shape of GET /api/stats/series: Bucket is the
+// bucket width, each point's Bucket is its start time.
+type seriesResponse struct {
+	Bucket string              `json:"bucket"`
+	Points []stats.SeriesPoint `json:"points"`
+}
+
+const (
+	defaultSeriesBucket = time.Hour
+	minSeriesBucket     = time.Second
+	maxSeriesBucket     = 24 * time.Hour
+	// maxSeriesPoints bounds the response: the width clamp alone would let a
+	// 168h window at 1s ask for ~600k points.
+	maxSeriesPoints = 2000
+)
+
+// parseBucket parses ?bucket=. An absent value means one hour; a value that
+// cannot be parsed is rejected rather than silently coerced, and a valid but
+// absurd width is clamped so a typo cannot ask for millions of bars.
+func parseBucket(v string) (time.Duration, error) {
+	if strings.TrimSpace(v) == "" {
+		return defaultSeriesBucket, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid bucket %q", v)
+	}
+	if d < minSeriesBucket {
+		d = minSeriesBucket
+	}
+	if d > maxSeriesBucket {
+		d = maxSeriesBucket
+	}
+	return d, nil
+}
+
+func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
+	if s.stats == nil {
+		writeError(w, http.StatusServiceUnavailable, "stats disabled")
+		return
+	}
+	bucket, err := parseBucket(r.URL.Query().Get("bucket"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	f, ok := s.requestFilter(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, seriesResponse{Bucket: bucket.String(), Points: []stats.SeriesPoint{}})
+		return
+	}
+	if !f.From.IsZero() && !f.To.IsZero() && f.To.Sub(f.From)/bucket > maxSeriesPoints {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("bucket %s yields more than %d points for this window", bucket, maxSeriesPoints))
+		return
+	}
+	series, err := s.stats.Series(r.Context(), f, bucket)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, seriesResponse{Bucket: bucket.String(), Points: nonNilPoints(series.Points)})
+}
+
+// nonNilPoints keeps the payload an array, never null.
+func nonNilPoints(points []stats.SeriesPoint) []stats.SeriesPoint {
+	if points == nil {
+		return []stats.SeriesPoint{}
+	}
+	return points
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {

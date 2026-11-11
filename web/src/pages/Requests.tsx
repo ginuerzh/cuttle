@@ -12,12 +12,14 @@ import {
   Typography,
   message,
 } from 'antd';
-import { createCaptureRule, deleteCaptureRule, getAlerts, getErrorSummary, getRequests, listCaptureRules, listGatewayKeys } from '../api/client';
+import { createCaptureRule, deleteCaptureRule, getAlerts, getErrorSummary, getRequests, getSeries, listCaptureRules, listGatewayKeys } from '../api/client';
 import { translate as t } from '../i18n';
-import type { Alert, CaptureRule, ConfigResponse, ErrorSummary, GatewayKey, RequestRow } from '../api/types';
+import type { Alert, CaptureRule, ConfigResponse, ErrorSummary, GatewayKey, RequestRow, SeriesResponse } from '../api/types';
 import { RequestDetailDrawer } from '../components/RequestDetail';
 import { useIsMobile } from '../components/useIsMobile';
 import { ListCard } from '../components/ListCard';
+import { SessionChart } from '../components/SessionChart';
+import { bucketFor } from '../charts/sessionBars';
 import { ListPage } from '../components/ListPage';
 import { formatCount } from '../format';
 import { configLabels, entityLabel } from '../labels';
@@ -51,6 +53,12 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<RequestRow | null>(null);
+  const [series, setSeries] = useState<SeriesResponse | null>(null);
+  const [seriesFailed, setSeriesFailed] = useState(false);
+  // A bar click narrows the whole page to that bucket; the chart hands back the
+  // bucket start and the list and series both use this window.
+  const [zoom, setZoom] = useState<{ from: number; to: number } | null>(null);
+  const [chartWindow, setChartWindow] = useState<{ from: number; to: number; bucket: number } | null>(null);
   const [tick, setTick] = useState(0);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [rules, setRules] = useState<CaptureRule[]>([]);
@@ -63,36 +71,41 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setSeriesFailed(false);
     try {
-      const to = new Date();
-      const from = new Date(to.getTime() - rangeMs);
-      const [list, summary, activeAlerts] = await Promise.all([
-        getRequests({
-          from,
-          to,
-          provider: provider || undefined,
-          route: route || undefined,
-          node: node || undefined,
-          entrypoint: entrypoint || undefined,
-          gatewayKey: gatewayKey || undefined,
-          clientModel: clientModel.trim() || undefined,
-          errorsOnly,
-          capturedOnly,
-          errorClass: errorClass || undefined,
-          limit: 200,
-        }),
+      const to = zoom ? new Date(zoom.to) : new Date();
+      const from = zoom ? new Date(zoom.from) : new Date(to.getTime() - rangeMs);
+      const bucket = bucketFor(to.getTime() - from.getTime());
+      setChartWindow({ from: from.getTime(), to: to.getTime(), bucket });
+      const filters = {
+        provider: provider || undefined,
+        route: route || undefined,
+        node: node || undefined,
+        entrypoint: entrypoint || undefined,
+        gatewayKey: gatewayKey || undefined,
+        clientModel: clientModel.trim() || undefined,
+        errorsOnly,
+        capturedOnly,
+        errorClass: errorClass || undefined,
+      };
+      const [list, summary, activeAlerts, trend] = await Promise.all([
+        getRequests({ from, to, ...filters, limit: 200 }),
         getErrorSummary({ from, to }),
         getAlerts(),
+        // A failed trend must not blank the list.
+        getSeries({ from, to, bucket, ...filters }).catch(() => null),
       ]);
       setRows(list);
       setErrorSummary(summary);
       setAlerts(activeAlerts);
+      setSeries(trend);
+      setSeriesFailed(trend === null);
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [rangeMs, provider, route, node, entrypoint, gatewayKey, clientModel, errorsOnly, capturedOnly, errorClass]);
+  }, [rangeMs, provider, route, node, entrypoint, gatewayKey, clientModel, errorsOnly, capturedOnly, errorClass, zoom]);
 
   const loadCaptures = useCallback(async () => {
     try {
@@ -202,7 +215,17 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
         </div>
       ) : null}
       <Space wrap style={{ marginBottom: 12 }}>
-        <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES.map((r) => ({ ...r, label: t(r.label) }))} style={{ width: isMobile ? '100%' : 110 }} />
+        <Select
+          size="small"
+          value={rangeMs}
+          // A preset change is a new window, so it also leaves any bar zoom.
+          onChange={(value: number) => {
+            setZoom(null);
+            setRangeMs(value);
+          }}
+          options={RANGES.map((r) => ({ ...r, label: t(r.label) }))}
+          style={{ width: isMobile ? '100%' : 110 }}
+        />
         <Select
           size="small"
           allowClear
@@ -291,6 +314,29 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
         <Typography.Text type="secondary">{t('{count} 条', { count: rows.length })}</Typography.Text>
       </Space>
 
+      {chartWindow ? (
+        <div style={{ marginBottom: 12 }}>
+          <Space wrap style={{ marginBottom: 4 }}>
+            <Typography.Text strong>{t('会话趋势')}</Typography.Text>
+            {zoom ? (
+              <Button size="small" type="link" onClick={() => setZoom(null)}>
+                {t('清除缩放')}
+              </Button>
+            ) : null}
+          </Space>
+          <SessionChart
+            points={series?.points ?? []}
+            from={chartWindow.from}
+            to={chartWindow.to}
+            bucket={chartWindow.bucket}
+            selected={zoom?.from}
+            failed={seriesFailed}
+            onSelect={(bucket) =>
+              setZoom(bucket === undefined ? null : { from: bucket, to: bucket + chartWindow.bucket })
+            }
+          />
+        </div>
+      ) : null}
       {rows.map((r) => {
         const failed = r.status >= 400 || !!r.error;
         const classLabel = errorClassLabel(r);
