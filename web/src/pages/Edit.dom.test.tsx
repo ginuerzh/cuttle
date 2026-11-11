@@ -335,7 +335,7 @@ describe('Edit canvas connections', () => {
       gateway: { listen: ':8787' },
       admin: { listen: '', sessionTTL: '' },
       providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
-      nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: '' }],
+      nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: 'm1' }],
       routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
       entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
     } as unknown as ConfigResponse;
@@ -363,5 +363,54 @@ describe('draft affordance', () => {
       />,
     );
     expect(entrypointForm.container.textContent).toContain('未连接（草稿）');
+  });
+});
+
+describe('draft round trip against the panel', () => {
+  it('does not send a model-less node to a provider and asks for a model first', async () => {
+    updateNodeMock.mockClear();
+    const config = {
+      gateway: { listen: ':8787' },
+      admin: { listen: '', sessionTTL: '' },
+      providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
+      nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: '' }],
+      routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
+      entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
+    } as unknown as ConfigResponse;
+    const { container } = render(<Edit config={config} onReload={async () => undefined} />);
+    await act(async () => {
+      buttonByText(container, 'connect-draft').click();
+    });
+    expect(updateNodeMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('还没有模型');
+  });
+
+  it('saves the node as a draft after the provider is cleared', async () => {
+    updateNodeMock.mockClear();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+    const node: Node = { id: 'n_0000000001', name: 'n', provider: 'p_0000000001', model: 'm1' };
+    const config = {
+      providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
+      nodes: [node],
+      routes: [],
+      entrypoints: [],
+    } as unknown as ConfigResponse;
+    const { container } = render(<NodeForm node={node} config={config} onSaved={async () => undefined} />);
+    const clear = container.querySelector('.ant-select-clear');
+    expect(clear).toBeTruthy();
+    await act(async () => {
+      clear!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+    expect(updateNodeMock).toHaveBeenCalledWith(
+      'n_0000000001',
+      expect.objectContaining({ provider: '', model: '', key: '' }),
+    );
   });
 });

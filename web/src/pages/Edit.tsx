@@ -828,17 +828,18 @@ export function NodeForm({
   const [form] = Form.useForm();
 
   const save = async () => {
-    const v = await form.validateFields();
+    const v = await form.validateFields().catch(() => null);
+    if (!v) return;
     setBusy(true);
     try {
       await updateNode(node.id, {
         name: String(v.name ?? '').trim(),
-        provider: v.provider,
+        provider: String(v.provider ?? ''),
         backup: v.backup,
         weight: v.weight,
         enabled: node.enabled,
-        model: v.model,
-        api: v.api === 'auto' ? '' : v.api,
+        model: String(v.model ?? ''),
+        api: v.api === 'auto' || !v.api ? '' : v.api,
         key: String(v.key ?? ''),
       });
       message.success(tr('已保存'));
@@ -864,7 +865,12 @@ export function NodeForm({
   };
 
   const providerOptions = config.providers.map((p) => ({ value: p.id, label: p.name }));
-  const providerId = (Form.useWatch('provider', form) as string | undefined) ?? node.provider;
+  const watchedProvider = Form.useWatch('provider', form) as string | undefined;
+  const [initialProvider] = useState(node.provider || undefined);
+  // Only fall back to the stored id before the field is touched: a cleared
+  // provider must read as cleared, or the model stays required and the draft
+  // can never be saved.
+  const providerId = form.isFieldTouched('provider') ? watchedProvider : initialProvider;
   const provider = config.providers.find((p) => p.id === providerId);
   const { models, error: modelsError } = useProviderModels(provider?.id);
   const model = Form.useWatch('model', form) as string | undefined;
@@ -970,7 +976,8 @@ export function EntrypointForm({
   const [form] = Form.useForm();
 
   const save = async () => {
-    const v = await form.validateFields();
+    const v = await form.validateFields().catch(() => null);
+    if (!v) return;
     setBusy(true);
     try {
       const next = config.entrypoints.map((e, i) =>
@@ -1246,7 +1253,15 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
         if (!node) throw new Error('node not found');
         const provider = config.providers.find((p) => p.id === tid);
         if (!provider) throw new Error('provider not found');
-        await updateNode(node.id, connectNodeProvider(node, provider));
+        const next = connectNodeProvider(node, provider);
+        if (!next.model.trim()) {
+          // A node with a provider must carry a model, so ask for it instead of
+          // sending an update the server would reject.
+          setSelection({ kind: 'node', id: c.source });
+          setError(tr('该节点还没有模型：请先在节点面板选择模型，再拖线接提供商。'));
+          return;
+        }
+        await updateNode(node.id, next);
       } else {
         throw new Error(tr('不支持的连接方向'));
       }

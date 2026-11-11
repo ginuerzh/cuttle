@@ -351,6 +351,11 @@ Entrypoint -> Route -> Node -> Provider model
   `?entrypoint=` filter follows the same first-match rule, so the globs of every
   earlier entrypoint shadow the selected one: a catch-all lists only the rows no
   earlier entrypoint claimed.
+- A row failed by a draft entrypoint has no `client_model` (no node ran, so no
+  rewriter recorded one). It is therefore attributed to whichever entrypoint
+  matches an empty model, normally the catch-all, and the draft's own filter
+  shows nothing. This is accepted; do not "fix" it by storing an entrypoint
+  column or by parsing bodies outside the node path.
 - Graph keys use `entrypoint:<id>`; edges use the row's **recorded route id**
   (`entrypoint:<id>->route:<id>` or `->unrouted`), never the entrypoint's
   current route.

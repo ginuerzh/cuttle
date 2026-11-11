@@ -192,6 +192,14 @@ through". `example.yaml` stays fully connected (it must keep loading as is).
   tagged `未连接`, which is the operator-facing signal.
 - Drafts are compiled into the data plane as failing hops; the cost is one
   matcher plus one empty hop per draft entrypoint, which is negligible.
+- A draft entrypoint's failures carry no client model, because the client model
+  is recorded by the node rewriter and a draft hop has no node. Entrypoint
+  attribution resolves the empty model at query time, so such a row is drawn
+  against whichever entrypoint matches an empty model (typically the catch-all)
+  and the Sessions `?entrypoint=` filter lists nothing for the draft. The row is
+  still unrouted and still 502; only its entrypoint attribution is misleading.
+  Accepted: the console marks the draft `未连接`, and recovering the client model
+  would require parsing every request body outside the node path.
 
 ## Open decisions settled by the builder
 
