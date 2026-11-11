@@ -215,7 +215,17 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
         </div>
       ) : null}
       <Space wrap style={{ marginBottom: 12 }}>
-        <Select size="small" value={rangeMs} onChange={setRangeMs} options={RANGES.map((r) => ({ ...r, label: t(r.label) }))} style={{ width: isMobile ? '100%' : 110 }} />
+        <Select
+          size="small"
+          value={rangeMs}
+          // A preset change is a new window, so it also leaves any bar zoom.
+          onChange={(value: number) => {
+            setZoom(null);
+            setRangeMs(value);
+          }}
+          options={RANGES.map((r) => ({ ...r, label: t(r.label) }))}
+          style={{ width: isMobile ? '100%' : 110 }}
+        />
         <Select
           size="small"
           allowClear

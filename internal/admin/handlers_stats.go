@@ -108,6 +108,9 @@ const (
 	defaultSeriesBucket = time.Hour
 	minSeriesBucket     = time.Second
 	maxSeriesBucket     = 24 * time.Hour
+	// maxSeriesPoints bounds the response: the width clamp alone would let a
+	// 168h window at 1s ask for ~600k points.
+	maxSeriesPoints = 2000
 )
 
 // parseBucket parses ?bucket=. An absent value means one hour; a value that
@@ -143,6 +146,10 @@ func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
 	f, ok := s.requestFilter(r)
 	if !ok {
 		writeJSON(w, http.StatusOK, seriesResponse{Bucket: bucket.String(), Points: []stats.SeriesPoint{}})
+		return
+	}
+	if !f.From.IsZero() && !f.To.IsZero() && f.To.Sub(f.From)/bucket > maxSeriesPoints {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("bucket %s yields more than %d points for this window", bucket, maxSeriesPoints))
 		return
 	}
 	series, err := s.stats.Series(r.Context(), f, bucket)

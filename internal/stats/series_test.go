@@ -51,6 +51,36 @@ func TestSeriesBucketsRequestsAndErrors(t *testing.T) {
 		t.Fatalf("failed[1] = %+v, want the +5m bucket", failed.Points[1])
 	}
 
+	// A window that does not start on a bucket boundary keeps its first partial
+	// bucket: bars are drawn at from+i*width, so an epoch-aligned bucket would
+	// fall before from and be dropped.
+	offsetBase := base.Add(23 * time.Second)
+	offsetRows := []Request{
+		{ID: "e", SID: "e", TS: offsetBase.Add(10 * time.Second), Provider: "p3", Status: 200},
+		{ID: "f", SID: "f", TS: offsetBase.Add(70 * time.Second), Provider: "p3", Status: 429, Error: "slow"},
+	}
+	for _, r := range offsetRows {
+		if err := s.Insert(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unaligned, err := s.Series(ctx, Filter{From: offsetBase, To: offsetBase.Add(3 * time.Minute), Provider: "p3"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unaligned.Points) != 2 {
+		t.Fatalf("unaligned points = %+v, want the two buckets inside the window", unaligned.Points)
+	}
+	if !unaligned.Points[0].Bucket.Equal(offsetBase) {
+		t.Fatalf("first unaligned bucket = %s, want the window start %s", unaligned.Points[0].Bucket, offsetBase)
+	}
+	if !unaligned.Points[1].Bucket.Equal(offsetBase.Add(time.Minute)) {
+		t.Fatalf("second unaligned bucket = %s", unaligned.Points[1].Bucket)
+	}
+	if got := unaligned.Points[0].Requests + unaligned.Points[1].Requests; got != 2 {
+		t.Fatalf("unaligned total = %d, want both rows counted", got)
+	}
+
 	empty, err := s.Series(ctx, Filter{From: base.Add(10 * time.Minute), To: base.Add(11 * time.Minute)}, time.Minute)
 	if err != nil {
 		t.Fatal(err)

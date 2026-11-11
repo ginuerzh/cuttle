@@ -136,3 +136,10 @@ Expected: PASS.
 - Tests: RED `npx vitest run src/charts/sessionBars.test.ts` → module not found; GREEN 7/7 after the `bucketFor` 24h rule (≥12h ⇒ 1h) matched the plan's preset mapping. RED `src/components/SessionChart.test.tsx` → module not found; GREEN 6/6. Client URL test added. Gates: `npx vitest run` 369/369, `tsc --noEmit` clean, `npm run build` ok, `GOWORK=off go build/vet/test ./...` green.
 - Review findings: the brief's "second click clears" is implemented through the page's `selected` prop (the component reports the bucket; the page stores the zoom and hands it back), so the component keeps no click state of its own — see the Task 2 ruling in the ledger.
 - Deferred: bucket labels use `formatClock` (`HH:MM`); sub-hour buckets therefore share a minute label when zoomed to a minute-wide bucket — acceptable, revisit if it confuses.
+
+**Final review fix pass (2026-11-11)**
+- Critical — server buckets were epoch-aligned while the console draws bars at `from+i*width`, so the window's first partial bucket was dropped (up to an hour on the 24h preset) and every label was early. Fixed by bucketing relative to `f.From` (`((ts - ?) / ?) * ? + ?`); `TestSeriesBucketsRequestsAndErrors` gained an unaligned-window case that fails with epoch alignment (`first unaligned bucket = 10:00:00, want 10:00:23`).
+- Important — `Requests.dom.test.tsx`'s client mock had no `getSeries`, so the page threw on every load there and the page-level tests silently stopped covering the load path. Mock added; new test asserts a rejected series still renders the session rows (`趋势加载失败` + row).
+- Important — `bucket` was clamped but the point count was not (168h at 1s ≈ 604k points). `handleSeries` now rejects windows over `maxSeriesPoints = 2000` points with `400`; covered in `internal/admin/series_test.go`.
+- Important — changing the range preset while zoomed did nothing. The preset's `onChange` now clears `zoom`; covered by `Requests.dom.test.tsx` (click a bar, switch to 24h, assert the next series window is wider than an hour).
+- Gates after the pass: `npx vitest run` 371/371, `tsc --noEmit`, `npm run build`, `GOWORK=off go build/vet/test ./...` all green.

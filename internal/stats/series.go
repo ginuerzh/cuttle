@@ -31,11 +31,18 @@ func (s *Store) Series(ctx context.Context, f Filter, bucket time.Duration) (Ser
 	if width <= 0 {
 		width = time.Hour.Milliseconds()
 	}
+	// Buckets are relative to the window start, not the epoch: the console draws
+	// its bars at from+i*width, and an epoch-aligned bucket would start before
+	// from and be dropped (losing the window's first partial bucket).
+	offset := f.From.UnixMilli()
+	if f.From.IsZero() {
+		offset = 0
+	}
 	where, args := f.where()
-	q := `SELECT (ts / ?) * ? AS b, COUNT(*),
+	q := `SELECT ((ts - ?) / ?) * ? + ? AS b, COUNT(*),
 		COALESCE(SUM(CASE WHEN ` + failedExpr + ` THEN 1 ELSE 0 END),0)
 		FROM requests` + where + ` GROUP BY b ORDER BY b`
-	queryArgs := append([]any{width, width}, args...)
+	queryArgs := append([]any{offset, width, width, offset}, args...)
 
 	rows, err := s.db.QueryContext(ctx, q, queryArgs...)
 	if err != nil {

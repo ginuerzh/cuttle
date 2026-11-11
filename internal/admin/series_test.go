@@ -161,6 +161,19 @@ func TestSeriesEndpointBucketsAndFilters(t *testing.T) {
 	if code, b := get(bad); code != http.StatusBadRequest {
 		t.Fatalf("bucket=abc = %d: %s, want 400", code, b)
 	}
+	// A window that would produce an absurd number of points is rejected, not
+	// rendered: the clamp bounds the width, not the count.
+	dense := url.Values{}
+	for k, v := range window {
+		dense[k] = v
+	}
+	dense.Set("from", base.Add(-168*time.Hour).UTC().Format(time.RFC3339))
+	dense.Set("to", base.UTC().Format(time.RFC3339))
+	dense.Set("bucket", "1s")
+	if code, b := get(dense); code != http.StatusBadRequest {
+		t.Fatalf("168h at 1s = %d: %s, want 400", code, b)
+	}
+
 	huge := url.Values{}
 	for k, v := range window {
 		huge[k] = v
