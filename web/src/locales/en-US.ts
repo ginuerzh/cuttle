@@ -39,6 +39,11 @@ export const enUS: Record<string, string> = {
   '最近窗口内没有错误': 'No errors in the recent window',
   '连线': 'Edge',
   '未连接': 'Not connected',
+  '未连接（草稿）': 'Not connected (draft)',
+  '留空即为草稿：节点先建卡片，之后在拓扑上拖线接提供商。':
+    'Leave empty to keep it as a draft: create the card now and drag it onto a provider later.',
+  '留空即为草稿：入口先建卡片，之后在拓扑上拖线接路由。':
+    'Leave empty to keep it as a draft: create the card now and drag it onto a route later.',
   '路径': 'Path',
   '错误': 'Errors',
   '键': 'key',

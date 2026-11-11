@@ -11,7 +11,7 @@ vi.mock('../api/client', () => ({
 }));
 
 import { getProviderModels, updateNode, updateProvider } from '../api/client';
-import { NodeForm, ProviderForm, RouteNodeList } from './Edit';
+import { Edit, EntrypointForm, NodeForm, ProviderForm, RouteNodeList } from './Edit';
 import { setActiveLang } from '../i18n';
 
 setActiveLang('zh-CN');
@@ -313,5 +313,55 @@ describe('RouteNodeList', () => {
       (container.querySelector('button[aria-label="移除 ds-fast"]') as HTMLButtonElement).click();
     });
     expect(onChange).toHaveBeenCalledWith([]);
+  });
+});
+
+vi.mock('./Topology', () => ({
+  Topology: (props: { onConnect?: (c: { source: string; target: string }) => void }) =>
+    props.onConnect ? (
+      <button
+        type="button"
+        onClick={() => props.onConnect!({ source: 'node:n_0000000001', target: 'provider:p_0000000001' })}
+      >
+        connect-draft
+      </button>
+    ) : null,
+}));
+
+describe('Edit canvas connections', () => {
+  it('connects a node to a provider by dragging', async () => {
+    updateNodeMock.mockClear();
+    const config = {
+      gateway: { listen: ':8787' },
+      admin: { listen: '', sessionTTL: '' },
+      providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
+      nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: '' }],
+      routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
+      entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
+    } as unknown as ConfigResponse;
+    const { container } = render(<Edit config={config} onReload={async () => undefined} />);
+    await act(async () => {
+      buttonByText(container, 'connect-draft').click();
+    });
+    expect(updateNodeMock).toHaveBeenCalledWith('n_0000000001', expect.objectContaining({ provider: 'p_0000000001' }));
+  });
+});
+
+describe('draft affordance', () => {
+  it('shows the draft placeholder on the node and entrypoint selects', () => {
+    const config = { providers: [], nodes: [], routes: [], entrypoints: [] } as unknown as ConfigResponse;
+    const node: Node = { id: 'n_0000000001', name: 'draft', provider: '', model: '' };
+    const nodeForm = render(<NodeForm node={node} config={config} onSaved={async () => undefined} />);
+    expect(nodeForm.container.textContent).toContain('未连接（草稿）');
+
+    const entrypointForm = render(
+      <EntrypointForm
+        entrypoint={{ id: 'e_0000000001', name: 'draft', match: ['*'], route: '' }}
+        index={0}
+        config={config}
+        onSaved={async () => undefined}
+      />,
+    );
+    expect(entrypointForm.container.textContent).toContain('未连接（草稿）');
   });
 });

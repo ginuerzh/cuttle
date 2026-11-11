@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AddButtons, NodeForm, ProviderForm, RouteForm } from './Edit';
+import { AddButtons, EdgeForm, EntrypointForm, NodeForm, ProviderForm, RouteForm } from './Edit';
 import { setActiveLang } from '../i18n';
 import type { ConfigResponse, Node, Provider, Route } from '../api/types';
 
@@ -122,5 +122,50 @@ describe('RouteForm', () => {
     const html = renderToStaticMarkup(<RouteForm route={route} config={config} onSaved={async () => undefined} />);
     expect(html).toContain('value="strong"');
     expect(html).toContain('仅用于显示');
+  });
+});
+
+describe('draft editing', () => {
+  it('offers a clearable route select and no required marker for an entrypoint', () => {
+    const config = { providers: [], nodes: [], routes: [], entrypoints: [] } as unknown as ConfigResponse;
+    const html = renderToStaticMarkup(
+      <EntrypointForm
+        entrypoint={{ id: 'e_0000000001', name: 'draft', match: ['*'], route: '' }}
+        index={0}
+        config={config}
+        onSaved={async () => undefined}
+      />,
+    );
+    expect(html).toContain('留空即为草稿');
+  });
+
+  it('offers a clearable provider select for a node', () => {
+    const config = { providers: [], nodes: [], routes: [], entrypoints: [] } as unknown as ConfigResponse;
+    const node: Node = { id: 'n_0000000001', name: 'draft', provider: '', model: '' };
+    const html = renderToStaticMarkup(<NodeForm node={node} config={config} onSaved={async () => undefined} />);
+    expect(html).toContain('留空即为草稿');
+  });
+});
+
+describe('EdgeForm', () => {
+  const config = {
+    providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', keys: [] }],
+    nodes: [{ id: 'n_0000000001', name: 'n', provider: 'p_0000000001', model: 'm1' }],
+    routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
+    entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
+  } as unknown as ConfigResponse;
+
+  it('can disconnect an entrypoint from its route', () => {
+    const html = renderToStaticMarkup(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000001" config={config} onSaved={async () => undefined} />,
+    );
+    expect(html.replace(/\s+/g, '')).toContain('断开');
+  });
+
+  it('can disconnect a node from its provider', () => {
+    const html = renderToStaticMarkup(
+      <EdgeForm id="node:n_0000000001|provider:p_0000000001" config={config} onSaved={async () => undefined} />,
+    );
+    expect(html.replace(/\s+/g, '')).toContain('断开');
   });
 });

@@ -57,6 +57,7 @@ import {
 } from './presets';
 import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
+import { connectNodeProvider, disconnectEntrypointRoute, disconnectNodeProvider } from './drafts';
 import type { NodeRouteHealth } from './routeHealth';
 import { entityLabel, labelMap, configLabels } from '../labels';
 
@@ -188,9 +189,11 @@ function KeyField({ label, extra }: { label: string; extra?: string }) {
 function ModelField({
   models,
   modelsError,
+  required = true,
 }: {
   models: ProviderModel[];
   modelsError: string;
+  required?: boolean;
 }) {
   const form = Form.useFormInstance();
   const isMobile = !Grid.useBreakpoint().md;
@@ -211,9 +214,9 @@ function ModelField({
 
   return (
     <>
-      <Form.Item label={tr('模型 ID')} required style={{ marginBottom: 12 }}>
+      <Form.Item label={tr('模型 ID')} required={required} style={{ marginBottom: 12 }}>
         <Space.Compact style={{ width: '100%' }}>
-          <Form.Item name="model" noStyle rules={[{ required: true, message: tr('请填写模型') }]}>
+          <Form.Item name="model" noStyle rules={required ? [{ required: true, message: tr('请填写模型') }] : []}>
             <Input placeholder="deepseek-v4-flash" />
           </Form.Item>
           <Button
@@ -875,7 +878,7 @@ export function NodeForm({
       size="small"
       initialValues={{
         name: node.name,
-        provider: node.provider,
+        provider: node.provider || undefined,
         model: node.model,
         api: node.api ?? 'auto',
         key: node.key ?? '',
@@ -897,10 +900,25 @@ export function NodeForm({
       >
         <Input placeholder="deepseek-fast" />
       </Form.Item>
-      <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
-        <Select options={providerOptions} />
+      <Form.Item
+        name="provider"
+        label="provider"
+        extra={tr('留空即为草稿：节点先建卡片，之后在拓扑上拖线接提供商。')}
+      >
+        <Select
+          allowClear
+          placeholder={tr('未连接（草稿）')}
+          options={providerOptions}
+          onChange={(v?: string) => {
+            if (!v) {
+              form.setFieldValue('model', '');
+              form.setFieldValue('api', '');
+              form.setFieldValue('key', '');
+            }
+          }}
+        />
       </Form.Item>
-      <ModelField models={models} modelsError={modelsError} />
+      <ModelField models={models} modelsError={modelsError} required={!!provider} />
       <Form.Item name="api" label={tr('目标 API（协议）')}>
         <Select options={nodeAPIOptions(provider).map((value) => ({ value, label: value }))} />
       </Form.Item>
@@ -956,7 +974,7 @@ export function EntrypointForm({
     setBusy(true);
     try {
       const next = config.entrypoints.map((e, i) =>
-        i === index ? { ...e, name: v.name, match: v.match, route: v.route } : e,
+        i === index ? { ...e, name: v.name, match: v.match, route: v.route ?? '' } : e,
       );
       await putEntrypoints(next);
       message.success(tr('已保存'));
@@ -986,7 +1004,7 @@ export function EntrypointForm({
       form={form}
       layout="vertical"
       size="small"
-      initialValues={{ name: entrypoint.name, match: entrypoint.match, route: entrypoint.route }}
+      initialValues={{ name: entrypoint.name, match: entrypoint.match, route: entrypoint.route || undefined }}
     >
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {entrypoint.name}
@@ -1009,12 +1027,13 @@ export function EntrypointForm({
       >
         <Select mode="tags" tokenSeparators={[',']} placeholder="claude-opus*" />
       </Form.Item>
-      <Form.Item name="route" label={tr('路由')} rules={[{ required: true }]}>
+      <Form.Item name="route" label={tr('路由')} extra={tr('留空即为草稿：入口先建卡片，之后在拓扑上拖线接路由。')}>
         <Select
+          allowClear
           showSearch
           optionFilterProp="label"
           options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
-          placeholder="strong / fast"
+          placeholder={tr('未连接（草稿）')}
         />
       </Form.Item>
       <Divider />
@@ -1030,9 +1049,28 @@ export function EntrypointForm({
   );
 }
 
-function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse; onSaved: () => Promise<void> }) {
+export function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse; onSaved: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   if (id.startsWith('entrypoint:')) {
+    const entrypointID = id.slice('entrypoint:'.length).split('->')[0] ?? '';
+    const entrypoint = config.entrypoints.find((e) => e.id === entrypointID);
+
+    const remove = async () => {
+      if (!entrypoint) return;
+      setBusy(true);
+      try {
+        await putEntrypoints(
+          config.entrypoints.map((e) => (e.id === entrypoint.id ? disconnectEntrypointRoute(e) : e)),
+        );
+        message.success(tr('已断开'));
+        await onSaved();
+      } catch (err) {
+        message.error(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    };
+
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
@@ -1041,6 +1079,9 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
         <Typography.Paragraph type="secondary">
           {tr('入口指向哪条 route 由 entrypoint 的 route 决定，请在入口面板里修改。')}
         </Typography.Paragraph>
+        <Button danger loading={busy} onClick={remove} disabled={!entrypoint}>
+          {tr('断开')}
+        </Button>
       </div>
     );
   }
@@ -1091,6 +1132,22 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
   if (source.startsWith('node:') && target.startsWith('provider:')) {
     const nodeId = source.slice('node:'.length);
     const providerId = target.slice('provider:'.length);
+    const node = config.nodes.find((n) => n.id === nodeId);
+
+    const remove = async () => {
+      if (!node) return;
+      setBusy(true);
+      try {
+        await updateNode(node.id, disconnectNodeProvider(node));
+        message.success(tr('已断开'));
+        await onSaved();
+      } catch (err) {
+        message.error(errorText(err));
+      } finally {
+        setBusy(false);
+      }
+    };
+
     return (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
@@ -1102,6 +1159,9 @@ function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse;
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {tr('Node 指向哪个 Provider 由 Node 的 provider 字段决定，请在 Node 面板修改。')}
         </Typography.Paragraph>
+        <Button danger loading={busy} onClick={remove} disabled={!node}>
+          {tr('断开')}
+        </Button>
       </div>
     );
   }
@@ -1181,6 +1241,12 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
           i === found.index ? { ...e, route: tid } : e,
         );
         await putEntrypoints(next);
+      } else if (skind === 'node' && tkind === 'provider') {
+        const node = config.nodes.find((n) => n.id === sid);
+        if (!node) throw new Error('node not found');
+        const provider = config.providers.find((p) => p.id === tid);
+        if (!provider) throw new Error('provider not found');
+        await updateNode(node.id, connectNodeProvider(node, provider));
       } else {
         throw new Error(tr('不支持的连接方向'));
       }
@@ -1474,10 +1540,24 @@ export function AddNodeModal({
         <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="deepseek-fast" />
         </Form.Item>
-        <Form.Item name="provider" label="provider" rules={[{ required: true }]}>
-          <Select options={providerOptions} />
+        <Form.Item
+          name="provider"
+          label="provider"
+          extra={tr('留空即为草稿：节点先建卡片，之后在拓扑上拖线接提供商。')}
+        >
+          <Select
+            allowClear
+            placeholder={tr('未连接（草稿）')}
+            options={providerOptions}
+            onChange={(v?: string) => {
+              if (!v) {
+                form.setFieldValue('model', '');
+                form.setFieldValue('api', 'auto');
+              }
+            }}
+          />
         </Form.Item>
-        <ModelField models={models} modelsError={modelsError} />
+        <ModelField models={models} modelsError={modelsError} required={!!provider} />
         <Form.Item name="api" label={tr('目标 API（协议）')} initialValue="auto">
           <Select options={nodeAPIOptions(provider).map((value) => ({ value, label: value }))} />
         </Form.Item>
@@ -1595,7 +1675,7 @@ export function AddEntrypointModal({
     try {
       await putEntrypoints([
         ...config.entrypoints,
-        { name: v.name, match: v.match, route: v.route },
+        { name: v.name, match: v.match, route: v.route ?? '' },
       ]);
       form.resetFields();
       await onDone();
@@ -1626,12 +1706,13 @@ export function AddEntrypointModal({
         >
           <Select mode="tags" tokenSeparators={[',']} placeholder="claude-opus*" />
         </Form.Item>
-        <Form.Item name="route" label={tr('路由')} rules={[{ required: true }]}>
+        <Form.Item name="route" label={tr('路由')} extra={tr('留空即为草稿：入口先建卡片，之后在拓扑上拖线接路由。')}>
           <Select
+            allowClear
             showSearch
             optionFilterProp="label"
             options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
-            placeholder="strong / fast"
+            placeholder={tr('未连接（草稿）')}
           />
         </Form.Item>
       </Form>
