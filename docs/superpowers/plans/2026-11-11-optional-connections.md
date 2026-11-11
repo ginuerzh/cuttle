@@ -760,12 +760,12 @@ git commit -m "feat(web): label unconnected entrypoints and nodes on the list pa
 ```
 
 **Implementation record (Task 5)** — fill in after the task is complete:
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-11 complete
+- Repository + commit: cuttle `e77c46fd` — `feat(web): label unconnected entrypoints and nodes on the list pages`
+- Files changed: `web/src/pages/Entrypoints.tsx` and `web/src/pages/Nodes.tsx` (fall back to `未连接` when the reference is empty), `web/src/pages/Entrypoints.test.tsx` (new), `web/src/pages/Nodes.test.tsx` (1 case).
+- Tests/commands and results: `npx vitest run src/pages/Nodes.test.tsx src/pages/Entrypoints.test.tsx` RED (the subtitle rendered `* → ` / an empty leading field) then GREEN (4 passed); `npx tsc --noEmit` clean; `npm test` 43 files / 316 tests passed.
+- Review findings and fixes: none.
+- Deferred items/limitations: the list rows show plain text, not the topology's amber badge; the canvas is where drafts are visually distinguished.
 
 ---
 
