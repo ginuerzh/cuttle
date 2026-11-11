@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS request_attempts (
 	PRIMARY KEY (request_id, attempt)
 );
 CREATE INDEX IF NOT EXISTS request_attempts_seq ON request_attempts(seq);
+CREATE INDEX IF NOT EXISTS request_attempts_ts ON request_attempts(ts);
 CREATE INDEX IF NOT EXISTS request_attempts_node ON request_attempts(node, ts);
 ```
 
