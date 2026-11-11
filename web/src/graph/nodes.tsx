@@ -3,6 +3,7 @@ import {
   ApiOutlined,
   BranchesOutlined,
   CloudServerOutlined,
+  DisconnectOutlined,
   FrownOutlined,
   GatewayOutlined,
   MehOutlined,
@@ -201,21 +202,21 @@ export function DraftBadge({ show }: { show?: boolean }) {
       title={t('未连接')}
       style={{
         position: 'absolute',
-        top: 3,
+        top: 5,
         right: 6,
-        height: 16,
-        padding: '0 4px',
-        borderRadius: 4,
-        background: 'rgba(217, 119, 6, 0.12)',
+        width: 14,
+        height: 14,
         color: '#d97706',
-        fontSize: 10,
-        fontWeight: 600,
-        lineHeight: '16px',
+        fontSize: 13,
+        lineHeight: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         pointerEvents: 'none',
         zIndex: 1,
       }}
     >
-      {t('未连接')}
+      <DisconnectOutlined />
     </span>
   );
 }

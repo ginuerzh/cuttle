@@ -412,6 +412,8 @@ describe('DraftBadge', () => {
     );
     expect(entry).toContain('data-status="draft"');
     expect(entry).toContain('未连接');
+    expect(entry).toContain('anticon-disconnect');
+    expect(entry).not.toContain('>未连接<');
 
     const nodeProps = {
       id: 'node:n_0000000001',
@@ -432,5 +434,7 @@ describe('DraftBadge', () => {
     );
     expect(node).toContain('data-status="draft"');
     expect(node).toContain('未连接');
+    expect(node).toContain('anticon-disconnect');
+    expect(node).not.toContain('>未连接<');
   });
 });
