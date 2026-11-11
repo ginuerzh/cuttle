@@ -60,19 +60,31 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 	var rewriters []string
 	entries := make([]*xhop.HopEntry, 0, len(cfg.Entrypoints)*(len(inboundGroups)+1))
 	for _, e := range cfg.Entrypoints {
+		key := draftPlanKey
 		r, ok := cfg.Route(e.Route)
-		if !ok {
+		switch {
+		case ok:
+			key = r.ID
+		case strings.TrimSpace(e.Route) != "":
 			return nil, rewriters, nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+		default:
+			log.Warnf("entrypoint %s: no route, compiled as a draft", e.Name)
 		}
-		key := r.ID
 		plan, ok := routePlans[key]
 		if !ok {
 			var err error
-			plan, err = buildRoutePlan(cfg, build, *r, log, facts, captureMgr)
+			if key == draftPlanKey {
+				plan, err = buildDraftPlan(log)
+			} else {
+				plan, err = buildRoutePlan(cfg, build, *r, log, facts, captureMgr)
+			}
 			if plan != nil {
 				rewriters = append(rewriters, plan.rewriters...)
 			}
 			if err != nil {
+				if key == draftPlanKey {
+					return nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+				}
 				return nil, rewriters, nil, fmt.Errorf("route %q: %w", r.Name, err)
 			}
 			routePlans[key] = plan
@@ -120,6 +132,30 @@ type routePlan struct {
 	countTokensEstimate bool
 }
 
+// draftPlanKey is the routePlans key of the shared plan compiled for
+// entrypoints that have no route yet. Route ids are never empty, so it cannot
+// collide with a real route.
+const draftPlanKey = ""
+
+// buildDraftPlan compiles the hop shared by every draft entrypoint. It has no
+// nodes, so selecting from it yields no node and the request fails; the
+// entrypoint keeps its matcher and its place in declaration order, which is
+// what stops a draft from falling through to a later entrypoint.
+func buildDraftPlan(log logger.Logger) (*routePlan, error) {
+	h, err := hop_parser.ParseHop(&xconfig.HopConfig{
+		Name: "route/draft",
+		Selector: &xconfig.SelectorConfig{
+			Strategy:    "round",
+			MaxFails:    1,
+			FailTimeout: 10 * time.Second,
+		},
+	}, log)
+	if err != nil {
+		return nil, err
+	}
+	return &routePlan{hops: map[provider.API]hop.Hop{"": h}}, nil
+}
+
 // nodePlan is one enabled node and its compiled target plan.
 type nodePlan struct {
 	provider gwconfig.Provider
@@ -136,6 +172,12 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 			return nil, fmt.Errorf("unknown node %q", ref)
 		}
 		if !n.EnabledValue() {
+			continue
+		}
+		if strings.TrimSpace(n.Provider) == "" {
+			// A providerless node is a draft: it keeps its card and name but is
+			// skipped until it is wired to a provider.
+			log.Warnf("route %s node %s: no provider, skipped", r.Name, n.Name)
 			continue
 		}
 		p, ok := cfg.Provider(n.Provider)

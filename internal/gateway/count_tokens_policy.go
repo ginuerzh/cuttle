@@ -3,6 +3,7 @@ package gateway
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/provider"
@@ -56,15 +57,23 @@ func buildCountTokensPolicy(cfg *gwconfig.Config, plans map[string]*routePlan) (
 		if err != nil {
 			return nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 		}
-		r, ok := cfg.Route(e.Route)
-		if !ok {
-			return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+		var entry countTokensEntry
+		if strings.TrimSpace(e.Route) == "" {
+			// A draft entrypoint has no upstream, so count_tokens must pass
+			// through and fail with the rest of its routing instead of being
+			// answered by a local estimate.
+			entry = countTokensEntry{}
+		} else {
+			r, ok := cfg.Route(e.Route)
+			if !ok {
+				return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+			}
+			plan, ok := plans[r.ID]
+			if !ok {
+				return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+			}
+			entry = countTokensEntry{estimate: plan.countTokensEstimate}
 		}
-		plan, ok := plans[r.ID]
-		if !ok {
-			return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
-		}
-		entry := countTokensEntry{estimate: plan.countTokensEstimate}
 		if !catchAll {
 			entry.matcher = regexp.MustCompile(pattern)
 		}

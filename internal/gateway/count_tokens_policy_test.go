@@ -97,6 +97,24 @@ func TestBuildCountTokensPolicyFromConfig(t *testing.T) {
 	}
 }
 
+func TestBuildCountTokensPolicyDraftEntrypoint(t *testing.T) {
+	cfg := &gwconfig.Config{
+		Entrypoints: []gwconfig.Entrypoint{
+			{ID: "e_0000000001", Name: "draft", Match: []string{"*"}},
+			{ID: "e_0000000002", Name: "rest", Match: []string{"*"}, Route: "r_0000000002"},
+		},
+		Routes: []gwconfig.Route{{ID: "r_0000000002", Name: "r"}},
+	}
+	plans := map[string]*routePlan{"r_0000000002": {countTokensEstimate: true}}
+	p, err := buildCountTokensPolicy(cfg, plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.estimateFor("gpt-4") {
+		t.Fatal("a draft entrypoint must pass through so the request fails, not estimate locally")
+	}
+}
+
 func TestGatewayCompilesCountTokensPolicy(t *testing.T) {
 	up, _ := captureUpstream(t)
 
