@@ -492,12 +492,12 @@ git commit -m "feat(web): mark unconnected entrypoints and nodes as drafts"
 ```
 
 **Implementation record (Task 3)** — fill in after the task is complete:
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-11 complete
+- Repository + commit: cuttle `ceb27625` — `feat(web): mark unconnected entrypoints and nodes as drafts`
+- Files changed: `web/src/graph/build.ts` (`GraphNodeData.unconnected`, `EdgeData.draft`, `DRAFT_COLOR`, `edge(..., dashed)`, draft sub-labels, amber dashed `unrouted` edge), `web/src/graph/nodes.tsx` (`DraftBadge` + render in `EntrypointNode`/`BindingNode`), `web/src/pages/Topology.tsx` (`EdgeData.draft` kept in `decorateEdge`), `web/src/api/types.ts` (draft comments on `Node.provider`/`Entrypoint.route`), `web/src/locales/en-US.ts` (`'未连接': 'Not connected'`), `web/src/graph/build.test.ts` (2 cases), `web/src/graph/nodes.test.tsx` (1 case).
+- Tests/commands and results: `npx vitest run src/graph/build.test.ts src/graph/nodes.test.tsx` RED (`data.unconnected` undefined, no `data-status="draft"`) then GREEN; the two build cases also needed `setActiveLang('zh-CN')` because the suite defaults to en-US. `npx vitest run src/graph/build.test.ts src/graph/nodes.test.tsx src/pages/Topology.test.tsx` 43 passed; `npx tsc --noEmit` clean; `npm test` 42 files / 304 tests passed.
+- Review findings and fixes: none beyond the language default; `decorateEdge` now keeps the dash for drafts so the monitor does not turn the amber edge solid.
+- Deferred items/limitations: the `unrouted` target node is still shared between a draft and a dangling (invalid) route; they differ only in edge colour/dash and the card badge.
 
 ---
 
