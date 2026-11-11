@@ -692,12 +692,12 @@ git commit -m "feat(web): connect and disconnect drafts on the edit canvas"
 ```
 
 **Implementation record (Task 4)** — fill in after the task is complete:
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-11 complete
+- Repository + commit: cuttle `f30fd230` — `feat(web): connect and disconnect drafts on the edit canvas`
+- Files changed: `web/src/pages/drafts.ts` (new: `connectNodeProvider`, `disconnectNodeProvider`, `disconnectEntrypointRoute`), `web/src/pages/drafts.test.ts` (4 cases), `web/src/pages/Edit.tsx` (`connect` gains `node→provider`, `EdgeForm` exported with `断开` for `entrypoint→route` and `node→provider`, clearable provider/route selects with placeholders and hints in both the panels and the create modals, `ModelField` gains an optional `required`, `''` normalized to `undefined` in the selects so the placeholder renders), `web/src/pages/Edit.test.tsx` (SSR cases), `web/src/pages/Edit.dom.test.tsx` (drag-to-connect via a mocked `Topology`, placeholder assertions), `web/src/locales/en-US.ts` (3 strings).
+- Tests/commands and results: `npx vitest run src/pages/drafts.test.ts` RED (module missing) then GREEN (4 passed); `npx vitest run src/pages/Edit.test.tsx src/pages/Edit.dom.test.tsx` RED (5 failed: no hint, `EdgeForm` not exported, connect unsupported) then GREEN (23 passed); `npx tsc --noEmit` clean; `npm test` 43 files / 314 tests passed.
+- Review findings and fixes: antd SSR never renders a Select placeholder, so the SSR assertions target the `留空即为草稿` hint and the jsdom test asserts the placeholder; a form value of `''` suppressed the placeholder, so empty references are normalized to `undefined` in `initialValues`; antd splits `断开` into `断 开`, so the new assertions strip whitespace.
+- Deferred items/limitations: disconnecting a node also clears its model text at the UI level even though the config keeps a model hint for hand-written YAML.
 
 ---
 
