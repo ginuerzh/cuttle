@@ -385,9 +385,9 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): show read-only entity par
 
 #### Implementation record — Task 2
 
-- Date / status:
-- Repository + commit:
-- Files changed:
-- Tests run / results:
-- Review findings / fixes:
-- Deferred / limitations:
+- Date / status: 2026-11-11 — DONE (code in `bad3bbd9`); this record is added by the follow-up plan commit.
+- Repository + commit: `github.com/ginuerzh/cuttle` @ `bad3bbd9` (`feat(web): show read-only entity parameters in the monitor panel`).
+- Files changed: `web/src/App.tsx` (`NodePanel` takes `config`, renders the 参数 block; a local `renderNodePanel(id)` now serves both the mobile drawer and the desktop aside), `web/src/App.test.tsx`, `web/src/i18n.test.ts`, `web/src/locales/en-US.ts`.
+- Tests/commands and results: RED `npx vitest run src/App.test.tsx` → both new parameter assertions failed (`expected '<div><h5 …' to contain '参数'`), and `npx tsc --noEmit` → `Property 'config' does not exist on type …`. GREEN the same commands (17 `App.test.tsx` tests, 32 focused tests). Web gate: `npm test` 300/300, `npx tsc --noEmit` exit 0, `npm run build` succeeded (the existing >500 kB chunk-size warning is pre-existing, not from this change).
+- Review findings and fixes: none yet (no per-task review; the whole-branch review covers it). One plan deviation, ledgered: `App`'s `config` is `ConfigResponse | null`, so `config={config}` could not typecheck; the panels go through `renderNodePanel`, which returns `null` while the config is absent.
+- Deferred items/limitations: a selection can only exist once the topology rendered, which needs the config, so the `null` branch is unreachable today. The panel is 320px wide on desktop and the session list moves down by the parameter block's height; the row set keeps that to six rows or fewer.
