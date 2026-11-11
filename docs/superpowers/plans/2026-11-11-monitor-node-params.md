@@ -45,7 +45,7 @@
   ```
   Both the label and the value are already translated (the function calls `translate` itself), so callers render them verbatim. It never throws and returns `[]` for an unknown kind or entity.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/pages/entityParams.test.ts`, with `beforeEach(() => setActiveLang('zh-CN'))` and this fixture (typed `as unknown as ConfigResponse` as in `labels.test.ts`):
 
@@ -187,12 +187,12 @@ it('returns nothing for unrouted, unknown ids and unknown kinds', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 Run: `cd cuttle/web && npx vitest run src/pages/entityParams.test.ts`
 Expected: FAIL — `Failed to resolve import "./entityParams"`.
 
-- [ ] **Step 3: Implement `web/src/pages/entityParams.ts`**
+- [x] **Step 3: Implement `web/src/pages/entityParams.ts`**
 
 ```ts
 export interface ParamRow {
@@ -212,17 +212,17 @@ Body rules, in this order:
 - Everything else: `return []`.
 - Wrap every literal label in `translate(...)` as well, so the returned rows are fully rendered strings.
 
-- [ ] **Step 4: Run the test and watch it pass**
+- [x] **Step 4: Run the test and watch it pass**
 
 Run: `cd cuttle/web && npx vitest run src/pages/entityParams.test.ts`
 Expected: PASS, 9 tests.
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 Run: `cd cuttle/web && npx tsc --noEmit`
 Expected: no output, exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add web/src/pages/entityParams.ts web/src/pages/entityParams.test.ts docs/superpowers/specs/2026-11-11-monitor-node-params-design.md docs/superpowers/plans/2026-11-11-monitor-node-params.md
@@ -235,7 +235,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): map a graph id to read-on
 - Repository + commit: `github.com/ginuerzh/cuttle` @ `2435991c` (`feat(web): map a graph id to read-only entity parameters`).
 - Files changed: `web/src/pages/entityParams.ts` (new), `web/src/pages/entityParams.test.ts` (new).
 - Tests/commands and results: RED `npx vitest run src/pages/entityParams.test.ts` → `Failed to load url ./entityParams` (no tests collected). GREEN the same command, 9/9 passing. `npx tsc --noEmit` exit 0.
-- Review findings and fixes: none yet (no review on this task; the whole-branch review covers it). Two details settled while implementing: the return type is `ParamRow[]` with both sides translated, so `NodePanel` can render rows verbatim; `configuredAPIs` from `presets.ts` is reused so the provider rows list exactly the APIs the node API select offers.
+- Review findings and fixes: none yet (no review on this task; the whole-branch review covers it). Two details settled while implementing: the return type is `ParamRow[]` with both sides translated, so `NodePanel` can render rows verbatim; `configuredAPIs` from `presets.ts` is reused so the provider rows list exactly the APIs the node API select offers. Whole-branch review: no finding against this module. The reviewer's minor about `configLabels(config)` running on every panel render is deferred (a `useMemo` here would freeze the language, because `translate` reads a module-level `activeLang`); the double `find`/`findIndex` in the entrypoint branch and the `1 keys` English plural are deferred minors as well.
 - Deferred items/limitations: the row order and omission rules live in this module only; the panel renders whatever it returns next task. `entrypoint.match` is joined with `, ` and a single-glob entrypoint therefore reads the same as a multi-glob one.
 
 ---
@@ -251,7 +251,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): map a graph id to read-on
 - Consumes: `entityParams(config, graphId): ParamRow[]` and `ParamRow` from Task 1.
 - Produces: `NodePanel` props become `{ config: ConfigResponse; id: string; label?: string; metrics?: NodeMetrics; since?: string; rangeMs: number; dead?: boolean; deadRoutes?: readonly string[] }` — `config` is required and the only new prop.
 
-- [ ] **Step 1: Add the English strings**
+- [x] **Step 1: Add the English strings**
 
 In `web/src/locales/en-US.ts` add, keeping the file's existing ordering style:
 
@@ -265,7 +265,7 @@ In `web/src/locales/en-US.ts` add, keeping the file's existing ordering style:
 '启用状态': 'Status',
 ```
 
-- [ ] **Step 2: Extend `i18n.test.ts` and watch it pass**
+- [x] **Step 2: Extend `i18n.test.ts` and watch it pass**
 
 Add one case to the existing `describe('translateFor')`:
 
@@ -280,7 +280,7 @@ it('translates the monitor parameter labels', () => {
 
 Run: `cd cuttle/web && npx vitest run src/i18n.test.ts` — Expected: PASS.
 
-- [ ] **Step 3: Write the failing panel tests**
+- [x] **Step 3: Write the failing panel tests**
 
 In `web/src/App.test.tsx`, add this fixture next to `metrics` (import `ConfigResponse` as a type):
 
@@ -331,17 +331,17 @@ it('renders no parameter block for unrouted or unknown ids', () => {
 
 Also pass `config={cfg}` to every existing `<NodePanel …>` in the file (nine call sites) so the required prop typechecks.
 
-- [ ] **Step 4: Run the tests and watch them fail**
+- [x] **Step 4: Run the tests and watch them fail**
 
 Run: `cd cuttle/web && npx vitest run src/App.test.tsx`
 Expected: FAIL — the parameter assertions find no `参数`, plus a TypeScript complaint about the unknown `config` prop.
 
-- [ ] **Step 5: Render the block in `NodePanel`**
+- [x] **Step 5: Render the block in `NodePanel`**
 
 Run: `cd cuttle/web && npx tsc --noEmit`
 Expected: FAIL on the property `config` not existing on `NodePanel` props.
 
-- [ ] **Step 6: Implement the `config` prop and the block**
+- [x] **Step 6: Implement the `config` prop and the block**
 
 `NodePanel` destructures `config` and, immediately after the existing title `</Typography.Title>` and before the metrics `Descriptions`, renders:
 
@@ -366,17 +366,17 @@ const params = entityParams(config, id);
 
 Import `entityParams` from `./pages/entityParams`. Pass `config={config}` at both `<NodePanel …>` call sites in `App.tsx`; `EdgePanel` is untouched.
 
-- [ ] **Step 7: Run the tests and verify they pass**
+- [x] **Step 7: Run the tests and verify they pass**
 
 Run: `cd cuttle/web && npx vitest run src/App.test.tsx src/i18n.test.ts`
 Expected: PASS.
 
-- [ ] **Step 8: Run the full web gate**
+- [x] **Step 8: Run the full web gate**
 
 Run: `cd cuttle/web && npm test && npx tsc --noEmit && npm run build`
 Expected: all three succeed; `npm test` reports no failures.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add web/src/App.tsx web/src/App.test.tsx web/src/i18n.test.ts web/src/locales/en-US.ts docs/superpowers/plans/2026-11-11-monitor-node-params.md
@@ -389,5 +389,5 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): show read-only entity par
 - Repository + commit: `github.com/ginuerzh/cuttle` @ `bad3bbd9` (`feat(web): show read-only entity parameters in the monitor panel`).
 - Files changed: `web/src/App.tsx` (`NodePanel` takes `config`, renders the 参数 block; a local `renderNodePanel(id)` now serves both the mobile drawer and the desktop aside), `web/src/App.test.tsx`, `web/src/i18n.test.ts`, `web/src/locales/en-US.ts`.
 - Tests/commands and results: RED `npx vitest run src/App.test.tsx` → both new parameter assertions failed (`expected '<div><h5 …' to contain '参数'`), and `npx tsc --noEmit` → `Property 'config' does not exist on type …`. GREEN the same commands (17 `App.test.tsx` tests, 32 focused tests). Web gate: `npm test` 300/300, `npx tsc --noEmit` exit 0, `npm run build` succeeded (the existing >500 kB chunk-size warning is pre-existing, not from this change).
-- Review findings and fixes: none yet (no per-task review; the whole-branch review covers it). One plan deviation, ledgered: `App`'s `config` is `ConfigResponse | null`, so `config={config}` could not typecheck; the panels go through `renderNodePanel`, which returns `null` while the config is absent.
-- Deferred items/limitations: a selection can only exist once the topology rendered, which needs the config, so the `null` branch is unreachable today. The panel is 320px wide on desktop and the session list moves down by the parameter block's height; the row set keeps that to six rows or fewer.
+- Review findings and fixes: none yet (no per-task review; the whole-branch review covers it). One plan deviation, ledgered: `App`'s `config` is `ConfigResponse | null`, so `config={config}` could not typecheck; the panels go through `renderNodePanel`, which returns `null` while the config is absent. **Whole-branch review** graded the branch "ready to merge with fixes": no Critical, one Important — the plan's Review Focus bullet 5 (English leaks Chinese when an `en-US` entry is missing) was pinned by only four assertions. Fixed in `web/src/App.test.tsx` with a whole-panel English test (`renders the parameters in English`) that forbids CJK; it is RED when an `en-US` entry is removed (verified by deleting `'模型': 'Models'`) and GREEN with it. The reviewer confirmed the ledger's `renderNodePanel` ruling stands. Minors deferred: English `1 keys` plural, the count-only `key` row label, `configLabels` rebuilt per render (memoizing would freeze the panel's language), the entrypoint `find` + `findIndex` double walk.
+- Deferred items/limitations: a selection can only exist once the topology rendered, which needs the config, so the `null` branch is unreachable today. The panel is 320px wide on desktop and the session list moves down by the parameter block's height; the row set keeps that to six rows or fewer. Disabled providers and disabled pinned keys are shown by name only, not flagged; that is the spec's contract and a candidate follow-up.

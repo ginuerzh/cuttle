@@ -21,6 +21,14 @@ const cfg = {
   entrypoints: [{ id: 'e_0000000001', name: 'all', match: ['*'], route: 'r_0000000001' }],
 } as unknown as ConfigResponse;
 
+// ASCII labels only: the English panel test forbids CJK characters, and the
+// display names are config data rather than console strings.
+const enCfg = {
+  ...cfg,
+  providers: [{ id: 'p_0000000001', name: 'deepseek', type: 'deepseek', keys: [] }],
+  nodes: [{ id: 'n_0000000001', name: 'fast', provider: 'p_0000000001', model: 'deepseek-v4-flash', api: 'chat' }],
+} as unknown as ConfigResponse;
+
 const base: RequestRow = {
   requestId: 'r1',
   sid: 's1',
@@ -143,6 +151,17 @@ describe('NodePanel', () => {
     );
     expect(unrouted).not.toContain('参数');
     expect(gone).not.toContain('参数');
+  });
+
+  it('renders the parameters in English', () => {
+    setActiveLang('en-US');
+    const html = renderToStaticMarkup(
+      <NodePanel config={enCfg} id="node:n_0000000001" metrics={metrics} since="" rangeMs={3_600_000} />,
+    );
+    expect(html).toContain('Parameters');
+    expect(html).toContain('Target API (protocol)');
+    expect(html).toContain('Pinned key');
+    expect(html).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
 
