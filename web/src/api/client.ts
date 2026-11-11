@@ -1,4 +1,4 @@
-import type { Alert, AttemptRow, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, TopologyPosition } from './types';
+import type { Alert, AttemptRow, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, SeriesResponse, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -248,6 +248,29 @@ export function getAttempts(q: AttemptQuery): Promise<AttemptRow[]> {
   if (q.errorClass) params.set('errorClass', q.errorClass);
   if (q.offset) params.set('offset', String(q.offset));
   return request<AttemptRow[] | null>('GET', `/api/attempts?${params.toString()}`).then((rows) => rows ?? []);
+}
+
+export interface SeriesQuery extends Omit<RequestQuery, 'limit'> {
+  /** Bucket width in milliseconds; the server clamps it to [1s, 24h]. */
+  bucket: number;
+}
+
+export function getSeries(q: SeriesQuery): Promise<SeriesResponse> {
+  const params = new URLSearchParams({
+    from: q.from.toISOString(),
+    to: q.to.toISOString(),
+    bucket: `${Math.max(1000, Math.round(q.bucket))}ms`,
+  });
+  if (q.provider) params.set('provider', q.provider);
+  if (q.route) params.set('route', q.route);
+  if (q.node) params.set('node', q.node);
+  if (q.entrypoint) params.set('entrypoint', q.entrypoint);
+  if (q.clientModel) params.set('clientModel', q.clientModel);
+  if (q.gatewayKey) params.set('key', q.gatewayKey);
+  if (q.errorsOnly) params.set('errors', '1');
+  if (q.capturedOnly) params.set('captured', '1');
+  if (q.errorClass) params.set('errorClass', q.errorClass);
+  return request<SeriesResponse>('GET', `/api/stats/series?${params.toString()}`);
 }
 
 export function getErrorSummary(q: { from: Date; to: Date }): Promise<ErrorSummary> {

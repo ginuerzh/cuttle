@@ -250,6 +250,12 @@ Entrypoint -> Route -> Node -> Provider model
   sockets with 4401 on logout or session expiry, 4408 when an open session
   exceeds `wsMaxAge`, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
+- `GET /api/stats/series` is the session trend: `{"bucket":"<duration>",
+  "points":[{bucket,requests,errors}]}`, sparse (only non-empty buckets), and
+  built from the *same* `requestFilter` as `GET /api/requests` so the chart and
+  the list cannot disagree. `bucket` defaults to `1h`, is rejected with `400`
+  when unparsable and clamped to `1s..24h`. The failure definition is the
+  request one (`status >= 400 OR error != ''`); attempts are not counted.
 - `GET /api/attempts` lists the discarded upstream attempts of the window
   newest first, filtered by `from`/`to`, `route=<id>`, `node=<id>`,
   `provider=<id>`, `status=<code>`, `errorClass=<class>`, `limit` and `offset`.

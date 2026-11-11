@@ -127,4 +127,12 @@ Expected: FAIL — component not found.
 Run: `cd cuttle/web && npx vitest run && npx tsc --noEmit && npm run build` then `cd cuttle && GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS.
 
-- [ ] **Step 8: Commit** `feat(web): chart sessions and errors over time` and append the Implementation record.
+- [x] **Step 8: Commit** `feat(web): chart sessions and errors over time` and append the Implementation record.
+
+**Implementation record (Task 2)**
+- Date/status: 2026-11-11 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/session-time-series`, base `06fd873a`)
+- Files: created `web/src/charts/sessionBars.ts` + test, `web/src/components/SessionChart.tsx` + test; modified `web/src/api/types.ts` (`SeriesPoint`, `SeriesResponse`), `web/src/api/client.ts` (`getSeries`), `web/src/pages/Requests.tsx` (series fetch, `zoom`/`chartWindow` state, chart + 清除缩放), `web/src/locales/en-US.ts`, `README.md`, `AGENTS.md`.
+- Tests: RED `npx vitest run src/charts/sessionBars.test.ts` → module not found; GREEN 7/7 after the `bucketFor` 24h rule (≥12h ⇒ 1h) matched the plan's preset mapping. RED `src/components/SessionChart.test.tsx` → module not found; GREEN 6/6. Client URL test added. Gates: `npx vitest run` 369/369, `tsc --noEmit` clean, `npm run build` ok, `GOWORK=off go build/vet/test ./...` green.
+- Review findings: the brief's "second click clears" is implemented through the page's `selected` prop (the component reports the bucket; the page stores the zoom and hands it back), so the component keeps no click state of its own — see the Task 2 ruling in the ledger.
+- Deferred: bucket labels use `formatClock` (`HH:MM`); sub-hour buckets therefore share a minute label when zoomed to a minute-wide bucket — acceptable, revisit if it confuses.

@@ -215,6 +215,19 @@ export interface NodeMetrics {
   outputTokensPerSecond: number;
 }
 
+/** One bucket of GET /api/stats/series; `bucket` is the bucket start. */
+export interface SeriesPoint {
+  bucket: string;
+  requests: number;
+  errors: number;
+}
+
+/** GET /api/stats/series: `bucket` is the width (a Go duration string). */
+export interface SeriesResponse {
+  bucket: string;
+  points: SeriesPoint[];
+}
+
 export interface EdgeMetrics {
   requests: number;
   errors: number;
