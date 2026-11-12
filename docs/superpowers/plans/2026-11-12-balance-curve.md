@@ -580,7 +580,7 @@ git commit -m "feat(admin): sample provider balances in the background"
   - `balanceTrendView{Currency string; Points []balancePointView}`
   - `balancePointView{At string; Amount float64}` — `at` is RFC3339 UTC, points ascending.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestProviderUsageTrends(t *testing.T) {
@@ -645,12 +645,12 @@ Also add:
   package) set `srv.stats = nil`, request the endpoint, assert `200`, the cards
   still present, and no `trends` key anywhere in the body.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestProviderUsageTrend' -count=1`
 Expected: FAIL (`KeyID`/`Trends` undefined or empty).
 
-- [ ] **Step 3: Implement the trend attachment**
+- [x] **Step 3: Implement the trend attachment**
 
 In `handleProviderUsage`, after `wg.Wait()` and with the same `statsStore`
 snapshot:
@@ -677,12 +677,12 @@ A series error is logged at warn and leaves trends empty; it never fails the
 request. Trend attachment happens for cached and fresh views alike (the cache
 holds only the card).
 
-- [ ] **Step 4: Run the admin package tests**
+- [x] **Step 4: Run the admin package tests**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/admin/handlers_usage.go internal/admin/usage_test.go
@@ -690,12 +690,12 @@ git commit -m "feat(admin): return balance trends with provider usage"
 ```
 
 **Implementation record — Task 5**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `6e38996c`)
+- Files changed: `internal/admin/handlers_usage.go` (`balanceTrendView`/`balancePointView`, `accountUsageView.Trends`, `attachBalanceTrends`, series attachment in `handleProviderUsage` with `to = max(to, now) + 1ms`), `internal/admin/usage_test.go` (`TestProviderUsageTrends`, `TestProviderUsageTrendIncludesFreshReading`, `TestProviderUsageTrendsOnCacheHit`, `TestProviderUsageTrendSkipsUnknownKey`, `TestProviderUsageNoTrendsWithoutStats`).
+- Tests run: RED `GOWORK=off go test ./internal/admin -run TestProviderUsageTrend -count=1` → `a.Trends undefined`; GREEN same → ok. Gate `GOWORK=off go test ./internal/admin -count=1` → ok (17.2s), `go vet ./internal/admin` → clean.
+- Review findings/fixes: the series bound is exclusive, so the handler steps 1 ms past `max(to, now)`; that is what makes the reading a request just took appear in its own response (`TestProviderUsageTrendIncludesFreshReading`). Trends sort by currency for a stable payload; deleted keys simply have no account to attach to.
+- Deferred: none.
 
 ---
 

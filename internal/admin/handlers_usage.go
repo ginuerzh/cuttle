@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -14,9 +15,22 @@ import (
 
 const usageCacheTTL = 60 * time.Second
 
+// balancePointView is one reading as the browser sees it.
+type balancePointView struct {
+	At     string  `json:"at"`
+	Amount float64 `json:"amount"`
+}
+
+// balanceTrendView is one currency's line for an account.
+type balanceTrendView struct {
+	Currency string             `json:"currency,omitempty"`
+	Points   []balancePointView `json:"points"`
+}
+
 // accountUsageView is one provider key as the browser sees it. The raw key is
 // never included; KeyPreview is the existing admin mask. KeyID is the configured
 // provider-key id, empty when an upstream account matches no configured key.
+// Trends are the balance readings of the requested window, one per currency.
 type accountUsageView struct {
 	KeyID      string                 `json:"keyId,omitempty"`
 	Name       string                 `json:"name,omitempty"`
@@ -24,6 +38,7 @@ type accountUsageView struct {
 	Enabled    bool                   `json:"enabled"`
 	Balance    []provider.BalancePart `json:"balance,omitempty"`
 	Windows    []provider.QuotaWindow `json:"windows,omitempty"`
+	Trends     []balanceTrendView     `json:"trends,omitempty"`
 	Note       string                 `json:"note,omitempty"`
 	Error      string                 `json:"error,omitempty"`
 	Stale      bool                   `json:"stale,omitempty"`
@@ -124,6 +139,24 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
+	// Trends are attached after the cache decision: they are stats reads, not
+	// vendor calls, so a cached card still gets live points.
+	if statsStore != nil {
+		seriesTo := to
+		if now.After(seriesTo) {
+			seriesTo = now
+		}
+		// The series bound is exclusive, and a reading taken by this very request
+		// lands at now: step one millisecond past it so it is not filtered out.
+		seriesTo = seriesTo.Add(time.Millisecond)
+		groups, err := statsStore.BalanceSeries(r.Context(), from, seriesTo, stats.DefaultBalanceSeriesPoints)
+		if err != nil {
+			s.log.Warnf("stats: balance series: %v", err)
+		} else {
+			attachBalanceTrends(views, groups)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, providerUsageResponse{
 		From:       from.UTC().Format(time.RFC3339),
 		To:         to.UTC().Format(time.RFC3339),
@@ -132,6 +165,45 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 		LocalError: localErr,
 		Providers:  views,
 	})
+}
+
+// attachBalanceTrends hangs each stored reading on the account it belongs to.
+// Groups match by provider id and provider-key id; a key that is no longer
+// configured has no account to hang on, so its history stays undrawn.
+func attachBalanceTrends(views []providerUsageView, groups []stats.BalanceGroup) {
+	byKey := make(map[string]map[string][]balanceTrendView, len(views))
+	for _, g := range groups {
+		if g.Provider == "" || g.Key == "" || len(g.Points) == 0 {
+			continue
+		}
+		points := make([]balancePointView, 0, len(g.Points))
+		for _, p := range g.Points {
+			points = append(points, balancePointView{
+				At:     p.At.UTC().Format(time.RFC3339),
+				Amount: p.Amount,
+			})
+		}
+		if byKey[g.Provider] == nil {
+			byKey[g.Provider] = map[string][]balanceTrendView{}
+		}
+		byKey[g.Provider][g.Key] = append(byKey[g.Provider][g.Key],
+			balanceTrendView{Currency: g.Currency, Points: points})
+	}
+	for i := range views {
+		perKey := byKey[views[i].ID]
+		if perKey == nil {
+			continue
+		}
+		for j := range views[i].Accounts {
+			acc := &views[i].Accounts[j]
+			trends := perKey[acc.KeyID]
+			if len(trends) == 0 {
+				continue
+			}
+			sort.Slice(trends, func(a, b int) bool { return trends[a].Currency < trends[b].Currency })
+			acc.Trends = trends
+		}
+	}
 }
 
 // queryUsage reads one provider's accounts from upstream. A non-empty note means
