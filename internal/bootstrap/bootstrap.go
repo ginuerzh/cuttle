@@ -54,6 +54,15 @@ func defaultDataDir() (dir string, fallback bool) {
 	return ".", true
 }
 
+// dataDirFallbackWarning reports the working-directory fallback, or "" when the
+// data directory came from CUTTLE_DATA or the user config directory.
+func dataDirFallbackWarning(paths Paths) string {
+	if !paths.DataDirFromFallback {
+		return ""
+	}
+	return fmt.Sprintf("CUTTLE_DATA is unset and the user config directory is unavailable; using %s", paths.DataDir)
+}
+
 // DefaultSearchPaths are checked after the data-directory config and before a
 // new config is generated.
 var DefaultSearchPaths = []string{
@@ -220,12 +229,16 @@ func Prepare(opts Options) (*Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 		}
+		warnings := ignoredEnvWarnings(cfg, getenv)
+		if w := dataDirFallbackWarning(paths); w != "" {
+			warnings = append([]string{w}, warnings...)
+		}
 		return &Result{
 			Config:        cfg,
 			ConfigPath:    paths.ConfigPath,
 			DataDir:       paths.DataDir,
 			ResetSessions: reset,
-			Warnings:      ignoredEnvWarnings(cfg, getenv),
+			Warnings:      warnings,
 		}, nil
 	}
 
@@ -237,6 +250,9 @@ func generate(paths Paths, getenv func(string) string, stderr io.Writer, migrate
 		return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 	}
 	warnings := dataDirWarnings(paths.DataDir)
+	if w := dataDirFallbackWarning(paths); w != "" {
+		warnings = append([]string{w}, warnings...)
+	}
 
 	pending, err := sessionsResetPending(paths.DataDir)
 	if err != nil {

@@ -303,12 +303,12 @@ git commit -m "feat(bootstrap): warn when CUTTLE_DATA falls back to the working 
 ```
 
 **Implementation record (Task 2):**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-12, complete.
+- Repository + commit: `ginuerzh/cuttle` (branch `feat/default-data-dir`), commit recorded below.
+- Files changed: `internal/bootstrap/bootstrap.go` (`dataDirFallbackWarning`, both `Prepare` warning paths), `internal/bootstrap/bootstrap_test.go` (two fallback-warning tests, `io` import).
+- Tests/commands and results: RED — `GOWORK=off go test ./internal/bootstrap -run 'TestPrepare(Warns|ExistingConfigWarns)OnDataDirFallback'` failed on the missing warning for both the generated and existing-config paths; GREEN — `GOWORK=off go test ./internal/bootstrap -count=1` → `ok`; `GOWORK=off go build ./... && GOWORK=off go vet ./...` → exit 0.
+- Review findings and fixes: none yet (final review pending).
+- Deferred items/limitations: the fallback warning precedes the `0700` permission warning on first-run generation.
 
 ---
 

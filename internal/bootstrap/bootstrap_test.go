@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -317,6 +318,52 @@ func TestPrepareUsesEnvDefaults(t *testing.T) {
 	}
 	if !config.VerifyPassword(res.Config.Admin.PasswordHash, "correct-horse") {
 		t.Fatal("stored hash does not verify CUTTLE_ADMIN_PASSWORD")
+	}
+}
+
+func TestPrepareWarnsOnDataDirFallback(t *testing.T) {
+	workDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return "", errors.New("$HOME is not defined") })
+	setGetwd(t, func() (string, error) { return workDir, nil })
+
+	var buf bytes.Buffer
+	res, err := Prepare(Options{Getenv: envMap(nil), SearchPaths: []string{}, Stderr: &buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Generated || res.DataDir != workDir {
+		t.Fatalf("Generated = %v, DataDir = %q, want a first run in %q", res.Generated, res.DataDir, workDir)
+	}
+	want := "CUTTLE_DATA is unset and the user config directory is unavailable; using " + workDir
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), want) {
+		t.Fatalf("warnings = %v, want %q", res.Warnings, want)
+	}
+}
+
+func TestPrepareExistingConfigWarnsOnDataDirFallback(t *testing.T) {
+	workDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return "", errors.New("$HOME is not defined") })
+	setGetwd(t, func() (string, error) { return workDir, nil })
+
+	hash, err := config.HashPassword("old-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBootstrapConfig(t, workDir, &config.Config{
+		Admin: config.Admin{PasswordHash: hash},
+		Stats: config.Stats{Path: filepath.Join(workDir, "stats.sqlite")},
+	})
+
+	res, err := Prepare(Options{Getenv: envMap(nil), SearchPaths: []string{}, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Generated {
+		t.Fatal("Generated = true, want the existing config")
+	}
+	want := "CUTTLE_DATA is unset and the user config directory is unavailable; using " + workDir
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), want) {
+		t.Fatalf("warnings = %v, want %q", res.Warnings, want)
 	}
 }
 
