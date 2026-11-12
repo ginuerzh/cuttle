@@ -635,12 +635,11 @@ git commit -m "feat(web): edit and show entrypoint route bindings"
 **Implementation record (fill in after the task is complete)**
 - Date/status: 2026-11-12 / done. Console only: the Go API, the probe runner and
   the events snapshot are Task 3 and are consumed unchanged.
-- Repository + commit: `cuttle` — this commit
-  `feat(web): edit and show entrypoint route bindings` on
-  `feat/entrypoint-bindings`. It carries the code, the tests, the `AGENTS.md`
-  invariant fix and this record; a follow-up `docs: record task 4 commit`
-  commit writes this SHA only (a record cannot carry the SHA of the commit that
-  contains it).
+- Repository + commit: `cuttle` — `f3057424` `feat(web): edit and show
+  entrypoint route bindings`, which carries this task's code, tests, the
+  `AGENTS.md` invariant fix and this record. A follow-up
+  `docs: record task 4 commit` commit writes this SHA only (a record cannot
+  carry the SHA of the commit that contains it).
 - Files changed:
   - `web/src/api/types.ts`: `EntrypointRoute` and `RouteBindingProbe`;
     `Entrypoint.routes` replaces `Entrypoint.route`; `EntrypointHealth`,
