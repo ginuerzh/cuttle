@@ -67,7 +67,7 @@ is still used (accepted fallback, see Decisions).
 
 ## Constraints
 
-- `github.com/go-gost/x v0.31.1`, no `replace`; **no x change is allowed** for
+- `github.com/go-gost/x v0.32.0`, no `replace`; **no x change is allowed** for
   this work. Consequences that are accepted and must be documented:
   - `hopGroup.Select` returns the first eligible entry when every entry is
     filtered out, so "all ineligible" falls back to the first binding.

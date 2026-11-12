@@ -6,7 +6,7 @@
 
 **Architecture:** `entrypoint.routes` becomes an ordered binding list; each entrypoint × inbound-variant entry wraps an inner x hop group (FIFO + `FailFilter`) over the bindings' route hops. A cuttle-owned goroutine runs one shell command per binding and marks every variant entry of that binding, so x's selector skips ineligible bindings. The outer hop group keeps its bare FIFO so an ineligible binding never falls through to another entrypoint.
 
-**Tech Stack:** Go 1.27, `github.com/go-gost/x v0.31.1` (hop group, `selector.FailFilter`, `HopEntry.Marker`), SQLite stats (unchanged), React 18 + Ant Design + React Flow console.
+**Tech Stack:** Go 1.27, `github.com/go-gost/x v0.32.0` (hop group, `selector.FailFilter`, `HopEntry.Marker`), SQLite stats (unchanged), React 18 + Ant Design + React Flow console.
 
 **Spec:** `docs/superpowers/specs/2026-11-12-entrypoint-multi-route-design.md`
 
@@ -51,7 +51,7 @@
 
 **Interfaces:**
 - Produces: `config.RouteBinding{Route string; Probe *config.Probe}`; `config.Probe{Command string; Interval Duration; Timeout Duration}`; `config.Entrypoint.Routes []RouteBinding`.
-- Produces: `buildBindingsHop(bindings []gwconfig.RouteBinding, plans map[string]*routePlan, api provider.API, failTimeout time.Duration, log logger.Logger) (hop.Hop, []*xhop.HopEntry, error)` — returns the inner group plus the per-binding entries, index-aligned with `bindings`.
+- Produces: `buildBindingsHop(entrypointID string, bindings []gwconfig.RouteBinding, plans map[string]*routePlan, api provider.API, failTimeout time.Duration, log logger.Logger) (hop.Hop, []*xhop.HopEntry, error)` — returns the inner group plus the per-binding entries, index-aligned with `bindings` (the `entrypointID` parameter was added during implementation for the group log name).
 - Produces: `bindingFailTimeout(bindings []gwconfig.RouteBinding) time.Duration`.
 - Produces test helper: `func bindings(ids ...string) []gwconfig.RouteBinding` in `internal/gateway/gateway_test.go`.
 
@@ -208,8 +208,8 @@ git commit -m "feat(config)!: bind entrypoints to an ordered list of routes"
 **Implementation record (fill in after the task is complete)**
 - Date/status: 2026-11-12 / done. Probe runner, health API and console are the
   later tasks; this task only prepares config, build and selection.
-- Repository + commit: `cuttle` — this commit, `feat(config)!: bind entrypoints
-  to an ordered list of routes` (SHA in the task report / `git log`).
+- Repository + commit: `cuttle` — `5138d930` `feat(config)!: bind entrypoints
+  to an ordered list of routes`.
 - Files changed:
   - `internal/config/config.go`: `Entrypoint.Routes []RouteBinding`, new
     `RouteBinding` and `Probe`; `expandEnv` expands only `binding.Route`;
