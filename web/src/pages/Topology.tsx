@@ -184,11 +184,9 @@ export function decorateEdge(
   const badgeLabel = badge.text ? (
     badge.invalid ? <span style={{ color: '#d97706' }}>{badge.text}</span> : badge.text
   ) : null;
-  let label: ReactNode = dead
-    ? trafficLabel
-      ? <>{trafficLabel}<span style={{ color: '#dc2626' }}> · dead</span></>
-      : <span style={{ color: '#dc2626' }}>dead</span>
-    : trafficLabel;
+  // A dead binding stays silently red and dashed: the line style already
+  // carries the state, so the label only keeps its traffic counts.
+  let label: ReactNode = trafficLabel;
   if (badgeLabel !== null) {
     label = label === null || label === undefined ? badgeLabel : <>{label} · {badgeLabel}</>;
   }

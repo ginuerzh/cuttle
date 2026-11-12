@@ -99,16 +99,16 @@ describe('decorateEdge', () => {
     expect(decorated.data).toMatchObject({ pulse: 0 });
   });
 
-  it('draws a dead binding as a red dashed edge labelled dead', () => {
+  it('draws a dead binding as a red dashed edge with no dead label', () => {
     const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
 
     const decorated = decorateEdge(edge, null, undefined, true, new Set([edge.id]));
 
     expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
-    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('dead');
+    expect(decorated.label).toBeUndefined();
   });
 
-  it('keeps the traffic counts and still marks a dead binding', () => {
+  it('keeps the traffic counts on a dead binding without labelling it dead', () => {
     const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
     const metrics = {
       nodes: {},
@@ -120,11 +120,11 @@ describe('decorateEdge', () => {
 
     expect(html).toContain('10');
     expect(html).toContain('↻3');
-    expect(html).toContain('dead');
+    expect(html).not.toContain('dead');
     expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
   });
 
-  it('labels a dead binding that only ever discarded attempts', () => {
+  it('keeps only the attempt count on a dead binding that discarded every attempt', () => {
     const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
     const metrics = {
       nodes: {},
@@ -135,7 +135,7 @@ describe('decorateEdge', () => {
     const text = renderToStaticMarkup(<>{decorated.label}</>).replace(/<[^>]+>/g, '');
 
     expect(text).toContain('↻2');
-    expect(text).toContain('dead');
+    expect(text).not.toContain('dead');
     expect((decorated.style as { strokeWidth?: number }).strokeWidth ?? 0).toBeGreaterThan(1.5);
   });
 
@@ -217,9 +217,11 @@ describe('binding badges', () => {
     const badges = bindingEdgeHealth([health('r_0000000001', true, [['r_0000000001', false]])]);
 
     const decorated = decorateEdge(fallbackEdge, null, undefined, true, new Set([fallbackEdge.id]), badges);
+    const html = renderToStaticMarkup(<>{decorated.label}</>);
 
     expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
-    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('dead');
+    expect(html).toContain('回退');
+    expect(html).not.toContain('dead');
   });
 
   it('leaves the dead decoration of a route binding untouched', () => {
@@ -229,7 +231,7 @@ describe('binding badges', () => {
     const decorated = decorateEdge(deadEdge, null, undefined, true, new Set([deadEdge.id]), badges);
 
     expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
-    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('dead');
+    expect(decorated.label).toBeUndefined();
   });
 
   it('keeps an unbadged edge solid when the map has other bindings', () => {
