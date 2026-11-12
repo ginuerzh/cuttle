@@ -134,9 +134,9 @@ git commit -m "feat(gateway): probed bindings outrank probe-less bindings"
 **Implementation record (fill in after the task is complete)**
 - Date/status: 2026-11-12 / DONE (code, tests, docs).
 - Repository + commit: `cuttle`, branch `feat/probe-edge-editing`. Code commit
-  `feat(gateway): probed bindings outrank probe-less bindings`; its SHA is
-  recorded in the follow-up docs commit, because a commit cannot contain its own
-  hash.
+  `e753beb1` — `feat(gateway): probed bindings outrank probe-less bindings`.
+  This SHA is recorded by the follow-up docs commit (`docs: record task 1
+  commit`), because a commit cannot contain its own hash.
 - Files changed:
   - `internal/config/config.go` — removed the probe-less-last validation branch;
     every other binding rule is unchanged.
