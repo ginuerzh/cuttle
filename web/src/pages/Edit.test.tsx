@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AddButtons, EdgeForm, EntrypointForm, entrypointBindingInputs, NodeForm, ProviderForm, RouteForm } from './Edit';
+import { AddButtons, connectEntrypointEdge, disconnectEntrypointEdge, EdgeForm, EntrypointForm, entrypointBindingInputs, NodeForm, ProviderForm, RouteForm } from './Edit';
 import { setActiveLang } from '../i18n';
 import type { ConfigResponse, Entrypoint, Node, Provider, Route } from '../api/types';
 
@@ -202,6 +202,49 @@ describe('EntrypointForm bindings', () => {
     expect(html).toContain('Probe command');
     expect(html).toContain('Remove probe command');
     expect(html).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+});
+
+describe('entrypoint edge wiring', () => {
+  const entrypoint: Entrypoint = {
+    id: 'e_0000000001',
+    name: 'all',
+    match: ['*'],
+    routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
+  };
+
+  it('appends a binding when a route is dragged onto an entrypoint', () => {
+    const draft: Entrypoint = { ...entrypoint, routes: [{ route: 'r_0000000001' }] };
+
+    const next = connectEntrypointEdge([draft], 'entrypoint:e_0000000001', 'route:r_0000000002');
+
+    expect(next[0].routes).toEqual([{ route: 'r_0000000001' }, { route: 'r_0000000002' }]);
+  });
+
+  it('leaves the list untouched when the route is already bound', () => {
+    const entrypoints = [entrypoint];
+
+    expect(connectEntrypointEdge(entrypoints, 'entrypoint:e_0000000001', 'route:r_0000000001')).toBe(entrypoints);
+  });
+
+  it('removes only the binding the edge names', () => {
+    const next = disconnectEntrypointEdge([entrypoint], 'entrypoint:e_0000000001->route:r_0000000001');
+
+    expect(next[0].routes).toEqual([{ route: 'r_0000000002' }]);
+  });
+
+  it('leaves a draft when the last binding is removed', () => {
+    const single: Entrypoint = { ...entrypoint, routes: [{ route: 'r_0000000001' }] };
+
+    const next = disconnectEntrypointEdge([single], 'entrypoint:e_0000000001->route:r_0000000001');
+
+    expect(next[0].routes).toEqual([]);
+  });
+
+  it('ignores an edge that is not an entrypoint binding', () => {
+    const entrypoints = [entrypoint];
+
+    expect(disconnectEntrypointEdge(entrypoints, 'entrypoint:e_0000000001->unrouted')).toBe(entrypoints);
   });
 });
 

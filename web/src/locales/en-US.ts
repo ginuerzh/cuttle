@@ -85,6 +85,7 @@ export const enUS: Record<string, string> = {
   '可用': 'Available',
   '未通过': 'Unavailable',
   '回退': 'Fallback',
+  '退出码 {code}': 'exit code {code}',
   '删除入口 {name}?': 'Delete entrypoint {name}?',
   '删除': 'Delete',
   '编辑入口 #{index}': 'Edit entrypoint #{index}',
@@ -132,7 +133,8 @@ export const enUS: Record<string, string> = {
   'Nodes（顺序 = 优先级）': 'Nodes (order = priority)',
   '快速 / *': 'fast / *',
   '入口连线': 'Entrypoint edge',
-  '入口绑定哪些 route 由入口的 routes 列表决定，请在入口面板里修改。': 'The routes an entrypoint binds are determined by its routes list; edit them in the Entrypoints panel.',
+  '一条连线对应一个路由绑定；断开只会移除这一个绑定，其余绑定保持顺序不变。':
+    'One edge is one route binding; disconnecting removes only that binding and keeps the rest in order.',
   '已断开': 'Disconnected',
   '模型映射和 backup/weight 都在 Node 面板里改。': 'Model mappings and backup/weight are edited in the Node panel.',
   '断开': 'Disconnect',

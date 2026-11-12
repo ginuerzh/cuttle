@@ -1,4 +1,4 @@
-import type { ConfigResponse } from '../api/types';
+import type { ConfigResponse, EntrypointHealth } from '../api/types';
 import { translate } from '../i18n';
 import { configLabels, entityLabel } from '../labels';
 import { configuredAPIs } from './presets';
@@ -16,7 +16,11 @@ export interface ParamRow {
  * default, so the panel stays short. An id the config no longer lists — an
  * `unrouted` row, a deleted entity — has no parameters at all.
  */
-export function entityParams(config: ConfigResponse, graphId: string): ParamRow[] {
+export function entityParams(
+  config: ConfigResponse,
+  graphId: string,
+  entrypointHealth?: readonly EntrypointHealth[],
+): ParamRow[] {
   const [kind, id] = splitId(graphId);
   const labels = configLabels(config);
 
@@ -62,14 +66,32 @@ export function entityParams(config: ConfigResponse, graphId: string): ParamRow[
       const index = config.entrypoints.findIndex((e) => e.id === entrypoint.id);
       const rows: ParamRow[] = [{ label: translate('模型匹配'), value: entrypoint.match.join(', ') }];
       const bindings = entrypoint.routes ?? [];
+      const health = entrypointHealth?.find((h) => h.entrypointId === entrypoint.id);
+      const reported = new Map((health?.bindings ?? []).map((b) => [b.routeId, b]));
       if (bindings.length === 0) {
         rows.push({ label: translate('路由'), value: translate('未连接') });
       }
       bindings.forEach((binding, i) => {
         const name = entityLabel(binding.route, labels.routes) || binding.route;
+        const parts = [binding.probe ? `${name} · ${binding.probe.command}` : name];
+        const row = reported.get(binding.route);
+        if (row) {
+          parts.push(row.eligible ? translate('可用') : translate('未通过'));
+          // The server only marks a fallback when no binding is eligible, so
+          // the fallback row is also ineligible.
+          if (health?.active.fallback && health.active.routeId === binding.route) {
+            parts.push(translate('回退'));
+          }
+          if (row.last) {
+            parts.push(
+              translate('退出码 {code}', { code: row.last.exitCode }),
+              `${row.last.latencyMs}ms`,
+            );
+          }
+        }
         rows.push({
           label: translate('路由 {index}', { index: i + 1 }),
-          value: binding.probe ? `${name} · ${binding.probe.command}` : name,
+          value: parts.join(' · '),
         });
       });
       rows.push({ label: translate('优先级'), value: String(index + 1) });

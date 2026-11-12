@@ -739,31 +739,31 @@ git commit -m "feat(web): edit and show entrypoint route bindings"
 - Consumes: `EntrypointHealth[]` and `connectEntrypointRoute` / `disconnectEntrypointBinding` from Task 4.
 - Produces: `Topology` prop `entrypointHealth?: EntrypointHealth[]`; helper `bindingEdgeHealth(health)` (in `edges.tsx`) → `Map<string, {eligible: boolean; active: boolean; fallback: boolean}>` keyed by the edge id `entrypoint:<id>->route:<id>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `Topology.test.tsx`: an ineligible non-active binding edge is dashed amber labelled `未通过`; the active binding edge keeps its normal style; a fallback-active edge is labelled `回退`; node `dead` decoration is unchanged.
 - `edges.test.tsx`: `bindingEdgeHealth` maps health rows to edge ids, keeps the first binding on duplicates, and the decoration preserves `selected`.
 - `Edit.test.tsx`: dragging entrypoint → route appends a binding, a duplicate drag is a no-op, deleting an `entrypoint:<id>->route:<id>` edge removes only that binding, and deleting the last binding makes a draft.
 - `entityParams.test.ts`: the monitor panel lists each binding with its state (`可用` / `未通过` / `回退`) and the last probe's exit code and latency.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd web && npx vitest run src/pages/Topology.test.tsx src/pages/edges.test.tsx src/pages/Edit.test.tsx src/pages/entityParams.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - `edges.tsx`: `bindingEdgeHealth`; extend `decorateEdge` (or a sibling) so an ineligible binding edge is dashed amber with label `未通过`, a fallback-active edge is labelled `回退`, and the existing `selected` flag is preserved by re-decorating the previous edge objects.
 - `Topology`: accept `entrypointHealth` and apply the decoration in a memo that does not depend on `structure.edges`.
 - `Edit.connect`: route → `connectEntrypointRoute`; edge form → `disconnectEntrypointBinding`; removing the last binding makes the entrypoint a draft.
 - `App.tsx`: pass the state to the monitor; `entityParams` renders binding health.
 
-- [ ] **Step 4: Run the web gate and rebuild**
+- [x] **Step 4: Run the web gate and rebuild**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web
@@ -771,12 +771,74 @@ git commit -m "feat(web): show binding eligibility on the topology"
 ```
 
 **Implementation record (fill in after the task is complete)**
-- Date/status:
-- Repository + commit:
+- Date/status: 2026-11-12 / complete
+- Repository + commit: cuttle @ recorded in the follow-up `docs: record task 5
+  commit` commit; a record cannot carry the SHA of the commit that contains it.
 - Files changed:
+  - `web/src/pages/edges.tsx`: `bindingEdgeHealth(health?)` keys every binding by
+    `entrypoint:<id>->route:<id>` (first row wins on duplicates), `BindingEdgeState`
+    (`eligible`/`active`/`fallback`) and `bindingEdgeBadge` (`未通过` for an
+    ineligible non-serving binding, `回退` for the fallback binding).
+  - `web/src/pages/Topology.tsx`: `Topology` takes `entrypointHealth?`; the map is
+    memoized and passed to `decorateEdge` as a sixth argument. An invalid binding
+    edge is dashed amber (`#d97706`), the fallback edge keeps its normal style
+    with a `回退` label, and the existing metrics/activity effect re-decorates the
+    previous edge objects so `selected` survives a health snapshot. The structure
+    effect still rebuilds only on config/layout changes. Node `dead` decoration
+    is untouched and keeps precedence over a badge.
+  - `web/src/pages/Edit.tsx`: `connectEntrypointEdge` (append; same list identity
+    for a duplicate or unsupported connection) and `disconnectEntrypointEdge`
+    (remove exactly the named binding via `disconnectEntrypointBinding`), used by
+    `Edit.connect` and `EdgeForm`. `Edit.connect` skips the PUT on a duplicate
+    drag. The entrypoint `EdgeForm` copy now says one edge is one binding and
+    `断开` is disabled for an edge that names no binding (`->unrouted`).
+  - `web/src/pages/entityParams.ts`: optional third argument
+    `entrypointHealth`; each `路由 {index}` row appends `可用`/`未通过`, `回退` on
+    the fallback binding, and `退出码 {code} · {latencyMs}ms` when `last` exists.
+  - `web/src/App.tsx`: `NodePanel` takes `entrypointHealth` (used by
+    `entityParams`), and the monitor `Topology` receives the state.
+  - `web/src/locales/en-US.ts`: `退出码 {code}` and the replaced entrypoint-edge
+    explanation; the retired string is removed.
+  - Tests: `web/src/pages/Topology.test.tsx`, `web/src/pages/edges.test.tsx`,
+    `web/src/pages/Edit.test.tsx`, `web/src/pages/Edit.dom.test.tsx`,
+    `web/src/pages/entityParams.test.ts`, `web/src/pages/Entrypoints.test.tsx`.
 - Tests/commands and results:
+  - RED: `cd web && npx vitest run src/pages/Topology.test.tsx
+    src/pages/edges.test.tsx src/pages/Edit.test.tsx src/pages/entityParams.test.ts`
+    → 19 failed / 53 passed (`bindingEdgeHealth`, `connectEntrypointEdge` and
+    `disconnectEntrypointEdge` were not exported yet; `entityParams` ignored the
+    health argument).
+  - `npx vitest run` on the five touched page test files plus
+    `Edit.dom.test.tsx` → 101 passed.
+  - GREEN: `cd web && npm test` → 428 passed (48 files); `npx tsc --noEmit` →
+    clean; `npm run build` → bundle rebuilt into `internal/admin/dist`
+    (git-ignored); `GOWORK=off go build ./...` → clean.
 - Review findings and fixes:
+  - The carried `Entrypoints.test.tsx` fixture had `active.fallback: true` with an
+    eligible binding, which the server cannot produce. It is split into a
+    healthy fixture (first binding eligible, active, no fallback) and an
+    all-ineligible fallback fixture; the render tests assert `回退` is absent in
+    the non-fallback case and that `可用` is absent when everything failed.
+  - The carried `EdgeForm` mismatch is closed: disconnect no longer clears every
+    binding, and the DOM test proves a two-binding entrypoint keeps its second
+    binding and a single-binding entrypoint becomes a draft (`routes: []`).
+  - `Topology` badges are applied by the effect that maps the *previous* edges,
+    not by the structure effect, so `selected` is preserved (asserted in
+    `edges.test.tsx`).
+  - A duplicate drag returns the same entrypoint array, so `Edit.connect` does
+    not round-trip an unchanged config (asserted in `Edit.dom.test.tsx`).
+  - The badge tests pin the active language; the default test language follows
+    `navigator.language`, which made `未通过` render as `Unavailable`.
 - Deferred items/limitations:
+  - The Entrypoints page still shows eligibility as fresh as the last topology
+    visit, as accepted in the task brief.
+  - The optional helper that enforces at most one probe-less binding and keeps it
+    last was not added; the server still rejects the duplicate and the form does
+    not enforce the order.
+  - Edit-mode topology does not render the badges; the task scoped them to the
+    monitor.
+  - No browser visual test: the badge styling and the panel rows are verified
+    only by Vitest static markup, TypeScript and the build.
 
 ---
 

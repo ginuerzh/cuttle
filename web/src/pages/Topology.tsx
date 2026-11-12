@@ -20,7 +20,7 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import { message } from 'antd';
-import type { ConfigResponse, GraphMetrics, NodeMetrics } from '../api/types';
+import type { ConfigResponse, EntrypointHealth, GraphMetrics, NodeMetrics } from '../api/types';
 import { getTopologyPositions, putTopologyPositions } from '../api/client';
 import { buildGraph, type GraphNode } from '../graph/build';
 import { layoutGraph, placeNewNodes } from '../graph/layout';
@@ -49,7 +49,7 @@ import {
   speedOf,
   type PanSample,
 } from '../graph/inertia';
-import { edgeTypes } from './edges';
+import { edgeTypes, bindingEdgeBadge, bindingEdgeHealth, type BindingEdgeState } from './edges';
 import { translate as t } from '../i18n';
 import type { NodeRouteHealth } from './routeHealth';
 
@@ -65,6 +65,8 @@ interface Props {
   editable?: boolean;
   onConnect?: (c: Connection) => void;
   nodeHealth?: NodeRouteHealth;
+  /** Binding eligibility of the current build; omitted leaves every edge plain. */
+  entrypointHealth?: readonly EntrypointHealth[];
   since?: string;
   animate?: boolean;
 }
@@ -172,20 +174,34 @@ export function decorateEdge(
   activity?: Activity,
   animate = true,
   deadEdges?: ReadonlySet<string>,
+  bindingHealth?: ReadonlyMap<string, BindingEdgeState>,
 ): Edge {
   const m = metrics?.edges[e.id];
   const data = e.data as EdgeData | undefined;
   const dead = deadEdges?.has(e.id) ?? false;
+  const badge = bindingEdgeBadge(bindingHealth?.get(e.id));
   const trafficLabel = m ? edgeLabel(m) : undefined;
-  const label = dead
+  const badgeLabel = badge.text ? (
+    badge.invalid ? <span style={{ color: '#d97706' }}>{badge.text}</span> : badge.text
+  ) : null;
+  let label: ReactNode = dead
     ? trafficLabel
       ? <>{trafficLabel}<span style={{ color: '#dc2626' }}> · dead</span></>
       : <span style={{ color: '#dc2626' }}>dead</span>
     : trafficLabel;
+  if (badgeLabel !== null) {
+    label = label === null || label === undefined ? badgeLabel : <>{label} · {badgeLabel}</>;
+  }
   const width = m
     ? Math.min(4, 1.5 + Math.log10(Math.max(m.requests, m.attempts ?? 0) + 1))
     : 1.5;
-  const color = dead ? '#dc2626' : m && m.requests > 0 ? edgeColor(m) : data?.color ?? '#94a3b8';
+  const color = dead
+    ? '#dc2626'
+    : badge.invalid
+      ? '#d97706'
+      : m && m.requests > 0
+        ? edgeColor(m)
+        : data?.color ?? '#94a3b8';
   return {
     ...e,
     label,
@@ -196,7 +212,12 @@ export function decorateEdge(
       error: animate ? !!activity?.error : false,
       duration: activity?.duration ?? 0,
     },
-    style: { ...e.style, stroke: color, strokeWidth: width, strokeDasharray: dead || data?.draft ? '6 4' : undefined },
+    style: {
+      ...e.style,
+      stroke: color,
+      strokeWidth: width,
+      strokeDasharray: dead || badge.invalid || data?.draft ? '6 4' : undefined,
+    },
     markerEnd: undefined,
   } as Edge;
 }
@@ -250,7 +271,7 @@ function saveLocalPositions(p: PositionMap, pending: boolean) {
   }
 }
 
-export function Topology({ config, metrics, onSelect, editable, onConnect, nodeHealth, since, animate = true }: Props) {
+export function Topology({ config, metrics, onSelect, editable, onConnect, nodeHealth, entrypointHealth, since, animate = true }: Props) {
   const canEdit = canEditTopology(editable);
   const [initialViewport] = useState(() => viewportInit(lastViewport));
   const [positions, setPositions] = useState<PositionMap>(loadLocalPositions);
@@ -275,6 +296,9 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
   // Dead-route names for the badge tooltip; ids stay in the node data.
   const routeLabels = useMemo(() => configLabels(config), [config]);
   const labelRoute = useCallback((id: string) => graphLabel(`route:${id}`, routeLabels), [routeLabels]);
+  // Binding eligibility keyed by edge id. The effects re-decorate the previous
+  // edge objects with it, so React Flow's `selected` flag survives a snapshot.
+  const bindingHealth = useMemo(() => bindingEdgeHealth(entrypointHealth), [entrypointHealth]);
 
   useEffect(() => {
     if (!metrics) {
@@ -433,7 +457,9 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
   }, [config, positions]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>(structure.nodes);
-  const [edges, setEdges] = useState<Edge[]>(structure.edges.map((e) => decorateEdge(e, metrics, undefined, true, nodeHealth?.edges)));
+  const [edges, setEdges] = useState<Edge[]>(
+    structure.edges.map((e) => decorateEdge(e, metrics, undefined, true, nodeHealth?.edges, bindingHealth)),
+  );
   const onEdgesChange: OnEdgesChange = (changes) => {
     setEdges((current) => applyEdgeChanges(changes, current));
   };
@@ -453,7 +479,7 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
     setNodes((prev) => mergeNodeState(prev, structure.nodes));
     setEdges(
       structure.edges.map((e) =>
-        decorateEdge(e, metrics, activityRef.current.edges[e.id], animate, nodeHealth?.edges),
+        decorateEdge(e, metrics, activityRef.current.edges[e.id], animate, nodeHealth?.edges, bindingHealth),
       ),
     );
     // metrics is intentionally read once per structure change; the metrics
@@ -474,8 +500,8 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
         return { ...n, data: { ...n.data, metrics: m, pulse, error } };
       }),
     );
-    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics, activity.edges[e.id], animate, nodeHealth?.edges)));
-  }, [metrics, activity, animate, nodeHealth?.edges, setNodes]);
+    setEdges((prev) => prev.map((e) => decorateEdge(e, metrics, activity.edges[e.id], animate, nodeHealth?.edges, bindingHealth)));
+  }, [metrics, activity, animate, nodeHealth?.edges, bindingHealth, setNodes]);
 
   useEffect(() => {
     setNodes((prev) => mergeNodeHealth(prev, nodeHealth, labelRoute));

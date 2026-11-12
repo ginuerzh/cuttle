@@ -57,7 +57,7 @@ import {
 } from './presets';
 import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
-import { connectEntrypointRoute, disconnectEntrypointRoute, disconnectNodeProvider, planNodeProviderConnect } from './drafts';
+import { connectEntrypointRoute, disconnectEntrypointBinding, disconnectNodeProvider, planNodeProviderConnect } from './drafts';
 import type { NodeRouteHealth } from './routeHealth';
 import { entityLabel, labelMap, configLabels } from '../labels';
 
@@ -1246,19 +1246,50 @@ export function EntrypointForm({
   );
 }
 
+/** The route id of an `entrypoint:<id>->route:<id>` topology edge. */
+export function entrypointEdgeRoute(id: string): string | undefined {
+  const marker = '->route:';
+  const at = id.indexOf(marker);
+  if (!id.startsWith('entrypoint:') || at < 0) return undefined;
+  return id.slice(at + marker.length) || undefined;
+}
+
+/**
+ * Appends the binding a drag-connect names. An already-bound route and an
+ * unsupported connection return the same list, so the caller can skip the save.
+ */
+export function connectEntrypointEdge(entrypoints: Entrypoint[], source: string, target: string): Entrypoint[] {
+  const found = entrypointFromNodeId(entrypoints, source);
+  const routeID = target.startsWith('route:') ? target.slice('route:'.length) : '';
+  if (!found || !routeID) return entrypoints;
+  const next = connectEntrypointRoute(found.entrypoint, routeID);
+  if (next === found.entrypoint) return entrypoints;
+  return entrypoints.map((e, i) => (i === found.index ? next : e));
+}
+
+/**
+ * Removes only the binding an `entrypoint:<id>->route:<id>` edge names. Any
+ * other edge, including the draft `->unrouted` edge, leaves the list untouched.
+ */
+export function disconnectEntrypointEdge(entrypoints: Entrypoint[], id: string): Entrypoint[] {
+  const routeID = entrypointEdgeRoute(id);
+  if (!routeID) return entrypoints;
+  const entrypointID = id.slice('entrypoint:'.length, id.indexOf('->route:'));
+  return entrypoints.map((e) => (e.id === entrypointID ? disconnectEntrypointBinding(e, routeID) : e));
+}
+
 export function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse; onSaved: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   if (id.startsWith('entrypoint:')) {
     const entrypointID = id.slice('entrypoint:'.length).split('->')[0] ?? '';
     const entrypoint = config.entrypoints.find((e) => e.id === entrypointID);
+    const routeID = entrypointEdgeRoute(id);
 
     const remove = async () => {
-      if (!entrypoint) return;
+      if (!entrypoint || !routeID) return;
       setBusy(true);
       try {
-        await putEntrypoints(
-          config.entrypoints.map((e) => (e.id === entrypoint.id ? disconnectEntrypointRoute(e) : e)),
-        );
+        await putEntrypoints(disconnectEntrypointEdge(config.entrypoints, id));
         message.success(tr('已断开'));
         await onSaved();
       } catch (err) {
@@ -1274,9 +1305,9 @@ export function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigRe
           {tr('入口连线')}
         </Typography.Title>
         <Typography.Paragraph type="secondary">
-          {tr('入口绑定哪些 route 由入口的 routes 列表决定，请在入口面板里修改。')}
+          {tr('一条连线对应一个路由绑定；断开只会移除这一个绑定，其余绑定保持顺序不变。')}
         </Typography.Paragraph>
-        <Button danger loading={busy} onClick={remove} disabled={!entrypoint}>
+        <Button danger loading={busy} onClick={remove} disabled={!entrypoint || !routeID}>
           {tr('断开')}
         </Button>
       </div>
@@ -1439,10 +1470,12 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
         const found = entrypointFromNodeId(config.entrypoints, c.source);
         if (!found) throw new Error('entrypoint not found');
         if (!config.routes.some((r) => r.id === tid)) throw new Error('route not found');
-        const next = config.entrypoints.map((e, i) =>
-          i === found.index ? connectEntrypointRoute(e, tid) : e,
-        );
-        await putEntrypoints(next);
+        const next = connectEntrypointEdge(config.entrypoints, c.source, c.target);
+        // A route the entrypoint already binds keeps the list by identity; do
+        // not round-trip an unchanged config to the server.
+        if (next !== config.entrypoints) {
+          await putEntrypoints(next);
+        }
       } else if (skind === 'node' && tkind === 'provider') {
         const node = config.nodes.find((n) => n.id === sid);
         if (!node) throw new Error('node not found');

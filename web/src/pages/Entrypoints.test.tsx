@@ -23,14 +23,28 @@ const config = {
   ],
 } as unknown as ConfigResponse;
 
-const health: EntrypointHealth[] = [
+// The server reports an eligible first binding as active, and only sets
+// `fallback` when no binding is eligible at all.
+const healthy: EntrypointHealth[] = [
+  {
+    entrypointId: 'e_0000000001',
+    entrypointName: 'all',
+    active: { routeId: 'r_0000000001', fallback: false },
+    bindings: [
+      { index: 0, routeId: 'r_0000000001', routeName: 'primary', eligible: true },
+      { index: 1, routeId: 'r_0000000002', routeName: 'backup', eligible: false },
+    ],
+  },
+];
+
+const fallback: EntrypointHealth[] = [
   {
     entrypointId: 'e_0000000001',
     entrypointName: 'all',
     active: { routeId: 'r_0000000001', fallback: true },
     bindings: [
       { index: 0, routeId: 'r_0000000001', routeName: 'primary', eligible: false },
-      { index: 1, routeId: 'r_0000000002', routeName: 'backup', eligible: true },
+      { index: 1, routeId: 'r_0000000002', routeName: 'backup', eligible: false },
     ],
   },
 ];
@@ -47,13 +61,22 @@ describe('EntrypointsPage', () => {
 
   it('lists every binding with its route name and eligibility', () => {
     const html = renderToStaticMarkup(
-      <EntrypointsPage config={config} onReload={async () => undefined} health={health} />,
+      <EntrypointsPage config={config} onReload={async () => undefined} health={healthy} />,
     );
     expect(html).toContain('primary');
     expect(html).toContain('backup');
     expect(html).toContain('未通过');
     expect(html).toContain('可用');
+    expect(html).not.toContain('回退');
+  });
+
+  it('marks the fallback binding only when no binding is eligible', () => {
+    const html = renderToStaticMarkup(
+      <EntrypointsPage config={config} onReload={async () => undefined} health={fallback} />,
+    );
+    expect(html).toContain('未通过');
     expect(html).toContain('回退');
+    expect(html).not.toContain('可用');
   });
 
   it('lists the bindings by name before health arrives', () => {
@@ -65,13 +88,17 @@ describe('EntrypointsPage', () => {
 
   it('renders the binding states in English', () => {
     setActiveLang('en-US');
-    const html = renderToStaticMarkup(
-      <EntrypointsPage config={config} onReload={async () => undefined} health={health} />,
+    const healthyHtml = renderToStaticMarkup(
+      <EntrypointsPage config={config} onReload={async () => undefined} health={healthy} />,
+    );
+    const fallbackHtml = renderToStaticMarkup(
+      <EntrypointsPage config={config} onReload={async () => undefined} health={fallback} />,
     );
     setActiveLang('zh-CN');
-    expect(html).toContain('Available');
-    expect(html).toContain('Unavailable');
-    expect(html).toContain('Fallback');
-    expect(html).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(healthyHtml).toContain('Available');
+    expect(healthyHtml).toContain('Unavailable');
+    expect(healthyHtml).not.toContain('Fallback');
+    expect(fallbackHtml).toContain('Fallback');
+    expect(healthyHtml + fallbackHtml).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });

@@ -1,10 +1,64 @@
 import { useEffect, useRef } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
+import type { EntrypointHealth } from '../api/types';
+import { translate } from '../i18n';
 
 interface FlowData extends Record<string, unknown> {
   pulse?: number;
   error?: boolean;
   duration?: number;
+}
+
+/** How one binding edge in the topology is decorated from the health payload. */
+export interface BindingEdgeState {
+  /** The binding's probe passed, so it may serve. */
+  eligible: boolean;
+  /** This binding is the one that serves the next request. */
+  active: boolean;
+  /** No binding is eligible, so x falls back to the first binding. */
+  fallback: boolean;
+}
+
+/**
+ * Keys binding health by the topology edge id, `entrypoint:<id>->route:<id>`.
+ * That is the same key the graph and stats use, so a reorder never re-keys an
+ * edge. A duplicate row keeps the first one, matching the first-match rule.
+ */
+export function bindingEdgeHealth(health?: readonly EntrypointHealth[]): Map<string, BindingEdgeState> {
+  const rows = new Map<string, BindingEdgeState>();
+  for (const entrypoint of health ?? []) {
+    const current = entrypoint.active;
+    for (const binding of entrypoint.bindings ?? []) {
+      const id = `entrypoint:${entrypoint.entrypointId}->route:${binding.routeId}`;
+      if (rows.has(id)) continue;
+      const isActive = current.routeId === binding.routeId;
+      rows.set(id, {
+        eligible: binding.eligible,
+        active: isActive && !current.fallback,
+        fallback: isActive && current.fallback,
+      });
+    }
+  }
+  return rows;
+}
+
+export interface BindingEdgeBadge {
+  /** Text to append to the edge label; absent when the binding needs no badge. */
+  text?: string;
+  /** Style as an ineligible binding: dashed amber. */
+  invalid: boolean;
+}
+
+/**
+ * The badge an edge carries: `未通过` for an ineligible binding that is not
+ * serving, `回退` for the binding x falls back to when none is eligible. The
+ * active binding and a binding without health stay unlabelled.
+ */
+export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
+  if (!state) return { invalid: false };
+  if (state.fallback) return { text: translate('回退'), invalid: false };
+  if (!state.eligible && !state.active) return { text: translate('未通过'), invalid: true };
+  return { invalid: false };
 }
 
 const DOTS = 3;

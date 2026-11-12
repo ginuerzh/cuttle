@@ -12,7 +12,7 @@ vi.mock('../api/client', () => ({
 }));
 
 import { getProviderModels, putEntrypoints, updateNode, updateProvider } from '../api/client';
-import { Edit, AddEntrypointModal, EntrypointForm, NodeForm, ProviderForm, RouteNodeList } from './Edit';
+import { Edit, AddEntrypointModal, EdgeForm, EntrypointForm, NodeForm, ProviderForm, RouteNodeList } from './Edit';
 import { setActiveLang } from '../i18n';
 
 setActiveLang('zh-CN');
@@ -357,31 +357,143 @@ describe('RouteNodeList', () => {
 vi.mock('./Topology', () => ({
   Topology: (props: { onConnect?: (c: { source: string; target: string }) => void }) =>
     props.onConnect ? (
-      <button
-        type="button"
-        onClick={() => props.onConnect!({ source: 'node:n_0000000001', target: 'provider:p_0000000001' })}
-      >
-        connect-draft
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={() => props.onConnect!({ source: 'node:n_0000000001', target: 'provider:p_0000000001' })}
+        >
+          connect-draft
+        </button>
+        <button
+          type="button"
+          onClick={() => props.onConnect!({ source: 'entrypoint:e_0000000001', target: 'route:r_0000000002' })}
+        >
+          connect-entrypoint
+        </button>
+      </>
     ) : null,
 }));
 
 describe('Edit canvas connections', () => {
+  const config = {
+    gateway: { listen: ':8787' },
+    admin: { listen: '', sessionTTL: '' },
+    providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
+    nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: 'm1' }],
+    routes: [
+      { id: 'r_0000000001', name: 'r', nodes: [] },
+      { id: 'r_0000000002', name: 'r2', nodes: [] },
+    ],
+    entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
+  } as unknown as ConfigResponse;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
   it('connects a node to a provider by dragging', async () => {
     updateNodeMock.mockClear();
-    const config = {
-      gateway: { listen: ':8787' },
-      admin: { listen: '', sessionTTL: '' },
-      providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
-      nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: 'm1' }],
-      routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
-      entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
-    } as unknown as ConfigResponse;
     const { container } = render(<Edit config={config} onReload={async () => undefined} />);
     await act(async () => {
       buttonByText(container, 'connect-draft').click();
     });
     expect(updateNodeMock).toHaveBeenCalledWith('n_0000000001', expect.objectContaining({ provider: 'p_0000000001' }));
+  });
+
+  it('appends a route binding when a route is dragged onto an entrypoint', async () => {
+    const { container } = render(<Edit config={config} onReload={async () => undefined} />);
+    await act(async () => {
+      buttonByText(container, 'connect-entrypoint').click();
+    });
+
+    expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([{ route: 'r_0000000001' }, { route: 'r_0000000002' }]);
+  });
+
+  it('does not save a duplicate route drag', async () => {
+    const bound = {
+      ...config,
+      entrypoints: [{ ...config.entrypoints[0], routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }] }],
+    } as unknown as ConfigResponse;
+    const { container } = render(<Edit config={bound} onReload={async () => undefined} />);
+    await act(async () => {
+      buttonByText(container, 'connect-entrypoint').click();
+    });
+
+    expect(putEntrypointsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('EdgeForm entrypoint binding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  const config = {
+    providers: [],
+    nodes: [],
+    routes: [
+      { id: 'r_0000000001', name: 'primary', nodes: [] },
+      { id: 'r_0000000002', name: 'backup', nodes: [] },
+    ],
+    entrypoints: [
+      {
+        id: 'e_0000000001',
+        name: 'all',
+        match: ['*'],
+        routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
+      },
+    ],
+  } as unknown as ConfigResponse;
+
+  it('disconnects only the binding the edge names', async () => {
+    const { container } = render(
+      <EdgeForm
+        id="entrypoint:e_0000000001->route:r_0000000001"
+        config={config}
+        onSaved={async () => undefined}
+      />,
+    );
+
+    await act(async () => {
+      buttonByText(container, '断开').click();
+    });
+
+    expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([{ route: 'r_0000000002' }]);
+  });
+
+  it('leaves a draft when the edge names the last binding', async () => {
+    const single = {
+      ...config,
+      entrypoints: [{ ...config.entrypoints[0], routes: [{ route: 'r_0000000001' }] }],
+    } as unknown as ConfigResponse;
+    const { container } = render(
+      <EdgeForm
+        id="entrypoint:e_0000000001->route:r_0000000001"
+        config={single}
+        onSaved={async () => undefined}
+      />,
+    );
+
+    await act(async () => {
+      buttonByText(container, '断开').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([]);
   });
 });
 

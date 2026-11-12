@@ -1,10 +1,14 @@
 import type { Edge } from '@xyflow/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { GraphMetrics } from '../api/types';
+import type { EntrypointHealth, GraphMetrics } from '../api/types';
 import type { GraphNode } from '../graph/build';
+import { setActiveLang } from '../i18n';
 import type { NodeRouteHealth } from './routeHealth';
+import { bindingEdgeHealth } from './edges';
 import { canEditTopology, decorateEdge, edgeLabel, mergeNodeHealth, viewportInit } from './Topology';
+
+beforeEach(() => setActiveLang('zh-CN'));
 
 describe('viewportInit', () => {
   it('fits the graph on the first visit', () => {
@@ -139,6 +143,90 @@ describe('decorateEdge', () => {
     const edge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
 
     const decorated = decorateEdge(edge, null, undefined, true, new Set());
+
+    expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
+    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+  });
+});
+
+describe('binding badges', () => {
+  const edge = (routeId: string): Edge =>
+    ({
+      id: `entrypoint:e_0000000001->route:${routeId}`,
+      source: 'entrypoint:e_0000000001',
+      target: `route:${routeId}`,
+    }) as Edge;
+
+  const health = (activeRoute: string, fallback: boolean, bindings: [string, boolean][]): EntrypointHealth => ({
+    entrypointId: 'e_0000000001',
+    entrypointName: 'all',
+    active: { routeId: activeRoute, fallback },
+    bindings: bindings.map(([routeId, eligible], index) => ({
+      index,
+      routeId,
+      routeName: routeId,
+      eligible,
+    })),
+  });
+
+  it('draws an ineligible inactive binding as dashed amber labelled 未通过', () => {
+    const badges = bindingEdgeHealth([
+      health('r_0000000002', false, [
+        ['r_0000000001', false],
+        ['r_0000000002', true],
+      ]),
+    ]);
+
+    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, badges);
+
+    expect(decorated.style).toMatchObject({ stroke: '#d97706', strokeDasharray: '6 4' });
+    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('未通过');
+  });
+
+  it('keeps the active binding in its normal style', () => {
+    const badges = bindingEdgeHealth([
+      health('r_0000000002', false, [
+        ['r_0000000001', false],
+        ['r_0000000002', true],
+      ]),
+    ]);
+
+    const decorated = decorateEdge(edge('r_0000000002'), null, undefined, true, undefined, badges);
+
+    expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
+    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+    expect(renderToStaticMarkup(<>{decorated.label}</>)).not.toContain('未通过');
+  });
+
+  it('labels the binding x falls back to as 回退', () => {
+    const badges = bindingEdgeHealth([
+      health('r_0000000001', true, [
+        ['r_0000000001', false],
+        ['r_0000000002', false],
+      ]),
+    ]);
+
+    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, badges);
+
+    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('回退');
+    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+  });
+
+  it('leaves the dead decoration of a route binding untouched', () => {
+    const deadEdge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
+    const badges = bindingEdgeHealth([health('r_0000000001', false, [['r_0000000001', false]])]);
+
+    const decorated = decorateEdge(deadEdge, null, undefined, true, new Set([deadEdge.id]), badges);
+
+    expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
+    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('dead');
+  });
+
+  it('keeps an unbadged edge solid when the map has other bindings', () => {
+    const badges = bindingEdgeHealth([health('r_0000000002', false, [['r_0000000001', false]])]);
+    const other = { id: 'entrypoint:e_0000000001->route:r_0000000009', source: 'entrypoint:e_0000000001', target: 'route:r_0000000009' } as Edge;
+
+    const decorated = decorateEdge(other, null, undefined, true, undefined, badges);
 
     expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
     expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();

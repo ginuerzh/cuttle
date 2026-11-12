@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { ConfigResponse } from '../api/types';
+import type { ConfigResponse, EntrypointHealth } from '../api/types';
 import { setActiveLang } from '../i18n';
 import { entityParams } from './entityParams';
 
@@ -148,6 +148,80 @@ describe('entityParams', () => {
       { label: '路由 1', value: 'bare' },
       { label: '优先级', value: '2' },
     ]);
+  });
+
+  const health: EntrypointHealth[] = [
+    {
+      entrypointId: 'e_0000000001',
+      entrypointName: 'fast',
+      active: { routeId: 'r_0000000002', fallback: true },
+      bindings: [
+        {
+          index: 0,
+          routeId: 'r_0000000001',
+          routeName: 'strong',
+          eligible: false,
+          last: { at: '2026-11-12T10:00:00Z', ok: false, exitCode: 3, latencyMs: 12 },
+        },
+        { index: 1, routeId: 'r_0000000002', routeName: 'bare', eligible: false },
+      ],
+    },
+  ];
+
+  it('lists each binding with its state, fallback and last probe', () => {
+    expect(entityParams(config, 'entrypoint:e_0000000001', health)).toEqual([
+      { label: '模型匹配', value: '*' },
+      { label: '路由 1', value: 'strong · 未通过 · 退出码 3 · 12ms' },
+      { label: '路由 2', value: 'bare · curl -fsS http://127.0.0.1:9/ready · 未通过 · 回退' },
+      { label: '优先级', value: '1' },
+    ]);
+  });
+
+  it('marks an available binding that has probed', () => {
+    const rows = entityParams(config, 'entrypoint:e_0000000002', [
+      {
+        entrypointId: 'e_0000000002',
+        entrypointName: 'claude',
+        active: { routeId: 'r_0000000002', fallback: false },
+        bindings: [
+          {
+            index: 0,
+            routeId: 'r_0000000002',
+            routeName: 'bare',
+            eligible: true,
+            last: { at: '2026-11-12T10:00:00Z', ok: true, exitCode: 0, latencyMs: 7 },
+          },
+        ],
+      },
+    ]);
+
+    expect(rows).toContainEqual({ label: '路由 1', value: 'bare · 可用 · 退出码 0 · 7ms' });
+    expect(rows.map((r) => r.value).join('')).not.toContain('回退');
+  });
+
+  it('omits the probe detail before the first run', () => {
+    const rows = entityParams(config, 'entrypoint:e_0000000002', [
+      {
+        entrypointId: 'e_0000000002',
+        entrypointName: 'claude',
+        active: { routeId: 'r_0000000002', fallback: false },
+        bindings: [{ index: 0, routeId: 'r_0000000002', routeName: 'bare', eligible: true }],
+      },
+    ]);
+
+    expect(rows).toContainEqual({ label: '路由 1', value: 'bare · 可用' });
+  });
+
+  it('renders the binding health rows in English', () => {
+    setActiveLang('en-US');
+    const rows = entityParams(config, 'entrypoint:e_0000000001', health);
+    setActiveLang('zh-CN');
+    expect(rows).toContainEqual({ label: 'Route 1', value: 'strong · Unavailable · exit code 3 · 12ms' });
+    expect(rows).toContainEqual({
+      label: 'Route 2',
+      value: 'bare · curl -fsS http://127.0.0.1:9/ready · Unavailable · Fallback',
+    });
+    expect(rows.map((r) => r.label + r.value).join('')).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it('renders the binding rows in English', () => {
