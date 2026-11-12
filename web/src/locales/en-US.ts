@@ -210,7 +210,6 @@ export const enUS: Record<string, string> = {
   '修改成功后当前会话会失效，需要用新密码重新登录。': 'The current session will expire after the change; log in with the new password.',
   '当前密码': 'Current password',
   '新密码（至少 8 位）': 'New password (at least 8 characters)',
-  '重置布局': 'Reset layout',
   '复制': 'Copy',
   '已复制': 'Copied',
   '复制失败': 'Copy failed',

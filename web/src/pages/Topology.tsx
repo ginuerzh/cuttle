@@ -3,8 +3,6 @@ import {
   Background,
   applyEdgeChanges,
   Controls,
-  MiniMap,
-  Panel,
   ReactFlow,
   type Connection,
   type Edge,
@@ -516,13 +514,6 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
     setPositions(next);
     persist(next);
   };
-  const resetLayout = () => {
-    const raw = buildGraph(config);
-    const laid = layoutGraph(raw.nodes, raw.edges);
-    const next = placeNewNodes(laid, {});
-    setPositions(next);
-    persist(next);
-  };
 
   return (
     <div
@@ -562,23 +553,6 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
       >
         <Background gap={20} color="var(--gw-border)" />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeStrokeWidth={2} />
-        <Panel position="top-right">
-          <button
-            onClick={resetLayout}
-            style={{
-              border: '1px solid var(--gw-control-border)',
-              background: 'var(--gw-surface)',
-              borderRadius: 6,
-              padding: '4px 10px',
-              fontSize: 12,
-              cursor: 'pointer',
-              color: 'var(--gw-control-text)',
-            }}
-          >
-            {t('重置布局')}
-          </button>
-        </Panel>
       </ReactFlow>
     </div>
   );
