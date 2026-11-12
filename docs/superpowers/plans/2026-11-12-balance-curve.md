@@ -726,7 +726,7 @@ git commit -m "feat(admin): return balance trends with provider usage"
   - `BalanceChart.tsx`: `export interface ChartLine { name: string; trend: BalanceTrend }`
     and `export function BalanceChart({ lines, from, to }: { lines: ChartLine[]; from: string; to: string })`
 
-- [ ] **Step 1: Write the failing math and component tests**
+- [x] **Step 1: Write the failing math and component tests**
 
 `balanceLine.test.ts`:
 
@@ -756,12 +756,12 @@ against a peak of 100 sits in the bottom tenth of the SVG), the empty state
 「余额历史不足，采样中」 when every line has fewer than two points, and an
 `en-US` render with no CJK.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/charts/balanceLine.test.ts src/components/BalanceChart.test.tsx`
 Expected: FAIL (modules not found).
 
-- [ ] **Step 3: Implement the types, the math and the component**
+- [x] **Step 3: Implement the types, the math and the component**
 
 `monotonePath` is Fritsch–Carlson: slopes per segment, tangents clamped so the
 curve never leaves the local interval (`m[i] = 0` at a sign change, otherwise
@@ -785,12 +785,12 @@ export interface BalanceTrend { currency: string; points: BalanceTrendPoint[] }
 
 `AccountUsage` gains `keyId?: string` and `trends?: BalanceTrend[]`.
 
-- [ ] **Step 4: Run the web tests and type check**
+- [x] **Step 4: Run the web tests and type check**
 
 Run: `cd web && npx vitest run src/charts/balanceLine.test.ts src/components/BalanceChart.test.tsx && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/api/types.ts web/src/format.ts web/src/format.test.ts \
@@ -800,12 +800,12 @@ git commit -m "feat(web): balance curve math and chart component"
 ```
 
 **Implementation record — Task 6**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `e7b2a420`)
+- Files changed: created `web/src/charts/balanceLine.ts` (`trendPoints`, `trendMax`, `trendGeometry`, `monotonePath`), `web/src/charts/balanceLine.test.ts`, `web/src/components/BalanceChart.tsx` (`ChartLine`, `BalanceChart`), `web/src/components/BalanceChart.test.tsx`; modified `web/src/api/types.ts` (`BalanceTrendPoint`, `BalanceTrend`, `AccountUsage.keyId/trends`), `web/src/format.ts` + `format.test.ts` (`currencySymbol` moved out of the page), `web/src/pages/Usage.tsx` (imports it), `web/src/locales/en-US.ts` (two new strings).
+- Tests run: RED `npx vitest run src/charts/balanceLine.test.ts src/components/BalanceChart.test.tsx src/format.test.ts` → modules/`currencySymbol` missing; GREEN same → 19 tests pass. Gate `npx tsc --noEmit` → clean, `npm test` → 51 files / 452 tests pass.
+- Review findings/fixes: Ruling — the `en-US` entries for `余额曲线`/`余额历史不足，采样中` land here, not in Task 7, because this task's English-render test needs them; cost if wrong: none, Task 7 only consumes them. The chart emits two paths per line (`balance` stroked, `balance-area` filled) so the count assertions stay meaningful. Legend labels degrade to the name alone when a currency has no symbol.
+- Deferred: none.
 
 ---
 

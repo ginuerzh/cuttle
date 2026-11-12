@@ -288,6 +288,8 @@ export const enUS: Record<string, string> = {
   '{phase} 提供': 'Provided by {phase}',
   '用量': 'Usage',
   '统计': 'Statistics',
+  '余额曲线': 'Balance history',
+  '余额历史不足，采样中': 'Not enough balance readings yet; sampling',
   '7 天': '7 days',
   '30 天': '30 days',
   '更新于 {time}': 'Updated {time}',

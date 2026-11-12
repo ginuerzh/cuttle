@@ -21,7 +21,7 @@ import { getProviderUsage } from '../api/client';
 import type { AccountUsage, BalancePart, ProviderUsage, ProviderUsageResponse, QuotaWindow } from '../api/types';
 import { useIsMobile } from '../components/useIsMobile';
 import { ListPage } from '../components/ListPage';
-import { formatCount } from '../format';
+import { currencySymbol, formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { formatDateTime } from '../time';
 
@@ -30,22 +30,6 @@ const RANGES = [
   { label: '7 天', value: 7 * 24 * 3_600_000 },
   { label: '30 天', value: 30 * 24 * 3_600_000 },
 ];
-
-function currencySymbol(currency?: string): string {
-  switch ((currency ?? '').toUpperCase()) {
-    case 'USD':
-      return '$';
-    case 'CNY':
-    case 'RMB':
-      return '¥';
-    case 'EUR':
-      return '€';
-    case 'GBP':
-      return '£';
-    default:
-      return currency ?? '';
-  }
-}
 
 function formatMoney(b: BalancePart): string {
   const symbol = currencySymbol(b.currency);
