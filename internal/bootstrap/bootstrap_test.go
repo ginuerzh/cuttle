@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,13 +108,71 @@ func TestResolvePrecedence(t *testing.T) {
 	})
 }
 
+func setUserConfigDir(t *testing.T, fn func() (string, error)) {
+	t.Helper()
+	old := userConfigDir
+	userConfigDir = fn
+	t.Cleanup(func() { userConfigDir = old })
+}
+
+func setGetwd(t *testing.T, fn func() (string, error)) {
+	t.Helper()
+	old := getwd
+	getwd = fn
+	t.Cleanup(func() { getwd = old })
+}
+
 func TestResolveDefaultDataDir(t *testing.T) {
+	configHome := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return configHome, nil })
+
 	paths, err := Resolve("", envMap(nil), []string{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if paths.DataDir != "/data" || paths.ConfigPath != "/data/cuttle.yaml" {
-		t.Fatalf("paths = %+v", paths)
+	wantDir := filepath.Join(configHome, DirName)
+	if paths.DataDir != wantDir || paths.ConfigPath != filepath.Join(wantDir, ConfigFileName) {
+		t.Fatalf("paths = %+v, want data dir %q", paths, wantDir)
+	}
+	if paths.DataDirFromFallback {
+		t.Fatal("DataDirFromFallback = true, want false")
+	}
+}
+
+func TestResolveDefaultDataDirFallsBackToWorkingDir(t *testing.T) {
+	workDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return "", errors.New("$HOME is not defined") })
+	setGetwd(t, func() (string, error) { return workDir, nil })
+
+	paths, err := Resolve("", envMap(nil), []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paths.DataDir != workDir || paths.ConfigPath != filepath.Join(workDir, ConfigFileName) {
+		t.Fatalf("paths = %+v, want data dir %q", paths, workDir)
+	}
+	if !paths.DataDirFromFallback {
+		t.Fatal("DataDirFromFallback = false, want true")
+	}
+}
+
+func TestResolveExplicitDataDirIgnoresUserConfigDir(t *testing.T) {
+	dataDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) {
+		t.Fatal("userConfigDir called although CUTTLE_DATA is set")
+		return "", nil
+	})
+	setGetwd(t, func() (string, error) {
+		t.Fatal("getwd called although CUTTLE_DATA is set")
+		return "", nil
+	})
+
+	paths, err := Resolve("", envMap(map[string]string{"CUTTLE_DATA": dataDir}), []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paths.DataDir != dataDir || paths.DataDirFromFallback {
+		t.Fatalf("paths = %+v, want %q without fallback", paths, dataDir)
 	}
 }
 
@@ -259,6 +318,95 @@ func TestPrepareUsesEnvDefaults(t *testing.T) {
 	}
 	if !config.VerifyPassword(res.Config.Admin.PasswordHash, "correct-horse") {
 		t.Fatal("stored hash does not verify CUTTLE_ADMIN_PASSWORD")
+	}
+}
+
+func TestPrepareWarnsOnDataDirFallback(t *testing.T) {
+	workDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return "", errors.New("$HOME is not defined") })
+	setGetwd(t, func() (string, error) { return workDir, nil })
+
+	var buf bytes.Buffer
+	res, err := Prepare(Options{Getenv: envMap(nil), SearchPaths: []string{}, Stderr: &buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Generated || res.DataDir != workDir {
+		t.Fatalf("Generated = %v, DataDir = %q, want a first run in %q", res.Generated, res.DataDir, workDir)
+	}
+	want := "CUTTLE_DATA is unset and the user config directory is unavailable; using " + workDir
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), want) {
+		t.Fatalf("warnings = %v, want %q", res.Warnings, want)
+	}
+}
+
+func TestPrepareExistingConfigWarnsOnDataDirFallback(t *testing.T) {
+	workDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return "", errors.New("$HOME is not defined") })
+	setGetwd(t, func() (string, error) { return workDir, nil })
+
+	hash, err := config.HashPassword("old-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBootstrapConfig(t, workDir, &config.Config{
+		Admin: config.Admin{PasswordHash: hash},
+		Stats: config.Stats{Path: filepath.Join(workDir, "stats.sqlite")},
+	})
+
+	res, err := Prepare(Options{Getenv: envMap(nil), SearchPaths: []string{}, Stderr: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Generated {
+		t.Fatal("Generated = true, want the existing config")
+	}
+	want := "CUTTLE_DATA is unset and the user config directory is unavailable; using " + workDir
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), want) {
+		t.Fatalf("warnings = %v, want %q", res.Warnings, want)
+	}
+}
+
+func TestPrepareFallsBackWhenDefaultDataDirIsUnusable(t *testing.T) {
+	base := t.TempDir()
+	blocked := filepath.Join(base, "blocked")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return blocked, nil })
+	setGetwd(t, func() (string, error) { return workDir, nil })
+
+	res, err := Prepare(Options{Getenv: envMap(nil), SearchPaths: []string{}, Stderr: io.Discard})
+	if err != nil {
+		t.Fatalf("first run against an unusable user config directory should fall back: %v", err)
+	}
+	if !res.Generated || res.DataDir != workDir {
+		t.Fatalf("Generated = %v, DataDir = %q, want a first run in %q", res.Generated, res.DataDir, workDir)
+	}
+	want := "CUTTLE_DATA is unset and the user config directory is unavailable; using " + workDir
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), want) {
+		t.Fatalf("warnings = %v, want %q", res.Warnings, want)
+	}
+}
+
+func TestPrepareRejectsEmptyCUTTLEData(t *testing.T) {
+	setUserConfigDir(t, func() (string, error) {
+		t.Fatal("userConfigDir called although CUTTLE_DATA is set")
+		return "", nil
+	})
+
+	_, err := Prepare(Options{
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": ""}),
+		LookupEnv:   func(k string) (string, bool) { return "", k == "CUTTLE_DATA" },
+		SearchPaths: []string{},
+		Stderr:      io.Discard,
+	})
+	if err == nil {
+		t.Fatal("want an error for an explicitly empty CUTTLE_DATA")
+	}
+	if !strings.Contains(err.Error(), "CUTTLE_DATA") || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("error %q does not name CUTTLE_DATA and the empty value", err)
 	}
 }
 

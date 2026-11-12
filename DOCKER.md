@@ -41,10 +41,11 @@ The first start creates `/data/cuttle.yaml` and `/data/stats.sqlite`. The log
 contains a one-time admin password. Open `http://localhost:8788/`, log in, and
 create the provider, node, route and entrypoint in the console.
 
-The image sets `CUTTLE_DATA=/data` (the data directory on every start) and
-`CUTTLE_ADMIN_LISTEN=:8788` (a first-run default). The binary default is
-`127.0.0.1:8788`; the image changes it so the published admin port works
-without extra configuration.
+The image sets `CUTTLE_DATA=/data` (the data directory on every start; the
+binary default is `<os.UserConfigDir>/cuttle`, so the env var is what keeps the
+container on `/data`) and `CUTTLE_ADMIN_LISTEN=:8788` (a first-run default). The
+binary default is `127.0.0.1:8788`; the image changes it so the published admin
+port works without extra configuration.
 
 To choose the password before the first start:
 
@@ -65,6 +66,10 @@ start, set `CUTTLE_ADMIN_LISTEN=127.0.0.1:8788`.
 `CUTTLE_ADMIN_PASSWORD` is visible in the container environment. Use an env file
 or an orchestrator secret to inject it. The generated config stores only the
 bcrypt hash.
+
+Never pass an empty `CUTTLE_DATA` (`-e CUTTLE_DATA=` or a compose
+`${CUTTLE_DATA}` that renders empty): Cuttle rejects it instead of silently
+writing outside the volume.
 
 ## Existing config mount
 

@@ -195,8 +195,10 @@ Entrypoint -> Route -> Node -> Provider model
 - `CUTTLE_LISTEN` (`:8787`), `CUTTLE_ADMIN_LISTEN` (`127.0.0.1:8788`; the
   Docker image sets `:8788`) and `CUTTLE_ADMIN_PASSWORD` (unset) are first-run
   defaults: they are used only when a new config is generated. `CUTTLE_DATA`
-  (default `/data`) is the data directory used on every start and determines
-  where an existing config is looked up or a missing one is generated.
+  (default `<os.UserConfigDir>/cuttle`, falling back to the working directory
+  with a warning) is the data directory used on every start and determines
+  where an existing config is looked up or a missing one is generated. A
+  set-but-empty `CUTTLE_DATA` is rejected.
 - Config resolution: explicit `-c` must exist; otherwise
   `$CUTTLE_DATA/cuttle.yaml`, `/etc/cuttle/cuttle.yaml`, `./cuttle.yaml`, then
   generate at `$CUTTLE_DATA/cuttle.yaml`.
@@ -576,9 +578,10 @@ GOWORK=off go test ./internal/stats -count=1
   write-back needs a writable *directory*, not a writable file: a `chmod 400`
   file in a writable directory is still rewritten and re-chmodded to `0600`.
   Startup and SIGHUP log the backup at info and a skip/failure as a warning.
-- First-run config and stats live in `$CUTTLE_DATA` (default `/data`). The
-  Docker image uses `CMD ["serve"]`; its `CUTTLE_ADMIN_LISTEN=:8788` is a
-  first-run default, not an override for an existing config.
+- First-run config and stats live in `$CUTTLE_DATA` (default
+  `<os.UserConfigDir>/cuttle`; the Docker image sets `/data`). The Docker image
+  uses `CMD ["serve"]`; its `CUTTLE_ADMIN_LISTEN=:8788` is a first-run default,
+  not an override for an existing config.
 - The generated admin password is printed only on the first run. If it is lost,
   replace `admin.passwordHash` with `hash-password` output or delete the config
   (destructive; persisted sessions are cleared on regeneration).

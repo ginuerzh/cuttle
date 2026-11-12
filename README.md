@@ -194,6 +194,12 @@ injected by the release build through ldflags, so the upgrade needs no code or
 config change beyond reviewing the backups. To roll back, restore both backups
 and the previous image.
 
+**The default data directory changed.** `CUTTLE_DATA` now defaults to
+`<os.UserConfigDir>/cuttle` instead of `/data`. A non-Docker install that relied
+on the old default must set `CUTTLE_DATA=/data` or move its config and stats
+directory before upgrading; there is no automatic migration. The Docker image is
+unaffected because it sets `CUTTLE_DATA=/data`.
+
 ### Zero-config first run
 
 No config file is required. Start the binary (or the Docker image) and it
@@ -203,6 +209,12 @@ creates `$CUTTLE_DATA/cuttle.yaml` and `$CUTTLE_DATA/stats.sqlite`:
 CUTTLE_DATA=./data ./cuttle serve
 ```
 
+With `CUTTLE_DATA` unset the directory is `<os.UserConfigDir>/cuttle`:
+`~/.config/cuttle` on Linux (`$XDG_CONFIG_HOME` wins),
+`~/Library/Application Support/cuttle` on macOS and `%AppData%\cuttle` on
+Windows. If the user config directory is unavailable — a service without
+`$HOME`, for example — Cuttle uses the working directory and logs a warning.
+
 If `CUTTLE_ADMIN_PASSWORD` is not set, Cuttle generates a 32-character admin
 password, prints it once to stderr, and stores only its bcrypt hash. Open the
 admin console, log in, and create a provider, node, route and entrypoint. No
@@ -210,7 +222,7 @@ provider, key or model environment variables exist.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CUTTLE_DATA` | `/data` | Directory for the generated config and stats database |
+| `CUTTLE_DATA` | `<os.UserConfigDir>/cuttle` (`~/.config/cuttle` on Linux) | Directory for the generated config and stats database |
 | `CUTTLE_LISTEN` | `:8787` | First-run `gateway.listen` |
 | `CUTTLE_ADMIN_LISTEN` | `127.0.0.1:8788` (binary); `:8788` (Docker image) | First-run `admin.listen` |
 | `CUTTLE_ADMIN_PASSWORD` | unset | First-run admin password; hashed into the config |
@@ -234,6 +246,10 @@ bytes; a trailing newline is trimmed, matching `cuttle hash-password`). If the
 generated password is lost, replace `admin.passwordHash` with the output of
 `cuttle hash-password`, or delete the config (destructive: it also deletes the
 topology; persisted sessions are cleared on regeneration).
+
+> Upgrading from a build whose default was `/data`: the binary no longer uses
+> `/data` unless `CUTTLE_DATA=/data` is set. Set the variable or move the
+> directory before starting the new version; there is no automatic migration.
 
 The rest of this section describes the full manual YAML configuration, which is
 still supported and is the right choice for multi-provider topologies.
@@ -1100,7 +1116,8 @@ docker logs cuttle
 
 The first start generates `/data/cuttle.yaml` and `/data/stats.sqlite`. The log
 contains a one-time admin password; open `http://localhost:8788/`, log in, and
-create the upstream topology. The image sets `CUTTLE_DATA=/data` and
+create the upstream topology. The image sets `CUTTLE_DATA=/data` (which keeps
+the container on `/data`; the binary default is `<os.UserConfigDir>/cuttle`) and
 `CUTTLE_ADMIN_LISTEN=:8788` for the first run. The binary default remains
 `127.0.0.1:8788`.
 

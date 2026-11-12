@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	// DefaultDataDir is the default CUTTLE_DATA directory.
-	DefaultDataDir = "/data"
+	// DirName is the directory name used under the user config directory.
+	DirName = "cuttle"
 	// ConfigFileName is the config file name inside the data directory.
 	ConfigFileName = "cuttle.yaml"
 	// StatsFileName is the stats database name inside the data directory.
@@ -30,6 +30,58 @@ const (
 	// still need to be cleared. It is removed after a successful clear.
 	SessionsResetFileName = ".cuttle-sessions-reset"
 )
+
+// Seams for the user config directory and the working directory.
+var (
+	userConfigDir = os.UserConfigDir
+	getwd         = os.Getwd
+)
+
+// defaultDataDir returns <os.UserConfigDir>/cuttle. When the user config
+// directory is unavailable it falls back to the working directory and reports
+// the fallback so Prepare can warn.
+func defaultDataDir() (dir string, fallback bool) {
+	if dir, err := userConfigDir(); err == nil {
+		if dir = strings.TrimSpace(dir); dir != "" {
+			return filepath.Join(dir, DirName), false
+		}
+	}
+	if wd, err := getwd(); err == nil {
+		if wd = strings.TrimSpace(wd); wd != "" {
+			return wd, true
+		}
+	}
+	return ".", true
+}
+
+// applyWorkingDirFallback switches paths to the working directory when the data
+// directory came from the per-user default. It reports whether it switched.
+func applyWorkingDirFallback(paths *Paths) bool {
+	if !paths.DataDirDefault || paths.DataDirFromFallback {
+		return false
+	}
+	wd, err := getwd()
+	if err != nil {
+		return false
+	}
+	wd = strings.TrimSpace(wd)
+	if wd == "" {
+		return false
+	}
+	paths.DataDir = filepath.Clean(wd)
+	paths.ConfigPath = filepath.Join(paths.DataDir, ConfigFileName)
+	paths.DataDirFromFallback = true
+	return true
+}
+
+// dataDirFallbackWarning reports the working-directory fallback, or "" when the
+// data directory came from CUTTLE_DATA or the user config directory.
+func dataDirFallbackWarning(paths Paths) string {
+	if !paths.DataDirFromFallback {
+		return ""
+	}
+	return fmt.Sprintf("CUTTLE_DATA is unset and the user config directory is unavailable; using %s", paths.DataDir)
+}
 
 // DefaultSearchPaths are checked after the data-directory config and before a
 // new config is generated.
@@ -43,6 +95,12 @@ type Paths struct {
 	DataDir    string
 	ConfigPath string
 	Existing   bool
+	// DataDirFromFallback is true when CUTTLE_DATA was unset and the user
+	// config directory was unavailable, so the working directory was used.
+	DataDirFromFallback bool
+	// DataDirDefault is true when CUTTLE_DATA was unset, so DataDir came from
+	// the user config directory rather than from the environment.
+	DataDirDefault bool
 }
 
 // Resolve determines where the config lives. An explicit path must exist. With
@@ -57,15 +115,17 @@ func Resolve(explicitPath string, getenv func(string) string, searchPaths []stri
 	}
 
 	dataDir := strings.TrimSpace(getenv("CUTTLE_DATA"))
+	defaulted := dataDir == ""
+	fromFallback := false
 	if dataDir == "" {
-		dataDir = DefaultDataDir
+		dataDir, fromFallback = defaultDataDir()
 	}
 	absDataDir, err := filepath.Abs(dataDir)
 	if err != nil {
 		return Paths{}, fmt.Errorf("CUTTLE_DATA %q: %w", dataDir, err)
 	}
 
-	paths := Paths{DataDir: absDataDir}
+	paths := Paths{DataDir: absDataDir, DataDirFromFallback: fromFallback, DataDirDefault: defaulted}
 
 	if explicitPath != "" {
 		ok, err := fileExists(explicitPath)
@@ -82,8 +142,12 @@ func Resolve(explicitPath string, getenv func(string) string, searchPaths []stri
 
 	dataConfig := filepath.Join(absDataDir, ConfigFileName)
 	ok, err := fileExists(dataConfig)
+	if err != nil && applyWorkingDirFallback(&paths) {
+		dataConfig = paths.ConfigPath
+		ok, err = fileExists(dataConfig)
+	}
 	if err != nil {
-		return Paths{}, fmt.Errorf("CUTTLE_DATA %s: %w", absDataDir, err)
+		return Paths{}, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 	}
 	if ok {
 		paths.ConfigPath = dataConfig
@@ -141,6 +205,9 @@ type Options struct {
 	SearchPaths []string
 	// Getenv overrides os.Getenv in tests. A nil function uses os.Getenv.
 	Getenv func(string) string
+	// LookupEnv overrides os.LookupEnv in tests. A nil function uses
+	// os.LookupEnv.
+	LookupEnv func(string) (string, bool)
 	// Stderr receives the one-time generated password. A nil writer uses
 	// os.Stderr.
 	Stderr io.Writer
@@ -172,6 +239,16 @@ func Prepare(opts Options) (*Result, error) {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	lookupEnv := opts.LookupEnv
+	if lookupEnv == nil {
+		lookupEnv = os.LookupEnv
+	}
+	// An empty value is indistinguishable from an unset one through Getenv, so
+	// a set-but-empty CUTTLE_DATA must fail loudly instead of silently moving
+	// the data directory to the per-user default.
+	if v, ok := lookupEnv("CUTTLE_DATA"); ok && strings.TrimSpace(v) == "" {
+		return nil, errors.New("CUTTLE_DATA is set but empty; unset it or set the data directory")
+	}
 	// The configured log level and format live in the config this load may
 	// rewrite, so the load-time migration logs plain text to stderr. Without it
 	// the upgrade that rewrites cuttle.yaml would be silent.
@@ -193,12 +270,16 @@ func Prepare(opts Options) (*Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
 		}
+		warnings := ignoredEnvWarnings(cfg, getenv)
+		if w := dataDirFallbackWarning(paths); w != "" {
+			warnings = append([]string{w}, warnings...)
+		}
 		return &Result{
 			Config:        cfg,
 			ConfigPath:    paths.ConfigPath,
 			DataDir:       paths.DataDir,
 			ResetSessions: reset,
-			Warnings:      ignoredEnvWarnings(cfg, getenv),
+			Warnings:      warnings,
 		}, nil
 	}
 
@@ -207,9 +288,17 @@ func Prepare(opts Options) (*Result, error) {
 
 func generate(paths Paths, getenv func(string) string, stderr io.Writer, migrateLog logger.Logger) (*Result, error) {
 	if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
-		return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
+		if !applyWorkingDirFallback(&paths) {
+			return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
+		}
+		if err := os.MkdirAll(paths.DataDir, 0o700); err != nil {
+			return nil, fmt.Errorf("CUTTLE_DATA %s: %w", paths.DataDir, err)
+		}
 	}
 	warnings := dataDirWarnings(paths.DataDir)
+	if w := dataDirFallbackWarning(paths); w != "" {
+		warnings = append([]string{w}, warnings...)
+	}
 
 	pending, err := sessionsResetPending(paths.DataDir)
 	if err != nil {
