@@ -14,7 +14,10 @@ import (
 )
 
 // bindingFixture builds two routes over two capture upstreams, bound in order
-// by one entrypoint.
+// by one entrypoint. The fixture keeps its own shape schema-valid: the first
+// binding carries a probe and the probe-less binding is last, which is the only
+// ordering config.Validate accepts. The probe command is a no-op, so both
+// bindings stay eligible.
 func bindingFixture(t *testing.T) (*gwconfig.Config, *capturedRequest, *capturedRequest) {
 	t.Helper()
 
@@ -25,7 +28,14 @@ func bindingFixture(t *testing.T) (*gwconfig.Config, *capturedRequest, *captured
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{{
 			ID: "e_0000000001", Name: "all", Match: []string{"*"},
-			Routes: bindings("r_0000000001", "r_0000000002"),
+			Routes: []gwconfig.RouteBinding{
+				{Route: "r_0000000001", Probe: &gwconfig.Probe{
+					Command:  "true",
+					Interval: gwconfig.Duration(2 * time.Second),
+					Timeout:  gwconfig.Duration(time.Second),
+				}},
+				{Route: "r_0000000002"},
+			},
 		}},
 		Providers: []gwconfig.Provider{
 			{
@@ -47,6 +57,16 @@ func bindingFixture(t *testing.T) (*gwconfig.Config, *capturedRequest, *captured
 		},
 	}
 	return cfg, firstHit, secondHit
+}
+
+// TestBindingFixtureIsSchemaValid keeps the fixture inside the rules
+// config.Validate enforces, so it cannot drift back to an arrangement the
+// loader would reject.
+func TestBindingFixtureIsSchemaValid(t *testing.T) {
+	cfg, _, _ := bindingFixture(t)
+	if err := gwconfig.Validate(cfg); err != nil {
+		t.Fatalf("bindingFixture is not a valid config: %v", err)
+	}
 }
 
 // bindingPlans compiles every fixture route into a plan keyed by route id.

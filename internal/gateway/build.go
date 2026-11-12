@@ -51,12 +51,20 @@ func nextBuildGeneration() string {
 // followed by the entrypoint's fallback entry. Each entry wraps an inner group
 // over the entrypoint's ordered route bindings, so a probe can make a binding
 // ineligible without touching the outer group. The FIFO group selector then
-// makes entrypoint order the single precedence rule. The returned names are the
+// makes entrypoint order the single precedence rule. The returned probe set is
+// unstarted; the caller starts and stops it. The returned names are the
 // rewriters registered for this build; the caller owns their lifecycle.
-func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, []string, *countTokensPolicy, error) {
+func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, *probeSet, []string, *countTokensPolicy, error) {
 	if err := registerHeaderRewriter(); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
+
+	probes := newProbeSet(func(id string) string {
+		if r, ok := cfg.Route(id); ok {
+			return r.Name
+		}
+		return id
+	}, log)
 
 	routePlans := make(map[string]*routePlan, len(cfg.Routes))
 	var rewriters []string
@@ -72,14 +80,14 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 				var err error
 				plan, err = buildDraftPlan(log)
 				if err != nil {
-					return nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+					return nil, nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 				}
 				routePlans[draftPlanKey] = plan
 			}
 			log.Warnf("entrypoint %s: no routes, compiled as a draft", e.Name)
 			m, err := buildEntrypointMatcher(e.Match)
 			if err != nil {
-				return nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+				return nil, nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 			}
 			entries = append(entries, xhop.NewHopEntry(plan.hops[""], m, nil))
 			continue
@@ -89,7 +97,7 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 			ref := strings.TrimSpace(e.Routes[i].Route)
 			r, ok := cfg.Route(ref)
 			if !ok {
-				return nil, rewriters, nil, fmt.Errorf("entrypoint %q: routes[%d]: unknown route %q", e.Name, i, ref)
+				return nil, nil, rewriters, nil, fmt.Errorf("entrypoint %q: routes[%d]: unknown route %q", e.Name, i, ref)
 			}
 			if _, ok := routePlans[r.ID]; ok {
 				continue
@@ -99,41 +107,55 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 				rewriters = append(rewriters, plan.rewriters...)
 			}
 			if err != nil {
-				return nil, rewriters, nil, fmt.Errorf("route %q: %w", r.Name, err)
+				return nil, nil, rewriters, nil, fmt.Errorf("route %q: %w", r.Name, err)
 			}
 			routePlans[r.ID] = plan
 		}
 
+		// One probe per binding must control every protocol variant the
+		// binding compiles to, so the variant entries are collected per
+		// binding index before the probe is registered.
 		failTimeout := bindingFailTimeout(e.Routes)
+		bindingEntries := make([][]*xhop.HopEntry, len(e.Routes))
 		for _, group := range inboundGroups {
 			if !bindingsHaveVariant(e.Routes, routePlans, group.api) {
 				continue
 			}
 			m, err := buildProtocolMatcher(e.Match, group.pathPattern)
 			if err != nil {
-				return nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+				return nil, nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 			}
-			inner, _, err := buildBindingsHop(e.ID, e.Routes, routePlans, group.api, failTimeout, log)
+			inner, variantEntries, err := buildBindingsHop(e.ID, e.Routes, routePlans, group.api, failTimeout, log)
 			if err != nil {
-				return nil, rewriters, nil, err
+				return nil, nil, rewriters, nil, err
 			}
 			entries = append(entries, xhop.NewHopEntry(inner, m, nil))
+			for i := range variantEntries {
+				bindingEntries[i] = append(bindingEntries[i], variantEntries[i])
+			}
 		}
 
 		m, err := buildEntrypointMatcher(e.Match)
 		if err != nil {
-			return nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
+			return nil, nil, rewriters, nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 		}
-		inner, _, err := buildBindingsHop(e.ID, e.Routes, routePlans, "", failTimeout, log)
+		inner, fallbackEntries, err := buildBindingsHop(e.ID, e.Routes, routePlans, "", failTimeout, log)
 		if err != nil {
-			return nil, rewriters, nil, err
+			return nil, nil, rewriters, nil, err
 		}
 		entries = append(entries, xhop.NewHopEntry(inner, m, nil))
+		for i := range fallbackEntries {
+			bindingEntries[i] = append(bindingEntries[i], fallbackEntries[i])
+		}
+
+		for i, b := range e.Routes {
+			probes.add(e, b, i, bindingEntries[i], failTimeout)
+		}
 	}
 
 	policy, err := buildCountTokensPolicy(cfg, routePlans)
 	if err != nil {
-		return nil, rewriters, nil, err
+		return nil, nil, rewriters, nil, err
 	}
 
 	return xhop.NewHopGroup(
@@ -146,7 +168,7 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 		xhop.WithGroupLoggerOption(log.WithFields(map[string]any{
 			"kind": "hopGroup",
 		})),
-	), rewriters, policy, nil
+	), probes, rewriters, policy, nil
 }
 
 // bindingsHaveVariant reports whether any bound route compiles a hop for the

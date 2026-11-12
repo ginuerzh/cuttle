@@ -178,7 +178,7 @@ func TestBuildUsesEntityIDs(t *testing.T) {
 		}},
 	}
 
-	h, rewriters, _, err := buildHopGroup(cfg, "ids-build", xlogger.Nop(), stats.NewFacts(),
+	h, _, rewriters, _, err := buildHopGroup(cfg, "ids-build", xlogger.Nop(), stats.NewFacts(),
 		capture.NewManager(capture.Policy{Mode: "off"}))
 	if err != nil {
 		t.Fatal(err)

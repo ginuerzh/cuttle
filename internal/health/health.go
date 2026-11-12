@@ -1,4 +1,5 @@
-// Package health exposes runtime node health derived from x node markers.
+// Package health exposes runtime node health derived from x node markers and
+// the entrypoint binding eligibility owned by the command probe runner.
 package health
 
 import "time"
@@ -24,4 +25,44 @@ type Route struct {
 	MaxFails    int    `json:"maxFails"`
 	FailTimeout string `json:"failTimeout"`
 	Nodes       []Node `json:"nodes"`
+}
+
+// Entrypoint is the binding health of one entrypoint. ID identifies the
+// entrypoint and Name is its display label. Active is the binding that will
+// serve the next request; Bindings keeps configuration order.
+type Entrypoint struct {
+	ID       string        `json:"entrypointId"`
+	Name     string        `json:"entrypointName"`
+	Active   ActiveBinding `json:"active"`
+	Bindings []Binding     `json:"bindings"`
+}
+
+// ActiveBinding names the binding that will serve the next request. Fallback is
+// true when no binding is eligible, so the data plane serves the first binding
+// as x's last resort.
+type ActiveBinding struct {
+	RouteID  string `json:"routeId"`
+	Fallback bool   `json:"fallback"`
+}
+
+// Binding is one entrypoint route binding. Index is its position in the
+// configured list and RouteID/RouteName name the bound route. Eligible is the
+// last probe verdict; a binding that has no probe or has not probed yet is
+// eligible. Last is the last probe result, absent until the first run.
+type Binding struct {
+	Index     int    `json:"index"`
+	RouteID   string `json:"routeId"`
+	RouteName string `json:"routeName"`
+	Eligible  bool   `json:"eligible"`
+	Last      *Probe `json:"last,omitempty"`
+}
+
+// Probe is one command probe result. ExitCode is -1 when the command could not
+// be started or timed out. Error carries the stderr tail, capped by the runner.
+type Probe struct {
+	At        time.Time `json:"at"`
+	OK        bool      `json:"ok"`
+	ExitCode  int       `json:"exitCode"`
+	LatencyMS int64     `json:"latencyMs"`
+	Error     string    `json:"error,omitempty"`
 }

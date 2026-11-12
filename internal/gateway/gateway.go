@@ -43,6 +43,7 @@ type Gateway struct {
 	handler      handler.Handler
 	forwarder    handler.Forwarder
 	hop          hop.Hop
+	probes       *probeSet
 	rewriters    []string
 	countTokens  atomic.Pointer[countTokensPolicy]
 	auth         atomic.Pointer[authPolicy]
@@ -289,6 +290,19 @@ func (g *Gateway) RouteHealth() []health.Route {
 	return out
 }
 
+// EntrypointHealth returns the binding health of the current build: one row per
+// entrypoint with bindings, in configuration order. Draft entrypoints have no
+// bindings and no probe runner, so they are absent.
+func (g *Gateway) EntrypointHealth() []health.Entrypoint {
+	g.mu.Lock()
+	probes := g.probes
+	g.mu.Unlock()
+	if probes == nil {
+		return nil
+	}
+	return probes.Snapshot()
+}
+
 func configNodeID(n *corechain.Node) string {
 	if n == nil {
 		return ""
@@ -356,7 +370,7 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	defer g.buildMu.Unlock()
 
 	build := nextBuildGeneration()
-	group, rewriters, policy, err := buildHopGroup(cfg, build, g.log, g.facts, g.capture)
+	group, probes, rewriters, policy, err := buildHopGroup(cfg, build, g.log, g.facts, g.capture)
 	if err != nil {
 		// The old hop is untouched; drop the rewriters this failed build
 		// registered so they cannot leak.
@@ -366,11 +380,20 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 
 	g.mu.Lock()
 	old := g.hop
+	oldProbes := g.probes
 	oldRewriters := g.rewriters
 	g.hop = group
+	g.probes = probes
 	g.cfg = cfg
 	g.rewriters = rewriters
 	g.mu.Unlock()
+
+	// The hop swap is done, so the old probe runner must stop now: it marks the
+	// old entries only, and leaving it alive would keep forking commands for a
+	// build that no longer serves. The new set starts immediately so the first
+	// request already sees a verdict for every probed binding.
+	oldProbes.Stop()
+	probes.Start(context.Background())
 
 	ap := newAuthPolicy(cfg.Gateway.Keys)
 	g.countTokens.Store(policy)
@@ -450,9 +473,14 @@ func (g *Gateway) Close() error {
 	g.mu.Lock()
 	h := g.hop
 	names := g.rewriters
+	probes := g.probes
 	g.hop = nil
+	g.probes = nil
 	g.rewriters = nil
 	g.mu.Unlock()
+
+	// Stop the probe runner before releasing the hop it marks.
+	probes.Stop()
 
 	if closer, ok := h.(io.Closer); ok {
 		closer.Close()

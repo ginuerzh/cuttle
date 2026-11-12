@@ -361,12 +361,67 @@ git commit -m "feat(gateway): switch route bindings with a command probe"
 ```
 
 **Implementation record (fill in after the task is complete)**
-- Date/status:
-- Repository + commit:
+- Date/status: 2026-11-12 / done.
+- Repository + commit: `cuttle` — `feat(gateway): switch route bindings with a
+  command probe`, recorded with its SHA in the follow-up docs commit (same
+  pattern as Task 1).
 - Files changed:
+  - `internal/gateway/bindingprobe.go` (new): `probeSet` (`add`, `Start`,
+    `Stop`, `probeOnce`, `Snapshot`), `bindingProbe`, `probeState`, the
+    `shellCmd` (`sh -c`, `cmd /C`) and `cappedBuffer` (1 KiB stderr) helpers.
+    One goroutine per probed binding; it runs immediately and then once per
+    interval, `exec.CommandContext` with the probe timeout, `WaitDelay` so a
+    shell's grandchild cannot block the runner, and
+    `CUTTLE_ENTRYPOINT_ID/NAME`, `CUTTLE_ROUTE_ID/NAME`,
+    `CUTTLE_BINDING_INDEX` in the environment. Success resets, failure marks
+    every variant `*xhop.HopEntry` of that binding; node `failCodes` markers and
+    the stats store are untouched. Debug per run, info only on a verdict
+    transition, never the command or its output.
+  - `internal/gateway/bindingprobe_test.go` (new): the seven tests named in the
+    brief plus `TestEntrypointHealthNilSafe`.
+  - `internal/gateway/probe_e2e_test.go` (new):
+    `TestEntrypointSwitchesRouteByProbe` and the Task 1 review follow-up
+    `TestIneligibleBindingDoesNotFallThrough`.
+  - `internal/health/health.go`: `Entrypoint`, `ActiveBinding`, `Binding`,
+    `Probe` with the spec's JSON names.
+  - `internal/gateway/build.go`: `buildHopGroup` returns an unstarted
+    `*probeSet`; the variant entries of each binding are collected per binding
+    index and registered with one `add` call per entrypoint binding.
+  - `internal/gateway/gateway.go`: `Gateway.probes`, start of the new set and
+    stop of the old one in `apply`, stop in `Close`, and `EntrypointHealth()`.
+  - `internal/gateway/bindings_test.go`: Task 1 review finding 1 — the fixture
+    now carries a probe on the first binding and the probe-less binding last, so
+    it passes `config.Validate`; `TestBindingFixtureIsSchemaValid` locks that in.
+  - `internal/gateway/gateway_test.go`: `buildHopGroup` call site.
 - Tests/commands and results:
+  - `GOWORK=off go test ./internal/gateway -run 'TestProbe|TestReloadReplacesProbeSet|TestEntrypointHealthNilSafe' -count=1` — RED first (`undefined: probeSet`, `undefined: newProbeSet`, `gw.EntrypointHealth undefined`), then PASS.
+  - `GOWORK=off go test ./internal/gateway -run 'TestProbe|TestEntrypointSwitchesRouteByProbe|TestIneligibleBindingDoesNotFallThrough|TestReloadReplacesProbeSet' -count=1 -race` — PASS, race clean (the Step 5 range plus the no-fallthrough test).
+  - The same set with `-count=5 -race` — PASS, no flakes.
+  - `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` — PASS.
+  - `GOWORK=off go test ./internal/gateway -run TestBinding -count=1` — PASS.
 - Review findings and fixes:
-- Deferred items/limitations:
+  - Task 1 finding 1 (schema-invalid fixture): fixed as described above. A
+    literal `Interval: 1s` cannot satisfy `Validate` (the timeout must be
+    smaller than the interval and at least 1s), so the fixture uses `2s`/`1s`.
+  - Task 1 finding 2 (cross-entrypoint fallthrough): fixed by
+    `TestIneligibleBindingDoesNotFallThrough`, which makes every binding of the
+    first entrypoint ineligible and proves the later catch-all entrypoint serves
+    nothing while the first binding still answers via x's last resort.
+  - The plan's Step 4 prose stops the old probe set inside the 30s grace block,
+    but Step 1's `TestReloadReplacesProbeSet` and the plan's Review Focus both
+    require the old probes to stop immediately. The old set is therefore stopped
+    right after the hop swap; only the hop close and the rewriter unregister stay
+    in the grace block. A canceled run records no verdict, so a draining build
+    cannot look failed.
+  - The `test -f <flag>` probe of the Step 4b sketch means "eligible while the
+    file exists", which contradicts its own "create the flag (r_1 ineligible)"
+    step; the test uses `test ! -f <flag>` so the flag's presence makes the
+    binding ineligible.
+- Deferred items/limitations: the admin endpoint, the events snapshot field and
+  the console (tasks 3-6) are not wired yet; `Gateway.EntrypointHealth()` is the
+  only new entry point. Probes start during `apply`, so they already run before
+  `Gateway.Start` binds the listener, which is what the first-request test
+  relies on. Bindings that bypass `config.Load` get the 30s/5s probe defaults.
 
 ---
 
