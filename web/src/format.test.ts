@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCount } from './format';
+import { currencySymbol, formatCount } from './format';
 
 describe('formatCount', () => {
   it('formats counts with one K/M/B unit scale', () => {
@@ -20,5 +20,20 @@ describe('formatCount', () => {
     expect(formatCount(undefined)).toBe('—');
     expect(formatCount(null)).toBe('—');
     expect(formatCount(Number.NaN)).toBe('—');
+  });
+});
+
+describe('currencySymbol', () => {
+  it('maps the currencies balances use to their sign', () => {
+    expect(currencySymbol('USD')).toBe('$');
+    expect(currencySymbol('cny')).toBe('¥');
+    expect(currencySymbol('EUR')).toBe('€');
+    expect(currencySymbol('GBP')).toBe('£');
+  });
+
+  it('passes an unknown currency through and keeps an absent one empty', () => {
+    expect(currencySymbol('USDT')).toBe('USDT');
+    expect(currencySymbol()).toBe('');
+    expect(currencySymbol('')).toBe('');
   });
 });

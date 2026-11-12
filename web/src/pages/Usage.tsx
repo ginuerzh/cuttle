@@ -20,8 +20,10 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { getProviderUsage } from '../api/client';
 import type { AccountUsage, BalancePart, ProviderUsage, ProviderUsageResponse, QuotaWindow } from '../api/types';
 import { useIsMobile } from '../components/useIsMobile';
+import { BalanceChart } from '../components/BalanceChart';
+import type { ChartLine } from '../components/BalanceChart';
 import { ListPage } from '../components/ListPage';
-import { formatCount } from '../format';
+import { currencySymbol, formatCount } from '../format';
 import { translate as t } from '../i18n';
 import { formatDateTime } from '../time';
 
@@ -30,22 +32,6 @@ const RANGES = [
   { label: '7 天', value: 7 * 24 * 3_600_000 },
   { label: '30 天', value: 30 * 24 * 3_600_000 },
 ];
-
-function currencySymbol(currency?: string): string {
-  switch ((currency ?? '').toUpperCase()) {
-    case 'USD':
-      return '$';
-    case 'CNY':
-    case 'RMB':
-      return '¥';
-    case 'EUR':
-      return '€';
-    case 'GBP':
-      return '£';
-    default:
-      return currency ?? '';
-  }
-}
 
 function formatMoney(b: BalancePart): string {
   const symbol = currencySymbol(b.currency);
@@ -129,16 +115,26 @@ export function AccountRow({ account, first }: { account: AccountUsage; first: b
   );
 }
 
-function ProviderCard({
+export function ProviderCard({
   provider,
   isMobile,
   showStats,
+  from,
+  to,
 }: {
   provider: ProviderUsage;
   isMobile: boolean;
   showStats: boolean;
+  from: string;
+  to: string;
 }) {
   const local = provider.local;
+  const lines: ChartLine[] = provider.accounts.flatMap((account) =>
+    (account.trends ?? []).map((trend) => ({
+      name: account.name || account.keyPreview || '',
+      trend,
+    })),
+  );
   return (
     <Card
       size="small"
@@ -165,6 +161,12 @@ function ProviderCard({
           <Descriptions.Item label={t('输出 tokens')}>{formatCount(local?.outputTokens)}</Descriptions.Item>
           <Descriptions.Item label={t('缓存 tokens')}>{formatCount(local?.cachedTokens)}</Descriptions.Item>
         </Descriptions>
+      ) : null}
+
+      {showStats && lines.length > 0 ? (
+        <div style={{ marginTop: 12 }}>
+          <BalanceChart lines={lines} from={from} to={to} />
+        </div>
       ) : null}
 
       {provider.note ? (
@@ -284,6 +286,8 @@ export function UsagePage() {
           provider={provider}
           isMobile={isMobile}
           showStats={showStats}
+          from={data.from}
+          to={data.to}
         />
       ))}
     </ListPage>

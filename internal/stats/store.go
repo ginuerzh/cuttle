@@ -270,6 +270,15 @@ func (s *Store) migrate(fresh bool) error {
 			cached_tokens INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (bucket, gateway_key)
 		)`,
+		`CREATE TABLE IF NOT EXISTS balance_points (
+			provider TEXT NOT NULL,
+			key      TEXT NOT NULL,
+			currency TEXT NOT NULL,
+			at       INTEGER NOT NULL,
+			amount   REAL NOT NULL,
+			PRIMARY KEY (provider, key, currency, at)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_balance_points_at ON balance_points(at)`,
 		`CREATE TABLE IF NOT EXISTS request_attempts (
 			request_id TEXT NOT NULL,
 			attempt    INTEGER NOT NULL,
@@ -1345,8 +1354,12 @@ func (s *Store) Cleanup(ctx context.Context, requestsBefore, rollupsBefore, capt
 		rollupsBefore.UTC().Format(time.RFC3339)); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM key_rollups WHERE bucket < ?`,
-		rollupsBefore.UTC().Format(time.RFC3339))
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM key_rollups WHERE bucket < ?`,
+		rollupsBefore.UTC().Format(time.RFC3339)); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM balance_points WHERE at < ?`,
+		rollupsBefore.UnixMilli())
 	return err
 }
 

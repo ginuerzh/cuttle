@@ -495,6 +495,18 @@ export interface BalancePart {
   toppedUp?: number;
 }
 
+/** One reading of an account's balance: `at` is RFC 3339 UTC. */
+export interface BalanceTrendPoint {
+  at: string;
+  amount: number;
+}
+
+/** One currency's balance history for an account. */
+export interface BalanceTrend {
+  currency: string;
+  points: BalanceTrendPoint[];
+}
+
 export interface QuotaWindow {
   name: string;
   usedPercent: number;
@@ -502,11 +514,15 @@ export interface QuotaWindow {
 }
 
 export interface AccountUsage {
+  /** Configured provider-key id; empty when the upstream account matches none. */
+  keyId?: string;
   name?: string;
   keyPreview?: string;
   enabled?: boolean;
   balance?: BalancePart[];
   windows?: QuotaWindow[];
+  /** Balance readings of the requested window, one entry per currency. */
+  trends?: BalanceTrend[];
   note?: string;
   error?: string;
   stale?: boolean;

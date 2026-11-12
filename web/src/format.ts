@@ -29,3 +29,20 @@ function scale(value: number): string {
   const rounded = Math.round(value * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
+
+/** The sign a balance currency is shown with; an unknown code is kept as is. */
+export function currencySymbol(currency?: string): string {
+  switch ((currency ?? '').toUpperCase()) {
+    case 'USD':
+      return '$';
+    case 'CNY':
+    case 'RMB':
+      return '¥';
+    case 'EUR':
+      return '€';
+    case 'GBP':
+      return '£';
+    default:
+      return currency ?? '';
+  }
+}

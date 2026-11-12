@@ -1270,9 +1270,21 @@ keys shows "no API key configured".
 
 Upstream results are cached for 60 seconds. The page's refresh button forces a
 query; a failed refresh keeps the last successful amounts, marks the account
-stale and caches the failure for the same 60 seconds. Balances are not persisted
-and survive only in memory. The API returns masked key previews only; raw keys
-are never returned, logged or stored in stats.
+stale and caches the failure for the same 60 seconds. The API returns masked key
+previews only; raw keys are never returned, logged or stored in stats.
+
+Balance readings are kept so each card can draw their curve. A background
+sampler reads every enabled, supported provider with a key every
+`usage.sampleInterval` (default `10m`; `0` turns the sampler off, and the
+accepted range is 5m–24h); opening the page records its fresh readings too.
+Points are deduplicated to roughly one per five minutes, kept per provider key
+and currency for as long as the hourly rollups (`stats.retainRollups`), and are
+never backfilled: a new installation's curve starts at its first reading.
+
+```yaml
+usage:
+  sampleInterval: 10m
+```
 
 `GET /api/provider-usage` accepts `from`/`to` RFC 3339 bounds and `refresh=1`.
 Local totals are omitted with a `localError` when stats are disabled, but

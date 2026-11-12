@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -14,14 +15,30 @@ import (
 
 const usageCacheTTL = 60 * time.Second
 
+// balancePointView is one reading as the browser sees it.
+type balancePointView struct {
+	At     string  `json:"at"`
+	Amount float64 `json:"amount"`
+}
+
+// balanceTrendView is one currency's line for an account.
+type balanceTrendView struct {
+	Currency string             `json:"currency,omitempty"`
+	Points   []balancePointView `json:"points"`
+}
+
 // accountUsageView is one provider key as the browser sees it. The raw key is
-// never included; KeyPreview is the existing admin mask.
+// never included; KeyPreview is the existing admin mask. KeyID is the configured
+// provider-key id, empty when an upstream account matches no configured key.
+// Trends are the balance readings of the requested window, one per currency.
 type accountUsageView struct {
+	KeyID      string                 `json:"keyId,omitempty"`
 	Name       string                 `json:"name,omitempty"`
 	KeyPreview string                 `json:"keyPreview,omitempty"`
 	Enabled    bool                   `json:"enabled"`
 	Balance    []provider.BalancePart `json:"balance,omitempty"`
 	Windows    []provider.QuotaWindow `json:"windows,omitempty"`
+	Trends     []balanceTrendView     `json:"trends,omitempty"`
 	Note       string                 `json:"note,omitempty"`
 	Error      string                 `json:"error,omitempty"`
 	Stale      bool                   `json:"stale,omitempty"`
@@ -107,7 +124,7 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 				view = old
 				view.Cached = true
 			} else {
-				view = s.buildProviderUsage(r.Context(), p, old)
+				view = s.buildProviderUsage(r.Context(), p, old, now)
 				if r.Context().Err() == nil {
 					s.storeUsage(p.ID, view, now, generation)
 				}
@@ -122,9 +139,31 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
+	// Trends are attached after the cache decision: they are stats reads, not
+	// vendor calls, so a cached card still gets live points.
+	respTo := to
+	if statsStore != nil {
+		seriesTo := to
+		if now.After(seriesTo) {
+			seriesTo = now
+		}
+		// The series bound is exclusive, and a reading taken by this very request
+		// lands at now: step one millisecond past it so it is not filtered out.
+		seriesTo = seriesTo.Add(time.Millisecond)
+		groups, err := statsStore.BalanceSeries(r.Context(), from, seriesTo, stats.DefaultBalanceSeriesPoints)
+		if err != nil {
+			s.log.Warnf("stats: balance series: %v", err)
+		} else {
+			attachBalanceTrends(views, groups)
+		}
+		// The chart's window must cover the reading just taken, or it would be
+		// drawn outside its own scale; the totals keep the requested window.
+		respTo = seriesTo
+	}
+
 	writeJSON(w, http.StatusOK, providerUsageResponse{
 		From:       from.UTC().Format(time.RFC3339),
-		To:         to.UTC().Format(time.RFC3339),
+		To:         respTo.UTC().Format(time.RFC3339),
 		CheckedAt:  formatCheckedAt(now),
 		Totals:     totals,
 		LocalError: localErr,
@@ -132,8 +171,127 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, old providerUsageView) providerUsageView {
-	now := time.Now().UTC()
+// attachBalanceTrends hangs each stored reading on the account it belongs to.
+// Groups match by provider id and provider-key id; a key that is no longer
+// configured has no account to hang on, so its history stays undrawn.
+func attachBalanceTrends(views []providerUsageView, groups []stats.BalanceGroup) {
+	byKey := make(map[string]map[string][]balanceTrendView, len(views))
+	for _, g := range groups {
+		if g.Provider == "" || g.Key == "" || len(g.Points) == 0 {
+			continue
+		}
+		points := make([]balancePointView, 0, len(g.Points))
+		for _, p := range g.Points {
+			points = append(points, balancePointView{
+				At:     p.At.UTC().Format(time.RFC3339),
+				Amount: p.Amount,
+			})
+		}
+		if byKey[g.Provider] == nil {
+			byKey[g.Provider] = map[string][]balanceTrendView{}
+		}
+		byKey[g.Provider][g.Key] = append(byKey[g.Provider][g.Key],
+			balanceTrendView{Currency: g.Currency, Points: points})
+	}
+	for i := range views {
+		perKey := byKey[views[i].ID]
+		if perKey == nil {
+			continue
+		}
+		// The per-provider cache shares this accounts slice with the view it
+		// stored, so attaching in place would race with another request's
+		// encoder and leave a stale window's points on a cache hit.
+		views[i].Accounts = append([]accountUsageView(nil), views[i].Accounts...)
+		for j := range views[i].Accounts {
+			acc := &views[i].Accounts[j]
+			trends := perKey[acc.KeyID]
+			if len(trends) == 0 {
+				continue
+			}
+			sort.Slice(trends, func(a, b int) bool { return trends[a].Currency < trends[b].Currency })
+			acc.Trends = trends
+		}
+	}
+}
+
+// queryUsage reads one provider's accounts from upstream. A non-empty note means
+// the provider could not be queried at all; unsupported reports that the reason
+// is the provider itself rather than a transient failure. Accounts carry the
+// configured key id so callers can store readings and join history.
+func queryUsage(ctx context.Context, cfg config.Provider) (accounts []accountUsageView, note string, unsupported bool) {
+	p, err := provider.New(cfg)
+	if err != nil {
+		return nil, err.Error(), true
+	}
+	up, ok := p.(provider.UsageProvider)
+	if !ok {
+		return nil, "provider does not support usage queries", true
+	}
+	list, err := up.Usage(ctx)
+	if err != nil {
+		var ue *provider.UsageUnsupportedError
+		if errors.As(err, &ue) {
+			return nil, ue.Note, true
+		}
+		return nil, err.Error(), false
+	}
+
+	out := make([]accountUsageView, 0, len(list))
+	for _, acc := range list {
+		av := accountUsageView{
+			Name:      acc.Name,
+			Enabled:   true,
+			Balance:   acc.Balance,
+			Windows:   acc.Windows,
+			Note:      acc.Note,
+			Error:     acc.Error,
+			CheckedAt: formatCheckedAt(acc.CheckedAt),
+		}
+		if acc.KeyIndex >= 0 && acc.KeyIndex < len(cfg.Keys) {
+			key := cfg.Keys[acc.KeyIndex]
+			av.KeyID = key.ID
+			av.Name = key.Name
+			av.KeyPreview = preview(key.Key)
+			av.Enabled = key.EnabledValue()
+		}
+		out = append(out, av)
+	}
+	return out, "", false
+}
+
+// recordBalancePoints stores the readings of one provider's accounts. Only
+// accounts with a configured key and no error contribute; a store failure is
+// logged and never fails the page.
+func (s *Server) recordBalancePoints(ctx context.Context, providerID string, accounts []accountUsageView, now time.Time) {
+	if s.stats == nil || providerID == "" {
+		return
+	}
+	var points []stats.BalancePoint
+	for _, acc := range accounts {
+		if acc.Error != "" || acc.KeyID == "" {
+			continue
+		}
+		for _, b := range acc.Balance {
+			points = append(points, stats.BalancePoint{
+				Provider: providerID,
+				Key:      acc.KeyID,
+				Currency: b.Currency,
+				At:       now,
+				Amount:   b.Total,
+			})
+		}
+	}
+	if len(points) == 0 {
+		return
+	}
+	if err := s.stats.RecordBalancePoints(ctx, points); err != nil {
+		s.log.Warnf("stats: record balance readings for provider %s: %v", providerID, err)
+	}
+}
+
+// buildProviderUsage assembles one provider card from a fresh upstream read. now
+// is the request's instant, so every reading of one request shares a timestamp.
+func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, old providerUsageView, now time.Time) providerUsageView {
 	view := providerUsageView{
 		ID:        cfg.ID,
 		Name:      cfg.Name,
@@ -157,62 +315,43 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 		return view
 	}
 
-	p, err := provider.New(cfg)
-	if err != nil {
-		view.Supported = false
-		view.Note = err.Error()
-		return view
+	accounts, note, unsupported := queryUsage(ctx, cfg)
+	// CheckedAt means "an upstream read ran": a provider-level unsupported reason
+	// sets no timestamp, a transient read failure does.
+	if note == "" || !unsupported {
+		view.CheckedAt = formatCheckedAt(now)
 	}
-	up, ok := p.(provider.UsageProvider)
-	if !ok {
+	if unsupported {
 		view.Supported = false
-		view.Note = "provider does not support usage queries"
-		return view
 	}
-	view.CheckedAt = formatCheckedAt(now)
-	accounts, err := up.Usage(ctx)
-	if err != nil {
-		var ue *provider.UsageUnsupportedError
-		if errors.As(err, &ue) {
-			view.Supported = false
-			view.Note = ue.Note
-		} else {
-			view.Note = err.Error()
+	view.Note = note
+	if note != "" {
+		if accounts == nil {
+			accounts = []accountUsageView{}
 		}
+		view.Accounts = accounts
 		return view
 	}
 
-	for _, acc := range accounts {
-		keyPreview := ""
-		name := acc.Name
-		enabled := true
-		if acc.KeyIndex >= 0 && acc.KeyIndex < len(cfg.Keys) {
-			keyPreview = preview(cfg.Keys[acc.KeyIndex].Key)
-			name = cfg.Keys[acc.KeyIndex].Name
-			enabled = cfg.Keys[acc.KeyIndex].EnabledValue()
+	// Fresh readings only: the cache hit path and the stale fallback below never
+	// reach here.
+	s.recordBalancePoints(ctx, cfg.ID, accounts, now)
+
+	for i := range accounts {
+		acc := &accounts[i]
+		if acc.Error == "" {
+			continue
 		}
-		av := accountUsageView{
-			Name:       name,
-			KeyPreview: keyPreview,
-			Enabled:    enabled,
-			Balance:    acc.Balance,
-			Windows:    acc.Windows,
-			Note:       acc.Note,
-			Error:      acc.Error,
-			CheckedAt:  formatCheckedAt(acc.CheckedAt),
+		if oldAcc, ok := oldAccount(old, i); ok &&
+			(len(oldAcc.Balance) > 0 || len(oldAcc.Windows) > 0 || oldAcc.Note != "") {
+			acc.Balance = oldAcc.Balance
+			acc.Windows = oldAcc.Windows
+			acc.Note = oldAcc.Note
+			acc.CheckedAt = oldAcc.CheckedAt
+			acc.Stale = true
 		}
-		if acc.Error != "" {
-			if oldAcc, ok := oldAccount(old, acc.KeyIndex); ok &&
-				(len(oldAcc.Balance) > 0 || len(oldAcc.Windows) > 0 || oldAcc.Note != "") {
-				av.Balance = oldAcc.Balance
-				av.Windows = oldAcc.Windows
-				av.Note = oldAcc.Note
-				av.CheckedAt = oldAcc.CheckedAt
-				av.Stale = true
-			}
-		}
-		view.Accounts = append(view.Accounts, av)
 	}
+	view.Accounts = accounts
 	return view
 }
 

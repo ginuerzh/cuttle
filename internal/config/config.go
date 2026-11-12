@@ -29,6 +29,7 @@ type Config struct {
 	Gateway     Gateway      `yaml:"gateway" json:"gateway"`
 	Admin       Admin        `yaml:"admin" json:"admin"`
 	Stats       Stats        `yaml:"stats" json:"stats"`
+	Usage       Usage        `yaml:"usage,omitempty" json:"usage,omitempty"`
 	Log         Log          `yaml:"log" json:"log"`
 	Entrypoints []Entrypoint `yaml:"entrypoints" json:"entrypoints"`
 	Providers   []Provider   `yaml:"providers" json:"providers"`
@@ -75,6 +76,27 @@ type Stats struct {
 	RetainRollups  Duration `yaml:"retainRollups" json:"retainRollups"`
 	Capture        Capture  `yaml:"capture" json:"capture"`
 }
+
+// Usage holds the provider balance sampling settings.
+type Usage struct {
+	// SampleInterval is how often the background sampler reads provider
+	// balances. It is a pointer because nil (the default, 10 minutes) and an
+	// explicit 0 (sampling off; page visits still record) must be told apart.
+	SampleInterval *Duration `yaml:"sampleInterval,omitempty" json:"sampleInterval,omitempty"`
+}
+
+// Bounds of usage.sampleInterval.
+const (
+	// DefaultUsageSampleInterval applies when the key is absent.
+	DefaultUsageSampleInterval = 10 * time.Minute
+	// UsageSampleMin is the shortest accepted interval. It matches the stats
+	// store's 5-minute dedupe gap, so a denser sampler would spend vendor calls
+	// without adding history.
+	UsageSampleMin = 5 * time.Minute
+	// UsageSampleMax caps the interval so a typo cannot silence sampling for
+	// days.
+	UsageSampleMax = 24 * time.Hour
+)
 
 // Capture configures bounded request/response body capture.
 type Capture struct {
@@ -588,6 +610,18 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Stats.Capture.Retain == 0 {
 		c.Stats.Capture.Retain = Duration(24 * time.Hour)
+	}
+	if c.Usage.SampleInterval == nil {
+		v := Duration(DefaultUsageSampleInterval)
+		c.Usage.SampleInterval = &v
+	}
+	switch v := time.Duration(*c.Usage.SampleInterval); {
+	case v < 0:
+		*c.Usage.SampleInterval = 0
+	case v > 0 && v < UsageSampleMin:
+		*c.Usage.SampleInterval = Duration(UsageSampleMin)
+	case v > UsageSampleMax:
+		*c.Usage.SampleInterval = Duration(UsageSampleMax)
 	}
 	for i := range c.Providers {
 		p := &c.Providers[i]

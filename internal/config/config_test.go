@@ -2381,3 +2381,31 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyDefaultsUsageSampleInterval(t *testing.T) {
+	d := func(v time.Duration) *Duration { x := Duration(v); return &x }
+	cases := []struct {
+		name string
+		in   *Duration
+		want time.Duration
+	}{
+		{"absent defaults to 10m", nil, 10 * time.Minute},
+		{"zero disables sampling", d(0), 0},
+		{"negative is off", d(-time.Minute), 0},
+		{"below the floor clamps to 5m", d(time.Minute), 5 * time.Minute},
+		{"above the ceiling clamps to 24h", d(48 * time.Hour), 24 * time.Hour},
+		{"in range is kept", d(30 * time.Minute), 30 * time.Minute},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{Usage: Usage{SampleInterval: tc.in}}
+			ApplyDefaults(cfg)
+			if cfg.Usage.SampleInterval == nil {
+				t.Fatal("sampleInterval is nil after defaults")
+			}
+			if got := time.Duration(*cfg.Usage.SampleInterval); got != tc.want {
+				t.Fatalf("sampleInterval = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

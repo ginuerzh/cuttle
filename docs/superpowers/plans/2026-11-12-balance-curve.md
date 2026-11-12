@@ -70,7 +70,7 @@ Vitest, inline SVG (no chart library).
   `PUT /api/config` keeps the stored `usage` when the body omits it (the console
   never sends it), while an explicit `{"usage":{"sampleInterval":"0"}}` wins.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestApplyDefaultsUsageSampleInterval(t *testing.T) {
@@ -102,12 +102,12 @@ func TestApplyDefaultsUsageSampleInterval(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `GOWORK=off go test ./internal/config -run TestApplyDefaultsUsageSampleInterval -count=1`
 Expected: FAIL with `undefined: Usage`.
 
-- [ ] **Step 3: Add the field, the type and the defaulting**
+- [x] **Step 3: Add the field, the type and the defaulting**
 
 Add to `Config` after `Stats`:
 
@@ -134,12 +134,12 @@ case v > UsageSampleMax:
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `GOWORK=off go test ./internal/config -run TestApplyDefaultsUsageSampleInterval -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Preserve the setting across an admin save**
+- [x] **Step 5: Preserve the setting across an admin save**
 
 `handlePutConfig` decodes a fresh `config.Config`, so a console save would drop
 `usage` and reset the interval to the 10 m default (turning an explicit `0` back
@@ -160,19 +160,19 @@ body back with the CSRF token, expect `204`, and assert the stored interval is
 still `0`. Then PUT a body carrying `{"usage":{"sampleInterval":"20m"}}` and
 assert it became 20 m.
 
-- [ ] **Step 6: Run the config and admin tests**
+- [x] **Step 6: Run the config and admin tests**
 
 Run: `GOWORK=off go test ./internal/config ./internal/admin -count=1`
 Expected: PASS, including `example.yaml` still loading.
 
-- [ ] **Step 7: Document the knob in `README.md`**
+- [x] **Step 7: Document the knob in `README.md`**
 
 Under the provider-usage / Usage page section, one paragraph: what the curve is,
 that readings come from a background sampler every `usage.sampleInterval`
 (default `10m`, `0` disables it, accepted range 5m–24h), that page visits record
 too, and that history starts when the feature is first run.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/config/config.go internal/config/config_test.go \
@@ -181,12 +181,12 @@ git commit -m "feat(config): add usage.sampleInterval"
 ```
 
 **Implementation record — Task 1**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `f50a3633`)
+- Files changed: `internal/config/config.go` (`Usage` type, `Usage` field on `Config`, three bound constants, `applyDefaults` normalization), `internal/config/config_test.go` (`TestApplyDefaultsUsageSampleInterval`), `internal/admin/handlers.go` (`handlePutConfig` preserves an absent `usage`), `internal/admin/usage_test.go` (`TestPutConfigPreservesUsageSampling`), `README.md` (Usage section: the curve, the sampler and the knob; dropped the "not persisted" claim).
+- Tests run: RED `GOWORK=off go test ./internal/config -run TestApplyDefaultsUsageSampleInterval -count=1` → `undefined: Usage`; GREEN same → ok. RED `GOWORK=off go test ./internal/admin -run TestPutConfigPreservesUsageSampling -count=1` → `sampleInterval = 0x…, want the stored 0`; GREEN same → ok. Gate `GOWORK=off go test ./internal/config ./internal/admin -count=1` → both ok.
+- Review findings/fixes: none in-task (native execution; whole-branch review follows). Ruling: the README documents the finished behaviour while the sampler lands in Task 4 — the branch ships as a whole; cost if wrong: one intermediate commit reads slightly ahead of the code.
+- Deferred: none.
 
 ---
 
@@ -208,7 +208,7 @@ git commit -m "feat(config): add usage.sampleInterval"
   - unexported `mergeBalancePoint(pts []BalancePoint, next BalancePoint) []BalancePoint`
   - table `balance_points(provider, key, currency, at INTEGER PRIMARY KEY, amount REAL)` with `idx_balance_points_at(at)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestMergeBalancePointRules(t *testing.T) {
@@ -288,12 +288,12 @@ records a point at `now-48h` and one at `now`, runs
 `s.Cleanup(ctx, cutoff, cutoff, cutoff)`, and asserts only the recent point
 survives `BalanceSeries(now-72h, now+time.Minute, 10)`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/stats -run 'TestMergeBalancePointRules|TestBalanceSeriesDownsamples|TestCleanupDeletesBalancePoints' -count=1`
 Expected: FAIL with `undefined: BalancePoint`.
 
-- [ ] **Step 3: Implement the table, the merge and the series**
+- [x] **Step 3: Implement the table, the merge and the series**
 
 In `internal/stats/store.go` add to the schema statement list:
 
@@ -337,12 +337,12 @@ provider/key/currency/at, groups, and keeps the last reading per bucket of
 `width = max(1ms, (to-from)/maxPoints)` with `maxPoints` defaulting to
 `DefaultBalanceSeriesPoints` when `<= 0`.
 
-- [ ] **Step 4: Run the stats package tests**
+- [x] **Step 4: Run the stats package tests**
 
 Run: `GOWORK=off go test ./internal/stats -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/stats/balance.go internal/stats/balance_test.go internal/stats/store.go
@@ -350,12 +350,12 @@ git commit -m "feat(stats): store provider balance readings"
 ```
 
 **Implementation record — Task 2**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `5c873e8e`)
+- Files changed: created `internal/stats/balance.go` (`BalancePoint`, `BalanceGroup`, `mergeBalancePoint`, `RecordBalancePoints`, `BalanceSeries`, `balancePointGap`, `DefaultBalanceSeriesPoints`), `internal/stats/balance_test.go`; modified `internal/stats/store.go` (schema: `balance_points` + `idx_balance_points_at`; `Cleanup` deletes points older than `rollupsBefore`).
+- Tests run: RED `GOWORK=off go test ./internal/stats -run 'TestMergeBalancePointRules|TestBalanceSeriesDownsamples|TestCleanupDeletesBalancePoints' -count=1` → `undefined: BalancePoint`; GREEN same → ok. Gate `GOWORK=off go test ./internal/stats -count=1` → ok (23.0s), `go vet ./internal/stats` → clean.
+- Review findings/fixes: none in-task. Merge rule follows the spec (gap measured against the second-to-last point, rises always appended, flat runs keep one sliding point); retention only in `Cleanup`.
+- Deferred: none.
 
 ---
 
@@ -372,7 +372,7 @@ git commit -m "feat(stats): store provider balance readings"
   - `(*Server).recordBalancePoints(ctx context.Context, providerID string, accounts []accountUsageView, now time.Time)`
   - `accountUsageView.KeyID string` (`json:"keyId,omitempty"`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestProviderUsageRecordsBalancePoints(t *testing.T) {
@@ -414,12 +414,12 @@ func TestProviderUsageRecordsBalancePoints(t *testing.T) {
 Add `TestProviderUsageRecordsNothingForFailedAccount`: a vendor replying `500`
 must leave `BalanceSeries` empty, while the card keeps today's error note.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestProviderUsageRecords' -count=1`
 Expected: FAIL (`srv.stats` has no readings — `len(groups) == 0`).
 
-- [ ] **Step 3: Extract `queryUsage` and record on the fresh path**
+- [x] **Step 3: Extract `queryUsage` and record on the fresh path**
 
 Move the body of `buildProviderUsage` from `provider.New` through account
 mapping into `queryUsage`, keeping the existing note/supported semantics exactly
@@ -445,12 +445,12 @@ is built from fresh accounts — after `queryUsage`, before the stale fallback
 account's `KeyID`, skips accounts with an empty `KeyID`, and logs a store error
 at warn without failing the request.
 
-- [ ] **Step 4: Run the admin package tests**
+- [x] **Step 4: Run the admin package tests**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS, including every pre-existing `TestProviderUsage*` case.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/admin/handlers_usage.go internal/admin/usage_test.go
@@ -458,12 +458,12 @@ git commit -m "refactor(admin): share the usage query and record fresh balances"
 ```
 
 **Implementation record — Task 3**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `7d014006`)
+- Files changed: `internal/admin/handlers_usage.go` (`accountUsageView.KeyID`; `queryUsage` extraction; `buildProviderUsage` now takes the request's `now` and records fresh readings; new `(*Server).recordBalancePoints`), `internal/admin/usage_test.go` (`TestProviderUsageRecordsBalancePoints`, `TestProviderUsageRecordsNothingForFailedAccount`).
+- Tests run: RED `GOWORK=off go test ./internal/admin -run TestProviderUsageRecords -count=1` → `groups = []`; GREEN same → ok. Gate `GOWORK=off go test ./internal/admin -count=1` → ok (16.9s), `go vet ./internal/admin` → clean.
+- Review findings/fixes: preserved the old `CheckedAt` semantics — a provider-level unsupported reason still sets no timestamp while a transient read failure does (`note == "" || !unsupported`). Stale fallback now indexes positionally (`oldAccount(old, i)`), which equals the upstream `KeyIndex` order every provider adapter emits; the pre-existing `TestProviderUsageFailureKeepsLastGood` passes.
+- Deferred: none.
 
 ---
 
@@ -481,7 +481,7 @@ git commit -m "refactor(admin): share the usage query and record fresh balances"
   - `(*Server).SampleUsageOnce(ctx context.Context, now time.Time)`
   - `(*Server).usageSampleInterval() time.Duration` (0 when sampling is off)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestSampleUsageOnceRecordsPoints(t *testing.T) {
@@ -520,12 +520,12 @@ calls), `TestUsageSamplerOffWhenIntervalZero` (interval 0, run
 `StartUsageSampler` for ~50 ms, assert zero vendor calls), and
 `TestSampleUsageOnceIgnoresFailedRead` (vendor 500 → no points).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestSampleUsageOnce|TestUsageSampler' -count=1`
 Expected: FAIL with `srv.SampleUsageOnce undefined`.
 
-- [ ] **Step 3: Implement the sampler and wire it in `main.go`**
+- [x] **Step 3: Implement the sampler and wire it in `main.go`**
 
 `usageSampleInterval` reads `srv.cfg` under `srv.mu` and returns `0` for a nil
 pointer or a non-positive value.
@@ -540,17 +540,17 @@ and re-read; otherwise wait the interval, then `SampleUsageOnce(ctx, time.Now())
 Start it in `main.go` beside `adm.StartProbes(probeCtx)` with the same context.
 Log the effective interval once at startup (`info`) and each time it changes.
 
-- [ ] **Step 4: Run the admin package tests**
+- [x] **Step 4: Run the admin package tests**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Build the binary to prove the wiring compiles**
+- [x] **Step 5: Build the binary to prove the wiring compiles**
 
 Run: `GOWORK=off go build ./...`
 Expected: success.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/admin/sampler.go internal/admin/sampler_test.go main.go
@@ -558,12 +558,12 @@ git commit -m "feat(admin): sample provider balances in the background"
 ```
 
 **Implementation record — Task 4**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `6158e115`)
+- Files changed: created `internal/admin/sampler.go` (`StartUsageSampler`, `SampleUsageOnce`, `usageSampleInterval`, `usageSampleIdle`), `internal/admin/sampler_test.go` (4 tests); modified `main.go` (starts the sampler on the probes' context).
+- Tests run: RED `GOWORK=off go test ./internal/admin -run 'TestSampleUsageOnce|TestUsageSampler' -count=1` → `srv.SampleUsageOnce undefined`; GREEN same → ok. Gate `GOWORK=off go test ./internal/admin -count=1` → ok (19.8s); `GOWORK=off go build ./...` → ok.
+- Review findings/fixes: `SampleUsageOnce` returns early when the stats store is nil and when `s.cfg` is nil; the interval loop re-reads the config every round (SIGHUP applies), logs once per effective value, and idles 30 s while off without touching a vendor.
+- Deferred: none.
 
 ---
 
@@ -580,7 +580,7 @@ git commit -m "feat(admin): sample provider balances in the background"
   - `balanceTrendView{Currency string; Points []balancePointView}`
   - `balancePointView{At string; Amount float64}` — `at` is RFC3339 UTC, points ascending.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestProviderUsageTrends(t *testing.T) {
@@ -645,12 +645,12 @@ Also add:
   package) set `srv.stats = nil`, request the endpoint, assert `200`, the cards
   still present, and no `trends` key anywhere in the body.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestProviderUsageTrend' -count=1`
 Expected: FAIL (`KeyID`/`Trends` undefined or empty).
 
-- [ ] **Step 3: Implement the trend attachment**
+- [x] **Step 3: Implement the trend attachment**
 
 In `handleProviderUsage`, after `wg.Wait()` and with the same `statsStore`
 snapshot:
@@ -677,12 +677,12 @@ A series error is logged at warn and leaves trends empty; it never fails the
 request. Trend attachment happens for cached and fresh views alike (the cache
 holds only the card).
 
-- [ ] **Step 4: Run the admin package tests**
+- [x] **Step 4: Run the admin package tests**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/admin/handlers_usage.go internal/admin/usage_test.go
@@ -690,12 +690,12 @@ git commit -m "feat(admin): return balance trends with provider usage"
 ```
 
 **Implementation record — Task 5**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `6e38996c`)
+- Files changed: `internal/admin/handlers_usage.go` (`balanceTrendView`/`balancePointView`, `accountUsageView.Trends`, `attachBalanceTrends`, series attachment in `handleProviderUsage` with `to = max(to, now) + 1ms`), `internal/admin/usage_test.go` (`TestProviderUsageTrends`, `TestProviderUsageTrendIncludesFreshReading`, `TestProviderUsageTrendsOnCacheHit`, `TestProviderUsageTrendSkipsUnknownKey`, `TestProviderUsageNoTrendsWithoutStats`).
+- Tests run: RED `GOWORK=off go test ./internal/admin -run TestProviderUsageTrend -count=1` → `a.Trends undefined`; GREEN same → ok. Gate `GOWORK=off go test ./internal/admin -count=1` → ok (17.2s), `go vet ./internal/admin` → clean.
+- Review findings/fixes: the series bound is exclusive, so the handler steps 1 ms past `max(to, now)`; that is what makes the reading a request just took appear in its own response (`TestProviderUsageTrendIncludesFreshReading`). Trends sort by currency for a stable payload; deleted keys simply have no account to attach to.
+- Deferred: none.
 
 ---
 
@@ -726,7 +726,7 @@ git commit -m "feat(admin): return balance trends with provider usage"
   - `BalanceChart.tsx`: `export interface ChartLine { name: string; trend: BalanceTrend }`
     and `export function BalanceChart({ lines, from, to }: { lines: ChartLine[]; from: string; to: string })`
 
-- [ ] **Step 1: Write the failing math and component tests**
+- [x] **Step 1: Write the failing math and component tests**
 
 `balanceLine.test.ts`:
 
@@ -756,12 +756,12 @@ against a peak of 100 sits in the bottom tenth of the SVG), the empty state
 「余额历史不足，采样中」 when every line has fewer than two points, and an
 `en-US` render with no CJK.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd web && npx vitest run src/charts/balanceLine.test.ts src/components/BalanceChart.test.tsx`
 Expected: FAIL (modules not found).
 
-- [ ] **Step 3: Implement the types, the math and the component**
+- [x] **Step 3: Implement the types, the math and the component**
 
 `monotonePath` is Fritsch–Carlson: slopes per segment, tangents clamped so the
 curve never leaves the local interval (`m[i] = 0` at a sign change, otherwise
@@ -785,12 +785,12 @@ export interface BalanceTrend { currency: string; points: BalanceTrendPoint[] }
 
 `AccountUsage` gains `keyId?: string` and `trends?: BalanceTrend[]`.
 
-- [ ] **Step 4: Run the web tests and type check**
+- [x] **Step 4: Run the web tests and type check**
 
 Run: `cd web && npx vitest run src/charts/balanceLine.test.ts src/components/BalanceChart.test.tsx && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/api/types.ts web/src/format.ts web/src/format.test.ts \
@@ -800,12 +800,12 @@ git commit -m "feat(web): balance curve math and chart component"
 ```
 
 **Implementation record — Task 6**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `e7b2a420`)
+- Files changed: created `web/src/charts/balanceLine.ts` (`trendPoints`, `trendMax`, `trendGeometry`, `monotonePath`), `web/src/charts/balanceLine.test.ts`, `web/src/components/BalanceChart.tsx` (`ChartLine`, `BalanceChart`), `web/src/components/BalanceChart.test.tsx`; modified `web/src/api/types.ts` (`BalanceTrendPoint`, `BalanceTrend`, `AccountUsage.keyId/trends`), `web/src/format.ts` + `format.test.ts` (`currencySymbol` moved out of the page), `web/src/pages/Usage.tsx` (imports it), `web/src/locales/en-US.ts` (two new strings).
+- Tests run: RED `npx vitest run src/charts/balanceLine.test.ts src/components/BalanceChart.test.tsx src/format.test.ts` → modules/`currencySymbol` missing; GREEN same → 19 tests pass. Gate `npx tsc --noEmit` → clean, `npm test` → 51 files / 452 tests pass.
+- Review findings/fixes: Ruling — the `en-US` entries for `余额曲线`/`余额历史不足，采样中` land here, not in Task 7, because this task's English-render test needs them; cost if wrong: none, Task 7 only consumes them. The chart emits two paths per line (`balance` stroked, `balance-area` filled) so the count assertions stay meaningful. Legend labels degrade to the name alone when a currency has no symbol.
+- Deferred: none.
 
 ---
 
@@ -821,7 +821,7 @@ git commit -m "feat(web): balance curve math and chart component"
 - Produces: no new exports; `ProviderCard` gains `from` and `to` props (RFC3339
   from the response) and renders the chart only while 统计 is on.
 
-- [ ] **Step 1: Write the failing page test**
+- [x] **Step 1: Write the failing page test**
 
 ```ts
 it('draws a balance curve per account trend', () => {
@@ -852,12 +852,12 @@ it('draws a balance curve per account trend', () => {
 Plus: a `showStats: false` render contains no chart, and an `en-US` render of
 the same card matches no CJK.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd web && npx vitest run src/pages/Usage.test.ts`
 Expected: FAIL (`ProviderCard` does not accept `from`/`to`, no chart in the HTML).
 
-- [ ] **Step 3: Wire the chart and translate the strings**
+- [x] **Step 3: Wire the chart and translate the strings**
 
 `ProviderCard` builds `lines` from
 `provider.accounts.flatMap((a) => (a.trends ?? []).map((trend) => ({ name: a.name || a.keyPreview || '', trend })))`
@@ -868,17 +868,17 @@ isolation, as `AccountRow` already is. `UsagePage` passes `data.from`/`data.to`
 down. Add the `en-US` entries for `余额曲线` and `余额历史不足，采样中` (and any
 other new source string).
 
-- [ ] **Step 4: Run the full web gate and rebuild the bundle**
+- [x] **Step 4: Run the full web gate and rebuild the bundle**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS; `internal/admin/dist` refreshed.
 
-- [ ] **Step 5: Run the full Go gate**
+- [x] **Step 5: Run the full Go gate**
 
 Run: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/pages/Usage.tsx web/src/pages/Usage.test.ts web/src/locales/en-US.ts
@@ -886,9 +886,56 @@ git commit -m "feat(web): draw a balance curve on each provider card"
 ```
 
 **Implementation record — Task 7**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `852bacb2`)
+- Files changed: `web/src/pages/Usage.tsx` (`ProviderCard` exported, gains `from`/`to`, builds `ChartLine[]` from account trends, renders `BalanceChart` under the `Descriptions` while 统计 is on; `UsagePage` passes `data.from`/`data.to`), `web/src/pages/Usage.test.ts` (three tests: curve drawn, no curve with statistics off, English render without CJK). No locale change needed — Task 6 already added both strings.
+- Tests run: RED `npx vitest run src/pages/Usage.test.ts` → `Element type is invalid … got: undefined` (ProviderCard not exported); GREEN same → 6 tests pass. Web gate `npm test` → 51 files / 455 tests, `npx tsc --noEmit` → clean, `npm run build` → built (bundle refreshed in `internal/admin/dist`). Go gate `GOWORK=off go build ./... && go vet ./... && go test ./... -count=1` → all packages ok (`internal/admin` 20.0s).
+- Review findings/fixes: none beyond the export needed by the test; the chart sits between the statistics block and the account rows so the number and its line read together.
+- Deferred: the v1 scope's follow-ups stay deferred by design (quota-window percentage curves, runs-out projection, low-balance alerts).
+
+---
+
+## Final review fix pass (2026-11-12)
+
+A fresh reviewer read `f50a3633..0ec3ed1f` and found two blockers, one Important
+defect and a set of minors. All four Critical/Important findings were fixed in
+one pass, each with a test that failed first:
+
+- **Critical — the sampler blocked startup.** `StartUsageSampler` looped
+  synchronously while `main.go` calls it plainly, so the admin server, its
+  goroutine and the SIGHUP loop never ran whenever `admin.passwordHash` was set.
+  Fixed by spawning the loop inside the method, like `StartProbes`.
+  `TestStartUsageSamplerReturnsImmediately` RED→GREEN. Verified on the built
+  binary: `serve` logs "admin API listening" and `GET /api/health` answers 200.
+- **Critical — trend attachment mutated the usage cache's accounts slice.** A
+  data race with another request's encoder and a stale window on a later cache
+  hit. Fixed by cloning the accounts slice before attaching.
+  `TestProviderUsageTrendsDoNotTouchTheCache` RED→GREEN (the test was also run
+  against the un-fixed code to prove it fails); `-race` over the usage/sampler
+  tests is clean.
+- **Important — the response echoed the requested `to`, not the extended series
+  bound**, so the reading the request just took sat outside the chart's window
+  and `trendMax` scaled the line without it (a top-up drew at the old peak).
+  Fixed by echoing `max(to, now)+1ms`.
+  `TestProviderUsageTrendToCoversFreshReading` RED→GREEN.
+- **Important (re-graded from Minor) — the sampler sent disabled keys
+  upstream** every interval. Fixed by filtering to enabled keys and skipping a
+  provider with none; the page still lists disabled keys on purpose.
+  `TestSampleUsageOnceSkipsDisabledKeys` RED→GREEN.
+- Minor also fixed while in that file: `accounts` is `[]`, never `null`, on the
+  provider-note path.
+
+**Deferred minors** (ledgered, not fixed): `checkedAt` is no longer set on the
+`UsageUnsupportedError` path; the sampler waits one interval before its first
+pass; the `usage.sampleInterval` clamp is silent (README documents the range);
+`BalanceSeries` can return `maxPoints+1` for a non-divisible window; a reading
+with an empty currency renders `… 11.12 undefined` in a tooltip; no test for
+"a failed stats write does not fail the request" and `-race` is not in the
+documented Go gate; `AGENTS.md` invariants do not yet mention `balance_points`,
+`usage.sampleInterval`, the sampler or the new payload fields.
+
+**Pre-existing failure observed, not caused by this branch:**
+`CGO_ENABLED=1 GOWORK=off go test -race ./internal/admin` reports a data race at
+`events_test.go:428` vs `handlers_events.go:192` (`srv.wsMaxAge` written by the
+test while the WebSocket handler reads it). Neither file is touched by this
+branch (`git diff --stat f50a3633..HEAD --` them is empty).
