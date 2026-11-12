@@ -519,9 +519,9 @@ git commit -m "feat(admin): expose entrypoint binding health"
 **Implementation record (fill in after the task is complete)**
 - Date/status: 2026-11-12 / done. HTTP surface only: the data plane's
   `Gateway.EntrypointHealth()` is consumed, not changed.
-- Repository + commit: `cuttle` — see the follow-up docs commit that records
-  this SHA (`feat(admin): expose entrypoint binding health`); the code and this
-  record share that commit, so the SHA cannot be written here.
+- Repository + commit: `cuttle` — `33c98a71` `feat(admin): expose entrypoint
+  binding health`, which carries this task's code, tests and record. A
+  follow-up `docs: record task 3 commit` commit writes this SHA only.
 - Files changed:
   - `internal/admin/server.go`: `entrypointHealth func() []health.Entrypoint`
     field, wired in `New` from the reloader's `EntrypointHealth()` when it
