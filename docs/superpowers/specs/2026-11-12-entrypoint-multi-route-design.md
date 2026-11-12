@@ -246,8 +246,9 @@ func (s *probeSet) Snapshot() []health.Entrypoint
   success, info on transition only (eligible ↔ ineligible), never the command
   or its full output.
 - Lifecycle: `buildHopGroup` returns the unstarted `*probeSet`; `apply` starts
-  it after the hop swap and keeps it on the `Gateway`; the 30s grace close
-  (`gateway.go`) stops the previous one together with the rewriters. A build
+  it after the hop swap and stops the previous set immediately, so an old
+  runner never marks a hop that no new request uses; only the old hop close and
+  the rewriter unregister stay in the 30s grace window (`gateway.go`). A build
   error never starts a probe set.
 - Binding eligibility is written **only** by this runner. Node 429/5xx marking
   (`failCodes`) and its marker stay untouched, so `dead` badges keep meaning

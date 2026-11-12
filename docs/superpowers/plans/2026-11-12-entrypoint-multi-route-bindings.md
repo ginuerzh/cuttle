@@ -277,7 +277,7 @@ git commit -m "feat(config)!: bind entrypoints to an ordered list of routes"
 
 ```go
 func TestProbeRunnerMarksEveryVariant(t *testing.T)
-// Two entries with markers, command `test -f <flag>`; probeOnce: both marked.
+// Two entries with markers, command `test ! -f <flag>`; probeOnce: both marked.
 // Create the flag, probeOnce: both reset.
 
 func TestProbeRunnerEnvironment(t *testing.T)
@@ -326,7 +326,7 @@ Expected: FAIL (`undefined: probeSet`).
 - [ ] **Step 4: Wire the set through the build and the gateway**
 
 - `buildHopGroup` returns `*probeSet`, creating it before the entrypoint loop, calling `add` for each binding with that binding's variant entries, and leaving it unstarted.
-- `Gateway` gains `probes *probeSet`. `apply`: after the hop swap and `g.forwarder.Forward(group)`, call `probes.Start(context.Background())`; in the existing `time.AfterFunc(30*time.Second, ...)` grace block, call `oldProbes.Stop()` beside the old hop close and rewriter unregister. A failed build starts nothing.
+- `Gateway` gains `probes *probeSet`. `apply`: after the hop swap, call `probes.Start(context.Background())` and `oldProbes.Stop()` immediately — a previous set must never keep marking a hop that no new request uses. Only the old hop close and the rewriter unregister stay in the existing `time.AfterFunc(30*time.Second, ...)` grace block. A failed build starts nothing.
 - `Gateway.EntrypointHealth()` returns `g.probes.Snapshot()` under `g.mu`, nil-safe.
 
 - [ ] **Step 4b: Add the end-to-end switch test**
@@ -336,7 +336,7 @@ Expected: FAIL (`undefined: probeSet`).
 ```go
 func TestEntrypointSwitchesRouteByProbe(t *testing.T)
 // Two routes over two captureUpstream servers, bindings [r_1(probe), r_2(none)].
-// Probe command: `test -f <flag>`. Start gateway with interval 20ms; first
+// Probe command: `test ! -f <flag>`. Start gateway with interval 20ms; first
 // request hits upstream 1. Create the flag (r_1 ineligible); poll requests until
 // upstream 2 is hit (2s budget). Remove the flag; poll until upstream 1 is hit
 // again. Assert no probe ever reached an upstream (probe hit counts stay 0) and
