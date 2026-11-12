@@ -12,36 +12,39 @@ import (
 // the sampler is off, so enabling it through SIGHUP needs no restart.
 const usageSampleIdle = 30 * time.Second
 
-// StartUsageSampler reads provider balances in the background until ctx is done.
-// The interval is re-read from the config every round, so a reload applies
-// without a restart; 0 idles without calling any vendor.
+// StartUsageSampler runs the balance reader in the background until ctx is done,
+// like StartProbes: it returns immediately. The interval is re-read from the
+// config every round, so a reload applies without a restart; 0 idles without
+// calling any vendor.
 func (s *Server) StartUsageSampler(ctx context.Context) {
-	logged := time.Duration(-1)
-	for {
-		interval := s.usageSampleInterval()
-		if interval != logged {
-			if interval > 0 {
-				s.log.Infof("usage: sampling provider balances every %s", interval)
-			} else {
-				s.log.Infof("usage: balance sampling is off; page visits still record")
+	go func() {
+		logged := time.Duration(-1)
+		for {
+			interval := s.usageSampleInterval()
+			if interval != logged {
+				if interval > 0 {
+					s.log.Infof("usage: sampling provider balances every %s", interval)
+				} else {
+					s.log.Infof("usage: balance sampling is off; page visits still record")
+				}
+				logged = interval
 			}
-			logged = interval
+			wait := interval
+			if wait <= 0 {
+				wait = usageSampleIdle
+			}
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			if interval > 0 {
+				s.SampleUsageOnce(ctx, time.Now())
+			}
 		}
-		wait := interval
-		if wait <= 0 {
-			wait = usageSampleIdle
-		}
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
-		if interval > 0 {
-			s.SampleUsageOnce(ctx, time.Now())
-		}
-	}
+	}()
 }
 
 // usageSampleInterval is the configured sampling interval; 0 means off.
@@ -78,9 +81,19 @@ func (s *Server) SampleUsageOnce(ctx context.Context, now time.Time) {
 		if supported, _ := provider.UsageSupport(p.Type); !supported {
 			continue
 		}
-		if len(p.Keys) == 0 {
+		// A disabled key never funds a request, so the sampler must not keep
+		// sending it upstream. Filtering also keeps KeyIndex mapping inside the
+		// filtered slice. The page keeps listing disabled keys on purpose.
+		keys := make([]config.ProviderKey, 0, len(p.Keys))
+		for _, k := range p.Keys {
+			if k.EnabledValue() {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) == 0 {
 			continue
 		}
+		p.Keys = keys
 		accounts, _, _ := queryUsage(ctx, p)
 		s.recordBalancePoints(ctx, p.ID, accounts, now)
 	}

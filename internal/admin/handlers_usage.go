@@ -141,6 +141,7 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 
 	// Trends are attached after the cache decision: they are stats reads, not
 	// vendor calls, so a cached card still gets live points.
+	respTo := to
 	if statsStore != nil {
 		seriesTo := to
 		if now.After(seriesTo) {
@@ -155,11 +156,14 @@ func (s *Server) handleProviderUsage(w http.ResponseWriter, r *http.Request) {
 		} else {
 			attachBalanceTrends(views, groups)
 		}
+		// The chart's window must cover the reading just taken, or it would be
+		// drawn outside its own scale; the totals keep the requested window.
+		respTo = seriesTo
 	}
 
 	writeJSON(w, http.StatusOK, providerUsageResponse{
 		From:       from.UTC().Format(time.RFC3339),
-		To:         to.UTC().Format(time.RFC3339),
+		To:         respTo.UTC().Format(time.RFC3339),
 		CheckedAt:  formatCheckedAt(now),
 		Totals:     totals,
 		LocalError: localErr,
@@ -194,6 +198,10 @@ func attachBalanceTrends(views []providerUsageView, groups []stats.BalanceGroup)
 		if perKey == nil {
 			continue
 		}
+		// The per-provider cache shares this accounts slice with the view it
+		// stored, so attaching in place would race with another request's
+		// encoder and leave a stale window's points on a cache hit.
+		views[i].Accounts = append([]accountUsageView(nil), views[i].Accounts...)
 		for j := range views[i].Accounts {
 			acc := &views[i].Accounts[j]
 			trends := perKey[acc.KeyID]
@@ -318,6 +326,9 @@ func (s *Server) buildProviderUsage(ctx context.Context, cfg config.Provider, ol
 	}
 	view.Note = note
 	if note != "" {
+		if accounts == nil {
+			accounts = []accountUsageView{}
+		}
 		view.Accounts = accounts
 		return view
 	}

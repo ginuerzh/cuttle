@@ -892,3 +892,50 @@ git commit -m "feat(web): draw a balance curve on each provider card"
 - Tests run: RED `npx vitest run src/pages/Usage.test.ts` → `Element type is invalid … got: undefined` (ProviderCard not exported); GREEN same → 6 tests pass. Web gate `npm test` → 51 files / 455 tests, `npx tsc --noEmit` → clean, `npm run build` → built (bundle refreshed in `internal/admin/dist`). Go gate `GOWORK=off go build ./... && go vet ./... && go test ./... -count=1` → all packages ok (`internal/admin` 20.0s).
 - Review findings/fixes: none beyond the export needed by the test; the chart sits between the statistics block and the account rows so the number and its line read together.
 - Deferred: the v1 scope's follow-ups stay deferred by design (quota-window percentage curves, runs-out projection, low-balance alerts).
+
+---
+
+## Final review fix pass (2026-11-12)
+
+A fresh reviewer read `f50a3633..0ec3ed1f` and found two blockers, one Important
+defect and a set of minors. All four Critical/Important findings were fixed in
+one pass, each with a test that failed first:
+
+- **Critical — the sampler blocked startup.** `StartUsageSampler` looped
+  synchronously while `main.go` calls it plainly, so the admin server, its
+  goroutine and the SIGHUP loop never ran whenever `admin.passwordHash` was set.
+  Fixed by spawning the loop inside the method, like `StartProbes`.
+  `TestStartUsageSamplerReturnsImmediately` RED→GREEN. Verified on the built
+  binary: `serve` logs "admin API listening" and `GET /api/health` answers 200.
+- **Critical — trend attachment mutated the usage cache's accounts slice.** A
+  data race with another request's encoder and a stale window on a later cache
+  hit. Fixed by cloning the accounts slice before attaching.
+  `TestProviderUsageTrendsDoNotTouchTheCache` RED→GREEN (the test was also run
+  against the un-fixed code to prove it fails); `-race` over the usage/sampler
+  tests is clean.
+- **Important — the response echoed the requested `to`, not the extended series
+  bound**, so the reading the request just took sat outside the chart's window
+  and `trendMax` scaled the line without it (a top-up drew at the old peak).
+  Fixed by echoing `max(to, now)+1ms`.
+  `TestProviderUsageTrendToCoversFreshReading` RED→GREEN.
+- **Important (re-graded from Minor) — the sampler sent disabled keys
+  upstream** every interval. Fixed by filtering to enabled keys and skipping a
+  provider with none; the page still lists disabled keys on purpose.
+  `TestSampleUsageOnceSkipsDisabledKeys` RED→GREEN.
+- Minor also fixed while in that file: `accounts` is `[]`, never `null`, on the
+  provider-note path.
+
+**Deferred minors** (ledgered, not fixed): `checkedAt` is no longer set on the
+`UsageUnsupportedError` path; the sampler waits one interval before its first
+pass; the `usage.sampleInterval` clamp is silent (README documents the range);
+`BalanceSeries` can return `maxPoints+1` for a non-divisible window; a reading
+with an empty currency renders `… 11.12 undefined` in a tooltip; no test for
+"a failed stats write does not fail the request" and `-race` is not in the
+documented Go gate; `AGENTS.md` invariants do not yet mention `balance_points`,
+`usage.sampleInterval`, the sampler or the new payload fields.
+
+**Pre-existing failure observed, not caused by this branch:**
+`CGO_ENABLED=1 GOWORK=off go test -race ./internal/admin` reports a data race at
+`events_test.go:428` vs `handlers_events.go:192` (`srv.wsMaxAge` written by the
+test while the WebSocket handler reads it). Neither file is touched by this
+branch (`git diff --stat f50a3633..HEAD --` them is empty).

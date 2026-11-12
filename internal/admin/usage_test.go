@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -773,5 +774,81 @@ func TestProviderUsageNoTrendsWithoutStats(t *testing.T) {
 	}
 	if strings.Contains(string(body), `"trends"`) {
 		t.Fatalf("body = %s, want no trends without stats", body)
+	}
+}
+
+func TestProviderUsageTrendsDoNotTouchTheCache(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":"11.12"}]}`))
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1",
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-1"}},
+	})
+	srv.mu.Lock()
+	p := srv.cfg.Providers[0]
+	srv.mu.Unlock()
+
+	now := time.Now().UTC()
+	if err := srv.stats.RecordBalancePoints(context.Background(), []stats.BalancePoint{
+		{Provider: p.ID, Key: p.Keys[0].ID, Currency: "USD", At: now.Add(-2 * time.Hour), Amount: 20},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client, _ := login(t, ts.URL)
+	got, _ := decodeUsage(t, doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage", "", ""))
+	if len(got.Providers[0].Accounts[0].Trends) == 0 {
+		t.Fatal("want the response to carry the trend")
+	}
+
+	// The cached card shares its accounts slice with the response view, so
+	// attaching trends in place would race with another encoder and leave the
+	// previous window's points on the next cache hit.
+	srv.usageMu.Lock()
+	entry := srv.usageCache[p.ID]
+	srv.usageMu.Unlock()
+	if len(entry.view.Accounts) != 1 {
+		t.Fatalf("cache entry = %+v, want the card", entry.view)
+	}
+	if trends := entry.view.Accounts[0].Trends; len(trends) != 0 {
+		t.Fatalf("cached card carries trends: %+v", trends)
+	}
+}
+
+func TestProviderUsageTrendToCoversFreshReading(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":"11.12"}]}`))
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1",
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-1"}},
+	})
+
+	// The browser's window ends before the reading this request takes.
+	to := time.Now().UTC().Add(-5 * time.Second)
+	from := to.Add(-time.Hour)
+	client, _ := login(t, ts.URL)
+	got, _ := decodeUsage(t, doJSON(t, client, http.MethodGet,
+		ts.URL+"/api/provider-usage?from="+url.QueryEscape(from.Format(time.RFC3339))+
+			"&to="+url.QueryEscape(to.Format(time.RFC3339)), "", ""))
+	a := got.Providers[0].Accounts[0]
+	if len(a.Trends) != 1 || len(a.Trends[0].Points) != 1 {
+		t.Fatalf("trends = %+v, want the reading this request took", a.Trends)
+	}
+	newest, err := time.Parse(time.RFC3339, a.Trends[0].Points[0].At)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotTo, err := time.Parse(time.RFC3339, got.To)
+	if err != nil {
+		t.Fatalf("response to %q: %v", got.To, err)
+	}
+	if gotTo.Before(newest) {
+		t.Fatalf("response to = %v, before the newest reading %v", gotTo, newest)
 	}
 }

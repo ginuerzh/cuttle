@@ -102,11 +102,50 @@ func TestUsageSamplerOffWhenIntervalZero(t *testing.T) {
 	srv.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go srv.StartUsageSampler(ctx)
+	srv.StartUsageSampler(ctx)
 	time.Sleep(60 * time.Millisecond)
 	cancel()
 
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("upstream hits = %d, want 0 while the sampler is off", got)
+	}
+}
+
+func TestStartUsageSamplerReturnsImmediately(t *testing.T) {
+	srv, _, _, _ := newTestAdmin(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		srv.StartUsageSampler(ctx)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("StartUsageSampler blocked; it must spawn its own goroutine like StartProbes")
+	}
+}
+
+func TestSampleUsageOnceSkipsDisabledKeys(t *testing.T) {
+	srv, _, _, _ := newTestAdmin(t)
+	var hits atomic.Int32
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":"1"}]}`))
+	}))
+	defer vendor.Close()
+	disabled := false
+	setUsageProviders(t, srv, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1",
+		Keys: []config.ProviderKey{
+			{Name: "on", Key: "sk-on"},
+			{Name: "off", Key: "sk-off", Enabled: &disabled},
+		},
+	})
+
+	srv.SampleUsageOnce(context.Background(), time.Now().UTC())
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("upstream hits = %d, want only the enabled key", got)
 	}
 }
