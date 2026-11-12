@@ -536,76 +536,152 @@ func TestValidateAllowsDraftEntrypoint(t *testing.T) {
 	}
 }
 
-func TestValidateEntrypointRouteBindings(t *testing.T) {
+// bindingValidationProbe is a valid probe for the binding validation tests.
+func bindingValidationProbe() *Probe {
+	return &Probe{Command: "true", Interval: Duration(30 * time.Second), Timeout: Duration(5 * time.Second)}
+}
+
+// TestValidateAllowsMultipleProbeLessBindings covers the relaxed placement rule:
+// priority is by category (probed bindings first), not by position, so any
+// number of probe-less bindings is legal in any order and none of them is
+// rejected for shadowing a later one.
+func TestValidateAllowsMultipleProbeLessBindings(t *testing.T) {
+	nodeID := fixtureID(identity.Node, "node")
+	names := []string{"a", "b", "c", "d", "e"}
+	routeIDs := make([]string, 0, len(names))
+	routes := make([]Route, 0, len(names))
+	for _, name := range names {
+		id := fixtureID(identity.Route, name)
+		routeIDs = append(routeIDs, id)
+		routes = append(routes, Route{ID: id, Name: name, Nodes: []string{nodeID}})
+	}
+	base := func(bindings ...RouteBinding) *Config {
+		c := topologyFixture()
+		c.Routes = routes
+		c.Entrypoints = []Entrypoint{{
+			ID: "e_0000000001", Name: "e", Match: []string{"*"}, Routes: bindings,
+		}}
+		return c
+	}
+
+	cases := []struct {
+		name     string
+		bindings []RouteBinding
+	}{
+		{name: "draft", bindings: nil},
+		{name: "two bindings with probes", bindings: []RouteBinding{
+			{Route: routeIDs[0], Probe: bindingValidationProbe()},
+			{Route: routeIDs[1], Probe: bindingValidationProbe()},
+		}},
+		{name: "probed then probe-less", bindings: []RouteBinding{
+			{Route: routeIDs[0], Probe: bindingValidationProbe()},
+			{Route: routeIDs[1]},
+		}},
+		{name: "probe-less then probed", bindings: []RouteBinding{
+			{Route: routeIDs[0]},
+			{Route: routeIDs[1], Probe: bindingValidationProbe()},
+		}},
+		{name: "probe-less inside probed", bindings: []RouteBinding{
+			{Route: routeIDs[0], Probe: bindingValidationProbe()},
+			{Route: routeIDs[1]},
+			{Route: routeIDs[2], Probe: bindingValidationProbe()},
+			{Route: routeIDs[3]},
+		}},
+		{name: "five probe-less", bindings: []RouteBinding{
+			{Route: routeIDs[0]},
+			{Route: routeIDs[1]},
+			{Route: routeIDs[2]},
+			{Route: routeIDs[3]},
+			{Route: routeIDs[4]},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := Validate(base(tc.bindings...)); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	// The loader must accept the relaxed shape too, not only a hand-built config.
+	t.Run("loads from yaml", func(t *testing.T) {
+		c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: e
+    match: ["*"]
+    routes:
+      - route: a
+      - route: b
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m1
+routes:
+  - name: a
+    nodes: [n]
+  - name: b
+    nodes: [n]
+`))
+		if err != nil {
+			t.Fatalf("a config with two probe-less bindings should load: %v", err)
+		}
+		if got := len(c.Entrypoints[0].Routes); got != 2 {
+			t.Fatalf("bindings = %d, want 2", got)
+		}
+	})
+}
+
+// TestValidateStillRejectsBadBindings pins every binding rule that survives the
+// relaxed placement rule.
+func TestValidateStillRejectsBadBindings(t *testing.T) {
 	routeA := fixtureID(identity.Route, "a")
 	routeB := fixtureID(identity.Route, "b")
 	nodeID := fixtureID(identity.Node, "node")
-	probe := func() *Probe {
-		return &Probe{Command: "true", Interval: Duration(30 * time.Second), Timeout: Duration(5 * time.Second)}
-	}
-	base := func(routes ...RouteBinding) *Config {
+	base := func(bindings ...RouteBinding) *Config {
 		c := topologyFixture()
 		c.Routes = []Route{
 			{ID: routeA, Name: "a", Nodes: []string{nodeID}},
 			{ID: routeB, Name: "b", Nodes: []string{nodeID}},
 		}
 		c.Entrypoints = []Entrypoint{{
-			ID: "e_0000000001", Name: "e", Match: []string{"*"}, Routes: routes,
+			ID: "e_0000000001", Name: "e", Match: []string{"*"}, Routes: bindings,
 		}}
 		return c
 	}
 
 	cases := []struct {
-		name   string
-		routes []RouteBinding
-		// wantErr lists substrings the error must contain; empty means the
-		// config must validate.
-		wantErr []string
+		name     string
+		bindings []RouteBinding
+		wantErr  []string
 	}{
-		{name: "draft", routes: nil},
-		{name: "two bindings with probes", routes: []RouteBinding{
-			{Route: routeA, Probe: probe()},
-			{Route: routeB, Probe: probe()},
-		}},
-		{name: "probe-less last", routes: []RouteBinding{
-			{Route: routeA, Probe: probe()},
-			{Route: routeB},
-		}},
-		{name: "blank route", routes: []RouteBinding{{Route: "  "}},
+		{name: "blank route", bindings: []RouteBinding{{Route: "  "}},
 			wantErr: []string{`entrypoint "e"`, "routes[0]", "route is required"}},
-		{name: "duplicate route", routes: []RouteBinding{
-			{Route: routeA, Probe: probe()},
-			{Route: routeA, Probe: probe()},
+		{name: "duplicate route", bindings: []RouteBinding{
+			{Route: routeA, Probe: bindingValidationProbe()},
+			{Route: routeA, Probe: bindingValidationProbe()},
 		}, wantErr: []string{`entrypoint "e"`, "routes[1]", "duplicate route"}},
-		{name: "unknown route", routes: []RouteBinding{{Route: "missing"}},
+		{name: "unknown route", bindings: []RouteBinding{{Route: "missing"}},
 			wantErr: []string{`entrypoint "e"`, "routes[0]", "unknown route id"}},
-		{name: "probe-less first", routes: []RouteBinding{
-			{Route: routeA},
-			{Route: routeB, Probe: probe()},
-		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "must be last"}},
-		{name: "two probe-less", routes: []RouteBinding{
-			{Route: routeA},
-			{Route: routeB},
-		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "must be last"}},
-		{name: "blank command", routes: []RouteBinding{
+		{name: "blank command", bindings: []RouteBinding{
 			{Route: routeA, Probe: &Probe{Command: "   ", Interval: Duration(30 * time.Second), Timeout: Duration(5 * time.Second)}},
 		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "command is required"}},
-		{name: "timeout equals interval", routes: []RouteBinding{
+		{name: "timeout below a second", bindings: []RouteBinding{
+			{Route: routeA, Probe: &Probe{Command: "true", Interval: Duration(5 * time.Second), Timeout: Duration(500 * time.Millisecond)}},
+		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "probe timeout must be at least 1s"}},
+		{name: "timeout equals interval", bindings: []RouteBinding{
 			{Route: routeA, Probe: &Probe{Command: "true", Interval: Duration(5 * time.Second), Timeout: Duration(5 * time.Second)}},
 		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "timeout"}},
-		{name: "interval below a second", routes: []RouteBinding{
+		{name: "interval below a second", bindings: []RouteBinding{
 			{Route: routeA, Probe: &Probe{Command: "true", Interval: Duration(500 * time.Millisecond), Timeout: Duration(100 * time.Millisecond)}},
 		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "interval"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := Validate(base(tc.routes...))
-			if len(tc.wantErr) == 0 {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				return
-			}
+			err := Validate(base(tc.bindings...))
 			if err == nil {
 				t.Fatal("config should not validate")
 			}

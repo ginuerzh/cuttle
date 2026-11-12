@@ -208,12 +208,15 @@ func (s *probeSet) probeOnce(ctx context.Context) {
 	}
 }
 
-// Snapshot reports binding health grouped by entrypoint in configuration order.
-// Both Eligible and the active binding come from the entry markers with the same
-// xs.IsFailed rule the inner hop group applies, so the payload can never name an
-// active binding that it also reports ineligible. When no binding survives, the
-// first one is active with Fallback set, which is exactly what x's last resort
-// serves.
+// Snapshot reports binding health grouped by entrypoint. Each entrypoint's
+// bindings are emitted in selection-priority order: probed bindings in
+// configuration order, then probe-less ones in configuration order, with Index
+// staying the configured position. Both Eligible and the active binding come
+// from the entry markers with the same xs.IsFailed rule the inner hop group
+// applies, so the payload can never name an active binding that it also reports
+// ineligible. Fallback is true exactly when at least one binding carries a probe
+// and none of the probed bindings is eligible: then the first probe-less binding
+// serves, or the first probed binding when there is no probe-less one.
 func (s *probeSet) Snapshot() []health.Entrypoint {
 	if s == nil {
 		return nil
@@ -231,31 +234,68 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 			Bindings: make([]health.Binding, 0, len(g.probes)),
 		}
 
-		active, fallback := 0, true
+		// Read the markers once per binding: Eligible, the active candidate
+		// and the fallback flag must come from the same read, or a probe
+		// landing between two reads could make the payload contradict itself.
+		failed := make([]bool, len(g.probes))
+		hasProbe, probedEligible := false, false
 		for i, p := range g.probes {
-			// Read the markers once per binding: Eligible and the active
-			// candidate must come from the same read, or a probe landing between
-			// two reads could make the payload contradict itself.
-			failed := p.failed()
+			failed[i] = p.failed()
+			if p.command == "" {
+				continue
+			}
+			hasProbe = true
+			if !failed[i] {
+				probedEligible = true
+			}
+		}
+
+		order := probePriorityOrder(g.probes)
+		active := order[0]
+		for _, i := range order {
+			if !failed[i] {
+				active = i
+				break
+			}
+		}
+		he.Active = health.ActiveBinding{
+			RouteID:  g.probes[active].routeID,
+			Fallback: hasProbe && !probedEligible,
+		}
+
+		for _, i := range order {
+			p := g.probes[i]
 			hb := health.Binding{
 				Index:     p.index,
 				RouteID:   p.routeID,
 				RouteName: p.routeName,
-				Eligible:  !failed,
+				Eligible:  !failed[i],
 			}
 			if last := p.last(); last != nil {
 				hb.Last = last
 			}
 			he.Bindings = append(he.Bindings, hb)
-
-			if fallback && !failed {
-				active, fallback = i, false
-			}
 		}
-		he.Active = health.ActiveBinding{RouteID: g.probes[active].routeID, Fallback: fallback}
 		out = append(out, he)
 	}
 	return out
+}
+
+// probePriorityOrder returns the health order of one entrypoint's probes: probed
+// bindings first, then probe-less ones, each in configuration order. It mirrors
+// bindingOrder, which cannot be reused here because the probe set does not see
+// the configured bindings.
+func probePriorityOrder(probes []*bindingProbe) []int {
+	order := make([]int, 0, len(probes))
+	plain := make([]int, 0, len(probes))
+	for i, p := range probes {
+		if p.command == "" {
+			plain = append(plain, i)
+			continue
+		}
+		order = append(order, i)
+	}
+	return append(order, plain...)
 }
 
 func (s *probeSet) groups() []probeGroup {

@@ -4,6 +4,12 @@ Date: 2026-11-12
 Status: implemented 2026-11-12; plan at
 `docs/superpowers/plans/2026-11-12-entrypoint-multi-route-bindings.md`
 
+> **Amended 2026-11-12:** the probe is now edited on the `entrypoint → route`
+> topology edge, the probe-less placement rule is gone, and probed bindings
+> outrank probe-less ones. See
+> `2026-11-12-probe-edge-editing-design.md`; §1, §3 and §5 below are amended
+> accordingly.
+
 ## Intent
 
 An entrypoint currently names exactly one route. The operator wants to choose
@@ -15,7 +21,7 @@ The chosen mechanism is a **command probe on every entrypoint → route binding*
 
 ```text
 Entrypoint (model globs)
-  -> route bindings, ordered        (first eligible binding wins)
+  -> route bindings                  (probed first, then the first probe-less one)
        binding = { route, probe? }
        probe   = `sh -c <command>`, exit 0 = eligible, non-zero = ineligible
   -> Route (unchanged: nodes + strategy + retry policy)
@@ -23,9 +29,11 @@ Entrypoint (model globs)
 ```
 
 Exactly one binding is normally eligible at a time: its command exits 0 while
-the others exit non-zero. The command is the external logic. If several are
-eligible, binding order breaks the tie. If none is eligible, the first binding
-is still used (accepted fallback, see Decisions).
+the others exit non-zero. The command is the external logic. Probed bindings are
+tried first in declaration order, so among them binding order breaks the tie.
+The probe-less bindings follow; the first one serves only when every probe is
+ineligible. If there is no probe-less binding and none is eligible, the first
+probed binding is still used (accepted fallback, see Decisions).
 
 ## Goals
 
@@ -70,7 +78,8 @@ is still used (accepted fallback, see Decisions).
 - `github.com/go-gost/x v0.32.0`, no `replace`; **no x change is allowed** for
   this work. Consequences that are accepted and must be documented:
   - `hopGroup.Select` returns the first eligible entry when every entry is
-    filtered out, so "all ineligible" falls back to the first binding.
+    filtered out, so "all ineligible" falls back to the first entry of the
+    inner group, which priority ordering makes the first probed binding.
   - `FailFilter` is a no-op when exactly one entry is eligible, so a
     single-binding entrypoint always uses its binding.
   - `FailFilter` per-item overrides read `metadata.Metadata`, which
@@ -135,12 +144,14 @@ entrypoints:
   validation error, not a draft.
 - Duplicate route ids inside one entrypoint are rejected. The same route in two
   entrypoints is fine and yields two independent bindings and two probes.
-- A binding without `probe` is always eligible. It is how an explicit static
-  default is expressed ("if no script claims the traffic, use this"). Because
-  such a binding shadows every binding after it, **at most one probe-less
-  binding is allowed and it must be last**; validation rejects anything else.
-  A list of only probed bindings is fine, and then the all-ineligible fallback
-  in §3 picks the first one.
+- A binding without `probe` is how an explicit static default is expressed ("if
+  no script claims the traffic, use this"). Probe-less bindings may appear any
+  number of times in any position: validation does not constrain their place,
+  because selection priority is by category, not position. Only the first
+  probe-less binding can serve (when every probe is ineligible); the build logs
+  one warning per additional probe-less binding, because it can never serve. A
+  list of only probed bindings is fine, and then the all-ineligible fallback in
+  §3 picks the first one.
 - Defaults: `interval` 30s, `timeout` 5s. Validation: `command` must be
   non-blank, `interval >= 1s`, `timeout >= 1s`, `timeout < interval`. Errors
   name the entrypoint and the binding index.
@@ -166,8 +177,8 @@ New shape:
 outer hop group        (unchanged matcher; bare FIFO, no filters)
   entry: entrypoint e, variant chat        matcher = model globs ∧ chat path
     inner hop group      FIFO + FailFilter(1, derived timeout)
-      entry: binding 0 -> hop(route A, chat)
-      entry: binding 1 -> hop(route B, chat)
+      entry: binding in priority order (probed first, then probe-less)
+             -> hop(route A, chat) / hop(route B, chat)
   entry: entrypoint e, fallback            matcher = model globs
     inner hop group
       ...
@@ -201,14 +212,20 @@ Per request, in order:
 1. Outer group picks the first entry whose matcher matches, in declaration
    order (model glob + protocol path for variant entries, model glob only for
    the fallback entry). No filters, so no cross-entrypoint fallthrough.
-2. Inner group builds its candidate pool = every binding (all match), applies
-   `FailFilter` when there is more than one candidate, then FIFO takes the
-   first survivor.
-3. If every binding is ineligible, x falls back to the first candidate
-   (`hopGroup.Select` last resort). Accepted: a broken script or a probe
-   timeout degrades to "the default route", never to a 502, and never to
-   another entrypoint. A probe-less binding is always eligible, so this path
-   only applies to entrypoints whose bindings all carry probes.
+2. Inner group entries are fed in priority order: probed bindings first in
+   declaration order, then probe-less bindings in declaration order
+   (`bindingOrder`). `FailFilter` drops the ineligible entries and FIFO takes
+   the first survivor; when every entry is filtered out the group falls back to
+   its first entry.
+3. Priority cases, in order:
+   - the first eligible probed binding serves;
+   - when every probe is ineligible, the first probe-less binding serves;
+   - when every probe is ineligible and there is no probe-less binding, x's
+     last resort serves the first candidate, which is the first probed binding.
+     Accepted: a broken script or a probe timeout degrades to "the default
+     route", never to a 502, and never to another entrypoint;
+   - an entrypoint with only probe-less bindings has no probe state: the first
+     binding serves and nothing is reported as a fallback.
 4. With one candidate, `FailFilter` is a no-op by design; the only binding is
    used regardless of its probe. Documented, not worked around.
 
@@ -269,30 +286,34 @@ func (s *probeSet) Snapshot() []health.Entrypoint
     {"index":1,"routeId":"r_…","routeName":"premium","eligible":true}]}]
   ```
 
-  `eligible` is the raw probe verdict; `active` is the binding that will serve
-  the next request, computed with the same rule the data plane uses (first
-  eligible binding, otherwise binding 0) and flagged `fallback: true` in the
-  second case. The two differ in exactly the two accepted states of §3
-  (all-ineligible fallback, single binding). Compute `active` in `Snapshot()`
-  from the entry markers with `xs.IsFailed` and the derived `failTimeout`, so
-  there is one verdict source. Bindings that have not probed yet report
-  `eligible: true` and no `last`. The command string is not echoed here (the
-  config API already returns it).
+  `bindings[]` is emitted in the same priority order as selection (probed in
+  declaration order, then probe-less); `index` remains the configuration index.
+  `eligible` is the raw probe verdict. `active` is the binding that will serve
+  the next request, computed with the same priority order and marker rule the
+  data plane uses, and `fallback` is true exactly when at least one binding has
+  a probe and none of the probed bindings is eligible — including when a
+  probe-less binding then serves. An entrypoint with no probes never reports a
+  fallback. Compute `active` in `Snapshot()` from the entry markers with
+  `xs.IsFailed` and the derived `failTimeout`, so there is one verdict source.
+  Bindings that have not probed yet report `eligible: true` and no `last`. The
+  command string is not echoed here (the config API already returns it).
 - `/api/events` snapshots add `entrypointHealth` to the snapshot that is
   already pushed on every tick (no change to the push cadence or the
   percentile recomputation rule).
 - Console:
   - Entrypoints list card subtitle: `claude-* → cheap (未通过) / premium (可用)`,
     with the active binding marked (`●`), and a `回退` tag when the active
-    binding is the all-ineligible fallback.
-  - Entrypoint form: ordered binding list with up/down, route select, and probe
-    command/interval/timeout fields. Empty list shows the draft hint. A
-    probe-less binding is offered only in the last position (the same rule the
-    API enforces).
+    binding serves because every probe is ineligible.
+  - Entrypoint form: ordered route list with up/down and route select. It shows
+    no probe fields and preserves every binding's existing probe by route id
+    through reorders and removals. An empty list shows the draft hint. Probes
+    are edited on the `entrypoint → route` topology edge instead.
   - Topology: one `entrypoint:<id> -> route:<id>` edge per binding (structure
-    graph). In monitor mode the active binding edge is emphasised, an
-    ineligible non-active binding is dashed amber labelled `未通过`, and a
-    fallback-active binding is dashed amber labelled `回退`. Node `dead`
+    graph). The edge panel edits the probe `command`/`interval`/`timeout`
+    (empty command clears it). In monitor mode the active binding edge is
+    emphasised, a failing probe binding is solid amber with a `✕` mark, the
+    fallback-active binding keeps its failure mark and adds `回退`, and a
+    probe-less binding is dashed because nothing checks it. Node `dead`
     styling is untouched.
   - Entrypoint detail panel: bindings, active/fallback, last probe time, exit
     code, latency and error.
@@ -367,9 +388,9 @@ per binding, which is the only visible stats-adjacent change.
 - Admin: PUT/GET with bindings, delete-route rejection, health payload
   (`eligible` vs `active`/`fallback` in all three states), events snapshot
   includes `entrypointHealth`, 401 without a session.
-- Config edge cases: probe-less binding not last is rejected; duplicate
-  route ids rejected; single-binding entrypoint still reports `active` and
-  ignores its probe for selection.
+- Config edge cases: multiple probe-less bindings in any order are accepted;
+  duplicate route ids rejected; single-binding entrypoint still reports
+  `active` and ignores its probe for selection.
 - Topology edit mode: connect appends, duplicate connect is a no-op, edge
   delete removes one binding, deleting the last one makes a draft.
 - Web: graph edges per binding, entrypoint card and form rendering, i18n keys
@@ -386,8 +407,9 @@ per binding, which is the only visible stats-adjacent change.
 3. cuttle owns the probe runner (one command per binding) instead of x's
    per-entry probe (one command per protocol variant), for cost and
    observability.
-4. All-ineligible falls back to the first binding (x native behavior, no x
-   change). The default route therefore belongs first in the list.
+4. All-ineligible falls back to the first probed binding when there is no
+   probe-less binding (x native behavior, no x change). A probe-less binding,
+   if configured, serves before that fallback.
 5. Commands are not env-expanded at load; `sh -c` plus injected `CUTTLE_*`
    variables; stderr head is recorded for the panel.
 6. Always wrap bindings in an inner group, including the single-binding case.
@@ -400,8 +422,10 @@ per binding, which is the only visible stats-adjacent change.
     route serves now" rather than only "which probes passed".
 11. Topology edit mode keeps working as list edits: connect appends a binding,
     deleting the edge removes that one binding, the last removal is a draft.
-12. A probe-less binding is allowed only once and only last; validation
-    rejects a configuration where it shadows later bindings.
+12. Probe-less bindings are allowed any number of times in any order. Every
+    probed binding outranks them, and only the first probe-less binding can
+    serve; the build warns about the rest instead of rejecting the
+    configuration.
 13. `/api/events` cadence is unchanged: `entrypointHealth` rides the existing
     per-tick snapshot.
 

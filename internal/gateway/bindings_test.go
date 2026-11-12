@@ -1,8 +1,12 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,13 +15,13 @@ import (
 	xlogger "github.com/go-gost/x/logger"
 
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/logging"
 )
 
 // bindingFixture builds two routes over two capture upstreams, bound in order
-// by one entrypoint. The fixture keeps its own shape schema-valid: the first
-// binding carries a probe and the probe-less binding is last, which is the only
-// ordering config.Validate accepts. The probe command is a no-op, so both
-// bindings stay eligible.
+// by one entrypoint: a probed binding followed by a probe-less one. The fixture
+// stays schema-valid; the probe command is a no-op, so both bindings start
+// eligible.
 func bindingFixture(t *testing.T) (*gwconfig.Config, *capturedRequest, *capturedRequest) {
 	t.Helper()
 
@@ -67,6 +71,64 @@ func TestBindingFixtureIsSchemaValid(t *testing.T) {
 	if err := gwconfig.Validate(cfg); err != nil {
 		t.Fatalf("bindingFixture is not a valid config: %v", err)
 	}
+}
+
+// bindingPriorityFixture builds one provider, node and route per probed flag and
+// returns the config whose single entrypoint binds every route in order. probed
+// decides whether a binding carries a probe; the routes never connect, so the
+// upstream is a placeholder.
+func bindingPriorityFixture(t *testing.T, probed ...bool) (*gwconfig.Config, []gwconfig.RouteBinding) {
+	t.Helper()
+
+	cfg := &gwconfig.Config{
+		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Entrypoints: []gwconfig.Entrypoint{{
+			ID: "e_0000000001", Name: "all", Match: []string{"*"},
+		}},
+	}
+	bindings := make([]gwconfig.RouteBinding, 0, len(probed))
+	for i, withProbe := range probed {
+		n := fmt.Sprintf("%010d", i+1)
+		providerID, nodeID, routeID := "p_"+n, "n_"+n, "r_"+n
+		cfg.Providers = append(cfg.Providers, gwconfig.Provider{
+			ID: providerID, Name: "p" + n, Type: "generic", Chat: "http://127.0.0.1:1",
+			Keys: []gwconfig.ProviderKey{{ID: "pk_" + n, Name: "k" + n, Key: "sk-" + n}},
+		})
+		cfg.Nodes = append(cfg.Nodes, gwconfig.Node{
+			ID: nodeID, Name: "n" + n, Provider: providerID, Model: "m1",
+		})
+		cfg.Routes = append(cfg.Routes, gwconfig.Route{
+			ID: routeID, Name: "r" + n, Nodes: []string{nodeID},
+		})
+		b := gwconfig.RouteBinding{Route: routeID}
+		if withProbe {
+			b.Probe = &gwconfig.Probe{
+				Command:  "true",
+				Interval: gwconfig.Duration(2 * time.Second),
+				Timeout:  gwconfig.Duration(time.Second),
+			}
+		}
+		bindings = append(bindings, b)
+	}
+	cfg.Entrypoints[0].Routes = bindings
+	return cfg, bindings
+}
+
+// selectBindingNode builds the inner group for cfg, marks the given binding
+// indexes as failed, and returns the config node id the group selects.
+func selectBindingNode(t *testing.T, cfg *gwconfig.Config, marked ...int) string {
+	t.Helper()
+
+	routes := cfg.Entrypoints[0].Routes
+	h, entries := bindingGroup(t, cfg.Entrypoints[0].ID, routes, bindingPlans(t, cfg))
+	for _, i := range marked {
+		entries[i].Marker().Mark()
+	}
+	node := h.Select(context.Background())
+	if node == nil {
+		return ""
+	}
+	return configNodeID(node)
 }
 
 // bindingPlans compiles every fixture route into a plan keyed by route id.
@@ -207,5 +269,138 @@ func TestBindingFailTimeoutDerivation(t *testing.T) {
 				t.Fatalf("bindingFailTimeout = %s, want %s", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestProbedBindingsOutrankProbeLess is the point of the category priority: a
+// probe-less binding placed first must not shadow a probed binding after it.
+func TestProbedBindingsOutrankProbeLess(t *testing.T) {
+	cfg, _ := bindingPriorityFixture(t, false, true)
+	if got, want := selectBindingNode(t, cfg), "n_0000000002"; got != want {
+		t.Fatalf("selected node = %q, want the probed binding %q", got, want)
+	}
+}
+
+// TestFirstEligibleProbedWins checks that configuration order still breaks the
+// tie among probed bindings.
+func TestFirstEligibleProbedWins(t *testing.T) {
+	t.Run("first eligible", func(t *testing.T) {
+		cfg, _ := bindingPriorityFixture(t, true, true, true)
+		if got, want := selectBindingNode(t, cfg), "n_0000000001"; got != want {
+			t.Fatalf("selected node = %q, want the first probed binding %q", got, want)
+		}
+	})
+
+	t.Run("first ineligible", func(t *testing.T) {
+		cfg, _ := bindingPriorityFixture(t, true, true, true)
+		if got, want := selectBindingNode(t, cfg, 0), "n_0000000002"; got != want {
+			t.Fatalf("selected node = %q, want the second probed binding %q", got, want)
+		}
+	})
+}
+
+// TestAllProbesFailServesFirstProbeLess checks that the probe-less binding is
+// reachable from any position and that the first one wins, not the first
+// binding of the configuration.
+func TestAllProbesFailServesFirstProbeLess(t *testing.T) {
+	cfg, _ := bindingPriorityFixture(t, true, false, true, false)
+	if got, want := selectBindingNode(t, cfg, 0, 2), "n_0000000002"; got != want {
+		t.Fatalf("selected node = %q, want the first probe-less binding %q", got, want)
+	}
+}
+
+// TestNoProbeLessFallsBackToFirstProbe keeps the accepted fallback: with every
+// probe failing and no probe-less binding, x's last resort serves the first
+// probed binding instead of failing the request.
+func TestNoProbeLessFallsBackToFirstProbe(t *testing.T) {
+	cfg, _ := bindingPriorityFixture(t, true, true)
+	if got, want := selectBindingNode(t, cfg, 0, 1), "n_0000000001"; got != want {
+		t.Fatalf("selected node = %q, want x's fallback to the first probed binding %q", got, want)
+	}
+}
+
+// TestOnlyProbeLessServesFirst covers an entrypoint that never probes: the first
+// configured binding serves.
+func TestOnlyProbeLessServesFirst(t *testing.T) {
+	cfg, _ := bindingPriorityFixture(t, false, false, false)
+	if got, want := selectBindingNode(t, cfg), "n_0000000001"; got != want {
+		t.Fatalf("selected node = %q, want the first binding %q", got, want)
+	}
+}
+
+// TestBindingOrderHelper pins the priority order the group is fed and the
+// probe-less bindings that can never serve.
+func TestBindingOrderHelper(t *testing.T) {
+	probed := func(route string) gwconfig.RouteBinding {
+		return gwconfig.RouteBinding{Route: route, Probe: &gwconfig.Probe{Command: "true"}}
+	}
+	plain := func(route string) gwconfig.RouteBinding {
+		return gwconfig.RouteBinding{Route: route}
+	}
+
+	cases := []struct {
+		name        string
+		bindings    []gwconfig.RouteBinding
+		wantOrder   []int
+		unreachable []int
+	}{
+		{
+			name:        "probe-less between probed",
+			bindings:    []gwconfig.RouteBinding{plain("r_0000000001"), probed("r_0000000002"), plain("r_0000000003"), probed("r_0000000004")},
+			wantOrder:   []int{1, 3, 0, 2},
+			unreachable: []int{2},
+		},
+		{
+			name:      "no probe-less",
+			bindings:  []gwconfig.RouteBinding{probed("r_0000000001"), probed("r_0000000002")},
+			wantOrder: []int{0, 1},
+		},
+		{
+			name:      "one probe-less",
+			bindings:  []gwconfig.RouteBinding{probed("r_0000000001"), plain("r_0000000002")},
+			wantOrder: []int{0, 1},
+		},
+		{
+			name:        "only probe-less",
+			bindings:    []gwconfig.RouteBinding{plain("r_0000000001"), plain("r_0000000002"), plain("r_0000000003")},
+			wantOrder:   []int{0, 1, 2},
+			unreachable: []int{1, 2},
+		},
+		{name: "empty"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			order, unreachable := bindingOrder(tc.bindings)
+			if !slices.Equal(order, tc.wantOrder) {
+				t.Fatalf("order = %v, want %v", order, tc.wantOrder)
+			}
+			if !slices.Equal(unreachable, tc.unreachable) {
+				t.Fatalf("unreachable = %v, want %v", unreachable, tc.unreachable)
+			}
+		})
+	}
+}
+
+// TestUnreachableProbeLessBindingWarns keeps the unreachable-binding report a
+// build warning: one line per probe-less binding after the first, and none for
+// the first one.
+func TestUnreachableProbeLessBindingWarns(t *testing.T) {
+	cfg, _ := bindingPriorityFixture(t, true, false, false)
+
+	var buf bytes.Buffer
+	log, err := logging.NewWithWriter("warn", "text", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err := buildHopGroup(cfg, "warn-test", log, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	out := buf.String()
+	if got := strings.Count(out, "routes[2] is a probe-less binding after another probe-less binding; it can never serve"); got != 1 {
+		t.Fatalf("warnings for routes[2] = %d, want exactly one:\n%s", got, out)
+	}
+	if strings.Contains(out, "routes[1] is a probe-less binding") {
+		t.Fatalf("the first probe-less binding was reported unreachable:\n%s", out)
 	}
 }

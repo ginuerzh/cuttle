@@ -1272,11 +1272,6 @@ func Validate(c *Config) error {
 		for j := range e.Routes {
 			b := &e.Routes[j]
 			scope := fmt.Sprintf("entrypoint %q: routes[%d]", name, j)
-			// A probe-less binding is always eligible, so it shadows every
-			// binding after it. Only the last position is meaningful.
-			if b.Probe == nil && j != len(e.Routes)-1 {
-				return fmt.Errorf("%s: a binding without a probe must be last", scope)
-			}
 			route := strings.TrimSpace(b.Route)
 			if route == "" {
 				return fmt.Errorf("%s: route is required", scope)

@@ -86,9 +86,15 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
 - A binding is `{route, probe?}` and holds a route id, never a display name.
   Bindings are inline config: they have no id and are never addressable through
   an API path. Duplicate route ids inside one entrypoint are rejected.
-- The first eligible binding in declaration order wins. A binding without a
-  `probe` is always eligible, so it shadows every binding after it: at most one
-  probe-less binding is allowed and it must be last.
+- Selection priority is by category, then by order: probed bindings are tried
+  first in declaration order, then every probe-less binding in declaration
+  order. A binding without a `probe` is legal in any position and any number of
+  them may exist, but only the first probe-less binding can serve, and only when
+  every probe is ineligible. The build logs one warning per probe-less binding
+  after the first because it can never serve; that is a warning, not a
+  validation error. `bindingOrder` in `internal/gateway/build.go` owns the order
+  fed to the inner group; the per-binding entry slice stays index-aligned with
+  the configuration for the probe runner.
 - The probe is command-only (`sh -c`, `cmd /C` on Windows): exit 0 = eligible,
   anything else = ineligible. It runs once per binding per interval,
   independent of how many protocol variants the binding compiles to, and it
@@ -109,9 +115,16 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   entrypoint. The inner per-entrypoint group owns binding eligibility with
   `FIFO + FailFilter(1, failTimeout)`, where `failTimeout` is twice the longest
   probe interval, floored at 10s.
-- All bindings ineligible falls back to x's last resort, which serves the first
-  binding. That is accepted behavior; do not add a cuttle dispatcher to change
+- When every probed binding is ineligible, the first probe-less binding serves.
+  With no probe-less binding, x's last resort serves the first entry of the
+  inner group, which is the first probed binding. Both are accepted behavior;
+  never return a 502 for this case and do not add a cuttle dispatcher to change
   it.
+- `GET /api/entrypoints/health` emits `bindings[]` in the same priority order
+  (probed in configuration order, then probe-less), keeps `index` as the
+  configuration index, and sets `fallback` only when at least one binding has a
+  probe and none of the probed bindings is eligible. An entrypoint with only
+  probe-less bindings serves the first one with `fallback: false`.
 - Only the request body's `model` field is matched for routing. Paths never
   affect entrypoint precedence or binding choice; they only select the upstream
   wire API inside a matched entrypoint. There is no host matching and no
@@ -286,13 +299,16 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   exceeds `wsMaxAge`, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
 - `GET /api/entrypoints/health` returns one row per entrypoint with bindings, in
-  configuration order, and `[]` when none (a draft is absent):
-  `active{routeId,fallback}` names the binding the next request uses — the
-  first eligible one, otherwise the first with `fallback:true` — and each
-  `bindings[]` row carries `index`, `routeId`, `routeName`, the marker-derived
-  `eligible` and an optional `last` probe result. The state is in-memory and
-  separate from `GET /api/routes/health`; a failed probe never marks a node
-  `dead`. The `/api/events` snapshot carries the same rows as
+  configuration order, and `[]` when none (a draft is absent): each
+  `bindings[]` row carries `index` (the configuration index), `routeId`,
+  `routeName`, the marker-derived `eligible` and an optional `last` probe
+  result, and the list is ordered by selection priority (probed bindings in
+  configuration order, then probe-less ones). `active{routeId,fallback}` names
+  the binding the next request uses: the first eligible one in that priority
+  order, otherwise the first probed binding, with `fallback` true only when at
+  least one binding has a probe and none of the probed bindings is eligible. The
+  state is in-memory and separate from `GET /api/routes/health`; a failed probe
+  never marks a node `dead`. The `/api/events` snapshot carries the same rows as
   `entrypointHealth` and omits the field when the list is empty.
 - `GET /api/stats/series` is the session trend: `{"bucket":"<duration>",
   "points":[{bucket,requests,errors}]}`, sparse (only non-empty buckets), and

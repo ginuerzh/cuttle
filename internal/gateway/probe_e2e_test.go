@@ -52,18 +52,22 @@ func probeRouteFixture(t *testing.T, upstreams ...string) ([]gwconfig.Provider, 
 }
 
 // waitBindingEligibility waits until entrypoint entrypointID has reported a
-// probe verdict for binding index that matches eligible.
+// probe verdict for the binding at configuration index that matches eligible.
+// Bindings are listed in priority order, so the lookup is by index, not by
+// position.
 func waitBindingEligibility(t *testing.T, gw *Gateway, entrypointID string, index int, eligible bool) {
 	t.Helper()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		for _, e := range gw.EntrypointHealth() {
-			if e.ID != entrypointID || index >= len(e.Bindings) {
+			if e.ID != entrypointID {
 				continue
 			}
-			if b := e.Bindings[index]; b.Last != nil && b.Eligible == eligible {
-				return
+			for _, b := range e.Bindings {
+				if b.Index == index && b.Last != nil && b.Eligible == eligible {
+					return
+				}
 			}
 		}
 		if time.Now().After(deadline) {
@@ -71,6 +75,23 @@ func waitBindingEligibility(t *testing.T, gw *Gateway, entrypointID string, inde
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// assertActive checks the entrypoint's health names routeID as the active
+// binding with the given fallback flag.
+func assertActive(t *testing.T, gw *Gateway, routeID string, fallback bool) {
+	t.Helper()
+
+	for _, e := range gw.EntrypointHealth() {
+		if e.ID != "e_0000000001" {
+			continue
+		}
+		if e.Active.RouteID != routeID || e.Active.Fallback != fallback {
+			t.Fatalf("active = %+v, want route %s fallback=%t", e.Active, routeID, fallback)
+		}
+		return
+	}
+	t.Fatalf("entrypoint e_0000000001 is absent from %+v", gw.EntrypointHealth())
 }
 
 func TestEntrypointSwitchesRouteByProbe(t *testing.T) {
@@ -218,5 +239,135 @@ func TestIneligibleBindingDoesNotFallThrough(t *testing.T) {
 	}
 	if got := secondHits.Load(); got != 0 {
 		t.Fatalf("second binding hits = %d, want none", got)
+	}
+}
+
+// TestEntrypointPriorityAcrossProbedAndProbeLess runs two probed bindings and one
+// probe-less binding end to end: traffic follows the probed bindings while any of
+// them passes, drops to the probe-less one only when every probe fails, and
+// returns to a probed binding as soon as it recovers.
+func TestEntrypointPriorityAcrossProbedAndProbeLess(t *testing.T) {
+	flagA := filepath.Join(t.TempDir(), "a")
+	flagB := filepath.Join(t.TempDir(), "b")
+	first, firstHits := probingUpstream(t)
+	second, secondHits := probingUpstream(t)
+	third, thirdHits := probingUpstream(t)
+
+	providers, nodes, routes := probeRouteFixture(t, first.URL, second.URL, third.URL)
+	probing := func(route, flag string) gwconfig.RouteBinding {
+		return gwconfig.RouteBinding{Route: route, Probe: &gwconfig.Probe{
+			Command: "test ! -f " + strconv.Quote(flag),
+			// The sub-second interval deliberately bypasses config.Validate
+			// (minimum 1s) to keep the test fast.
+			Interval: gwconfig.Duration(20 * time.Millisecond),
+			Timeout:  gwconfig.Duration(time.Second),
+		}}
+	}
+	cfg := &gwconfig.Config{
+		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Entrypoints: []gwconfig.Entrypoint{{
+			ID: "e_0000000001", Name: "all", Match: []string{"*"},
+			Routes: []gwconfig.RouteBinding{
+				probing("r_0000000001", flagA),
+				probing("r_0000000002", flagB),
+				{Route: "r_0000000003"},
+			},
+		}},
+		Providers: providers,
+		Nodes:     nodes,
+		Routes:    routes,
+	}
+	gw := startGateway(t, cfg)
+
+	sent := 0
+	send := func() {
+		sent++
+		if code := postModel(t, gw, "/v1/chat/completions", `{"model":"m1","messages":[]}`); code != http.StatusOK {
+			t.Fatalf("status = %d", code)
+		}
+	}
+	sendUntilServed := func(hits *atomic.Int64, what string) {
+		t.Helper()
+		before := hits.Load()
+		deadline := time.Now().Add(2 * time.Second)
+		for hits.Load() == before {
+			send()
+			if time.Now().After(deadline) {
+				t.Fatalf("%s never served a request", what)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	// Both probes pass: a probed binding outranks the probe-less one.
+	waitBindingEligibility(t, gw, "e_0000000001", 0, true)
+	waitBindingEligibility(t, gw, "e_0000000001", 1, true)
+	send()
+	if got := firstHits.Load(); got != 1 {
+		t.Fatalf("first upstream hits = %d, want the first probed binding to serve", got)
+	}
+	if got := secondHits.Load(); got != 0 {
+		t.Fatalf("second upstream hits = %d, want none", got)
+	}
+	if got := thirdHits.Load(); got != 0 {
+		t.Fatalf("probe-less upstream hits = %d, want none while a probe passes", got)
+	}
+
+	// The first probe fails: the second probed binding takes over, not the
+	// probe-less one.
+	if err := os.WriteFile(flagA, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitBindingEligibility(t, gw, "e_0000000001", 0, false)
+	beforeFirst := firstHits.Load()
+	sendUntilServed(secondHits, "the second probed binding")
+	if got := firstHits.Load(); got != beforeFirst {
+		t.Fatalf("the ineligible probed binding served %d requests", got-beforeFirst)
+	}
+	if got := thirdHits.Load(); got != 0 {
+		t.Fatalf("the probe-less binding served %d requests while a probe still passed", got)
+	}
+
+	// Both probes fail: only now does the probe-less binding serve, and the
+	// health payload reports it as the fallback.
+	if err := os.WriteFile(flagB, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitBindingEligibility(t, gw, "e_0000000001", 1, false)
+	beforeSecond := secondHits.Load()
+	sendUntilServed(thirdHits, "the probe-less binding")
+	if got := secondHits.Load(); got != beforeSecond {
+		t.Fatalf("the ineligible second binding served %d requests", got-beforeSecond)
+	}
+	if got := firstHits.Load(); got != beforeFirst {
+		t.Fatalf("the ineligible first binding served %d requests", got-beforeFirst)
+	}
+	assertActive(t, gw, "r_0000000003", true)
+
+	// The first probe recovers: a probed binding outranks the probe-less one
+	// again even though the second probe still fails.
+	if err := os.Remove(flagA); err != nil {
+		t.Fatal(err)
+	}
+	waitBindingEligibility(t, gw, "e_0000000001", 0, true)
+	beforeFirst = firstHits.Load()
+	beforeThird := thirdHits.Load()
+	sendUntilServed(firstHits, "the recovered probed binding")
+	if got := thirdHits.Load(); got != beforeThird {
+		t.Fatalf("the probe-less binding kept serving %d requests after a probe recovered", got-beforeThird)
+	}
+	assertActive(t, gw, "r_0000000001", false)
+
+	// A probe is a local command: every upstream hit must belong to a client
+	// request this test sent.
+	if got := firstHits.Load() + secondHits.Load() + thirdHits.Load(); got != int64(sent) {
+		t.Fatalf("upstream hits = %d, want exactly the %d client requests: a probe reached an upstream", got, sent)
+	}
+	for _, r := range gw.RouteHealth() {
+		for _, n := range r.Nodes {
+			if n.Dead {
+				t.Fatalf("node %s reports dead: the probe must not touch node markers", n.ID)
+			}
+		}
 	}
 }

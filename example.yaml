@@ -45,9 +45,10 @@ log:
 
 # An entrypoint is the client-facing ingress. Its match globs are checked in
 # declaration order; the first entrypoint with a matching client model wins.
-# `routes` is an ordered list of route bindings: the first binding whose probe
-# exits 0 serves the request. A binding without `probe` is always eligible and
-# must be last.
+# `routes` is an ordered list of route bindings: probed bindings are tried
+# first in declaration order, then the probe-less ones. The first eligible
+# binding serves, so a probe-less binding serves only when every probe is
+# ineligible (and only the first probe-less binding can serve).
 entrypoints:
   - id: e_q7a4m2xk9d
     name: strong

@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -432,10 +433,95 @@ func TestReloadReplacesProbeSet(t *testing.T) {
 	}
 }
 
+// TestSnapshotPriorityOrderAndFallback pins the health mapping of the category
+// priority: bindings are emitted probed-first with their configuration indexes,
+// active follows that order, and fallback means a probe exists and none of the
+// probed bindings is eligible.
+func TestSnapshotPriorityOrderAndFallback(t *testing.T) {
+	flag := filepath.Join(t.TempDir(), "flag")
+
+	set := testProbeSet()
+	mixed := gwconfig.Entrypoint{ID: "e_0000000001", Name: "mixed"}
+	set.add(mixed, gwconfig.RouteBinding{Route: "r_0000000001"}, 0, probeEntries(1), 10*time.Second)
+	set.add(mixed, gwconfig.RouteBinding{Route: "r_0000000002", Probe: &gwconfig.Probe{
+		Command:  "test -f " + strconv.Quote(flag),
+		Interval: gwconfig.Duration(2 * time.Second),
+		Timeout:  gwconfig.Duration(time.Second),
+	}}, 1, probeEntries(1), 10*time.Second)
+	set.add(mixed, gwconfig.RouteBinding{Route: "r_0000000003"}, 2, probeEntries(1), 10*time.Second)
+
+	// An entrypoint without any probe must never report a fallback.
+	static := gwconfig.Entrypoint{ID: "e_0000000002", Name: "static"}
+	set.add(static, gwconfig.RouteBinding{Route: "r_0000000004"}, 0, probeEntries(1), 10*time.Second)
+	set.add(static, gwconfig.RouteBinding{Route: "r_0000000005"}, 1, probeEntries(1), 10*time.Second)
+
+	indexes := func(he health.Entrypoint) []int {
+		out := make([]int, 0, len(he.Bindings))
+		for _, b := range he.Bindings {
+			out = append(out, b.Index)
+		}
+		return out
+	}
+
+	// Before the first run every binding is eligible: the probed binding is
+	// listed first and serves, without a fallback.
+	snap := set.Snapshot()
+	if len(snap) != 2 {
+		t.Fatalf("snapshot = %+v, want two entrypoints", snap)
+	}
+	if got, want := indexes(snap[0]), []int{1, 0, 2}; !slices.Equal(got, want) {
+		t.Fatalf("mixed binding order = %v, want priority order %v", got, want)
+	}
+	if snap[0].Bindings[0].Last != nil {
+		t.Fatalf("unprobed binding carries a last probe: %+v", snap[0].Bindings[0])
+	}
+	if snap[0].Active.RouteID != "r_0000000002" || snap[0].Active.Fallback {
+		t.Fatalf("active = %+v, want the probed binding without fallback", snap[0].Active)
+	}
+	if got, want := indexes(snap[1]), []int{0, 1}; !slices.Equal(got, want) {
+		t.Fatalf("static binding order = %v, want configuration order %v", got, want)
+	}
+	if snap[1].Active.RouteID != "r_0000000004" || snap[1].Active.Fallback {
+		t.Fatalf("static active = %+v, want the first binding without fallback", snap[1].Active)
+	}
+
+	// The probe fails: the first probe-less binding in configuration order
+	// serves, and the payload reports the fallback because a probe exists and
+	// none passed.
+	set.probeOnce(context.Background())
+	snap = set.Snapshot()
+	if snap[0].Bindings[0].Eligible || snap[0].Bindings[0].Last == nil {
+		t.Fatalf("probed binding = %+v, want ineligible with a last probe", snap[0].Bindings[0])
+	}
+	if got, want := indexes(snap[0]), []int{1, 0, 2}; !slices.Equal(got, want) {
+		t.Fatalf("mixed binding order after a failed probe = %v, want %v", got, want)
+	}
+	if snap[0].Active.RouteID != "r_0000000001" || !snap[0].Active.Fallback {
+		t.Fatalf("active = %+v, want the first probe-less binding as the fallback", snap[0].Active)
+	}
+	if snap[1].Active.RouteID != "r_0000000004" || snap[1].Active.Fallback {
+		t.Fatalf("static active = %+v, want no fallback without probes", snap[1].Active)
+	}
+
+	// The probe recovers: the probed binding serves again and is listed first.
+	if err := os.WriteFile(flag, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	set.probeOnce(context.Background())
+	snap = set.Snapshot()
+	if !snap[0].Bindings[0].Eligible {
+		t.Fatalf("probed binding = %+v, want eligible", snap[0].Bindings[0])
+	}
+	if snap[0].Active.RouteID != "r_0000000002" || snap[0].Active.Fallback {
+		t.Fatalf("active = %+v, want the recovered probed binding without fallback", snap[0].Active)
+	}
+}
+
 // assertSnapshotConsistent checks the invariant the switching tests rely on: a
-// snapshot never names an active binding that it also reports ineligible, and a
-// fallback means no binding is eligible.
-func assertSnapshotConsistent(t *testing.T, snap []health.Entrypoint) {
+// snapshot never names an active binding that it also reports ineligible; and a
+// fallback means no probed binding is eligible, so only a probe-less binding may
+// be serving. probed lists the configuration indexes that carry a probe.
+func assertSnapshotConsistent(t *testing.T, snap []health.Entrypoint, probed ...int) {
 	t.Helper()
 
 	if len(snap) != 1 || len(snap[0].Bindings) != 2 {
@@ -456,9 +542,11 @@ func assertSnapshotConsistent(t *testing.T, snap []health.Entrypoint) {
 		t.Fatalf("active binding %d is reported ineligible: %+v", active, ep)
 	}
 	if ep.Active.Fallback {
-		for _, b := range ep.Bindings {
-			if b.Eligible {
-				t.Fatalf("binding %d is eligible but the payload fell back: %+v", b.Index, ep)
+		for _, idx := range probed {
+			for _, b := range ep.Bindings {
+				if b.Index == idx && b.Eligible {
+					t.Fatalf("probed binding %d is eligible but the payload fell back: %+v", idx, ep)
+				}
 			}
 		}
 	}
@@ -499,7 +587,7 @@ func TestProbeSnapshotActiveMatchesEligibility(t *testing.T) {
 			return
 		default:
 		}
-		assertSnapshotConsistent(t, set.Snapshot())
+		assertSnapshotConsistent(t, set.Snapshot(), 0)
 	}
 }
 

@@ -116,6 +116,14 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 		// binding compiles to, so the variant entries are collected per
 		// binding index before the probe is registered.
 		failTimeout := bindingFailTimeout(e.Routes)
+		// One warning per probe-less binding after the first: it stays a valid
+		// configuration, but the first probe-less binding shadows it whenever
+		// every probe fails. Logged here, once per entrypoint, because the
+		// inner group is rebuilt for every inbound variant.
+		_, unreachable := bindingOrder(e.Routes)
+		for _, i := range unreachable {
+			log.Warnf("entrypoint %s: routes[%d] is a probe-less binding after another probe-less binding; it can never serve", e.Name, i)
+		}
 		bindingEntries := make([][]*xhop.HopEntry, len(e.Routes))
 		for _, group := range inboundGroups {
 			if !bindingsHaveVariant(e.Routes, routePlans, group.api) {
@@ -213,15 +221,47 @@ func bindingFailTimeout(bindings []gwconfig.RouteBinding) time.Duration {
 	return timeout
 }
 
+// bindingOrder returns the selection order of one entrypoint's route bindings:
+// probed bindings first, then probe-less ones, each in configuration order.
+// unreachable lists the probe-less bindings after the first one: they are legal
+// but can never serve, because the first probe-less binding already shadows them
+// whenever every probe fails.
+func bindingOrder(bindings []gwconfig.RouteBinding) (order, unreachable []int) {
+	order = make([]int, 0, len(bindings))
+	plain := make([]int, 0, len(bindings))
+	for i, b := range bindings {
+		if bindingHasProbe(b) {
+			order = append(order, i)
+			continue
+		}
+		plain = append(plain, i)
+	}
+	if len(plain) > 1 {
+		unreachable = append(unreachable, plain[1:]...)
+	}
+	return append(order, plain...), unreachable
+}
+
+// bindingHasProbe reports whether a binding actually runs a command probe. A
+// blank command never runs, so such a binding behaves like a probe-less one:
+// config validation rejects that shape, but a build that bypasses the loader
+// must still order it the way the probe runner and the health payload do.
+func bindingHasProbe(b gwconfig.RouteBinding) bool {
+	return b.Probe != nil && strings.TrimSpace(b.Probe.Command) != ""
+}
+
 // buildBindingsHop compiles one entrypoint's ordered route bindings into the
 // inner hop group for one inbound variant. A route without a protocol-specific
 // variant serves the inbound through its default hop, which is what the
 // entrypoint fallback entry did before bindings existed.
 //
 // The returned entries are the per-binding entries, index-aligned with
-// bindings; the probe runner marks and resets them. The group selector is FIFO
-// plus FailFilter(1, failTimeout): the first eligible binding in order wins,
-// and x falls back to the first binding when every entry is ineligible.
+// bindings; the probe runner marks and resets them. The group is fed the same
+// entries in priority order (probed bindings first, then probe-less ones, each
+// in configuration order) and selects with FIFO plus FailFilter(1, failTimeout):
+// the first eligible probed binding wins, the first probe-less binding serves
+// only when every probe is ineligible, and x falls back to the first probed
+// binding when no probe-less one exists.
 func buildBindingsHop(entrypointID string, bindings []gwconfig.RouteBinding, plans map[string]*routePlan, api provider.API, failTimeout time.Duration, log logger.Logger) (hop.Hop, []*xhop.HopEntry, error) {
 	if len(bindings) == 0 {
 		return nil, nil, fmt.Errorf("entrypoint %q: no route bindings", entrypointID)
@@ -244,8 +284,17 @@ func buildBindingsHop(entrypointID string, bindings []gwconfig.RouteBinding, pla
 		entries = append(entries, xhop.NewHopEntry(h, nil, nil))
 	}
 
+	// The group is fed probed bindings first, then the probe-less ones: FIFO +
+	// FailFilter then makes a probed binding outrank every probe-less one, and
+	// the returned slice stays index-aligned with bindings for the probe runner.
+	order, _ := bindingOrder(bindings)
+	groupEntries := make([]*xhop.HopEntry, 0, len(entries))
+	for _, i := range order {
+		groupEntries = append(groupEntries, entries[i])
+	}
+
 	return xhop.NewHopGroup(
-		xhop.WithEntriesOption(entries...),
+		xhop.WithEntriesOption(groupEntries...),
 		xhop.WithGroupSelectorOption(xs.NewSelector(
 			xs.FIFOStrategy[hop.Hop](),
 			xs.FailFilter[hop.Hop](1, failTimeout),

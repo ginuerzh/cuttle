@@ -54,7 +54,8 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
                   │                 │          └─ one provider + one model
                   │                 └─ ordered nodes, strategy (fifo / round / random / sticky)
                   │                    and an optional retry budget (`retries` / `retryCodes`)
-                  └─ ordered {route, probe?}; the first eligible binding wins
+                  └─ ordered {route, probe?}; probed bindings first, then the
+                     first probe-less one when every probe fails
 ```
 
 - An **entrypoint** is the client-facing ingress. It has a name, a non-empty
@@ -63,13 +64,17 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
 - Entrypoints are evaluated in declaration order. The first entrypoint with a
   matching glob wins; `*` is the explicit catch-all.
 - Globs are case-insensitive. `*` is the only wildcard.
-- A **binding** is `{route, probe?}`. Bindings are tried in order; the first
-  eligible binding serves the request.
+- A **binding** is `{route, probe?}`. Probed bindings are tried first, in
+  declaration order; every probe-less binding comes after all of them, also in
+  declaration order. The first eligible binding in that priority order serves
+  the request.
   - A binding with a `probe` is eligible while its command exits `0`.
-  - A binding without a `probe` is always eligible, so it shadows every binding
-    after it. At most one probe-less binding is allowed and it must be last.
-  - If every binding is ineligible, the first binding still serves the request.
-    That accepted fallback means the default route belongs first in the list.
+  - A binding without a `probe` is always eligible. The first probe-less binding
+    serves only when every probe is ineligible; further probe-less bindings are
+    legal but can never serve, and the build logs one warning per extra binding.
+  - If every probe is ineligible and there is no probe-less binding, the first
+    probed binding still serves the request. That accepted fallback never
+    returns a 502.
 - A **probe** is command-only and decides eligibility at runtime, with no config
   write and no reload; the full contract, environment variables and an example
   are in [Route bindings and command probes](#route-bindings-and-command-probes).
@@ -95,7 +100,8 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
 ### Route bindings and command probes
 
 An entrypoint may bind several routes and let a command decide which one serves.
-Bindings are tried in declaration order and the first eligible one wins:
+Probed bindings are tried first in declaration order, then the probe-less ones;
+the first eligible binding in that order wins:
 
 ```yaml
 entrypoints:
@@ -147,24 +153,27 @@ node markers keep their 429/5xx meaning.
 The command runs once per binding per `interval` (default `30s`; `timeout`
 defaults to `5s`), however many inbound protocol variants the binding compiles
 to, and runs immediately at startup and after a reload. A reload (SIGHUP or an
-admin save) re-routes to the first binding until each probe's first run
+admin save) re-routes to the first probed binding until each probe's first run
 completes (at most `timeout`). The verdict applies to the next request after the
 run, so the switching latency is one `interval`: with a `15s` probe traffic can
 take up to 15 seconds to follow a change. `interval` and `timeout` are at least
 `1s`, and `timeout` must be shorter than `interval`.
 
-A binding without a `probe` is always eligible and therefore shadows every
-binding after it: at most one probe-less binding is allowed and it must be last.
-A list of only probed bindings is valid. When every binding is ineligible the
-first one still serves the request — an accepted fallback that never returns a
-502 and never hands the request to a later entrypoint — so the default route
-belongs first in the list.
+Selection inside one entrypoint is by category, then by order: a probed binding
+outranks every probe-less binding, and order only decides inside a category.
+Probed bindings are tried in declaration order and the first eligible one
+serves. The probe-less bindings come after all of them; only the first one can
+serve, and it does so exactly when every probe is ineligible. Extra probe-less
+bindings are accepted but unreachable, so the build logs one warning per extra
+binding. A list of only probed bindings is valid; when every probe is ineligible
+the first probed binding still serves the request, an accepted fallback that
+never returns a 502 and never hands the request to a later entrypoint.
 
-`GET /api/entrypoints/health` reports each entrypoint's bindings, the binding
-that serves next (`active`) and the last probe result; see
-[Admin API](#admin-api). The console shows the same state on the Entrypoints
-page, where the binding that serves next is marked `●`, and as edge badges on
-the topology monitor.
+`GET /api/entrypoints/health` reports each entrypoint's bindings in the same
+priority order, the binding that serves next (`active`) and the last probe
+result; see [Admin API](#admin-api). The console shows the same state on the
+Entrypoints page, where the binding that serves next is marked `●`, and as edge
+badges on the topology monitor.
 
 > The routing model is intentionally strict. Old configurations using
 > `aliases`, route `match`, or node `models` maps are rejected at load time.
@@ -486,15 +495,17 @@ creation. Delete and recreate the provider to change them, or edit the config
 file and reload.
 
 The topology view has monitor and edit modes. In monitor mode nodes are fixed
-and binding edges are badged from the latest probe run: an ineligible binding
-that is not serving shows `未通过` (unavailable) in dashed amber, and the binding
-x falls back to when everything is ineligible shows `回退` (fallback) in the
-same dashed amber. In edit mode you can drag an entrypoint onto a route, a route
-onto a node or a node onto a provider to change the configuration. Dragging onto
-a route adds a binding, placed before a trailing probe-less binding so it can
-still serve; dragging a route the entrypoint already binds changes nothing, and
-the entrypoint edge panel's `断开` removes just that one binding, so removing
-the last one makes the entrypoint a draft again. A draft card is tagged
+and binding edges show the latest probe state: the binding that serves is
+emphasised, a failing probe binding carries a `✕` mark, and a binding that
+serves only because every probe failed carries `回退` (fallback). A binding
+without a probe is drawn dashed, because nothing checks it. Probe `command`,
+`interval` and `timeout` are edited in the `entrypoint → route` edge panel; an
+empty command removes the probe. In edit mode you can drag an entrypoint onto a
+route, a route onto a node or a node onto a provider to change the
+configuration. Dragging onto a route appends a binding; dragging a route the
+entrypoint already binds changes nothing, and the entrypoint edge panel's `断开`
+removes just that one binding, so removing the last one makes the entrypoint a
+draft again. A draft card is tagged
 `未连接` (not connected). Node positions are stored in the stats SQLite database
 and shared by every admin; `localStorage` keeps a local backup and is used if
 the server cannot be reached.
@@ -727,7 +738,7 @@ for short debugging sessions and protect the log stream.
 | `match` | yes | Non-empty list of client model globs |
 | `routes` | no | Ordered route bindings; an empty or absent list is a draft (the entrypoint then serves no traffic) |
 | `routes[].route` | yes | Existing route id (literal; see below) |
-| `routes[].probe` | no | Command probe; absent means the binding is always eligible |
+| `routes[].probe` | no | Command probe; absent means the binding never probes and serves only when every probe fails |
 | `routes[].probe.command` | yes | Shell command; exit `0` means eligible |
 | `routes[].probe.interval` | no | `30s` (minimum `1s`); how often the command runs |
 | `routes[].probe.timeout` | no | `5s` (minimum `1s`); must be shorter than `interval` |
@@ -735,21 +746,23 @@ for short debugging sessions and protect the log stream.
 Declaration order is the matching precedence. Globs inside one entrypoint are a
 union.
 
-Bindings are tried in declaration order and the first eligible one serves the
-request. A probe is the external switch: while its command exits `0` the binding
-is eligible, and any other exit, timeout or exec failure makes it ineligible. It
-adds no credentials of its own but inherits the cuttle process environment, so
-provider keys exported for `${VAR}` are visible to it — never print them — and it
-must never call a provider API. The full contract, environment variables and an
-example are in
+Probed bindings are tried first in declaration order, then the probe-less ones;
+the first eligible binding in that priority order serves the request. A probe is
+the external switch: while its command exits `0` the binding is eligible, and any
+other exit, timeout or exec failure makes it ineligible. It adds no credentials
+of its own but inherits the cuttle process environment, so provider keys exported
+for `${VAR}` are visible to it — never print them — and it must never call a
+provider API. The full contract, environment variables and an example are in
 [Route bindings and command probes](#route-bindings-and-command-probes).
 
 A binding without a probe is always eligible, which is how an explicit static
-default is written ("if no script claims the traffic, use this"); it shadows
-everything after it, so at most one is allowed and it must be the last binding.
-A list with only probed bindings is valid. Duplicate route ids inside one
-entrypoint are rejected, and validation names the entrypoint and binding index
-(`entrypoint "fast": routes[1]: ...`).
+default is written ("if no script claims the traffic, use this"). Probed
+bindings outrank it regardless of its position: it serves only when every probe
+is ineligible, and only the first probe-less binding can serve. Multiple
+probe-less bindings are accepted; the build logs one warning per extra binding,
+because it can never serve. A list with only probed bindings is valid. Duplicate
+route ids inside one entrypoint are rejected, and validation names the entrypoint
+and binding index (`entrypoint "fast": routes[1]: ...`).
 
 `routes[].route` is a literal route id and cannot be `${VAR}` in a hand-written
 file, because entity references are resolved before environment expansion (see
@@ -1101,15 +1114,19 @@ bindings, in configuration order (a draft entrypoint has none and is absent), or
     {"index":1,"routeId":"r_f3k9x2m4qa","routeName":"premium","eligible":true}]}]
 ```
 
-`eligible` is the probe verdict; a binding without a probe, or one that has not
-run yet, is eligible. `last` is absent until the first run and carries the exit
-code (`-1` for a timeout or a command that could not start), latency and the
-first 1 KiB of stderr (or the exec error when stderr is empty). `active` is the
-binding that will serve the next request, computed with the same marker rule as
-the data plane: the first eligible binding, otherwise the first binding with
-`fallback: true`. The verdict is in-memory, rebuilt by the probe run that
-follows a reload, and separate from `GET /api/routes/health`, which still
-reports node markers.
+`bindings[]` is ordered by selection priority — probed bindings in
+configuration order, then probe-less ones — and `index` stays the configured
+position. `eligible` is the probe verdict; a binding without a probe, or one that
+has not run yet, is eligible. `last` is absent until the first run and carries
+the exit code (`-1` for a timeout or a command that could not start), latency
+and the first 1 KiB of stderr (or the exec error when stderr is empty). `active`
+is the binding that will serve the next request, computed with the same marker
+rule and priority order as the data plane. `fallback` is true exactly when at
+least one binding has a probe and none of the probed bindings is eligible: then
+the first probe-less binding serves, or the first probed binding when there is no
+probe-less one. An entrypoint with no probes never reports a fallback. The
+verdict is in-memory, rebuilt by the probe run that follows a reload, and
+separate from `GET /api/routes/health`, which still reports node markers.
 
 `GET /api/requests` accepts `errors=1`, `captured=1`, `errorClass=<class>`,
 `provider=<id>`, `route=<id>`, `node=<id>`, `entrypoint=<id>` and `key=<id>`
