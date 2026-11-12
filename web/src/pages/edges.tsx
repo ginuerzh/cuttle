@@ -23,6 +23,12 @@ export interface BindingEdgeState {
    * so this is read from `entrypoints[].routes[].probe`.
    */
   hasProbe: boolean;
+  /**
+   * The entrypoint has exactly one binding, so there is nothing to choose
+   * between and the edge is the normal default rather than an unverified
+   * alternative.
+   */
+  onlyBinding: boolean;
 }
 
 /** The configured bindings that carry a probe, keyed by entrypoint id + route id. */
@@ -51,6 +57,7 @@ export function bindingEdgeHealth(
   const rows = new Map<string, BindingEdgeState>();
   for (const entrypoint of health ?? []) {
     const current = entrypoint.active;
+    const onlyBinding = entrypoint.bindings?.length === 1;
     for (const binding of entrypoint.bindings ?? []) {
       const id = `entrypoint:${entrypoint.entrypointId}->route:${binding.routeId}`;
       if (rows.has(id)) continue;
@@ -60,6 +67,7 @@ export function bindingEdgeHealth(
         active: isActive && !current.fallback,
         fallback: isActive && current.fallback,
         hasProbe: probed.has(`${entrypoint.entrypointId}\0${binding.routeId}`),
+        onlyBinding,
       });
     }
   }
@@ -73,7 +81,7 @@ export interface BindingEdgeBadge {
   text?: string;
   /** Style the edge amber, because a probe is failing. */
   invalid: boolean;
-  /** Draw the edge dashed, because nothing checks this binding. */
+  /** Draw the edge dashed, because nothing checks this binding and it is not the entrypoint's only one. */
   dashed: boolean;
 }
 
@@ -81,8 +89,10 @@ export interface BindingEdgeBadge {
  * The badge an edge carries. A probed binding whose probe fails is solid amber
  * with a `✕`; the fallback binding adds `回退` (`✕ 回退` when probed). A binding
  * without a probe is dashed and neutral, because nothing checks it, and carries
- * no state label unless it serves the fallback. An eligible active binding and
- * a binding without health stay solid and unlabelled.
+ * no state label unless it serves the fallback. The exception is an entrypoint
+ * with a single binding: there is nothing to choose between, so that is the
+ * normal case and stays solid. An eligible active binding and a binding without
+ * health stay solid and unlabelled.
  */
 export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
   if (!state) return { invalid: false, dashed: false };
@@ -91,7 +101,7 @@ export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
     mark: invalid ? '✕' : undefined,
     text: state.fallback ? translate('回退') : undefined,
     invalid,
-    dashed: !state.hasProbe,
+    dashed: !state.hasProbe && !state.onlyBinding,
   };
 }
 

@@ -194,6 +194,19 @@ describe('binding badges', () => {
     expect(decorated.label).toBeUndefined();
   });
 
+  it('keeps a lone probe-less binding solid, because that is the default case', () => {
+    const states = bindingEdgeHealth(
+      [health('r_0000000001', false, [['r_0000000001', true]])],
+      [{ id: 'e_0000000001', name: 'all', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
+    );
+
+    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, states);
+
+    expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
+    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+    expect(decorated.label).toBeUndefined();
+  });
+
   it('draws a failing probe binding as a solid amber edge marked ✕', () => {
     const states = badges('r_0000000002', false, [
       ['r_0000000001', false],

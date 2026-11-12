@@ -125,12 +125,14 @@ describe('bindingEdgeHealth', () => {
       active: false,
       fallback: false,
       hasProbe: false,
+      onlyBinding: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
       eligible: true,
       active: true,
       fallback: false,
       hasProbe: false,
+      onlyBinding: false,
     });
   });
 
@@ -169,12 +171,14 @@ describe('bindingEdgeHealth', () => {
       active: false,
       fallback: true,
       hasProbe: false,
+      onlyBinding: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
       eligible: false,
       active: false,
       fallback: false,
       hasProbe: false,
+      onlyBinding: false,
     });
   });
 
@@ -191,6 +195,18 @@ describe('bindingEdgeHealth', () => {
 
   it('returns an empty map without health', () => {
     expect(bindingEdgeHealth(undefined).size).toBe(0);
+  });
+
+  it('marks a lone binding as the entrypoint only one', () => {
+    const rows = bindingEdgeHealth([
+      health('e_0000000001', { routeId: 'r_0000000001', fallback: false }, [['r_0000000001', true]]),
+    ]);
+
+    expect(rows.get('entrypoint:e_0000000001->route:r_0000000001')).toMatchObject({
+      eligible: true,
+      active: true,
+      onlyBinding: true,
+    });
   });
 
   it('preserves the selected flag when re-decorating an edge', () => {
