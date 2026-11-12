@@ -259,7 +259,7 @@ func TestRouteCRUDByIDAndRename(t *testing.T) {
 
 	// An entrypoint references the route by id before the rename.
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints",
-		`[{"name":"default","match":["*"],"route":"`+id+`"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+		`[{"name":"default","match":["*"],"routes":[{"route":"`+id+`"}]}]`, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("put entrypoints = %d: %s", resp.StatusCode, b)
 	}
@@ -275,7 +275,7 @@ func TestRouteCRUDByIDAndRename(t *testing.T) {
 		len(got[0].Nodes) != 1 || got[0].Nodes[0] != nid {
 		t.Fatalf("stored routes = %+v, want the same id renamed to renamed", got)
 	}
-	if got := rel.cfg.Entrypoints; len(got) != 1 || got[0].Route != id {
+	if got := rel.cfg.Entrypoints; len(got) != 1 || len(got[0].Routes) != 1 || got[0].Routes[0].Route != id {
 		t.Fatalf("entrypoints after the route rename = %+v, want the route id kept", got)
 	}
 
@@ -332,7 +332,7 @@ func TestPutEntrypointsAssignsIDsAndPreservesThem(t *testing.T) {
 
 	// A fresh entry receives a generated entrypoint id.
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints",
-		`[{"name":"fast","match":["gpt-4.5*"],"route":"`+fastID+`"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+		`[{"name":"fast","match":["gpt-4.5*"],"routes":[{"route":"`+fastID+`"}]}]`, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("put entrypoints = %d: %s", resp.StatusCode, b)
 	}
@@ -344,14 +344,14 @@ func TestPutEntrypointsAssignsIDsAndPreservesThem(t *testing.T) {
 	if !identity.Valid(identity.Entrypoint, eid) {
 		t.Fatalf("entrypoint id = %q, want a generated e_ id", eid)
 	}
-	if list[0].Route != fastID {
-		t.Fatalf("entrypoint route = %q, want the route id %q", list[0].Route, fastID)
+	if len(list[0].Routes) != 1 || list[0].Routes[0].Route != fastID {
+		t.Fatalf("entrypoint routes = %+v, want the route id %q", list[0].Routes, fastID)
 	}
 
 	// A later PUT keeps an id that is sent, mints one for a new entry and
 	// keeps declaration order.
-	body := `[{"name":"slow","match":["slow*"],"route":"` + slowID + `"},` +
-		`{"id":"` + eid + `","name":"fast","match":["gpt-4.5*"],"route":"` + fastID + `"}]`
+	body := `[{"name":"slow","match":["slow*"],"routes":[{"route":"` + slowID + `"}]},` +
+		`{"id":"` + eid + `","name":"fast","match":["gpt-4.5*"],"routes":[{"route":"` + fastID + `"}]}]`
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", body, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("second put entrypoints = %d: %s", resp.StatusCode, b)
@@ -370,8 +370,8 @@ func TestPutEntrypointsAssignsIDsAndPreservesThem(t *testing.T) {
 
 	// An id-less entry matched by name adopts the stored id, so a rename of
 	// that entry keeps its identity and its position.
-	renamed := `[{"name":"slowest","match":["slow*"],"route":"` + slowID + `"},` +
-		`{"name":"fast","match":["gpt-4.5*"],"route":"` + fastID + `"}]`
+	renamed := `[{"name":"slowest","match":["slow*"],"routes":[{"route":"` + slowID + `"}]},` +
+		`{"name":"fast","match":["gpt-4.5*"],"routes":[{"route":"` + fastID + `"}]}]`
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", renamed, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("third put entrypoints = %d: %s", resp.StatusCode, b)
@@ -511,7 +511,7 @@ func TestPutConfigAdoptsStoredEntityIDs(t *testing.T) {
 	nid := createNodeTest(t, client, base, csrf, pid, "n")
 	rid := createNodeBackedRoute(t, client, base, csrf, "fast", nid)
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints",
-		`[{"name":"default","match":["*"],"route":"`+rid+`"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+		`[{"name":"default","match":["*"],"routes":[{"route":"`+rid+`"}]}]`, csrf); resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("put entrypoints = %d: %s", resp.StatusCode, b)
 	}
@@ -523,7 +523,7 @@ func TestPutConfigAdoptsStoredEntityIDs(t *testing.T) {
 	cfg := `{"providers":[` + provider + `],"nodes":[` +
 		`{"name":"n","provider":"` + pid + `","model":"m1"}],` +
 		`"routes":[{"name":"fast","nodes":["` + nid + `"]}],` +
-		`"entrypoints":[{"name":"default","match":["*"],"route":"` + rid + `"}]}`
+		`"entrypoints":[{"name":"default","match":["*"],"routes":[{"route":"` + rid + `"}]}]}`
 	putConfig(t, client, base, csrf, cfg)
 
 	if got := rel.cfg.Nodes; len(got) != 1 || got[0].ID != nid {
@@ -555,8 +555,8 @@ func TestPutConfigAdoptsStoredEntityIDs(t *testing.T) {
 		`{"name":"fresh","provider":"` + pid + `","model":"m2"}],` +
 		`"routes":[{"name":"fast","nodes":["` + nid + `"]},` +
 		`{"name":"fresh","nodes":["` + nid + `"]}],` +
-		`"entrypoints":[{"name":"default","match":["*"],"route":"` + rid + `"},` +
-		`{"name":"fresh","match":["fresh-*"],"route":"` + rid + `"}]}`
+		`"entrypoints":[{"name":"default","match":["*"],"routes":[{"route":"` + rid + `"}]},` +
+		`{"name":"fresh","match":["fresh-*"],"routes":[{"route":"` + rid + `"}]}]}`
 	putConfig(t, client, base, csrf, cfg)
 
 	if got := rel.cfg.Providers; len(got) != 2 || got[0].ID != pid {

@@ -116,7 +116,7 @@ func TestResolveNodeKeysKeyless(t *testing.T) {
 func nodeKeyBuildConfig(upstreamURL string) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway:     gwconfig.Gateway{Listen: "127.0.0.1:0"},
-		Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: "r_0000000001"}},
+		Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Routes: bindings("r_0000000001")}},
 		Providers: []gwconfig.Provider{{
 			ID:   "p_0000000001",
 			Name: "up",

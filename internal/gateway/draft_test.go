@@ -37,7 +37,7 @@ func TestDraftEntrypointDoesNotFallThrough(t *testing.T) {
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
 	cfg.Entrypoints = []gwconfig.Entrypoint{
 		{ID: "e_0000000003", Name: "draft", Match: []string{"*"}},
-		{ID: "e_0000000004", Name: "fallback", Match: []string{"*"}, Route: testRouteID},
+		{ID: "e_0000000004", Name: "fallback", Match: []string{"*"}, Routes: bindings(testRouteID)},
 	}
 	gw := startGateway(t, cfg)
 
@@ -71,7 +71,7 @@ func TestDraftNodeRouteFails(t *testing.T) {
 func TestDraftEntrypointCountTokensFails(t *testing.T) {
 	up, hit := captureUpstream(t)
 	cfg := testConfig(up.URL)
-	cfg.Entrypoints[0].Route = ""
+	cfg.Entrypoints[0].Routes = nil
 	gw := startGateway(t, cfg)
 
 	if code := postModel(t, gw, "/v1/messages/count_tokens", `{"model":"anything","messages":[]}`); code != http.StatusBadGateway {

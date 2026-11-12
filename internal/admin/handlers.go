@@ -821,10 +821,15 @@ func routeIndexByID(c *config.Config, id string) int {
 	return -1
 }
 
-// sameRouteRef reports whether an entrypoint's route reference points at rt.
-// The reference is the route id.
-func sameRouteRef(ref string, rt config.Route) bool {
-	return strings.TrimSpace(ref) == rt.ID
+// routeReferencedBy reports whether the entrypoint binds the route. Bindings
+// hold route ids, never display names.
+func routeReferencedBy(e config.Entrypoint, routeID string) bool {
+	for _, b := range e.Routes {
+		if strings.TrimSpace(b.Route) == routeID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleRouteHealth(w http.ResponseWriter, r *http.Request) {
@@ -914,7 +919,7 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 		target := c.Routes[i]
 		var refs []string
 		for _, e := range c.Entrypoints {
-			if sameRouteRef(e.Route, target) {
+			if routeReferencedBy(e, target.ID) {
 				refs = append(refs, entityLabel(e.Name, e.ID))
 			}
 		}

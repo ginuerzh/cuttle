@@ -24,7 +24,7 @@ func TestApplyMigratesStatsAndSyncsLabels(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = path
-	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "edge", Match: []string{"*"}, Route: "r_0000000001"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "edge", Match: []string{"*"}, Routes: bindings("r_0000000001")}}
 	cfg.Providers = []config.Provider{{
 		ID:   "p_0000000001",
 		Name: "alpha",

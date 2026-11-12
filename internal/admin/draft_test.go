@@ -19,7 +19,7 @@ func TestDraftNodeAndEntrypointAreAccepted(t *testing.T) {
 	}
 
 	// An entrypoint with no route is a draft, in declaration order.
-	body := `[{"name":"draft-entry","match":["mystery*"]},{"name":"fast","match":["gpt-4.5*"],"route":"` + route + `"}]`
+	body := `[{"name":"draft-entry","match":["mystery*"]},{"name":"fast","match":["gpt-4.5*"],"routes":[{"route":"` + route + `"}]}]`
 	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", body, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put draft entrypoint = %d, want 204", resp.StatusCode)
 	}
@@ -51,7 +51,7 @@ func TestDraftNodeAndEntrypointAreAccepted(t *testing.T) {
 	if draftNode == nil || draftNode.Provider != "" || draftNode.Model != "" {
 		t.Fatalf("draft node = %+v, want an empty provider and model", draftNode)
 	}
-	if len(view.Entrypoints) == 0 || view.Entrypoints[0].Name != "draft-entry" || view.Entrypoints[0].Route != "" {
+	if len(view.Entrypoints) == 0 || view.Entrypoints[0].Name != "draft-entry" || len(view.Entrypoints[0].Routes) != 0 {
 		t.Fatalf("entrypoints = %+v, want an unconnected draft first", view.Entrypoints)
 	}
 }

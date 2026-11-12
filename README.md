@@ -49,18 +49,33 @@ Every request follows one chain:
 client model
     │  glob match, entrypoint order
     ▼
-Entrypoint ──► Route ──► Node ──► Provider model
-                 │          │
-                 │          └─ one provider + one model
-                 └─ ordered nodes, strategy (fifo / round / random / sticky)
-                    and an optional retry budget (`retries` / `retryCodes`)
+Entrypoint ──► route bindings ──► Route ──► Node ──► Provider model
+                  │                 │          │
+                  │                 │          └─ one provider + one model
+                  │                 └─ ordered nodes, strategy (fifo / round / random / sticky)
+                  │                    and an optional retry budget (`retries` / `retryCodes`)
+                  └─ ordered {route, probe?}; the first eligible binding wins
 ```
 
 - An **entrypoint** is the client-facing ingress. It has a name, a non-empty
-  list of model globs, and one route. The route may be empty while drafting.
+  list of model globs, and an ordered list of route bindings. The list may be
+  empty while drafting.
 - Entrypoints are evaluated in declaration order. The first entrypoint with a
   matching glob wins; `*` is the explicit catch-all.
 - Globs are case-insensitive. `*` is the only wildcard.
+- A **binding** is `{route, probe?}`. Bindings are tried in order; the first
+  eligible binding serves the request.
+  - A binding with a `probe` is eligible while its command exits `0`.
+  - A binding without a `probe` is always eligible, so it shadows every binding
+    after it. At most one probe-less binding is allowed and it must be last.
+  - If every binding is ineligible, the first binding still serves the request.
+    That accepted fallback means the default route belongs first in the list.
+- A **probe** is command-only: `sh -c <command>` (`cmd /C` on Windows), exit `0`
+  = eligible, anything else = ineligible. It runs once per binding per interval,
+  never calls a provider API, and never marks a node `dead`. `probe.command` is
+  not environment-expanded at load time; `$` belongs to the shell. `interval`
+  defaults to `30s` and `timeout` to `5s`; `timeout` must be shorter than
+  `interval`.
 - A **route** contains only nodes, a selection strategy and an optional retry
   budget. It does not match anything by itself.
 - A **node** binds at most one provider and one provider model. `backup` marks
@@ -73,7 +88,7 @@ Entrypoint ──► Route ──► Node ──► Provider model
 - Disabling a provider, a node, or a provider model removes that node from the
   compiled route. A route with no usable nodes fails the request instead of
   passing the client model through.
-- An entrypoint without a route, or a node without a provider, is a **draft**:
+- An entrypoint without bindings, or a node without a provider, is a **draft**:
   it is saved, shown on the topology and shared with every admin, but it serves
   no traffic. A request that matches a draft entrypoint fails (502) and is
   recorded as unrouted; it never falls through to a later entrypoint. Skip a
@@ -85,6 +100,10 @@ Entrypoint ──► Route ──► Node ──► Provider model
 > There is no automatic migration. The one automatic config migration is the
 > entity-id rewrite described in [Identity: ids and
 > names](#identity-ids-and-names).
+>
+> Upgrading: `entrypoint.route` is gone. A file that still carries it fails to
+> load, so rewrite it as a one-element `routes` list (see
+> [`entrypoints[]`](#entrypoints)) before sending `SIGHUP`.
 
 ## Identity: ids and names
 
@@ -94,9 +113,10 @@ fields:
 - `id` is the stable handle. It looks like `<prefix>_<10 base32 characters>`:
   `p_` provider, `pk_` provider key, `n_` node, `r_` route, `e_` entrypoint,
   `gk_` gateway key. It is globally unique within the file and never changes.
-  Every association (`entrypoints[].route`, `nodes[].provider`, `nodes[].key`,
-  `routes[].nodes`) stores an id, and so do stats rows, the admin API and the
-  saved topology layout.
+  Every association (`entrypoints[].routes[].route`, `nodes[].provider`,
+  `nodes[].key`, `routes[].nodes`) stores an id, and so do stats rows, the admin
+  API and the saved topology layout. A route binding is inline config: it has no
+  id of its own.
 - `name` is a display label. It must be unique per entity kind (provider key
   names only inside their provider), at most 64 characters, and must not contain
   `$` or control characters. It is otherwise free-form: spaces, `/` and
@@ -273,7 +293,8 @@ entrypoints:
   - id: e_q7a4m2xk9d
     name: default
     match: ["*"]
-    route: r_7d2n5v8b1e
+    routes:
+      - route: r_7d2n5v8b1e
 
 providers:
   - id: p_3k9x2m4q7a
@@ -605,7 +626,13 @@ for short debugging sessions and protect the log stream.
   match:
     - "claude-sonnet*"
     - "gpt-4.5*"
-  route: r_7d2n5v8b1e
+  routes:
+    - route: r_7d2n5v8b1e
+      probe:
+        command: /usr/local/bin/cuttle-quota cheap
+        interval: 30s
+        timeout: 5s
+    - route: r_f3k9x2m4qa
 ```
 
 | Field | Required | Description |
@@ -613,10 +640,33 @@ for short debugging sessions and protect the log stream.
 | `id` | yes | Immutable entrypoint id; assigned by the loader or the console |
 | `name` | yes | Unique display label |
 | `match` | yes | Non-empty list of client model globs |
-| `route` | no | Existing route id; empty while drafting (the entrypoint then serves no traffic) |
+| `routes` | no | Ordered route bindings; an empty or absent list is a draft (the entrypoint then serves no traffic) |
+| `routes[].route` | yes | Existing route id |
+| `routes[].probe` | no | Command probe; absent means the binding is always eligible |
+| `routes[].probe.command` | yes | Shell command; exit `0` means eligible |
+| `routes[].probe.interval` | no | `30s`; how often the command runs |
+| `routes[].probe.timeout` | no | `5s`; must be shorter than `interval` |
 
 Declaration order is the matching precedence. Globs inside one entrypoint are a
 union.
+
+Bindings are tried in declaration order and the first eligible one serves the
+request. A probe is the external switch: while its command exits `0` the binding
+is eligible, and any other exit, timeout or exec failure makes it ineligible.
+The command runs as the cuttle process, gets no provider credentials from
+cuttle, and must never call a provider API.
+
+A binding without a probe is always eligible, which is how an explicit static
+default is written ("if no script claims the traffic, use this"). Because such a
+binding shadows everything after it, at most one probe-less binding is allowed
+and it must be the last binding. A list with only probed bindings is valid, and
+when every probe fails the first binding still serves the request: the fallback
+is "binding 0", never a 502 and never another entrypoint. Duplicate route ids
+inside one entrypoint are rejected.
+
+The configuration is a breaking change from the single-route schema:
+`entrypoint.route` no longer loads. Rewrite an existing file as a one-element
+`routes` list before sending `SIGHUP`.
 
 ### `providers[]`
 
@@ -1042,7 +1092,8 @@ streaming request that ended without a terminal
 cut is surfaced.
 
 `PUT /api/entrypoints` replaces the whole ordered list. Entrypoint order is
-precedence, so the list is edited and saved as one unit.
+precedence, so the list is edited and saved as one unit. Each entry carries its
+inline `routes: [{route, probe?}]` bindings; bindings have no id.
 
 `GET /api/topology/positions` returns the shared layout map and `PUT` replaces
 it. The layout lives in the `topology_positions` table of `stats.sqlite`.

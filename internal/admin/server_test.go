@@ -252,7 +252,7 @@ func TestAuthAndCSRF(t *testing.T) {
 	}
 
 	client, csrf := login(t, ts.URL)
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"fast"}]`, ""); resp.StatusCode != http.StatusForbidden {
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"routes":[{"route":"fast"}]}]`, ""); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("missing csrf status = %d, want 403", resp.StatusCode)
 	}
 	if rel.calls != 0 {
@@ -275,11 +275,11 @@ func TestAuthAndCSRF(t *testing.T) {
 	mustCreate(t, client, ts.URL+"/api/routes",
 		`{"name":"fast","nodes":["`+nid+`"]}`, csrf)
 	rid := routeID(t, client, ts.URL, "fast")
-	entrypoints := `[{"name":"default","match":["*"],"route":"` + rid + `"}]`
+	entrypoints := `[{"name":"default","match":["*"],"routes":[{"route":"` + rid + `"}]}]`
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", entrypoints, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put entrypoints status = %d", resp.StatusCode)
 	}
-	if len(rel.cfg.Entrypoints) != 1 || rel.cfg.Entrypoints[0].Route != rid {
+	if len(rel.cfg.Entrypoints) != 1 || len(rel.cfg.Entrypoints[0].Routes) != 1 || rel.cfg.Entrypoints[0].Routes[0].Route != rid {
 		t.Fatalf("entrypoints not applied: %+v", rel.cfg.Entrypoints)
 	}
 
@@ -411,7 +411,7 @@ func TestReloadFailureKeepsFileAndMemory(t *testing.T) {
 	attempts := rel.attempts
 	rel.err = errors.New("boom")
 	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints",
-		`[{"name":"default","match":["*"],"route":"`+fastID+`"}]`, csrf); resp.StatusCode != http.StatusBadRequest {
+		`[{"name":"default","match":["*"],"routes":[{"route":"`+fastID+`"}]}]`, csrf); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 	after, err := os.ReadFile(path)
@@ -730,7 +730,7 @@ func jsonDecode(r io.Reader, v any) error {
 func TestStatsAPI(t *testing.T) {
 	s, rel, _, ts := newTestAdmin(t)
 	s.mu.Lock()
-	s.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude-*"}, Route: "r"}}
+	s.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude-*"}, Routes: []config.RouteBinding{{Route: "r"}}}}
 	s.mu.Unlock()
 	client, _ := login(t, ts.URL)
 
@@ -1145,7 +1145,7 @@ func TestPutStatsCapture(t *testing.T) {
 		t.Fatalf("create route status = %d", resp.StatusCode)
 	}
 	rid := routeID(t, client, ts.URL, "fast")
-	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"route":"`+rid+`"}]`, csrf); resp.StatusCode != http.StatusNoContent {
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/entrypoints", `[{"name":"default","match":["*"],"routes":[{"route":"`+rid+`"}]}]`, csrf); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("put entrypoints status = %d", resp.StatusCode)
 	}
 

@@ -92,14 +92,33 @@ type Log struct {
 }
 
 // Entrypoint is the client-facing ingress: it owns the model globs that select
-// it and one optional route. The id is the stable handle; the name is a display
-// label. An empty route is a draft: the entrypoint still claims its models in
-// declaration order but every matching request fails as unrouted.
+// it and an ordered list of route bindings. The id is the stable handle; the
+// name is a display label. No bindings is a draft: the entrypoint still claims
+// its models in declaration order but every matching request fails as
+// unrouted.
 type Entrypoint struct {
-	ID    string   `yaml:"id" json:"id"`
-	Name  string   `yaml:"name" json:"name"`
-	Match []string `yaml:"match" json:"match"`
-	Route string   `yaml:"route" json:"route"`
+	ID     string         `yaml:"id" json:"id"`
+	Name   string         `yaml:"name" json:"name"`
+	Match  []string       `yaml:"match" json:"match"`
+	Routes []RouteBinding `yaml:"routes,omitempty" json:"routes,omitempty"`
+}
+
+// RouteBinding binds a route to an entrypoint. Probe, when set, decides whether
+// the binding may serve new requests: exit 0 means eligible. Bindings are
+// inline config, not entities: they carry no id and are never addressed by an
+// API path.
+type RouteBinding struct {
+	Route string `yaml:"route" json:"route"`
+	Probe *Probe `yaml:"probe,omitempty" json:"probe,omitempty"`
+}
+
+// Probe is the command probe attached to one route binding. The command runs
+// through a shell, so it is never environment-expanded at load time: "$"
+// belongs to the shell.
+type Probe struct {
+	Command  string   `yaml:"command" json:"command"`
+	Interval Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
+	Timeout  Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 // Provider is an upstream LLM endpoint: which APIs it serves, how to connect
@@ -450,7 +469,12 @@ func (c *Config) expandEnv() {
 		e := &c.Entrypoints[i]
 		e.ID = ExpandEnv(e.ID)
 		e.Name = ExpandEnv(e.Name)
-		e.Route = ExpandEnv(e.Route)
+		for j := range e.Routes {
+			// Only the route reference is expanded. The probe command belongs
+			// to the shell: expanding it here would corrupt "$VAR" and break
+			// the rule that an admin save never reinterprets a literal "$".
+			e.Routes[j].Route = ExpandEnv(e.Routes[j].Route)
+		}
 		for j := range e.Match {
 			e.Match[j] = ExpandEnv(e.Match[j])
 		}
@@ -604,7 +628,20 @@ func (c *Config) applyDefaults() {
 	for i := range c.Entrypoints {
 		e := &c.Entrypoints[i]
 		e.Name = strings.TrimSpace(e.Name)
-		e.Route = strings.TrimSpace(e.Route)
+		for j := range e.Routes {
+			b := &e.Routes[j]
+			b.Route = strings.TrimSpace(b.Route)
+			if b.Probe == nil {
+				continue
+			}
+			b.Probe.Command = strings.TrimSpace(b.Probe.Command)
+			if b.Probe.Interval == 0 {
+				b.Probe.Interval = Duration(30 * time.Second)
+			}
+			if b.Probe.Timeout == 0 {
+				b.Probe.Timeout = Duration(5 * time.Second)
+			}
+		}
 		seen := make(map[string]struct{}, len(e.Match))
 		match := make([]string, 0, len(e.Match))
 		for _, m := range e.Match {
@@ -1197,14 +1234,41 @@ func Validate(c *Config) error {
 		if !hasMatch {
 			return fmt.Errorf("entrypoint %q: match is required", name)
 		}
-		route := strings.TrimSpace(e.Route)
-		if route == "" {
-			// An entrypoint without a route is a draft: it claims its models in
-			// declaration order but serves no traffic.
-			continue
-		}
-		if !routeIDs[route] {
-			return nameRefError(fmt.Sprintf("entrypoint %q", name), "route", route, routeIDByName)
+		seenRoutes := make(map[string]bool, len(e.Routes))
+		for j := range e.Routes {
+			b := &e.Routes[j]
+			scope := fmt.Sprintf("entrypoint %q: routes[%d]", name, j)
+			// A probe-less binding is always eligible, so it shadows every
+			// binding after it. Only the last position is meaningful.
+			if b.Probe == nil && j != len(e.Routes)-1 {
+				return fmt.Errorf("%s: a binding without a probe must be last", scope)
+			}
+			route := strings.TrimSpace(b.Route)
+			if route == "" {
+				return fmt.Errorf("%s: route is required", scope)
+			}
+			if !routeIDs[route] {
+				return nameRefError(scope, "route", route, routeIDByName)
+			}
+			if seenRoutes[route] {
+				return fmt.Errorf("%s: duplicate route %q", scope, route)
+			}
+			seenRoutes[route] = true
+			if b.Probe == nil {
+				continue
+			}
+			if strings.TrimSpace(b.Probe.Command) == "" {
+				return fmt.Errorf("%s: probe command is required", scope)
+			}
+			if b.Probe.Interval < Duration(time.Second) {
+				return fmt.Errorf("%s: probe interval must be at least 1s", scope)
+			}
+			if b.Probe.Timeout < Duration(time.Second) {
+				return fmt.Errorf("%s: probe timeout must be at least 1s", scope)
+			}
+			if b.Probe.Timeout >= b.Probe.Interval {
+				return fmt.Errorf("%s: probe timeout must be less than the interval", scope)
+			}
 		}
 	}
 	return nil

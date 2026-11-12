@@ -26,8 +26,8 @@ func statsConfig(t *testing.T, upstreamURL string) *config.Config {
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
 	cfg.Entrypoints = []config.Entrypoint{
-		{ID: "e_0000000001", Name: "fast", Match: []string{"gpt-4.5*"}, Route: "r_0000000001"},
-		{ID: "e_0000000002", Name: "claude", Match: []string{"claude-*"}, Route: "r_0000000001"},
+		{ID: "e_0000000001", Name: "fast", Match: []string{"gpt-4.5*"}, Routes: bindings("r_0000000001")},
+		{ID: "e_0000000002", Name: "claude", Match: []string{"claude-*"}, Routes: bindings("r_0000000001")},
 	}
 	cfg.Providers = []config.Provider{{
 		ID:   "p_0000000001",

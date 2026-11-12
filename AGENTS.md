@@ -55,7 +55,7 @@ docker build -t cuttle .
 | `internal/identity` | Entity id minting and validation (shape, prefixes, derivation). |
 | `internal/config` | Strict YAML schema, environment expansion, defaults, validation, entity-id migration and atomic `0600` writes. |
 | `internal/gateway/auth.go` | Data-plane gateway-key authentication, request-head replay and fixed 401 responses. |
-| `internal/gateway/build.go` | Compiles one hop entry per entrypoint and inbound protocol variant, with route plans cached by route id. |
+| `internal/gateway/build.go` | Compiles one hop entry per entrypoint and inbound protocol variant, each wrapping an inner group over the entrypoint's ordered route bindings; route plans are cached by route id. |
 | `internal/gateway/protocol.go` | Inbound protocol path groups and path/model matcher construction. |
 | `internal/gateway/upstream.go` | Resolves default and per-protocol upstream targets per node and rewrites inbound paths/models. |
 | `internal/provider` | Provider adapters, model catalogs, API classification, auth. |
@@ -72,18 +72,40 @@ with a custom dispatcher unless the task explicitly requires it.
 The only routing chain is:
 
 ```text
-Entrypoint -> Route -> Node -> Provider model
+Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
 ```
 
 - Entrypoint declaration order is the only precedence rule. Never make route
-  order semantic.
+  order semantic across entrypoints.
 - An entrypoint has an immutable id, a display name, a non-empty list of
-  client-model globs and an **optional** route id. An empty route is a draft:
-  the entrypoint still claims its models in declaration order, but every
+  client-model globs and an **ordered list of route bindings**. No bindings is a
+  draft: the entrypoint still claims its models in declaration order, but every
   matching request fails with a 5xx (x returns 502 for the zero-node hop) and is
   recorded as unrouted. `*` is an explicit catch-all.
+- A binding is `{route, probe?}` and holds a route id, never a display name.
+  Bindings are inline config: they have no id and are never addressable through
+  an API path. Duplicate route ids inside one entrypoint are rejected.
+- The first eligible binding in declaration order wins. A binding without a
+  `probe` is always eligible, so it shadows every binding after it: at most one
+  probe-less binding is allowed and it must be last.
+- The probe is command-only (`sh -c`, `cmd /C` on Windows): exit 0 = eligible,
+  anything else = ineligible. It runs once per binding per interval,
+  independent of how many protocol variants the binding compiles to, and it
+  never calls a provider API. `probe.command` is never passed through
+  `config.ExpandEnv`.
+- Binding markers are written only by the probe runner. Never mark, reset or
+  read node `failCodes` markers from probe code, so node `dead` badges keep
+  their meaning.
+- The outer hop group selector stays FIFO with **no filters**: an entrypoint
+  whose bindings are all ineligible must never fall through to a later
+  entrypoint. The inner per-entrypoint group owns binding eligibility with
+  `FIFO + FailFilter(1, failTimeout)`, where `failTimeout` is twice the longest
+  probe interval, floored at 10s.
+- All bindings ineligible falls back to x's last resort, which serves the first
+  binding. That is accepted behavior; do not add a cuttle dispatcher to change
+  it.
 - Only the request body's `model` field is matched for routing. Paths never
-  affect entrypoint precedence or route choice; they only select the upstream
+  affect entrypoint precedence or binding choice; they only select the upstream
   wire API inside a matched entrypoint. There is no host matching and no
   client-model pass-through.
 - A route contains only nodes and a strategy (`fifo`, `round`, `random`,
@@ -108,10 +130,11 @@ Entrypoint -> Route -> Node -> Provider model
 - Disabled providers, disabled nodes, providerless nodes and provider-disabled
   models are skipped at compile time. If every node is skipped, the request
   fails; never fall through to another route or send the client model upstream.
-- Entrypoints without a route compile against one shared zero-node hop. That hop
-  keeps the matcher in declaration order on purpose: a draft entrypoint must not
-  fall through to a later entrypoint. A draft entrypoint therefore makes
-  `count_tokens` pass through too (no local estimate).
+- Entrypoints without bindings compile against one shared zero-node hop. That
+  hop keeps the matcher in declaration order on purpose: a draft entrypoint must
+  not fall through to a later entrypoint. A draft entrypoint therefore makes
+  `count_tokens` pass through too (no local estimate). An entrypoint estimates
+  `count_tokens` locally when **any** of its bindings needs an estimate.
 - Do not edit the sibling repositories (`../core`, `../x`,
   `../llm-api-converter`) as part of cuttle work. Publish a tag in the sibling
   repository, then bump the tagged dependency here; record that repository's
@@ -170,7 +193,8 @@ Entrypoint -> Route -> Node -> Provider model
   kind's prefix (`p`, `pk`, `n`, `r`, `e`, `gk`). After `MigrateIdentities` an id
   is required, globally unique across all kinds, and never changes. A name is
   never an id: `node.provider`, `node.key`, `route.nodes` and
-  `entrypoint.route` hold ids, and the entity lookups accept ids only.
+  `entrypoints[].routes[].route` hold ids, and the entity lookups accept ids
+  only.
 - `name` is a display label: trimmed, non-empty, at most 64 runes, no `$` and no
   control characters, unique per kind (provider-key names unique per provider).
   `/`, spaces and non-ASCII are allowed. Names are editable at any time through
@@ -191,7 +215,8 @@ Entrypoint -> Route -> Node -> Provider model
 - Defaults: gateway `:8787`, admin `127.0.0.1:8788`, session `12h`, remember
   `720h`, stats `stats.sqlite`, log `info`/`json`, capture `off`/`1048576`/`24h`,
   provider health `30s`/`5s`, node weight `1`, node API `auto` (stored as an
-  empty string), route strategy `round`.
+  empty string), route strategy `round`, probe interval `30s` and timeout
+  `5s`.
 - `CUTTLE_LISTEN` (`:8787`), `CUTTLE_ADMIN_LISTEN` (`127.0.0.1:8788`; the
   Docker image sets `:8788`) and `CUTTLE_ADMIN_PASSWORD` (unset) are first-run
   defaults: they are used only when a new config is generated. `CUTTLE_DATA`

@@ -54,7 +54,7 @@ func disabledModelConfig(upstreamURL string) *gwconfig.Config {
 				"disabled-model": {Disabled: true},
 			},
 		}},
-		Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: "r_0000000001"}},
+		Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Routes: bindings("r_0000000001")}},
 		Nodes: []gwconfig.Node{{
 			ID:       "n_0000000001",
 			Name:     "up",
@@ -101,7 +101,7 @@ func TestDisabledTargetModelFallsBackToOtherNode(t *testing.T) {
 				Chat: backupSrv.URL,
 			},
 		},
-		Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: "r_0000000001"}},
+		Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Routes: bindings("r_0000000001")}},
 		Nodes: []gwconfig.Node{
 			{
 				ID:       "n_0000000001",

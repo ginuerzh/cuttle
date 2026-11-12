@@ -25,7 +25,8 @@ gateway:
 entrypoints:
   - name: default
     match: ["*"]
-    route: default
+    routes:
+      - route: default
 providers:
   - name: deepseek
     type: generic
@@ -109,8 +110,8 @@ func TestMigrateIdentitiesDerivesAndTracksChanges(t *testing.T) {
 	if len(route.Nodes) != 1 || route.Nodes[0] != node.ID {
 		t.Fatalf("route.nodes = %#v, want [%q]", route.Nodes, node.ID)
 	}
-	if entrypoint.Route != route.ID {
-		t.Fatalf("entrypoint.route = %q, want the route id %q", entrypoint.Route, route.ID)
+	if len(entrypoint.Routes) != 1 || entrypoint.Routes[0].Route != route.ID {
+		t.Fatalf("entrypoint.routes = %+v, want one binding for the route id %q", entrypoint.Routes, route.ID)
 	}
 
 	changed, err = MigrateIdentities(c)
@@ -214,7 +215,8 @@ routes:
 entrypoints:
   - name: e
     match: ["*"]
-    route: nope
+    routes:
+      - route: nope
 `,
 			want: []string{`entrypoint "e"`, `"nope"`, "unique route name"},
 		},
@@ -578,7 +580,8 @@ gateway:
 entrypoints:
   - name: default
     match: ["*"]
-    route: default
+    routes:
+      - route: default
 providers:
   - name: alpha
     type: generic
@@ -638,5 +641,56 @@ func TestNameToIDsAndLabelsByID(t *testing.T) {
 	}
 	if got := labels[string(identity.GatewayKey)][c.Gateway.Keys[0].ID]; got != "client" {
 		t.Fatalf("LabelsByID gateway key = %q, want client", got)
+	}
+}
+
+func TestMigrateEntrypointRouteBindings(t *testing.T) {
+	c := decodeConfig(t, `
+entrypoints:
+  - name: e
+    match: ["*"]
+    routes:
+      - route: b
+      - route: a
+providers:
+  - name: p
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: p
+    model: m1
+routes:
+  - name: a
+    nodes: [n]
+  - name: b
+    nodes: [n]
+`)
+	changed, err := MigrateIdentities(c)
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true for an id-less config")
+	}
+
+	bindings := c.Entrypoints[0].Routes
+	if len(bindings) != 2 {
+		t.Fatalf("bindings = %+v, want two", bindings)
+	}
+	// The binding order is independent of the route declaration order.
+	if got, want := bindings[0].Route, c.Routes[1].ID; got != want {
+		t.Fatalf("routes[0].route = %q, want the id of route b (%q)", got, want)
+	}
+	if got, want := bindings[1].Route, c.Routes[0].ID; got != want {
+		t.Fatalf("routes[1].route = %q, want the id of route a (%q)", got, want)
+	}
+
+	changed, err = MigrateIdentities(c)
+	if err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+	if changed {
+		t.Fatal("changed = true on a migrated config, want false")
 	}
 }

@@ -57,8 +57,8 @@ func matrixConfig(upstreamURL string, api provider.API) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "strong", Match: []string{"claude-opus*", "gpt-5.5*"}, Route: "r_0000000001"},
-			{ID: "e_0000000002", Name: "fast", Match: []string{"gpt-4.5*", "*"}, Route: "r_0000000001"},
+			{ID: "e_0000000001", Name: "strong", Match: []string{"claude-opus*", "gpt-5.5*"}, Routes: bindings("r_0000000001")},
+			{ID: "e_0000000002", Name: "fast", Match: []string{"gpt-4.5*", "*"}, Routes: bindings("r_0000000001")},
 		},
 		Providers: []gwconfig.Provider{p},
 		Nodes: []gwconfig.Node{{

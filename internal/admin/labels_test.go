@@ -42,7 +42,7 @@ func TestLabelSetPrefersConfigThenStoredLabels(t *testing.T) {
 	s.cfg.Providers = []config.Provider{{ID: providerID, Name: "provider"}}
 	s.cfg.Nodes = []config.Node{{ID: nodeID, Name: "node", Provider: providerID}}
 	s.cfg.Routes = []config.Route{{ID: routeID, Name: "route", Nodes: []string{nodeID}}}
-	s.cfg.Entrypoints = []config.Entrypoint{{ID: entrypointID, Name: "entrypoint", Route: routeID}}
+	s.cfg.Entrypoints = []config.Entrypoint{{ID: entrypointID, Name: "entrypoint", Routes: []config.RouteBinding{{Route: routeID}}}}
 	s.cfg.Gateway.Keys = []config.GatewayKey{{ID: keyID, Name: "key", Key: "sk-gw-secret"}}
 	s.mu.Unlock()
 

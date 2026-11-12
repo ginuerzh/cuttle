@@ -41,7 +41,7 @@ func TestGatewayRetriesRetryableUpstream(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
-	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Routes: bindings("r_0000000001")}}
 	cfg.Providers = []config.Provider{
 		{
 			ID:   "p_0000000001",
@@ -149,7 +149,7 @@ func TestGatewayRetryUsesProviderCredentials(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
 	cfg.Stats.Path = filepath.Join(t.TempDir(), "stats.sqlite")
-	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Routes: bindings("r_0000000001")}}
 	cfg.Providers = []config.Provider{
 		{
 			ID:   "p_0000000001",

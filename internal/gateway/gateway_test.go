@@ -39,7 +39,7 @@ func testConfig(upstreamURL string) *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{{
-			ID: testEntrypointID, Name: "default", Match: []string{"*"}, Route: testRouteID,
+			ID: testEntrypointID, Name: "default", Match: []string{"*"}, Routes: bindings(testRouteID),
 		}},
 		Providers: []gwconfig.Provider{{
 			ID:   testProviderID,
@@ -60,6 +60,16 @@ func testConfig(upstreamURL string) *gwconfig.Config {
 			Nodes: []string{testNodeID},
 		}},
 	}
+}
+
+// bindings builds an entrypoint's ordered route bindings from route ids. The
+// fixtures use probe-less bindings, which are always eligible.
+func bindings(ids ...string) []gwconfig.RouteBinding {
+	out := make([]gwconfig.RouteBinding, len(ids))
+	for i, id := range ids {
+		out[i] = gwconfig.RouteBinding{Route: id}
+	}
+	return out
 }
 
 func startGateway(t *testing.T, cfg *gwconfig.Config) *Gateway {
@@ -150,7 +160,7 @@ func TestBuildUsesEntityIDs(t *testing.T) {
 	)
 	cfg := &gwconfig.Config{
 		Entrypoints: []gwconfig.Entrypoint{{
-			ID: "e_0000000001", Name: "entry-display", Match: []string{"*"}, Route: routeID,
+			ID: "e_0000000001", Name: "entry-display", Match: []string{"*"}, Routes: bindings(routeID),
 		}},
 		Providers: []gwconfig.Provider{{
 			ID: providerID, Name: "provider-display", Type: "generic",
@@ -221,7 +231,7 @@ func TestRouteHealthReportsIDs(t *testing.T) {
 	cfg := &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{{
-			ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: routeID,
+			ID: "e_0000000001", Name: "default", Match: []string{"*"}, Routes: bindings(routeID),
 		}},
 		Providers: []gwconfig.Provider{{
 			ID: providerID, Name: "provider-display", Type: "generic", Chat: upstream.URL,

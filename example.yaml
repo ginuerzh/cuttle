@@ -45,25 +45,30 @@ log:
 
 # An entrypoint is the client-facing ingress. Its match globs are checked in
 # declaration order; the first entrypoint with a matching client model wins.
-# `route` is the id of the route it selects.
+# `routes` is an ordered list of route bindings: the first binding whose probe
+# exits 0 serves the request. A binding without `probe` is always eligible and
+# must be last.
 entrypoints:
   - id: e_q7a4m2xk9d
     name: strong
     match:
       - "claude-opus*"
       - "gpt-5.5*"
-    route: r_f3k9x2m4qa
+    routes:
+      - route: r_f3k9x2m4qa
   - id: e_2v8n5b1c7f
     name: fast
     match:
       - "claude-sonnet*"
       - "gpt-4.5*"
       - "claude-haiku*"
-    route: r_7d2n5v8b1e
+    routes:
+      - route: r_7d2n5v8b1e
   - id: e_9m3k7a1x5q
     name: default
     match: ["*"]
-    route: r_7d2n5v8b1e
+    routes:
+      - route: r_7d2n5v8b1e
 
 # A provider declares which wire APIs it serves and where; type selects the
 # adapter. An empty API field means the provider does not serve that API.

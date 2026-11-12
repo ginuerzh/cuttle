@@ -52,7 +52,8 @@ gateway:
 entrypoints:
   - name: default
     match: ["*"]
-    route: default
+    routes:
+      - route: default
 providers:
   - name: deepseek
     type: generic
@@ -91,7 +92,8 @@ gateway:
 entrypoints:
   - name: default
     match: ["*"]
-    route: default
+    routes:
+      - route: default
 providers:
   - name: deepseek
     type: generic
@@ -272,7 +274,8 @@ func TestLoadAppliesDefaults(t *testing.T) {
 entrypoints:
   - name: "  default  "
     match: ["  *  ", "", "*"]
-    route: "  r  "
+    routes:
+      - route: "  r  "
 providers:
   - name: a
     type: generic
@@ -303,7 +306,7 @@ routes:
 	if c.Routes[0].Name != "r" || c.Routes[0].Strategy != "round" {
 		t.Fatalf("route defaults = %+v, want name r and strategy round", c.Routes[0])
 	}
-	if c.Entrypoints[0].Name != "default" || c.Entrypoints[0].Route != c.Routes[0].ID {
+	if c.Entrypoints[0].Name != "default" || c.Entrypoints[0].Routes[0].Route != c.Routes[0].ID {
 		t.Fatalf("entrypoint defaults = %+v", c.Entrypoints[0])
 	}
 	if got := c.Entrypoints[0].Match; len(got) != 1 || got[0] != "*" {
@@ -316,7 +319,8 @@ func TestNodeAPIAcceptedAndNormalized(t *testing.T) {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: a
     type: generic
@@ -353,7 +357,8 @@ func TestNodeAPIRejectsUnknown(t *testing.T) {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: a
     type: generic
@@ -380,7 +385,8 @@ func TestLoadKeepsCustomAuthHeaderWithoutPrefix(t *testing.T) {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: a
     type: generic
@@ -405,16 +411,16 @@ routes:
 
 func TestResolveEntrypointOrder(t *testing.T) {
 	c := &Config{Entrypoints: []Entrypoint{
-		{ID: "e_3k9x2m4q7a", Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
-		{ID: "e_8m2xq7a4k9", Name: "fallback", Match: []string{"*"}, Route: "b"},
+		{ID: "e_3k9x2m4q7a", Name: "specific", Match: []string{"gpt-5*"}},
+		{ID: "e_8m2xq7a4k9", Name: "fallback", Match: []string{"*"}},
 	}}
 
 	ep, ok := c.ResolveEntrypoint("GPT-5.5")
-	if !ok || ep.Name != "specific" || ep.Route != "a" {
+	if !ok || ep.Name != "specific" {
 		t.Fatalf("specific = %+v, %v", ep, ok)
 	}
 	ep, ok = c.ResolveEntrypoint("other")
-	if !ok || ep.Name != "fallback" || ep.Route != "b" {
+	if !ok || ep.Name != "fallback" {
 		t.Fatalf("fallback = %+v, %v", ep, ok)
 	}
 	if got := c.ResolveEntrypointID("gpt-5.5"); got != "e_3k9x2m4q7a" {
@@ -424,7 +430,7 @@ func TestResolveEntrypointOrder(t *testing.T) {
 		t.Fatalf("ResolveEntrypointID(empty) = %q, want the fallback entrypoint id", got)
 	}
 	noCatchAll := &Config{Entrypoints: []Entrypoint{
-		{ID: "e_3k9x2m4q7a", Name: "specific", Match: []string{"gpt-5*"}, Route: "a"},
+		{ID: "e_3k9x2m4q7a", Name: "specific", Match: []string{"gpt-5*"}},
 	}}
 	if got := noCatchAll.ResolveEntrypointID("unmatched"); got != "" {
 		t.Fatalf("ResolveEntrypointID(unmatched) = %q, want empty", got)
@@ -436,10 +442,10 @@ func TestResolveEntrypointOrder(t *testing.T) {
 
 func TestResolveEntrypointMultipleGlobsAndCase(t *testing.T) {
 	c := &Config{Entrypoints: []Entrypoint{
-		{Name: "claude", Match: []string{"claude-*", "claude*"}, Route: "r"},
+		{Name: "claude", Match: []string{"claude-*", "claude*"}},
 	}}
 	ep, ok := c.ResolveEntrypoint("CLAUDE-OPUS-4-5")
-	if !ok || ep.Name != "claude" || ep.Route != "r" {
+	if !ok || ep.Name != "claude" {
 		t.Fatalf("ResolveEntrypoint = %+v, %v", ep, ok)
 	}
 }
@@ -450,7 +456,8 @@ func topologyFixture() *Config {
 	return &Config{
 		Gateway: Gateway{Listen: ":8787"},
 		Entrypoints: []Entrypoint{{
-			ID: fixtureID(identity.Entrypoint, "entry"), Name: "entry", Match: []string{"*"}, Route: fixtureID(identity.Route, "route"),
+			ID: fixtureID(identity.Entrypoint, "entry"), Name: "entry", Match: []string{"*"},
+			Routes: []RouteBinding{{Route: fixtureID(identity.Route, "route")}},
 		}},
 		Providers: []Provider{{
 			ID: fixtureID(identity.Provider, "provider"), Name: "provider", Type: "generic", Chat: "https://a.example/v1",
@@ -476,11 +483,11 @@ func TestValidateEntrypoints(t *testing.T) {
 		name string
 		ep   Entrypoint
 	}{
-		{"missing id", Entrypoint{Name: "e", Match: []string{"*"}, Route: routeID}},
-		{"empty name", Entrypoint{ID: "e_0000000001", Match: []string{"*"}, Route: routeID}},
-		{"empty match", Entrypoint{ID: "e_0000000001", Name: "e", Route: routeID}},
-		{"empty match entries", Entrypoint{ID: "e_0000000001", Name: "e", Match: []string{"", "  "}, Route: routeID}},
-		{"unknown route", Entrypoint{ID: "e_0000000001", Name: "e", Match: []string{"*"}, Route: "missing"}},
+		{"missing id", Entrypoint{Name: "e", Match: []string{"*"}, Routes: []RouteBinding{{Route: routeID}}}},
+		{"empty name", Entrypoint{ID: "e_0000000001", Match: []string{"*"}, Routes: []RouteBinding{{Route: routeID}}}},
+		{"empty match", Entrypoint{ID: "e_0000000001", Name: "e", Routes: []RouteBinding{{Route: routeID}}}},
+		{"empty match entries", Entrypoint{ID: "e_0000000001", Name: "e", Match: []string{"", "  "}, Routes: []RouteBinding{{Route: routeID}}}},
+		{"unknown route", Entrypoint{ID: "e_0000000001", Name: "e", Match: []string{"*"}, Routes: []RouteBinding{{Route: "missing"}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -495,8 +502,8 @@ func TestValidateEntrypoints(t *testing.T) {
 	t.Run("duplicate name", func(t *testing.T) {
 		c := base()
 		c.Entrypoints = []Entrypoint{
-			{ID: "e_0000000001", Name: "e", Match: []string{"a*"}, Route: routeID},
-			{ID: "e_0000000002", Name: "e", Match: []string{"b*"}, Route: routeID},
+			{ID: "e_0000000001", Name: "e", Match: []string{"a*"}, Routes: []RouteBinding{{Route: routeID}}},
+			{ID: "e_0000000002", Name: "e", Match: []string{"b*"}, Routes: []RouteBinding{{Route: routeID}}},
 		}
 		if err := Validate(c); err == nil {
 			t.Fatal("duplicate entrypoint names should not validate")
@@ -505,7 +512,7 @@ func TestValidateEntrypoints(t *testing.T) {
 
 	t.Run("unknown route by name", func(t *testing.T) {
 		c := base()
-		c.Entrypoints = []Entrypoint{{ID: "e_0000000001", Name: "e", Match: []string{"*"}, Route: "route"}}
+		c.Entrypoints = []Entrypoint{{ID: "e_0000000001", Name: "e", Match: []string{"*"}, Routes: []RouteBinding{{Route: "route"}}}}
 		err := Validate(c)
 		if err == nil || !strings.Contains(err.Error(), `use the route id "`+routeID+`"`) {
 			t.Fatalf("err = %v, want the display name rejected with the expected route id", err)
@@ -514,7 +521,7 @@ func TestValidateEntrypoints(t *testing.T) {
 
 	t.Run("slash name accepted", func(t *testing.T) {
 		c := base()
-		c.Entrypoints = []Entrypoint{{ID: "e_0000000001", Name: "cli/desktop", Match: []string{"*"}, Route: routeID}}
+		c.Entrypoints = []Entrypoint{{ID: "e_0000000001", Name: "cli/desktop", Match: []string{"*"}, Routes: []RouteBinding{{Route: routeID}}}}
 		if err := Validate(c); err != nil {
 			t.Fatalf("slash in an entrypoint name should validate: %v", err)
 		}
@@ -523,9 +530,205 @@ func TestValidateEntrypoints(t *testing.T) {
 
 func TestValidateAllowsDraftEntrypoint(t *testing.T) {
 	c := topologyFixture()
-	c.Entrypoints[0].Route = ""
+	c.Entrypoints[0].Routes = nil
 	if err := Validate(c); err != nil {
 		t.Fatalf("an entrypoint without a route should validate as a draft: %v", err)
+	}
+}
+
+func TestValidateEntrypointRouteBindings(t *testing.T) {
+	routeA := fixtureID(identity.Route, "a")
+	routeB := fixtureID(identity.Route, "b")
+	nodeID := fixtureID(identity.Node, "node")
+	probe := func() *Probe {
+		return &Probe{Command: "true", Interval: Duration(30 * time.Second), Timeout: Duration(5 * time.Second)}
+	}
+	base := func(routes ...RouteBinding) *Config {
+		c := topologyFixture()
+		c.Routes = []Route{
+			{ID: routeA, Name: "a", Nodes: []string{nodeID}},
+			{ID: routeB, Name: "b", Nodes: []string{nodeID}},
+		}
+		c.Entrypoints = []Entrypoint{{
+			ID: "e_0000000001", Name: "e", Match: []string{"*"}, Routes: routes,
+		}}
+		return c
+	}
+
+	cases := []struct {
+		name   string
+		routes []RouteBinding
+		// wantErr lists substrings the error must contain; empty means the
+		// config must validate.
+		wantErr []string
+	}{
+		{name: "draft", routes: nil},
+		{name: "two bindings with probes", routes: []RouteBinding{
+			{Route: routeA, Probe: probe()},
+			{Route: routeB, Probe: probe()},
+		}},
+		{name: "probe-less last", routes: []RouteBinding{
+			{Route: routeA, Probe: probe()},
+			{Route: routeB},
+		}},
+		{name: "blank route", routes: []RouteBinding{{Route: "  "}},
+			wantErr: []string{`entrypoint "e"`, "routes[0]", "route is required"}},
+		{name: "duplicate route", routes: []RouteBinding{
+			{Route: routeA, Probe: probe()},
+			{Route: routeA, Probe: probe()},
+		}, wantErr: []string{`entrypoint "e"`, "routes[1]", "duplicate route"}},
+		{name: "unknown route", routes: []RouteBinding{{Route: "missing"}},
+			wantErr: []string{`entrypoint "e"`, "routes[0]", "unknown route id"}},
+		{name: "probe-less first", routes: []RouteBinding{
+			{Route: routeA},
+			{Route: routeB, Probe: probe()},
+		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "must be last"}},
+		{name: "two probe-less", routes: []RouteBinding{
+			{Route: routeA},
+			{Route: routeB},
+		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "must be last"}},
+		{name: "blank command", routes: []RouteBinding{
+			{Route: routeA, Probe: &Probe{Command: "   ", Interval: Duration(30 * time.Second), Timeout: Duration(5 * time.Second)}},
+		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "command is required"}},
+		{name: "timeout equals interval", routes: []RouteBinding{
+			{Route: routeA, Probe: &Probe{Command: "true", Interval: Duration(5 * time.Second), Timeout: Duration(5 * time.Second)}},
+		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "timeout"}},
+		{name: "interval below a second", routes: []RouteBinding{
+			{Route: routeA, Probe: &Probe{Command: "true", Interval: Duration(500 * time.Millisecond), Timeout: Duration(100 * time.Millisecond)}},
+		}, wantErr: []string{`entrypoint "e"`, "routes[0]", "interval"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(base(tc.routes...))
+			if len(tc.wantErr) == 0 {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("config should not validate")
+			}
+			for _, want := range tc.wantErr {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadAppliesProbeDefaults(t *testing.T) {
+	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    routes:
+      - route: r
+        probe:
+          command: "  true  "
+providers:
+  - name: a
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: a
+    model: m1
+routes:
+  - name: r
+    nodes: [n]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Entrypoints) != 1 || len(c.Entrypoints[0].Routes) != 1 {
+		t.Fatalf("entrypoint routes = %+v, want one binding", c.Entrypoints)
+	}
+	b := c.Entrypoints[0].Routes[0]
+	if want := fixtureID(identity.Route, "r"); b.Route != want {
+		t.Fatalf("binding route = %q, want %q", b.Route, want)
+	}
+	if b.Probe == nil {
+		t.Fatal("probe = nil, want the configured probe")
+	}
+	if b.Probe.Command != "true" {
+		t.Fatalf("probe.command = %q, want the trimmed command", b.Probe.Command)
+	}
+	if b.Probe.Interval != Duration(30*time.Second) {
+		t.Fatalf("probe.interval = %v, want 30s", time.Duration(b.Probe.Interval))
+	}
+	if b.Probe.Timeout != Duration(5*time.Second) {
+		t.Fatalf("probe.timeout = %v, want 5s", time.Duration(b.Probe.Timeout))
+	}
+}
+
+func TestLoadRejectsLegacyEntrypointRoute(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+entrypoints:
+  - name: e
+    match: ["*"]
+    route: r_0000000001
+`))
+	if err == nil {
+		t.Fatal("a config with entrypoint.route should not load")
+	}
+	if !strings.Contains(err.Error(), "field route not found") {
+		t.Fatalf("err = %v, want it to name the unknown route field", err)
+	}
+}
+
+func TestProbeCommandIsNotEnvExpanded(t *testing.T) {
+	t.Setenv("CUTTLE_PROBE_TOKEN", "secret")
+	const command = `echo "$CUTTLE_PROBE_TOKEN" | grep -q x`
+
+	c, err := Load(writeConfig(t, `
+entrypoints:
+  - name: default
+    match: ["*"]
+    routes:
+      - route: r
+        probe:
+          command: 'echo "$CUTTLE_PROBE_TOKEN" | grep -q x'
+providers:
+  - name: a
+    type: generic
+    chat: https://a.example/v1
+nodes:
+  - name: n
+    provider: a
+    model: m1
+routes:
+  - name: r
+    nodes: [n]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Entrypoints[0].Routes[0].Probe.Command; got != command {
+		t.Fatalf("probe.command = %q, want it byte-identical (%q)", got, command)
+	}
+}
+
+func TestEntrypointRouteBindingExpandsEnv(t *testing.T) {
+	t.Setenv("R_ID", "r_0000000001")
+	t.Setenv("CUTTLE_PROBE_TOKEN", "secret")
+
+	c := &Config{Entrypoints: []Entrypoint{{
+		ID: "e_0000000001", Name: "e", Match: []string{"*"},
+		Routes: []RouteBinding{{
+			Route: "${R_ID}",
+			Probe: &Probe{Command: `echo "$CUTTLE_PROBE_TOKEN"`},
+		}},
+	}}}
+	c.Normalize()
+
+	b := c.Entrypoints[0].Routes[0]
+	if b.Route != "r_0000000001" {
+		t.Fatalf("binding route = %q, want the expanded id", b.Route)
+	}
+	if b.Probe.Command != `echo "$CUTTLE_PROBE_TOKEN"` {
+		t.Fatalf("probe.command = %q, want it left for the shell", b.Probe.Command)
 	}
 }
 
@@ -635,7 +838,8 @@ func TestNodeModelExpandsEnv(t *testing.T) {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: a
     type: generic
@@ -661,7 +865,8 @@ func TestLoadRejectsEmptyKey(t *testing.T) {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: a
     type: generic
@@ -766,7 +971,8 @@ stats:
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: a
     type: generic
@@ -1003,7 +1209,8 @@ func TestProviderModelOverrides(t *testing.T) {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: p
     type: generic
@@ -1154,7 +1361,8 @@ routes:
 entrypoints:
   - name: e
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -1209,7 +1417,8 @@ func TestRouteFailSettingsDefaultsAndValidation(t *testing.T) {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: p
     type: generic
@@ -1236,7 +1445,8 @@ routes:
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: p
     type: generic
@@ -1262,7 +1472,8 @@ routes:
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: p
     type: generic
@@ -1292,7 +1503,8 @@ routes:
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: p
     type: generic
@@ -1317,7 +1529,8 @@ func routeRetryConfig(extra string) string {
 entrypoints:
   - name: default
     match: ["*"]
-    route: r
+    routes:
+      - route: r
 providers:
   - name: p
     type: generic
@@ -1448,8 +1661,10 @@ func TestExampleConfigLoads(t *testing.T) {
 		if !identity.Valid(identity.Entrypoint, e.ID) {
 			t.Fatalf("entrypoint %q: id = %q, want an entrypoint id", e.Name, e.ID)
 		}
-		if !routeIDs[e.Route] {
-			t.Fatalf("entrypoint %q: route = %q, want a route id", e.Name, e.Route)
+		for _, b := range e.Routes {
+			if !routeIDs[b.Route] {
+				t.Fatalf("entrypoint %q: routes[].route = %q, want a route id", e.Name, b.Route)
+			}
 		}
 	}
 
@@ -1910,7 +2125,8 @@ entrypoints:
   - id: e_q7a4m2xk9d
     name: entry
     match: ["*"]
-    route: route
+    routes:
+      - route: route
 providers:
   - id: p_3k9x2m4q7a
     name: provider
@@ -1961,7 +2177,8 @@ gateway:
 entrypoints:
   - name: entry
     match: ["*"]
-    route: route
+    routes:
+      - route: route
 providers:
   - id: "${PROVIDER_ID}"
     name: provider
@@ -2081,7 +2298,7 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 		c.Routes[0].ID = "r_f3k9x2m4qa"
 		c.Routes[0].Nodes = []string{"n_4q7a9x2m3k"}
 		c.Entrypoints[0].ID = "e_q7a4m2xk9d"
-		c.Entrypoints[0].Route = "r_f3k9x2m4qa"
+		c.Entrypoints[0].Routes = []RouteBinding{{Route: "r_f3k9x2m4qa"}}
 		c.Gateway.Keys = []GatewayKey{{ID: "gk_9x2m4q7a3k", Name: "laptop", Key: "sk-gateway-key"}}
 		return c
 	}
@@ -2134,7 +2351,7 @@ func TestValidateRejectsDuplicateIDs(t *testing.T) {
 			"entrypoints",
 			func(c *Config) {
 				c.Entrypoints = append(c.Entrypoints, Entrypoint{
-					ID: "e_q7a4m2xk9d", Name: "entry2", Match: []string{"*"}, Route: "r_f3k9x2m4qa",
+					ID: "e_q7a4m2xk9d", Name: "entry2", Match: []string{"*"}, Routes: []RouteBinding{{Route: "r_f3k9x2m4qa"}},
 				})
 			},
 			[]string{"duplicate id", "e_q7a4m2xk9d", `entrypoint "entry2"`, `entrypoint "entry"`},

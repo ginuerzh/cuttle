@@ -153,7 +153,7 @@ func TestGraphEntrypointAPI(t *testing.T) {
 		routeID    = "r_f3k9x2m4qa"
 	)
 	srv.mu.Lock()
-	srv.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude*"}, Route: routeID}}
+	srv.cfg.Entrypoints = []config.Entrypoint{{ID: "e_3k9x2m4q7a", Name: "claude", Match: []string{"claude*"}, Routes: []config.RouteBinding{{Route: routeID}}}}
 	srv.cfg.Routes = []config.Route{{ID: routeID, Name: "r", Nodes: []string{nodeID}}}
 	srv.cfg.Nodes = []config.Node{{ID: nodeID, Name: "n", Provider: providerID, Model: "m1"}}
 	srv.mu.Unlock()

@@ -125,7 +125,7 @@ func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 		t.Fatalf("create route = %d", code)
 	}
 	routeID := entityID(t, client, ts.URL+"/api/routes", "r")
-	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"route":"`+routeID+`"}]`); code != http.StatusNoContent {
+	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"routes":[{"route":"`+routeID+`"}]}]`); code != http.StatusNoContent {
 		t.Fatalf("put entrypoints = %d", code)
 	}
 

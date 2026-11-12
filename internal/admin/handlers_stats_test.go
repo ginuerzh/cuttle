@@ -18,8 +18,8 @@ func TestRequestsEntrypointFilterFollowsEntrypointOrder(t *testing.T) {
 	s, rel, _, ts := newTestAdmin(t)
 	s.mu.Lock()
 	s.cfg.Entrypoints = []config.Entrypoint{
-		{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Route: "r"},
-		{ID: "e_0000000002", Name: "fallback", Match: []string{"*"}, Route: "r"},
+		{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Routes: []config.RouteBinding{{Route: "r"}}},
+		{ID: "e_0000000002", Name: "fallback", Match: []string{"*"}, Routes: []config.RouteBinding{{Route: "r"}}},
 	}
 	s.mu.Unlock()
 	client, _ := login(t, ts.URL)

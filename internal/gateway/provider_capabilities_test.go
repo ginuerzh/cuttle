@@ -353,7 +353,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Provider: "p_0000000001",
 				Model:    "chat-model",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Route: "r_0000000001"}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Routes: bindings("r_0000000001")}},
 			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
@@ -389,7 +389,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Provider: "p_0000000001",
 				Model:    "unknown-model",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Route: "r_0000000001"}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Routes: bindings("r_0000000001")}},
 			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
@@ -420,7 +420,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Provider: "p_0000000001",
 				Model:    "deepseek-v4-flash",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Routes: bindings("r_0000000001")}},
 			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "all", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
@@ -464,7 +464,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Provider: "p_0000000001",
 				Model:    "glm-4.8",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Route: "r_0000000001"}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Routes: bindings("r_0000000001")}},
 			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "claude", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
@@ -507,7 +507,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Provider: "p_0000000001",
 				Model:    "deepseek-v4-flash",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Route: "r_0000000001"}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "fast", Match: []string{"fast"}, Routes: bindings("r_0000000001")}},
 			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
@@ -548,7 +548,7 @@ func TestProviderCapabilities(t *testing.T) {
 				Provider: "p_0000000001",
 				Model:    "glm-4.8",
 			}},
-			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Route: "r_0000000001"}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "claude", Match: []string{"claude-*"}, Routes: bindings("r_0000000001")}},
 			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "claude", Nodes: []string{"n_0000000001"}}},
 		}
 		gw := startGateway(t, cfg)
@@ -653,8 +653,8 @@ func capabilityConfig() *gwconfig.Config {
 	return &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "fast", Match: []string{"gpt-4.5*"}, Route: "r_0000000001"},
-			{ID: "e_0000000002", Name: "strong", Match: []string{"claude-*"}, Route: "r_0000000002"},
+			{ID: "e_0000000001", Name: "fast", Match: []string{"gpt-4.5*"}, Routes: bindings("r_0000000001")},
+			{ID: "e_0000000002", Name: "strong", Match: []string{"claude-*"}, Routes: bindings("r_0000000002")},
 		},
 		Routes: []gwconfig.Route{
 			{ID: "r_0000000001", Name: "fast", Nodes: []string{"n_0000000001"}},

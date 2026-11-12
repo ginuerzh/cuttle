@@ -14,32 +14,49 @@ import (
 	"github.com/ginuerzh/cuttle/internal/gateway"
 )
 
+// bindings builds an entrypoint's ordered route bindings from route ids for the
+// external test package. The fixtures use probe-less bindings, which are always
+// eligible.
+func bindings(ids ...string) []config.RouteBinding {
+	out := make([]config.RouteBinding, len(ids))
+	for i, id := range ids {
+		out[i] = config.RouteBinding{Route: id}
+	}
+	return out
+}
+
 func writeEntrypointConfig(t *testing.T, dir, upstream string, defaultFirst bool) string {
 	t.Helper()
 	entrypoints := `
 entrypoints:
   - name: fast
     match: ["gpt-4.5*"]
-    route: fast
+    routes:
+      - route: fast
   - name: strong
     match: ["claude-opus*", "gpt-5.5*"]
-    route: strong
+    routes:
+      - route: strong
   - name: default
     match: ["*"]
-    route: fast
+    routes:
+      - route: fast
 `
 	if defaultFirst {
 		entrypoints = `
 entrypoints:
   - name: fast
     match: ["gpt-4.5*"]
-    route: fast
+    routes:
+      - route: fast
   - name: default
     match: ["*"]
-    route: fast
+    routes:
+      - route: fast
   - name: strong
     match: ["claude-opus*", "gpt-5.5*"]
-    route: strong
+    routes:
+      - route: strong
 `
 	}
 	body := fmt.Sprintf(`

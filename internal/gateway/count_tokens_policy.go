@@ -58,21 +58,24 @@ func buildCountTokensPolicy(cfg *gwconfig.Config, plans map[string]*routePlan) (
 			return nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
 		}
 		var entry countTokensEntry
-		if strings.TrimSpace(e.Route) == "" {
-			// A draft entrypoint has no upstream, so count_tokens must pass
-			// through and fail with the rest of its routing instead of being
-			// answered by a local estimate.
-			entry = countTokensEntry{}
-		} else {
-			r, ok := cfg.Route(e.Route)
+		// A draft entrypoint has no upstream, so count_tokens must pass through
+		// and fail with the rest of its routing instead of being answered by a
+		// local estimate. Otherwise the entrypoint estimates when any of its
+		// bindings needs it: the probe verdict is not evaluated on the
+		// count_tokens path, so the conservative rule is the only sound one.
+		for j := range e.Routes {
+			ref := strings.TrimSpace(e.Routes[j].Route)
+			r, ok := cfg.Route(ref)
 			if !ok {
-				return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+				return nil, fmt.Errorf("entrypoint %q: routes[%d]: unknown route %q", e.Name, j, ref)
 			}
 			plan, ok := plans[r.ID]
 			if !ok {
-				return nil, fmt.Errorf("entrypoint %q: unknown route %q", e.Name, e.Route)
+				return nil, fmt.Errorf("entrypoint %q: routes[%d]: unknown route %q", e.Name, j, ref)
 			}
-			entry = countTokensEntry{estimate: plan.countTokensEstimate}
+			if plan.countTokensEstimate {
+				entry.estimate = true
+			}
 		}
 		if !catchAll {
 			entry.matcher = regexp.MustCompile(pattern)

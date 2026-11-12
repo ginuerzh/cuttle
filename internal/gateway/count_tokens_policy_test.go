@@ -73,8 +73,8 @@ func TestCountTokensPolicyPrecedence(t *testing.T) {
 func TestBuildCountTokensPolicyFromConfig(t *testing.T) {
 	cfg := &gwconfig.Config{
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "anthropic", Match: []string{"claude-*"}, Route: "r_0000000001"},
-			{ID: "e_0000000002", Name: "rest", Match: []string{"*"}, Route: "r_0000000002"},
+			{ID: "e_0000000001", Name: "anthropic", Match: []string{"claude-*"}, Routes: bindings("r_0000000001")},
+			{ID: "e_0000000002", Name: "rest", Match: []string{"*"}, Routes: bindings("r_0000000002")},
 		},
 		Routes: []gwconfig.Route{
 			{ID: "r_0000000001", Name: "a"},
@@ -101,7 +101,7 @@ func TestBuildCountTokensPolicyDraftEntrypoint(t *testing.T) {
 	cfg := &gwconfig.Config{
 		Entrypoints: []gwconfig.Entrypoint{
 			{ID: "e_0000000001", Name: "draft", Match: []string{"*"}},
-			{ID: "e_0000000002", Name: "rest", Match: []string{"*"}, Route: "r_0000000002"},
+			{ID: "e_0000000002", Name: "rest", Match: []string{"*"}, Routes: bindings("r_0000000002")},
 		},
 		Routes: []gwconfig.Route{{ID: "r_0000000002", Name: "r"}},
 	}

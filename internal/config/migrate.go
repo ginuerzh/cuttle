@@ -14,7 +14,7 @@ import (
 
 // MigrateIdentities gives every entity a stable id and rewrites the name-based
 // associations to ids: node.provider, node.key (scoped to the node's own
-// provider), route.nodes and entrypoint.route.
+// provider), route.nodes and entrypoints[].routes[].route.
 //
 // Ids derive from the entity name, so a config that cannot be written back (a
 // read-only mount) derives the same ids on every load. Provider key ids also
@@ -150,18 +150,21 @@ func MigrateIdentities(c *Config) (changed bool, err error) {
 
 	for i := range c.Entrypoints {
 		e := &c.Entrypoints[i]
-		ref := strings.TrimSpace(e.Route)
-		if ref == "" {
-			// Validate reports the missing route.
-			continue
-		}
-		routeID, err := resolveReference(fmt.Sprintf("entrypoint %q", strings.TrimSpace(e.Name)), "route", ref, routeIDs, routeNames)
-		if err != nil {
-			return changed, err
-		}
-		if e.Route != routeID {
-			e.Route = routeID
-			changed = true
+		scope := fmt.Sprintf("entrypoint %q", strings.TrimSpace(e.Name))
+		for j := range e.Routes {
+			ref := strings.TrimSpace(e.Routes[j].Route)
+			if ref == "" {
+				// Validate reports the missing route.
+				continue
+			}
+			routeID, err := resolveReference(scope, "route", ref, routeIDs, routeNames)
+			if err != nil {
+				return changed, err
+			}
+			if e.Routes[j].Route != routeID {
+				e.Routes[j].Route = routeID
+				changed = true
+			}
 		}
 	}
 

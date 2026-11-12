@@ -27,7 +27,7 @@ func autoProtocolConfig(t *testing.T, upstream string) *gwconfig.Config {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"},
+			{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Routes: bindings("r_0000000001")},
 		},
 		Providers: []gwconfig.Provider{{
 			ID:        "p_0000000001",
@@ -218,8 +218,8 @@ func TestEntrypointOrderWithProtocolVariants(t *testing.T) {
 	cfg := &gwconfig.Config{
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "first", Match: []string{"*"}, Route: "r_0000000001"},
-			{ID: "e_0000000002", Name: "second", Match: []string{"*"}, Route: "r_0000000002"},
+			{ID: "e_0000000001", Name: "first", Match: []string{"*"}, Routes: bindings("r_0000000001")},
+			{ID: "e_0000000002", Name: "second", Match: []string{"*"}, Routes: bindings("r_0000000002")},
 		},
 		Providers: []gwconfig.Provider{
 			{ID: "p_0000000001", Name: "pa", Type: "deepseek", Chat: up.srv.URL + "/a/chat", Anthropic: up.srv.URL + "/a/anthropic"},
@@ -302,7 +302,7 @@ func TestGeminiAutoProtocol(t *testing.T) {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Route: "r_0000000001"},
+			{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Routes: bindings("r_0000000001")},
 		},
 		Providers: []gwconfig.Provider{{
 			ID:     "p_0000000001",
@@ -334,8 +334,8 @@ func TestFailedReloadKeepsOldRewriters(t *testing.T) {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "a", Match: []string{"a-model"}, Route: "r_0000000001"},
-			{ID: "e_0000000002", Name: "b", Match: []string{"b-model"}, Route: "r_0000000002"},
+			{ID: "e_0000000001", Name: "a", Match: []string{"a-model"}, Routes: bindings("r_0000000001")},
+			{ID: "e_0000000002", Name: "b", Match: []string{"b-model"}, Routes: bindings("r_0000000002")},
 		},
 		Providers: []gwconfig.Provider{
 			{ID: "p_0000000001", Name: "pa", Type: "generic", Chat: up.srv.URL + "/a/chat"},
@@ -421,7 +421,7 @@ func TestSuccessfulReloadKeepsInFlightResponseRewriter(t *testing.T) {
 		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
 		Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
 		Entrypoints: []gwconfig.Entrypoint{
-			{ID: "e_0000000001", Name: "a", Match: []string{"a-model"}, Route: "r_0000000001"},
+			{ID: "e_0000000001", Name: "a", Match: []string{"a-model"}, Routes: bindings("r_0000000001")},
 		},
 		Providers: []gwconfig.Provider{{
 			ID: "p_0000000001", Name: "pa", Type: "generic", Chat: upstream.URL + "/a/chat",

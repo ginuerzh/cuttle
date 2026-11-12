@@ -196,7 +196,7 @@ func TestZeroConfigOnboarding(t *testing.T) {
 		t.Fatalf("create route = %d, want 201", code)
 	}
 	routeID := entityID(t, client, ts.URL+"/api/routes", "r")
-	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"route":"`+routeID+`"}]`); code != http.StatusNoContent {
+	if code := do(http.MethodPut, "/api/entrypoints", `[{"name":"default","match":["*"],"routes":[{"route":"`+routeID+`"}]}]`); code != http.StatusNoContent {
 		ts.Close()
 		gw.Close()
 		t.Fatalf("put entrypoints = %d, want 204", code)

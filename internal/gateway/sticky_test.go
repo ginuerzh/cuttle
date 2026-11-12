@@ -29,7 +29,7 @@ func stickyUpstream(name string) *httptest.Server {
 func stickyConfig(ocURL, ccURL string) *config.Config {
 	cfg := &config.Config{}
 	cfg.Gateway.Listen = "127.0.0.1:0"
-	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Route: "r_0000000001"}}
+	cfg.Entrypoints = []config.Entrypoint{{ID: "e_0000000001", Name: "default", Match: []string{"*"}, Routes: bindings("r_0000000001")}}
 	cfg.Providers = []config.Provider{
 		{ID: "p_0000000001", Name: "oc", Type: "generic", Chat: ocURL, Keys: []config.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "sk-oc"}}},
 		{ID: "p_0000000002", Name: "cc", Type: "generic", Chat: ccURL, Keys: []config.ProviderKey{{ID: "pk_0000000002", Name: "key-1", Key: "sk-cc"}}},
