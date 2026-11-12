@@ -208,7 +208,7 @@ git commit -m "feat(config): add usage.sampleInterval"
   - unexported `mergeBalancePoint(pts []BalancePoint, next BalancePoint) []BalancePoint`
   - table `balance_points(provider, key, currency, at INTEGER PRIMARY KEY, amount REAL)` with `idx_balance_points_at(at)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestMergeBalancePointRules(t *testing.T) {
@@ -288,12 +288,12 @@ records a point at `now-48h` and one at `now`, runs
 `s.Cleanup(ctx, cutoff, cutoff, cutoff)`, and asserts only the recent point
 survives `BalanceSeries(now-72h, now+time.Minute, 10)`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/stats -run 'TestMergeBalancePointRules|TestBalanceSeriesDownsamples|TestCleanupDeletesBalancePoints' -count=1`
 Expected: FAIL with `undefined: BalancePoint`.
 
-- [ ] **Step 3: Implement the table, the merge and the series**
+- [x] **Step 3: Implement the table, the merge and the series**
 
 In `internal/stats/store.go` add to the schema statement list:
 
@@ -337,12 +337,12 @@ provider/key/currency/at, groups, and keeps the last reading per bucket of
 `width = max(1ms, (to-from)/maxPoints)` with `maxPoints` defaulting to
 `DefaultBalanceSeriesPoints` when `<= 0`.
 
-- [ ] **Step 4: Run the stats package tests**
+- [x] **Step 4: Run the stats package tests**
 
 Run: `GOWORK=off go test ./internal/stats -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/stats/balance.go internal/stats/balance_test.go internal/stats/store.go
@@ -350,12 +350,12 @@ git commit -m "feat(stats): store provider balance readings"
 ```
 
 **Implementation record — Task 2**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `5c873e8e`)
+- Files changed: created `internal/stats/balance.go` (`BalancePoint`, `BalanceGroup`, `mergeBalancePoint`, `RecordBalancePoints`, `BalanceSeries`, `balancePointGap`, `DefaultBalanceSeriesPoints`), `internal/stats/balance_test.go`; modified `internal/stats/store.go` (schema: `balance_points` + `idx_balance_points_at`; `Cleanup` deletes points older than `rollupsBefore`).
+- Tests run: RED `GOWORK=off go test ./internal/stats -run 'TestMergeBalancePointRules|TestBalanceSeriesDownsamples|TestCleanupDeletesBalancePoints' -count=1` → `undefined: BalancePoint`; GREEN same → ok. Gate `GOWORK=off go test ./internal/stats -count=1` → ok (23.0s), `go vet ./internal/stats` → clean.
+- Review findings/fixes: none in-task. Merge rule follows the spec (gap measured against the second-to-last point, rises always appended, flat runs keep one sliding point); retention only in `Cleanup`.
+- Deferred: none.
 
 ---
 
