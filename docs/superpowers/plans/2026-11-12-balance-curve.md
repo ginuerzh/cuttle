@@ -821,7 +821,7 @@ git commit -m "feat(web): balance curve math and chart component"
 - Produces: no new exports; `ProviderCard` gains `from` and `to` props (RFC3339
   from the response) and renders the chart only while 统计 is on.
 
-- [ ] **Step 1: Write the failing page test**
+- [x] **Step 1: Write the failing page test**
 
 ```ts
 it('draws a balance curve per account trend', () => {
@@ -852,12 +852,12 @@ it('draws a balance curve per account trend', () => {
 Plus: a `showStats: false` render contains no chart, and an `en-US` render of
 the same card matches no CJK.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd web && npx vitest run src/pages/Usage.test.ts`
 Expected: FAIL (`ProviderCard` does not accept `from`/`to`, no chart in the HTML).
 
-- [ ] **Step 3: Wire the chart and translate the strings**
+- [x] **Step 3: Wire the chart and translate the strings**
 
 `ProviderCard` builds `lines` from
 `provider.accounts.flatMap((a) => (a.trends ?? []).map((trend) => ({ name: a.name || a.keyPreview || '', trend })))`
@@ -868,17 +868,17 @@ isolation, as `AccountRow` already is. `UsagePage` passes `data.from`/`data.to`
 down. Add the `en-US` entries for `余额曲线` and `余额历史不足，采样中` (and any
 other new source string).
 
-- [ ] **Step 4: Run the full web gate and rebuild the bundle**
+- [x] **Step 4: Run the full web gate and rebuild the bundle**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS; `internal/admin/dist` refreshed.
 
-- [ ] **Step 5: Run the full Go gate**
+- [x] **Step 5: Run the full Go gate**
 
 Run: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/pages/Usage.tsx web/src/pages/Usage.test.ts web/src/locales/en-US.ts
@@ -886,9 +886,9 @@ git commit -m "feat(web): draw a balance curve on each provider card"
 ```
 
 **Implementation record — Task 7**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `852bacb2`)
+- Files changed: `web/src/pages/Usage.tsx` (`ProviderCard` exported, gains `from`/`to`, builds `ChartLine[]` from account trends, renders `BalanceChart` under the `Descriptions` while 统计 is on; `UsagePage` passes `data.from`/`data.to`), `web/src/pages/Usage.test.ts` (three tests: curve drawn, no curve with statistics off, English render without CJK). No locale change needed — Task 6 already added both strings.
+- Tests run: RED `npx vitest run src/pages/Usage.test.ts` → `Element type is invalid … got: undefined` (ProviderCard not exported); GREEN same → 6 tests pass. Web gate `npm test` → 51 files / 455 tests, `npx tsc --noEmit` → clean, `npm run build` → built (bundle refreshed in `internal/admin/dist`). Go gate `GOWORK=off go build ./... && go vet ./... && go test ./... -count=1` → all packages ok (`internal/admin` 20.0s).
+- Review findings/fixes: none beyond the export needed by the test; the chart sits between the statistics block and the account rows so the number and its line read together.
+- Deferred: the v1 scope's follow-ups stay deferred by design (quota-window percentage curves, runs-out projection, low-balance alerts).
