@@ -772,8 +772,9 @@ git commit -m "feat(web): show binding eligibility on the topology"
 
 **Implementation record (fill in after the task is complete)**
 - Date/status: 2026-11-12 / complete
-- Repository + commit: cuttle @ recorded in the follow-up `docs: record task 5
-  commit` commit; a record cannot carry the SHA of the commit that contains it.
+- Repository + commit: cuttle @ `b78f0563` (`feat(web): show binding eligibility
+  on the topology`), recorded here by the follow-up `docs: record task 5 commit`
+  commit; a record cannot carry the SHA of the commit that contains it.
 - Files changed:
   - `web/src/pages/edges.tsx`: `bindingEdgeHealth(health?)` keys every binding by
     `entrypoint:<id>->route:<id>` (first row wins on duplicates), `BindingEdgeState`
