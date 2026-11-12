@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildGraph } from './build';
+import { buildGraph, ROUTE_PALETTE, routeColor } from './build';
 import { setActiveLang } from '../i18n';
 import type { ConfigResponse } from '../api/types';
 
@@ -126,5 +126,35 @@ describe('buildGraph', () => {
     expect(edge?.data?.color).toBe('#d97706');
     expect(edge?.data?.draft).toBe(true);
     expect(edges.some((e) => e.id.startsWith('entrypoint:e_0000000003->route:'))).toBe(false);
+  });
+});
+
+describe('routeColor', () => {
+  const hue = (hex: string): number => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    if (!d) return 0;
+    const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (h * 60 + 360) % 360;
+  };
+
+  it('is stable for the same route name', () => {
+    expect(routeColor('dadax')).toBe(routeColor('dadax'));
+    expect(ROUTE_PALETTE).toContain(routeColor('dadax'));
+  });
+
+  it('keeps the palette free of pink and fuchsia, which read as a fault', () => {
+    for (const color of ROUTE_PALETTE) {
+      const h = hue(color);
+      expect(h < 285 || h > 350).toBe(true);
+    }
+  });
+
+  it('never colours a route with the health colours', () => {
+    for (const color of ROUTE_PALETTE) {
+      expect(['#dc2626', '#d97706', '#16a34a', '#cbd5e1']).not.toContain(color);
+    }
   });
 });

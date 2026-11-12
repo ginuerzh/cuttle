@@ -29,14 +29,19 @@ export interface GraphNodeData extends Record<string, unknown> {
 
 export type GraphNode = Node<GraphNodeData>;
 
-const PALETTE = [
+/**
+ * Route identity colours. They are cool on purpose: pink and fuchsia read as a
+ * fault next to the health colours, and the palette only tints idle edges
+ * anyway. `ROUTE_PALETTE` is exported for the guard test.
+ */
+export const ROUTE_PALETTE = [
   '#2563eb', // blue
   '#7c3aed', // violet
-  '#db2777', // pink
+  '#4f46e5', // indigo
   '#ea580c', // orange
   '#0891b2', // cyan
   '#65a30d', // lime
-  '#c026d3', // fuchsia
+  '#0ea5e9', // sky
   '#0d9488', // teal
 ];
 
@@ -49,7 +54,7 @@ export function routeColor(name: string): string {
   for (let i = 0; i < name.length; i++) {
     h = (h * 31 + name.charCodeAt(i)) >>> 0;
   }
-  return PALETTE[h % PALETTE.length];
+  return ROUTE_PALETTE[h % ROUTE_PALETTE.length];
 }
 
 interface EdgeData extends Record<string, unknown> {
