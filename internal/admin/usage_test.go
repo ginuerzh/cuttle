@@ -544,3 +544,68 @@ func TestPutConfigPreservesUsageSampling(t *testing.T) {
 		t.Fatalf("sampleInterval = %v after an explicit PUT, want 20m", got)
 	}
 }
+
+func TestProviderUsageRecordsBalancePoints(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":"11.12"}]}`))
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1",
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret-1234"}},
+	})
+	srv.mu.Lock()
+	p := srv.cfg.Providers[0]
+	srv.mu.Unlock()
+
+	client, _ := login(t, ts.URL)
+	if resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage", "", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+
+	groups, err := srv.stats.BalanceSeries(context.Background(), time.Now().Add(-time.Minute), time.Now().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("groups = %+v", groups)
+	}
+	g := groups[0]
+	if g.Provider != p.ID || g.Key != p.Keys[0].ID || g.Currency != "USD" {
+		t.Fatalf("group = %+v, want provider id %q and key id %q", g, p.ID, p.Keys[0].ID)
+	}
+	if len(g.Points) != 1 || g.Points[0].Amount != 11.12 {
+		t.Fatalf("points = %+v", g.Points)
+	}
+}
+
+func TestProviderUsageRecordsNothingForFailedAccount(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer vendor.Close()
+	setUsageProviders(t, srv, config.Provider{
+		Name: "deepseek", Type: "deepseek", Chat: vendor.URL + "/v1",
+		Keys: []config.ProviderKey{{Name: "key-1", Key: "sk-secret-1234"}},
+	})
+
+	client, _ := login(t, ts.URL)
+	resp := doJSON(t, client, http.MethodGet, ts.URL+"/api/provider-usage", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got, _ := decodeUsage(t, resp)
+	if len(got.Providers) != 1 || len(got.Providers[0].Accounts) != 1 || got.Providers[0].Accounts[0].Error == "" {
+		t.Fatalf("provider = %+v, want the account error kept", got.Providers)
+	}
+
+	groups, err := srv.stats.BalanceSeries(context.Background(), time.Now().Add(-time.Minute), time.Now().Add(time.Minute), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 0 {
+		t.Fatalf("groups = %+v, want no reading for a failed account", groups)
+	}
+}

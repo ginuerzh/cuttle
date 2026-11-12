@@ -372,7 +372,7 @@ git commit -m "feat(stats): store provider balance readings"
   - `(*Server).recordBalancePoints(ctx context.Context, providerID string, accounts []accountUsageView, now time.Time)`
   - `accountUsageView.KeyID string` (`json:"keyId,omitempty"`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestProviderUsageRecordsBalancePoints(t *testing.T) {
@@ -414,12 +414,12 @@ func TestProviderUsageRecordsBalancePoints(t *testing.T) {
 Add `TestProviderUsageRecordsNothingForFailedAccount`: a vendor replying `500`
 must leave `BalanceSeries` empty, while the card keeps today's error note.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestProviderUsageRecords' -count=1`
 Expected: FAIL (`srv.stats` has no readings — `len(groups) == 0`).
 
-- [ ] **Step 3: Extract `queryUsage` and record on the fresh path**
+- [x] **Step 3: Extract `queryUsage` and record on the fresh path**
 
 Move the body of `buildProviderUsage` from `provider.New` through account
 mapping into `queryUsage`, keeping the existing note/supported semantics exactly
@@ -445,12 +445,12 @@ is built from fresh accounts — after `queryUsage`, before the stale fallback
 account's `KeyID`, skips accounts with an empty `KeyID`, and logs a store error
 at warn without failing the request.
 
-- [ ] **Step 4: Run the admin package tests**
+- [x] **Step 4: Run the admin package tests**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS, including every pre-existing `TestProviderUsage*` case.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/admin/handlers_usage.go internal/admin/usage_test.go
@@ -458,12 +458,12 @@ git commit -m "refactor(admin): share the usage query and record fresh balances"
 ```
 
 **Implementation record — Task 3**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `7d014006`)
+- Files changed: `internal/admin/handlers_usage.go` (`accountUsageView.KeyID`; `queryUsage` extraction; `buildProviderUsage` now takes the request's `now` and records fresh readings; new `(*Server).recordBalancePoints`), `internal/admin/usage_test.go` (`TestProviderUsageRecordsBalancePoints`, `TestProviderUsageRecordsNothingForFailedAccount`).
+- Tests run: RED `GOWORK=off go test ./internal/admin -run TestProviderUsageRecords -count=1` → `groups = []`; GREEN same → ok. Gate `GOWORK=off go test ./internal/admin -count=1` → ok (16.9s), `go vet ./internal/admin` → clean.
+- Review findings/fixes: preserved the old `CheckedAt` semantics — a provider-level unsupported reason still sets no timestamp while a transient read failure does (`note == "" || !unsupported`). Stale fallback now indexes positionally (`oldAccount(old, i)`), which equals the upstream `KeyIndex` order every provider adapter emits; the pre-existing `TestProviderUsageFailureKeepsLastGood` passes.
+- Deferred: none.
 
 ---
 
