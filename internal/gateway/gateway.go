@@ -394,8 +394,9 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 
 	// The hop swap is done, so the old probe runner must stop now: it marks the
 	// old entries only, and leaving it alive would keep forking commands for a
-	// build that no longer serves. The new set starts immediately so the first
-	// request already sees a verdict for every probed binding.
+	// build that no longer serves. The new set starts immediately, but its first
+	// verdict lands only when the first command finishes (at most the probe
+	// timeout), so a reload briefly serves binding 0 until that run completes.
 	oldProbes.Stop()
 	probes.Start(context.Background())
 

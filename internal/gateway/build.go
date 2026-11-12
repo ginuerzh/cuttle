@@ -191,13 +191,22 @@ func bindingsHaveVariant(routes []gwconfig.RouteBinding, plans map[string]*route
 // probe intervals: twice the longest interval, floored at 10s. A probe that
 // keeps failing re-marks on every run, so the timeout must outlast one interval
 // or eligibility would flap between probe runs.
+//
+// A zero interval means the config default, exactly as the runner substitutes
+// it; without that, a build path that bypasses config.Load would derive 10s
+// for a probe that actually runs every 30s, and the binding would look
+// eligible again between runs.
 func bindingFailTimeout(bindings []gwconfig.RouteBinding) time.Duration {
 	timeout := 10 * time.Second
 	for _, b := range bindings {
 		if b.Probe == nil {
 			continue
 		}
-		if d := 2 * time.Duration(b.Probe.Interval); d > timeout {
+		interval := time.Duration(b.Probe.Interval)
+		if interval <= 0 {
+			interval = defaultProbeInterval
+		}
+		if d := 2 * interval; d > timeout {
 			timeout = d
 		}
 	}

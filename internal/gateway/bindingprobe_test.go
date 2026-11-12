@@ -372,6 +372,8 @@ func probeReloadConfig(t *testing.T, path string) *gwconfig.Config {
 	t.Helper()
 
 	cfg := testConfig("http://127.0.0.1:1")
+	// The sub-second interval deliberately bypasses config.Validate (which
+	// requires at least 1s) so several runs fit in a test.
 	cfg.Entrypoints[0].Routes = []gwconfig.RouteBinding{{
 		Route: testRouteID,
 		Probe: &gwconfig.Probe{

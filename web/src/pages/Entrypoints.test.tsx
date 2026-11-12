@@ -70,6 +70,14 @@ describe('EntrypointsPage', () => {
     expect(html).not.toContain('回退');
   });
 
+  it('marks the binding that serves next with a dot', () => {
+    const html = renderToStaticMarkup(
+      <EntrypointsPage config={config} onReload={async () => undefined} health={healthy} />,
+    );
+    expect(html).toContain('● primary');
+    expect(html).not.toContain('● backup');
+  });
+
   it('marks the fallback binding only when no binding is eligible', () => {
     const html = renderToStaticMarkup(
       <EntrypointsPage config={config} onReload={async () => undefined} health={fallback} />,
@@ -77,6 +85,7 @@ describe('EntrypointsPage', () => {
     expect(html).toContain('未通过');
     expect(html).toContain('回退');
     expect(html).not.toContain('可用');
+    expect(html).toContain('● primary');
   });
 
   it('lists the bindings by name before health arrives', () => {
@@ -84,6 +93,7 @@ describe('EntrypointsPage', () => {
     expect(html).toContain('primary');
     expect(html).toContain('backup');
     expect(html).not.toContain('未通过');
+    expect(html).not.toContain('●');
   });
 
   it('renders the binding states in English', () => {
@@ -97,6 +107,7 @@ describe('EntrypointsPage', () => {
     setActiveLang('zh-CN');
     expect(healthyHtml).toContain('Available');
     expect(healthyHtml).toContain('Unavailable');
+    expect(healthyHtml).toContain('● primary');
     expect(healthyHtml).not.toContain('Fallback');
     expect(fallbackHtml).toContain('Fallback');
     expect(healthyHtml + fallbackHtml).not.toMatch(/[\u4e00-\u9fff]/);

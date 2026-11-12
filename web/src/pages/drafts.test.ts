@@ -75,13 +75,24 @@ const entrypoint: Entrypoint = {
 };
 
 describe('connectEntrypointRoute', () => {
-  it('appends a probe-less binding and keeps the configured order', () => {
+  it('adds a probe-less binding after a probed one and keeps the configured order', () => {
     const next = connectEntrypointRoute(entrypoint, 'r_0000000002');
     expect(next.routes.map((b) => b.route)).toEqual(['r_0000000001', 'r_0000000002']);
     // The new binding is the last one, so it is the only one that may omit a probe.
     expect(next.routes[1].probe).toBeUndefined();
     expect(next.routes[0].probe?.command).toBe('true');
     expect(entrypoint.routes).toHaveLength(1);
+  });
+
+  it('inserts before a trailing probe-less binding so the new one is reachable', () => {
+    const bound: Entrypoint = {
+      ...entrypoint,
+      routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
+    };
+    const next = connectEntrypointRoute(bound, 'r_0000000003');
+    expect(next.routes.map((b) => b.route)).toEqual(['r_0000000001', 'r_0000000003', 'r_0000000002']);
+    expect(next.routes[1].probe).toBeUndefined();
+    expect(bound.routes.map((b) => b.route)).toEqual(['r_0000000001', 'r_0000000002']);
   });
 
   it('is a no-op for a route the entrypoint already binds', () => {

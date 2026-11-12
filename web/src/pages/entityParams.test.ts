@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ConfigResponse, EntrypointHealth } from '../api/types';
 import { setActiveLang } from '../i18n';
+import { formatDateTime } from '../time';
 import { entityParams } from './entityParams';
 
 beforeEach(() => setActiveLang('zh-CN'));
@@ -161,17 +162,25 @@ describe('entityParams', () => {
           routeId: 'r_0000000001',
           routeName: 'strong',
           eligible: false,
-          last: { at: '2026-11-12T10:00:00Z', ok: false, exitCode: 3, latencyMs: 12 },
+          last: {
+            at: '2026-11-12T10:00:00Z',
+            ok: false,
+            exitCode: 3,
+            latencyMs: 12,
+            error: 'quota exhausted',
+          },
         },
         { index: 1, routeId: 'r_0000000002', routeName: 'bare', eligible: false },
       ],
     },
   ];
 
+  const probedAt = formatDateTime('2026-11-12T10:00:00Z');
+
   it('lists each binding with its state, fallback and last probe', () => {
     expect(entityParams(config, 'entrypoint:e_0000000001', health)).toEqual([
       { label: '模型匹配', value: '*' },
-      { label: '路由 1', value: 'strong · 未通过 · 退出码 3 · 12ms' },
+      { label: '路由 1', value: `strong · 未通过 · 退出码 3 · 12ms · ${probedAt} · quota exhausted` },
       { label: '路由 2', value: 'bare · curl -fsS http://127.0.0.1:9/ready · 未通过 · 回退' },
       { label: '优先级', value: '1' },
     ]);
@@ -195,7 +204,7 @@ describe('entityParams', () => {
       },
     ]);
 
-    expect(rows).toContainEqual({ label: '路由 1', value: 'bare · 可用 · 退出码 0 · 7ms' });
+    expect(rows).toContainEqual({ label: '路由 1', value: `bare · 可用 · 退出码 0 · 7ms · ${probedAt}` });
     expect(rows.map((r) => r.value).join('')).not.toContain('回退');
   });
 
@@ -216,7 +225,10 @@ describe('entityParams', () => {
     setActiveLang('en-US');
     const rows = entityParams(config, 'entrypoint:e_0000000001', health);
     setActiveLang('zh-CN');
-    expect(rows).toContainEqual({ label: 'Route 1', value: 'strong · Unavailable · exit code 3 · 12ms' });
+    expect(rows).toContainEqual({
+      label: 'Route 1',
+      value: `strong · Unavailable · exit code 3 · 12ms · ${probedAt} · quota exhausted`,
+    });
     expect(rows).toContainEqual({
       label: 'Route 2',
       value: 'bare · curl -fsS http://127.0.0.1:9/ready · Unavailable · Fallback',

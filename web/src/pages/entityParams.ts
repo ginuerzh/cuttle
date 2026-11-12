@@ -1,6 +1,7 @@
 import type { ConfigResponse, EntrypointHealth } from '../api/types';
 import { translate } from '../i18n';
 import { configLabels, entityLabel } from '../labels';
+import { formatDateTime } from '../time';
 import { configuredAPIs } from './presets';
 import { splitId } from './selection';
 
@@ -86,7 +87,11 @@ export function entityParams(
             parts.push(
               translate('退出码 {code}', { code: row.last.exitCode }),
               `${row.last.latencyMs}ms`,
+              formatDateTime(row.last.at),
             );
+            // The runner keeps the stderr head (first 1 KiB), so a failing
+            // command explains itself here without a log dive.
+            if (row.last.error) parts.push(row.last.error);
           }
         }
         rows.push({

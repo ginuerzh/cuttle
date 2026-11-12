@@ -990,6 +990,70 @@ export interface EntrypointBindingRow {
   probe?: { command?: string; interval?: string; timeout?: string };
 }
 
+/** The default probe schedule the server applies when a field is blank. */
+const DEFAULT_PROBE_INTERVAL_MS = 30_000;
+const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+
+const DURATION_PART = /(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/g;
+const DURATION_UNIT_MS: Record<string, number> = {
+  ns: 1e-6,
+  us: 1e-3,
+  'µs': 1e-3,
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+};
+
+/**
+ * Milliseconds of a Go duration string (`30s`, `1m30s`, `500ms`), or undefined
+ * when the text is not one. Progressively summing the unit parts mirrors
+ * `time.ParseDuration` closely enough to reject typos before the server does.
+ */
+export function probeDurationMs(value?: string): number | undefined {
+  const text = (value ?? '').trim();
+  if (!text) return undefined;
+  let total = 0;
+  let consumed = 0;
+  for (const part of text.matchAll(DURATION_PART)) {
+    if (part.index !== consumed) return undefined;
+    total += Number(part[1]) * DURATION_UNIT_MS[part[2]];
+    consumed += part[0].length;
+  }
+  return consumed === text.length ? total : undefined;
+}
+
+/** The problem with a probe interval, or undefined. A blank field is the default. */
+export function probeIntervalError(value?: string): string | undefined {
+  const text = (value ?? '').trim();
+  if (!text) return undefined;
+  const ms = probeDurationMs(text);
+  if (ms === undefined) return '探测间隔必须是时长，例如 30s';
+  if (ms < 1_000) return '探测间隔不能小于 1s（默认 30s）';
+  return undefined;
+}
+
+/**
+ * The problem with a probe timeout, or undefined. A blank field is the default
+ * `5s`, so the comparison uses the effective values: an operator who typed no
+ * timeout gets a message instead of a server rejection for a `5s` they never
+ * entered.
+ */
+export function probeTimeoutError(value?: string, interval?: string): string | undefined {
+  const text = (value ?? '').trim();
+  const ms = text ? probeDurationMs(text) : DEFAULT_PROBE_TIMEOUT_MS;
+  if (ms === undefined) return '探测超时必须是时长，例如 5s';
+  if (ms < 1_000) return '探测超时不能小于 1s（默认 5s）';
+  const intervalMs = ((interval ?? '').trim() ? probeDurationMs(interval) : DEFAULT_PROBE_INTERVAL_MS)
+    ?? DEFAULT_PROBE_INTERVAL_MS;
+  if (ms >= intervalMs) return '探测超时必须小于探测间隔（默认 30s / 5s）';
+  return undefined;
+}
+
+function probeRuleResult(message?: string): Promise<void> {
+  return message ? Promise.reject(new Error(tr(message))) : Promise.resolve();
+}
+
 /**
  * The ordered bindings a form row list saves. Blank rows are dropped so a form
  * with an untouched row saves a draft, and a probe without a command is dropped
@@ -1116,14 +1180,31 @@ function EntrypointBindingsField({ routes }: { routes: Route[] }) {
                         <Form.Item
                           name={[field.name, 'probe', 'interval']}
                           label={tr('探测间隔')}
-                          extra={tr('默认 30s')}
+                          rules={[
+                            {
+                              validator: (_, value: string | undefined) =>
+                                probeRuleResult(probeIntervalError(value)),
+                            },
+                          ]}
+                          extra={tr('默认 30s，最小 1s')}
                         >
                           <Input placeholder="30s" style={{ width: 90 }} />
                         </Form.Item>
                         <Form.Item
                           name={[field.name, 'probe', 'timeout']}
                           label={tr('探测超时')}
-                          extra={tr('默认 5s')}
+                          rules={[
+                            {
+                              validator: (_, value: string | undefined) =>
+                                probeRuleResult(
+                                  probeTimeoutError(
+                                    value,
+                                    form.getFieldValue(['routes', field.name, 'probe', 'interval']),
+                                  ),
+                                ),
+                            },
+                          ]}
+                          extra={tr('默认 5s，最小 1s，且小于间隔')}
                         >
                           <Input placeholder="5s" style={{ width: 90 }} />
                         </Form.Item>

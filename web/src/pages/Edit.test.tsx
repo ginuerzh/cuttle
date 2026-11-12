@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AddButtons, connectEntrypointEdge, disconnectEntrypointEdge, EdgeForm, EntrypointForm, entrypointBindingInputs, NodeForm, ProviderForm, RouteForm } from './Edit';
+import { AddButtons, connectEntrypointEdge, disconnectEntrypointEdge, EdgeForm, EntrypointForm, entrypointBindingInputs, NodeForm, probeDurationMs, probeIntervalError, probeTimeoutError, ProviderForm, RouteForm } from './Edit';
 import { setActiveLang } from '../i18n';
 import type { ConfigResponse, Entrypoint, Node, Provider, Route } from '../api/types';
 
@@ -152,6 +152,37 @@ describe('entrypointBindingInputs', () => {
   });
 });
 
+describe('probe schedule validation', () => {
+  it('parses Go durations, including compound and sub-second forms', () => {
+    expect(probeDurationMs('30s')).toBe(30_000);
+    expect(probeDurationMs('1m30s')).toBe(90_000);
+    expect(probeDurationMs('500ms')).toBe(500);
+    expect(probeDurationMs(' 2m ')).toBe(120_000);
+    expect(probeDurationMs('30')).toBeUndefined();
+    expect(probeDurationMs('30 s')).toBeUndefined();
+    expect(probeDurationMs('abc')).toBeUndefined();
+    expect(probeDurationMs('')).toBeUndefined();
+  });
+
+  it('accepts a blank interval and rejects less than one second', () => {
+    expect(probeIntervalError(undefined)).toBeUndefined();
+    expect(probeIntervalError('30s')).toBeUndefined();
+    expect(probeIntervalError('500ms')).toBe('探测间隔不能小于 1s（默认 30s）');
+    expect(probeIntervalError('soon')).toBe('探测间隔必须是时长，例如 30s');
+  });
+
+  it('checks the timeout against its default and the effective interval', () => {
+    expect(probeTimeoutError(undefined, undefined)).toBeUndefined();
+    expect(probeTimeoutError('5s', '30s')).toBeUndefined();
+    // A blank timeout means the 5s default, so a 2s interval is rejected even
+    // though the operator typed no timeout.
+    expect(probeTimeoutError('', '2s')).toBe('探测超时必须小于探测间隔（默认 30s / 5s）');
+    expect(probeTimeoutError('30s', undefined)).toBe('探测超时必须小于探测间隔（默认 30s / 5s）');
+    expect(probeTimeoutError('500ms', '30s')).toBe('探测超时不能小于 1s（默认 5s）');
+    expect(probeTimeoutError('nope', '30s')).toBe('探测超时必须是时长，例如 5s');
+  });
+});
+
 describe('EntrypointForm bindings', () => {
   const config = {
     providers: [],
@@ -213,12 +244,26 @@ describe('entrypoint edge wiring', () => {
     routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
   };
 
-  it('appends a binding when a route is dragged onto an entrypoint', () => {
+  it('adds a binding when a route is dragged onto an entrypoint', () => {
+    const draft: Entrypoint = {
+      ...entrypoint,
+      routes: [{ route: 'r_0000000001', probe: { command: 'true' } }],
+    };
+
+    const next = connectEntrypointEdge([draft], 'entrypoint:e_0000000001', 'route:r_0000000002');
+
+    expect(next[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'true' } },
+      { route: 'r_0000000002' },
+    ]);
+  });
+
+  it('inserts before a trailing probe-less binding', () => {
     const draft: Entrypoint = { ...entrypoint, routes: [{ route: 'r_0000000001' }] };
 
     const next = connectEntrypointEdge([draft], 'entrypoint:e_0000000001', 'route:r_0000000002');
 
-    expect(next[0].routes).toEqual([{ route: 'r_0000000001' }, { route: 'r_0000000002' }]);
+    expect(next[0].routes).toEqual([{ route: 'r_0000000002' }, { route: 'r_0000000001' }]);
   });
 
   it('leaves the list untouched when the route is already bound', () => {

@@ -191,7 +191,7 @@ export interface EntrypointHealthProbe {
   /** -1 when the command could not be started or timed out. */
   exitCode: number;
   latencyMs: number;
-  /** Stderr tail of the failed run. */
+  /** Stderr head of the failed run (first 1 KiB); a timeout prefixes `timeout after <duration>`. */
   error?: string;
 }
 

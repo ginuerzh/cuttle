@@ -191,6 +191,15 @@ func TestBindingFailTimeoutDerivation(t *testing.T) {
 			},
 			want: 10 * time.Second,
 		},
+		{
+			// A build that bypasses config.Load has no default applied yet; the
+			// runner still runs every 30s, so the timeout must follow it.
+			name: "zero interval uses the 30s default",
+			routes: []gwconfig.RouteBinding{
+				{Route: "r_0000000001", Probe: &gwconfig.Probe{Command: "true"}},
+			},
+			want: 60 * time.Second,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

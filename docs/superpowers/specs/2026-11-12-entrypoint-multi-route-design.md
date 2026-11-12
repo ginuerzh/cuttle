@@ -242,8 +242,10 @@ func (s *probeSet) Snapshot() []health.Entrypoint
   or exec failure → `Mark()` on all of them. The group `failTimeout` derived in
   §2 keeps them ineligible until the next successful probe.
 - Result recorded in memory per binding: `at`, `ok`, `exitCode`, `latencyMs`,
-  `error` (stderr head, first 1 KiB, plus the exec error). Logs: debug on
-  success, info on transition only (eligible ↔ ineligible), never the command
+  `error`. `error` is the stderr head (first 1 KiB) when the command wrote
+  anything, the exec error string only when stderr was empty, and a timeout
+  prefixes `timeout after <duration>` before the stderr head. Logs: debug on
+  success, info on a verdict transition and on the first run, never the command
   or its full output.
 - Lifecycle: `buildHopGroup` returns the unstarted `*probeSet`; `apply` starts
   it after the hop swap and stops the previous set immediately, so an old
@@ -357,7 +359,7 @@ per binding, which is the only visible stats-adjacent change.
 - Probe runner: fixture command in `t.TempDir` that reads a file to flip
   exit 0/1; assert every variant entry's marker follows; env variables are
   passed; timeout marks ineligible; `Stop` cancels a slow command; result
-  registry carries exit code, latency and stderr tail.
+  registry carries exit code, latency and stderr head.
 - Selection: two bindings, first ineligible → second serves; both ineligible →
   first serves (fallback); first becomes eligible → first serves again; single
   binding ignores probe; entrypoint-level no-fallthrough (a dead binding of
@@ -387,7 +389,7 @@ per binding, which is the only visible stats-adjacent change.
 4. All-ineligible falls back to the first binding (x native behavior, no x
    change). The default route therefore belongs first in the list.
 5. Commands are not env-expanded at load; `sh -c` plus injected `CUTTLE_*`
-   variables; stderr tail is recorded for the panel.
+   variables; stderr head is recorded for the panel.
 6. Always wrap bindings in an inner group, including the single-binding case.
 7. Binding health is memory-only, separate from `/api/routes/health`, and shows
    up in `/api/events` and the console.

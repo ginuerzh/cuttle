@@ -34,6 +34,7 @@
 - A hung probe command must time out, mark the binding ineligible and keep the loop alive; `Stop` must not block on it.
 - A reload (SIGHUP or admin save) must stop the old probe goroutines and start the new set immediately, with no double marking and no stale health rows.
 - A binding compiles up to four variant entries; one switch must update all of them, or the route changes for one wire API only.
+- The Entrypoints page must not depend on a prior topology visit for binding health: it fetches `GET /api/entrypoints/health` on mount and after every save, and marks the binding that serves next (`●`).
 
 ---
 
@@ -581,15 +582,16 @@ git commit -m "feat(admin): expose entrypoint binding health"
 
 **Interfaces:**
 - Consumes: `GET /api/entrypoints/health`, `entrypointHealth` in the events snapshot (Task 3).
-- Produces: `types.ts` `EntrypointRoute{route: string; probe?: RouteBindingProbe}`, `RouteBindingProbe{command: string; interval?: string; timeout?: string}`, `Entrypoint.routes: EntrypointRoute[]`, `EntrypointHealth`, `EntrypointHealthBinding`, `EntrypointHealthProbe`; `getEntrypointHealth(): Promise<EntrypointHealth[]>`; `App.tsx` state `entrypointHealth` set from the initial fetch and the events snapshot (Task 5 passes it to the topology; this task passes it to the Entrypoints page).
-- Produces: `drafts.ts` `connectEntrypointRoute(e, routeID)` (append, no-op when bound) and `disconnectEntrypointBinding(e, routeID)` (remove one); `disconnectEntrypointRoute` clears all bindings.
+- Produces: `types.ts` `EntrypointRoute{route: string; probe?: RouteBindingProbe}`, `RouteBindingProbe{command: string; interval?: string; timeout?: string}`, `Entrypoint.routes: EntrypointRoute[]`, `EntrypointHealth`, `EntrypointHealthBinding`, `EntrypointHealthProbe`; `getEntrypointHealth(): Promise<EntrypointHealth[]>`; `App.tsx` state `entrypointHealth` set from the initial fetch and the events snapshot (Task 5 passes it to the topology; the Entrypoints page fetches its own rows so it never relies on a prior topology visit).
+- Produces: `drafts.ts` `connectEntrypointRoute(e, routeID)` (adds the binding, inserting before a trailing probe-less binding; no-op when already bound) and `disconnectEntrypointBinding(e, routeID)` (remove one); `disconnectEntrypointRoute` clears all bindings.
 
 - [x] **Step 1: Write the failing web tests**
 
 - `graph/build.test.ts`: replace `route:` fixtures with `routes: [{route: 'r_...'}]`; add "draws one edge per binding" (one entrypoint, two bindings → two edges, ids `entrypoint:e->route:r1` and `entrypoint:e->route:r2`) and "a draft entrypoint has no bindings and links to unrouted".
-- `Entrypoints.test.tsx`: card subtitle lists both route names with their eligibility (`未通过` / `可用`), and `回退` when the active binding is a fallback.
+- `Entrypoints.test.tsx`: card subtitle lists both route names with their eligibility (`未通过` / `可用`), marks the binding that serves next with `●`, and `回退` when the active binding is a fallback.
+- `Entrypoints.dom.test.tsx`: the page calls `getEntrypointHealth()` on mount without any health prop, and again after a save (`onReload`) reloads the config.
 - `Edit.test.tsx`: saving the form round-trips an ordered binding list with a probe (command, interval, timeout) and preserves order.
-- `drafts.test.ts`: `connectEntrypointRoute(e, 'r_2')` appends; connecting an already-bound route is a no-op; `disconnectEntrypointBinding(e, 'r_1')` removes only that binding; `disconnectEntrypointRoute` clears the list.
+- `drafts.test.ts`: `connectEntrypointRoute(e, 'r_2')` adds a binding; connecting an already-bound route is a no-op; a new binding goes before a trailing probe-less binding; `disconnectEntrypointBinding(e, 'r_1')` removes only that binding; `disconnectEntrypointRoute` clears the list.
 
 - [x] **Step 2: Run them to verify they fail**
 
@@ -601,16 +603,16 @@ Expected: FAIL (type errors / missing bindings).
 - `types.ts`: new binding/health types; `Entrypoint.route` removed; document id fields as ids.
 - `client.ts`: `getEntrypointHealth()`.
 - `events.ts`: `SnapshotMessage.entrypointHealth?: EntrypointHealth[]`.
-- `App.tsx`: `entrypointHealth` state, initial `getEntrypointHealth()` fetch beside `getRouteHealth()` (same cancelled guard), `if (msg.entrypointHealth) setEntrypointHealth(...)`, pass to the Entrypoints page.
+- `App.tsx`: `entrypointHealth` state, initial `getEntrypointHealth()` fetch beside `getRouteHealth()` (same cancelled guard), `if (msg.entrypointHealth) setEntrypointHealth(...)`, pass to the topology (Task 5). The Entrypoints page fetches its own rows on mount and after every save (spec §5), so freshness never depends on a prior topology visit; the prop it receives is only the first paint.
 
 - [x] **Step 4: Implement the graph edges and the list page**
 
 - `graph/build.ts`: `sub` joins route names; one edge per binding with the unchanged id `entrypoint:<id>->route:<id>`; `unconnected` when `routes.length === 0`; the unrouted edge appears only when there are no bindings.
-- `Entrypoints.tsx`: subtitle from bindings plus health (`未通过` / `可用` / `回退`).
+- `Entrypoints.tsx`: subtitle from bindings plus health (`未通过` / `可用` / `回退`), with `●` on the binding that serves the next request; the page owns its health rows and refreshes them on mount and after each save, keeping the prop only for the first paint.
 
 - [x] **Step 5: Implement the form and the helpers**
 
-- `Edit.tsx`: `Form.List name="routes"` with route select, optional probe command/interval/timeout, add/remove/up-down; save maps to `routes`; `AddEntrypointModal` starts with one optional binding.
+- `Edit.tsx`: `Form.List name="routes"` with route select, optional probe command/interval/timeout, add/remove/up-down; save maps to `routes`; `AddEntrypointModal` starts with one optional binding. The interval/timeout fields validate as Go durations ≥ 1s with `timeout < interval`, comparing blank fields against the effective defaults (`30s` / `5s`) so a server rejection for a value the operator never typed cannot surprise them.
 - `entityParams.ts`: show the binding list.
 - `drafts.ts`: `connectEntrypointRoute`, `disconnectEntrypointBinding`, `disconnectEntrypointRoute` = clear all.
 - `en-US.ts`: every new source string.
@@ -741,10 +743,10 @@ git commit -m "feat(web): edit and show entrypoint route bindings"
 
 - [x] **Step 1: Write the failing tests**
 
-- `Topology.test.tsx`: an ineligible non-active binding edge is dashed amber labelled `未通过`; the active binding edge keeps its normal style; a fallback-active edge is labelled `回退`; node `dead` decoration is unchanged.
+- `Topology.test.tsx`: an ineligible non-active binding edge is dashed amber labelled `未通过`; the active binding edge keeps its normal style; a fallback-active edge is dashed amber and labelled `回退`; node `dead` decoration is unchanged and keeps precedence.
 - `edges.test.tsx`: `bindingEdgeHealth` maps health rows to edge ids, keeps the first binding on duplicates, and the decoration preserves `selected`.
-- `Edit.test.tsx`: dragging entrypoint → route appends a binding, a duplicate drag is a no-op, deleting an `entrypoint:<id>->route:<id>` edge removes only that binding, and deleting the last binding makes a draft.
-- `entityParams.test.ts`: the monitor panel lists each binding with its state (`可用` / `未通过` / `回退`) and the last probe's exit code and latency.
+- `Edit.test.tsx`: dragging entrypoint → route inserts a binding (before a trailing probe-less binding), a duplicate drag is a no-op, deleting an `entrypoint:<id>->route:<id>` edge removes only that binding, and deleting the last binding makes a draft.
+- `entityParams.test.ts`: the monitor panel lists each binding with its state (`可用` / `未通过` / `回退`) and the last probe's exit code, latency, time and error.
 
 - [x] **Step 2: Run them to verify they fail**
 
@@ -753,10 +755,10 @@ Expected: FAIL.
 
 - [x] **Step 3: Implement**
 
-- `edges.tsx`: `bindingEdgeHealth`; extend `decorateEdge` (or a sibling) so an ineligible binding edge is dashed amber with label `未通过`, a fallback-active edge is labelled `回退`, and the existing `selected` flag is preserved by re-decorating the previous edge objects.
+- `edges.tsx`: `bindingEdgeHealth`; extend `decorateEdge` (or a sibling) so an ineligible binding edge is dashed amber with label `未通过`, a fallback-active edge is dashed amber with label `回退`, and the existing `selected` flag is preserved by re-decorating the previous edge objects.
 - `Topology`: accept `entrypointHealth` and apply the decoration in a memo that does not depend on `structure.edges`.
-- `Edit.connect`: route → `connectEntrypointRoute`; edge form → `disconnectEntrypointBinding`; removing the last binding makes the entrypoint a draft.
-- `App.tsx`: pass the state to the monitor; `entityParams` renders binding health.
+- `Edit.connect`: route → `connectEntrypointRoute` (insert before a trailing probe-less binding); edge form → `disconnectEntrypointBinding`; removing the last binding makes the entrypoint a draft.
+- `App.tsx`: pass the state to the monitor; `entityParams` renders binding health, including the last probe time, exit code, latency and error.
 
 - [x] **Step 4: Run the web gate and rebuild**
 

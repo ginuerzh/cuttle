@@ -405,7 +405,7 @@ describe('Edit canvas connections', () => {
     expect(updateNodeMock).toHaveBeenCalledWith('n_0000000001', expect.objectContaining({ provider: 'p_0000000001' }));
   });
 
-  it('appends a route binding when a route is dragged onto an entrypoint', async () => {
+  it('adds a route binding before a trailing probe-less binding when one is dragged in', async () => {
     const { container } = render(<Edit config={config} onReload={async () => undefined} />);
     await act(async () => {
       buttonByText(container, 'connect-entrypoint').click();
@@ -413,7 +413,7 @@ describe('Edit canvas connections', () => {
 
     expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
     const [entrypoints] = putEntrypointsMock.mock.calls[0];
-    expect(entrypoints[0].routes).toEqual([{ route: 'r_0000000001' }, { route: 'r_0000000002' }]);
+    expect(entrypoints[0].routes).toEqual([{ route: 'r_0000000002' }, { route: 'r_0000000001' }]);
   });
 
   it('does not save a duplicate route drag', async () => {

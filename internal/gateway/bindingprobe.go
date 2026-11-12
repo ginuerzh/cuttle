@@ -145,7 +145,9 @@ func (s *probeSet) add(e gwconfig.Entrypoint, b gwconfig.RouteBinding, index int
 }
 
 // Start runs every command probe immediately and then once per interval. It is
-// idempotent; Stop cancels the goroutines and waits for them.
+// idempotent; Stop cancels the goroutines and waits for them. Start and Stop
+// must not run concurrently: callers serialize them (the gateway does so under
+// buildMu), because Stop drops its own lock before waiting.
 func (s *probeSet) Start(ctx context.Context) {
 	if s == nil {
 		return
@@ -173,7 +175,8 @@ func (s *probeSet) Start(ctx context.Context) {
 }
 
 // Stop cancels the probe goroutines and waits for them. A canceled run records
-// no verdict, so a reload cannot make a fresh binding look failed.
+// no verdict, so a reload cannot make a fresh binding look failed. Like Start,
+// it relies on the caller to serialize the two (buildMu in the gateway).
 func (s *probeSet) Stop() {
 	if s == nil {
 		return

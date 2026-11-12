@@ -137,17 +137,21 @@ Replace the `test` with a quota lookup, a time window or a canary check; the
 variables say which binding is being asked about.
 
 A probe decides which route serves; it is not a health check on a provider.
-cuttle passes no provider credentials to it, and the command must never call a
-provider API: that would spend provider quota on every probe run and feed the
-probe's own traffic into the quota it is supposed to measure. A probe never
-marks a node `dead`; node markers keep their 429/5xx meaning.
+cuttle adds no credentials of its own, but the probe inherits the cuttle
+process environment, including any keys exported for `${VAR}` expansion in the
+config — never print them. The command must never call a provider API: that
+would spend provider quota on every probe run and feed the probe's own traffic
+into the quota it is supposed to measure. A probe never marks a node `dead`;
+node markers keep their 429/5xx meaning.
 
 The command runs once per binding per `interval` (default `30s`; `timeout`
 defaults to `5s`), however many inbound protocol variants the binding compiles
-to, and runs immediately at startup and after a reload. The verdict applies to
-the next request after the run, so the switching latency is one `interval`: with
-a `15s` probe traffic can take up to 15 seconds to follow a change. `interval`
-and `timeout` are at least `1s`, and `timeout` must be shorter than `interval`.
+to, and runs immediately at startup and after a reload. A reload (SIGHUP or an
+admin save) re-routes to the first binding until each probe's first run
+completes (at most `timeout`). The verdict applies to the next request after the
+run, so the switching latency is one `interval`: with a `15s` probe traffic can
+take up to 15 seconds to follow a change. `interval` and `timeout` are at least
+`1s`, and `timeout` must be shorter than `interval`.
 
 A binding without a `probe` is always eligible and therefore shadows every
 binding after it: at most one probe-less binding is allowed and it must be last.
@@ -159,7 +163,8 @@ belongs first in the list.
 `GET /api/entrypoints/health` reports each entrypoint's bindings, the binding
 that serves next (`active`) and the last probe result; see
 [Admin API](#admin-api). The console shows the same state on the Entrypoints
-page and as edge badges on the topology monitor.
+page, where the binding that serves next is marked `●`, and as edge badges on
+the topology monitor.
 
 > The routing model is intentionally strict. Old configurations using
 > `aliases`, route `match`, or node `models` maps are rejected at load time.
@@ -482,15 +487,17 @@ file and reload.
 
 The topology view has monitor and edit modes. In monitor mode nodes are fixed
 and binding edges are badged from the latest probe run: an ineligible binding
-that is not serving shows `未通过` (unavailable), and the binding x falls back to
-when everything is ineligible shows `回退` (fallback). In edit mode you can drag
-an entrypoint onto a route, a route onto a node or a node onto a provider to
-change the configuration. Dragging onto a route appends a binding; dragging a
-route the entrypoint already binds changes nothing, and the entrypoint edge
-panel's `断开` removes just that one binding, so removing the last one makes the
-entrypoint a draft again. A draft card is tagged `未连接` (not connected). Node
-positions are stored in the stats SQLite database and shared by every admin;
-`localStorage` keeps a local backup and is used if the server cannot be reached.
+that is not serving shows `未通过` (unavailable) in dashed amber, and the binding
+x falls back to when everything is ineligible shows `回退` (fallback) in the
+same dashed amber. In edit mode you can drag an entrypoint onto a route, a route
+onto a node or a node onto a provider to change the configuration. Dragging onto
+a route adds a binding, placed before a trailing probe-less binding so it can
+still serve; dragging a route the entrypoint already binds changes nothing, and
+the entrypoint edge panel's `断开` removes just that one binding, so removing
+the last one makes the entrypoint a draft again. A draft card is tagged
+`未连接` (not connected). Node positions are stored in the stats SQLite database
+and shared by every admin; `localStorage` keeps a local backup and is used if
+the server cannot be reached.
 
 The monitor streams live data over the `GET /api/events` WebSocket. New traffic
 flashes the node icon once and sends light dots along the connection. The
@@ -731,8 +738,10 @@ union.
 Bindings are tried in declaration order and the first eligible one serves the
 request. A probe is the external switch: while its command exits `0` the binding
 is eligible, and any other exit, timeout or exec failure makes it ineligible. It
-runs as the cuttle process with no provider credentials and must never call a
-provider API. The full contract, environment variables and an example are in
+adds no credentials of its own but inherits the cuttle process environment, so
+provider keys exported for `${VAR}` are visible to it — never print them — and it
+must never call a provider API. The full contract, environment variables and an
+example are in
 [Route bindings and command probes](#route-bindings-and-command-probes).
 
 A binding without a probe is always eligible, which is how an explicit static

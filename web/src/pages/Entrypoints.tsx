@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, Drawer, Empty, Popconfirm, Space, Typography, message } from 'antd';
-import { putEntrypoints } from '../api/client';
+import { getEntrypointHealth, putEntrypoints } from '../api/client';
 import { translate as t } from '../i18n';
 import type { ConfigResponse, Entrypoint, EntrypointHealth } from '../api/types';
 import { entityLabel, labelMap, type LabelMap } from '../labels';
@@ -10,9 +10,10 @@ import { ListPage } from '../components/ListPage';
 
 /**
  * One entrypoint card's subtitle: its globs and every binding in configured
- * order. A binding shows its eligibility once the data plane reports it, and
- * the binding the data plane falls back to is marked as such. Health is keyed
- * by entrypoint id, the same key the graph and stats use.
+ * order. The binding that serves the next request is marked `●`, a binding
+ * shows its eligibility once the data plane reports it, and the binding the
+ * data plane falls back to is marked as such. Health is keyed by entrypoint id,
+ * the same key the graph and stats use.
  */
 export function entrypointSubtitle(
   entrypoint: Entrypoint,
@@ -29,14 +30,16 @@ export function entrypointSubtitle(
   const parts = bindings.map((binding) => {
     const name = entityLabel(binding.route, routeNames) || binding.route;
     const row = reported.get(binding.route);
+    const isActive = active?.routeId === binding.route;
     const state: string[] = [];
     if (row) {
       state.push(row.eligible ? t('可用') : t('未通过'));
     }
-    if (active?.fallback && active.routeId === binding.route) {
+    if (isActive && active?.fallback) {
       state.push(t('回退'));
     }
-    return state.length > 0 ? `${name}（${state.join(' · ')}）` : name;
+    const marked = isActive ? `● ${name}` : name;
+    return state.length > 0 ? `${marked}（${state.join(' · ')}）` : marked;
   });
   return `${match} → ${parts.join(', ')}`;
 }
@@ -44,17 +47,41 @@ export function entrypointSubtitle(
 export function EntrypointsPage({
   config,
   onReload,
-  health = [],
+  health: latestHealth = [],
 }: {
   config: ConfigResponse;
   onReload: () => Promise<void>;
-  /** Binding health of the current build, keyed by entrypoint id. */
+  /**
+   * Binding health from the last snapshot or poll, used for the first paint.
+   * The page fetches its own rows on mount and after every save, so it never
+   * depends on a prior topology visit for fresh eligibility.
+   */
   health?: EntrypointHealth[];
 }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  const [health, setHealth] = useState<EntrypointHealth[]>(latestHealth);
   const routeNames = labelMap(config.routes);
   const healthById = new Map(health.map((h) => [h.entrypointId, h]));
+
+  const refreshHealth = useCallback(async () => {
+    try {
+      setHealth(await getEntrypointHealth());
+    } catch {
+      setHealth([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHealth();
+  }, [refreshHealth]);
+
+  // Every save reloads the config; the eligibility rows must reload too, or a
+  // just-saved binding keeps the verdict of the binding it replaced.
+  const reload = useCallback(async () => {
+    await onReload();
+    await refreshHealth();
+  }, [onReload, refreshHealth]);
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
@@ -63,7 +90,7 @@ export function EntrypointsPage({
     next.splice(to, 0, moved);
     try {
       await putEntrypoints(next);
-      await onReload();
+      await reload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     }
@@ -73,7 +100,7 @@ export function EntrypointsPage({
     try {
       await putEntrypoints(config.entrypoints.filter((_, i) => i !== index));
       message.success(t('已删除'));
-      await onReload();
+      await reload();
     } catch (err) {
       message.error(err instanceof Error ? err.message : String(err));
     }
@@ -119,7 +146,7 @@ export function EntrypointsPage({
             config={config}
             onSaved={async () => {
               setEditing(null);
-              await onReload();
+              await reload();
             }}
           />
         ) : null}
@@ -132,7 +159,7 @@ export function EntrypointsPage({
         onDone={async () => {
           message.success(t('已添加'));
           setAdding(false);
-          await onReload();
+          await reload();
         }}
         onError={(s) => message.error(s)}
       />

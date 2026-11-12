@@ -198,7 +198,7 @@ describe('binding badges', () => {
     expect(renderToStaticMarkup(<>{decorated.label}</>)).not.toContain('未通过');
   });
 
-  it('labels the binding x falls back to as 回退', () => {
+  it('draws the binding x falls back to as dashed amber labelled 回退', () => {
     const badges = bindingEdgeHealth([
       health('r_0000000001', true, [
         ['r_0000000001', false],
@@ -209,7 +209,17 @@ describe('binding badges', () => {
     const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, badges);
 
     expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('回退');
-    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+    expect(decorated.style).toMatchObject({ stroke: '#d97706', strokeDasharray: '6 4' });
+  });
+
+  it('lets the dead decoration win over a fallback badge', () => {
+    const fallbackEdge = edge('r_0000000001');
+    const badges = bindingEdgeHealth([health('r_0000000001', true, [['r_0000000001', false]])]);
+
+    const decorated = decorateEdge(fallbackEdge, null, undefined, true, new Set([fallbackEdge.id]), badges);
+
+    expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
+    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('dead');
   });
 
   it('leaves the dead decoration of a route binding untouched', () => {

@@ -87,7 +87,9 @@ func TestEntrypointSwitchesRouteByProbe(t *testing.T) {
 				{Route: "r_0000000001", Probe: &gwconfig.Probe{
 					// Exit 0 means eligible: the flag's presence makes this
 					// binding ineligible, which is what the switch test toggles.
-					Command:  "test ! -f " + strconv.Quote(flag),
+					Command: "test ! -f " + strconv.Quote(flag),
+					// The sub-second interval deliberately bypasses
+					// config.Validate (minimum 1s) to keep the test fast.
 					Interval: gwconfig.Duration(20 * time.Millisecond),
 					Timeout:  gwconfig.Duration(time.Second),
 				}},

@@ -45,18 +45,19 @@ export function bindingEdgeHealth(health?: readonly EntrypointHealth[]): Map<str
 export interface BindingEdgeBadge {
   /** Text to append to the edge label; absent when the binding needs no badge. */
   text?: string;
-  /** Style as an ineligible binding: dashed amber. */
+  /** Style the edge as a warning: dashed amber. Both badges use it. */
   invalid: boolean;
 }
 
 /**
  * The badge an edge carries: `未通过` for an ineligible binding that is not
- * serving, `回退` for the binding x falls back to when none is eligible. The
- * active binding and a binding without health stay unlabelled.
+ * serving, `回退` for the binding x falls back to when none is eligible. Both
+ * are dashed amber because neither binding is serving by choice. The active
+ * binding and a binding without health stay unlabelled and solid.
  */
 export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
   if (!state) return { invalid: false };
-  if (state.fallback) return { text: translate('回退'), invalid: false };
+  if (state.fallback) return { text: translate('回退'), invalid: true };
   if (!state.eligible && !state.active) return { text: translate('未通过'), invalid: true };
   return { invalid: false };
 }
