@@ -884,8 +884,9 @@ git commit -m "docs: document entrypoint route bindings and probe switching"
 - Date/status: 2026-11-12 / DONE. Docs finished, full gates green, manual smoke
   passed on the built binary with no data-plane defect.
 - Repository + commit: `ginuerzh/cuttle`, branch `feat/entrypoint-bindings`.
-  Task commit `TBD` (docs + cleanups + this record); the follow-up
-  `docs: record task 6 commit` commit records its SHA and is not amended.
+  Task commit `c6845b95` (docs + cleanups + this record); the follow-up
+  `docs: record task 6 commit` commit records this SHA in the record and is not
+  amended.
 - Files changed:
   - `README.md` — new `Route bindings and command probes` subsection (ordered
     bindings, two-binding YAML, a probe script, the five `CUTTLE_*` variables,
