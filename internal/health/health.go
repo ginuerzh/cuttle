@@ -59,7 +59,8 @@ type Binding struct {
 }
 
 // Probe is one command probe result. ExitCode is -1 when the command could not
-// be started or timed out. Error carries the stderr tail, capped by the runner.
+// be started or timed out. Error carries the first 1 KiB of stderr (the head),
+// capped by the runner.
 type Probe struct {
 	At        time.Time `json:"at"`
 	OK        bool      `json:"ok"`

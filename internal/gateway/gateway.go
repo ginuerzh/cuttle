@@ -423,7 +423,8 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	}
 
 	// In-flight requests hold the old nodes; give them time to finish before
-	// closing probe goroutines and releasing the old generation's rewriters.
+	// closing the old hop and releasing the old generation's rewriters. The old
+	// probe runner was already stopped above, right after the swap.
 	if old != nil {
 		time.AfterFunc(30*time.Second, func() {
 			if closer, ok := old.(io.Closer); ok {

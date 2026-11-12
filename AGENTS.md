@@ -56,6 +56,7 @@ docker build -t cuttle .
 | `internal/config` | Strict YAML schema, environment expansion, defaults, validation, entity-id migration and atomic `0600` writes. |
 | `internal/gateway/auth.go` | Data-plane gateway-key authentication, request-head replay and fixed 401 responses. |
 | `internal/gateway/build.go` | Compiles one hop entry per entrypoint and inbound protocol variant, each wrapping an inner group over the entrypoint's ordered route bindings; route plans are cached by route id. |
+| `internal/gateway/bindingprobe.go` | cuttle-owned command probe runner: one goroutine per probed binding, marker verdicts for every protocol variant, and the in-memory entrypoint health snapshot. |
 | `internal/gateway/protocol.go` | Inbound protocol path groups and path/model matcher construction. |
 | `internal/gateway/upstream.go` | Resolves default and per-protocol upstream targets per node and rewrites inbound paths/models. |
 | `internal/provider` | Provider adapters, model catalogs, API classification, auth. |
@@ -93,9 +94,16 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   independent of how many protocol variants the binding compiles to, and it
   never calls a provider API. `probe.command` is never passed through
   `config.ExpandEnv`.
+- `buildHopGroup` returns the probe set unstarted; `apply` starts it right after
+  the hop swap and stops the previous set there too, so a draining build never
+  keeps marking a hop and two runners never drive one binding. Only the old hop
+  close and the rewriter unregister stay in the 30s grace window, and a failed
+  build starts nothing.
 - Binding markers are written only by the probe runner. Never mark, reset or
   read node `failCodes` markers from probe code, so node `dead` badges keep
-  their meaning.
+  their meaning. `GET /api/entrypoints/health` reads the same markers with
+  `xs.IsFailed`, so its `eligible`/`active` rows and the inner group cannot
+  disagree.
 - The outer hop group selector stays FIFO with **no filters**: an entrypoint
   whose bindings are all ineligible must never fall through to a later
   entrypoint. The inner per-entrypoint group owns binding eligibility with
@@ -277,6 +285,15 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   sockets with 4401 on logout or session expiry, 4408 when an open session
   exceeds `wsMaxAge`, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
+- `GET /api/entrypoints/health` returns one row per entrypoint with bindings, in
+  configuration order, and `[]` when none (a draft is absent):
+  `active{routeId,fallback}` names the binding the next request uses — the
+  first eligible one, otherwise the first with `fallback:true` — and each
+  `bindings[]` row carries `index`, `routeId`, `routeName`, the marker-derived
+  `eligible` and an optional `last` probe result. The state is in-memory and
+  separate from `GET /api/routes/health`; a failed probe never marks a node
+  `dead`. The `/api/events` snapshot carries the same rows as
+  `entrypointHealth` and omits the field when the list is empty.
 - `GET /api/stats/series` is the session trend: `{"bucket":"<duration>",
   "points":[{bucket,requests,errors}]}`, sparse (only non-empty buckets), and
   built from the *same* `requestFilter` as `GET /api/requests` so the chart and

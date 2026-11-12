@@ -849,22 +849,22 @@ git commit -m "feat(web): show binding eligibility on the topology"
 - Modify: `README.md`, `AGENTS.md`, `docs/superpowers/specs/2026-11-12-entrypoint-multi-route-design.md` (status line), this plan
 - Verify only: the running gateway
 
-- [ ] **Step 1: Finish the docs**
+- [x] **Step 1: Finish the docs**
 
 - README: routing section with a two-binding example and a probe script example; probe contract (`sh -c`, exit 0 = eligible, env vars, timeout, no upstream calls); ordering rule and the probe-less-last rule; all-ineligible fallback; `GET /api/entrypoints/health`; upgrade note.
 - AGENTS.md: keep the invariants written in Task 1 consistent with the final implementation (probe runner ownership, outer group without filters, binding marker isolation).
 - Design doc: set `Status: implemented` and record any deviation from the design.
 
-- [ ] **Step 2: Run the complete Go and web gates**
+- [x] **Step 2: Run the complete Go and web gates**
 
 Run: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Run: `cd web && npm test && npx tsc --noEmit && npm run build`
 Expected: all PASS.
 
-- [ ] **Step 3: Run the manual smoke check**
+- [x] **Step 3: Run the manual smoke check**
 
 1. Build `GOWORK=off go build -o /tmp/cuttle-smoke .`.
-2. Start with a two-binding config over two local `httptest`-like upstreams (or `python3 -m http.server`-style stubs), probe command `test -f /tmp/cuttle-flag`.
+2. Start with a two-binding config over two local `httptest`-like upstreams (or `python3 -m http.server`-style stubs), probe command `test ! -f /tmp/cuttle-flag`.
 3. With no flag: request served by binding 1 (check the recorded route in `GET /api/requests`).
 4. `touch /tmp/cuttle-flag`; within one interval the next request is recorded under binding 2's route, and `GET /api/entrypoints/health` shows `eligible:false`, `active.routeId` = binding 2.
 5. Remove the flag; traffic returns to binding 1.
@@ -873,7 +873,7 @@ Expected: all PASS.
 
 Record the observed route ids and health payloads in this record.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md AGENTS.md docs
@@ -881,9 +881,157 @@ git commit -m "docs: document entrypoint route bindings and probe switching"
 ```
 
 **Implementation record (fill in after the task is complete)**
-- Date/status:
-- Repository + commit:
+- Date/status: 2026-11-12 / DONE. Docs finished, full gates green, manual smoke
+  passed on the built binary with no data-plane defect.
+- Repository + commit: `ginuerzh/cuttle`, branch `feat/entrypoint-bindings`.
+  Task commit `TBD` (docs + cleanups + this record); the follow-up
+  `docs: record task 6 commit` commit records its SHA and is not amended.
 - Files changed:
+  - `README.md` — new `Route bindings and command probes` subsection (ordered
+    bindings, two-binding YAML, a probe script, the five `CUTTLE_*` variables,
+    `sh -c`/exit-0 contract, no provider calls, no node `dead`, defaults and
+    `timeout < interval`, one run per binding per interval, switch latency =
+    interval, probe-less-last, all-ineligible fallback, health endpoint). Also:
+    the literal `${VAR}` rule for entity references (`routes[].route` cannot be
+    a placeholder because migration runs before `expandEnv`), the
+    `GET /api/entrypoints/health` payload and `entrypointHealth` events field,
+    the console table/topology description, and the binding-health vs node
+    marker note.
+  - `AGENTS.md` — `internal/gateway/bindingprobe.go` architecture row, probe-set
+    lifecycle invariant (unstarted build, start/stop in `apply` after the swap,
+    only hop close/rewriter unregister in the 30s grace), marker-derived health
+    note, and `GET /api/entrypoints/health` + `entrypointHealth` admin
+    invariants.
+  - `docs/superpowers/specs/2026-11-12-entrypoint-multi-route-design.md` —
+    `Status: implemented`, "stderr head" wording, and an
+    `Implementation notes (deviations from this design)` section.
+  - `internal/gateway/gateway.go` — the 30s grace comment no longer claims it
+    stops probe goroutines (they stop right after the swap).
+  - `internal/gateway/bindingprobe.go`, `internal/health/health.go` — comments
+    say "stderr head (first 1 KiB)", matching `cappedBuffer`.
+  - `web/src/pages/drafts.ts`, `web/src/pages/drafts.test.ts` — deleted the
+    unused destructive `disconnectEntrypointRoute` (clear-all-bindings) helper
+    and its test. `disconnectEntrypointBinding` keeps its test that a removal
+    leaves the other binding intact.
+  - this plan (Task 6 checkboxes + this record).
 - Tests/commands and results:
-- Review findings and fixes:
+  - `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test
+    ./... -count=1` — PASS, every package `ok` (admin 19.631s, gateway 19.805s,
+    stats 30.245s, root 0.694s).
+  - `cd web && npm test && npx tsc --noEmit && npm run build` — `Test Files 48
+    passed (48)`, `Tests 427 passed (427)` (one fewer than Task 5's 428: the
+    deleted helper's test), `tsc` clean, Vite `✓ built in 8.74s` into the
+    git-ignored `internal/admin/dist`.
+  - `GOWORK=off go build -o /tmp/cuttle-smoke .` — PASS (`cuttle dev`).
+  - `gofmt -l` was not needed (comment-only Go edits); `go vet` covers them.
+
+  **Manual smoke** (`/tmp/cuttle-smoke serve -c /tmp/cuttle-smoke.yaml`; one
+  entrypoint `e_q7a4m2xk9d` "smoke" with `match: ["*"]`; binding 0
+  `r_7d2n5v8b1e` "primary" with `probe.command: test ! -f /tmp/cuttle-flag`,
+  `interval: 2s`, `timeout: 1s`; binding 1 `r_f3k9x2m4qa` "secondary" with no
+  probe; upstreams on `127.0.0.1:19001`/`19002`; admin on
+  `127.0.0.1:18788`, password hashed with `cuttle-smoke hash-password`; stats
+  `/tmp/cuttle-smoke-stats.sqlite`; data plane `127.0.0.1:18787`).
+
+  3. No flag. Health:
+     ```json
+     [{"entrypointId":"e_q7a4m2xk9d","entrypointName":"smoke",
+       "active":{"routeId":"r_7d2n5v8b1e","fallback":false},
+       "bindings":[
+         {"index":0,"routeId":"r_7d2n5v8b1e","routeName":"primary",
+          "eligible":true,
+          "last":{"at":"2026-11-12T05:14:57.877520293Z","ok":true,
+                  "exitCode":0,"latencyMs":1}},
+         {"index":1,"routeId":"r_f3k9x2m4qa","routeName":"secondary",
+          "eligible":true}]}]
+     ```
+     Request recorded as `{"status":501,"route":"r_7d2n5v8b1e",
+     "routeName":"primary","node":"n_4q7a9x2m3k","nodeName":"node-a"}`. The
+     upstream was `python3 -m http.server` at this point, which answers 501 to
+     POST; the assertion is the recorded route, and x marked the node dead from
+     the 5xx (cleared by the SIGHUP in step 6).
+
+  4. `touch /tmp/cuttle-flag`, waited 2 probe intervals (4s). The next request
+     recorded `{"status":501,"route":"r_f3k9x2m4qa","routeName":"secondary",
+     "node":"n_6b1w8z3p5c","nodeName":"node-b"}`. Health:
+     ```json
+     [{"entrypointId":"e_q7a4m2xk9d","entrypointName":"smoke",
+       "active":{"routeId":"r_f3k9x2m4qa","fallback":false},
+       "bindings":[
+         {"index":0,"routeId":"r_7d2n5v8b1e","routeName":"primary",
+          "eligible":false,
+          "last":{"at":"2026-11-12T05:15:09.877586893Z","ok":false,
+                  "exitCode":1,"latencyMs":1,"error":"exit status 1"}},
+         {"index":1,"routeId":"r_f3k9x2m4qa","routeName":"secondary",
+          "eligible":true}]}]
+     ```
+
+  5. `rm /tmp/cuttle-flag`, waited 4s. The next request recorded
+     `"route":"r_7d2n5v8b1e"` again. Health (`active` and per-binding rows as
+     returned):
+     ```json
+     {"active":{"routeId":"r_7d2n5v8b1e","fallback":false},
+      "bindings":[
+        {"index":0,"routeId":"r_7d2n5v8b1e","eligible":true,
+         "last":{"ok":true,"exitCode":0,
+                 "at":"2026-11-12T05:15:15.877469444Z"}},
+        {"index":1,"routeId":"r_f3k9x2m4qa","eligible":true,"last":null}]}
+     ```
+
+  6. Every binding ineligible. Config edited to add
+     `probe: {command: "false", interval: 2s, timeout: 1s}` to binding 1,
+     `/tmp/cuttle-flag` touched, upstreams replaced by 200-returning stubs, then
+     `SIGHUP`. The request recorded
+     `{"status":200,"route":"r_7d2n5v8b1e","routeName":"primary",
+     "node":"n_4q7a9x2m3k"}` with health:
+     ```json
+     [{"entrypointId":"e_q7a4m2xk9d","entrypointName":"smoke",
+       "active":{"routeId":"r_7d2n5v8b1e","fallback":true},
+       "bindings":[
+         {"index":0,"routeId":"r_7d2n5v8b1e","routeName":"primary",
+          "eligible":false,
+          "last":{"at":"2026-11-12T05:15:53.753890889Z","ok":false,
+                  "exitCode":1,"latencyMs":1,"error":"exit status 1"}},
+         {"index":1,"routeId":"r_f3k9x2m4qa","routeName":"secondary",
+          "eligible":false,
+          "last":{"at":"2026-11-12T05:15:53.753893613Z","ok":false,
+                  "exitCode":1,"latencyMs":1,"error":"exit status 1"}}]}]
+     ```
+     `GET /api/routes/health` reported for both routes
+     `"failCount":0,"dead":false` (node-a and node-b), so no node was marked
+     dead by the probes.
+
+  7. Second `SIGHUP` with no config change. `bindings[0].last.at` advanced from
+     `2026-11-12T05:15:57.754589231Z` to `2026-11-12T05:16:00.483719928Z` (and
+     `bindings[1]` to `...00.483696948Z`), i.e. the new probe set ran
+     immediately; `GET /api/entrypoints/health` answered 200 with the same
+     single `e_q7a4m2xk9d` row (no stale rows), `active` still
+     `{"routeId":"r_7d2n5v8b1e","fallback":true}`. Log showed
+     `config reloaded` then both `binding ineligible (exit 1)` lines.
+- Review findings and fixes: Task 6 had no external review round; self-review of
+  the diff found and fixed one inaccuracy of my own: the README first said
+  `last.error` was always stderr, but the runner falls back to the exec error
+  string when stderr is empty (the smoke showed `"exit status 1"`). The carried
+  cleanups are closed: the grace-window comment, the stderr head wording in both
+  files, the deletion of `disconnectEntrypointRoute` + its test, and the
+  `${VAR}` route-reference note. AGENTS.md was checked line by line against
+  `build.go` (`FIFO` outer selector with no filters, inner
+  `FIFO + FailFilter(1, failTimeout)`, `bindingFailTimeout` = 2× max interval
+  floored at 10s), `bindingprobe.go` (one goroutine per probed binding, markers
+  only, no `failCodes`/stats access) and `gateway.go` (start after swap, stop
+  immediately, failed build starts nothing): no drift, only the missing
+  lifecycle and admin-health invariants were added.
 - Deferred items/limitations:
+  - The smoke's step 3-5 upstream answered 501, which x treats as a node failure;
+    the node badges were therefore transiently dead until the step-6 `SIGHUP`
+    rebuilt the hop. Not a defect: node `failCodes` behavior is unchanged and
+    separate from binding eligibility, as documented.
+  - Probe health is memory-only. A restart or reload drops `last` until the
+    immediate first run, so there is a sub-second window with no `last` row.
+  - Unchanged Task 5 limitations: no browser visual regression tests (the
+    bindings UI is covered by Vitest/TypeScript only), edit-mode topology does
+    not show binding badges, and the probe-less-last rule is enforced by the
+    server rather than the form.
+  - `/api/events` omits `entrypointHealth` when the list is empty (`omitempty`);
+    clients must treat an absent field as "no binding health".
+

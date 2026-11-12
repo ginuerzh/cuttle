@@ -1,7 +1,7 @@
 # Entrypoint → multiple route bindings, switched by a command probe
 
 Date: 2026-11-12
-Status: approved 2026-11-12; implementation plan at
+Status: implemented 2026-11-12; plan at
 `docs/superpowers/plans/2026-11-12-entrypoint-multi-route-bindings.md`
 
 ## Intent
@@ -242,7 +242,7 @@ func (s *probeSet) Snapshot() []health.Entrypoint
   or exec failure → `Mark()` on all of them. The group `failTimeout` derived in
   §2 keeps them ineligible until the next successful probe.
 - Result recorded in memory per binding: `at`, `ok`, `exitCode`, `latencyMs`,
-  `error` (stderr tail, capped at 1 KiB, plus the exec error). Logs: debug on
+  `error` (stderr head, first 1 KiB, plus the exec error). Logs: debug on
   success, info on transition only (eligible ↔ ineligible), never the command
   or its full output.
 - Lifecycle: `buildHopGroup` returns the unstarted `*probeSet`; `apply` starts
@@ -402,6 +402,35 @@ per binding, which is the only visible stats-adjacent change.
     rejects a configuration where it shadows later bindings.
 13. `/api/events` cadence is unchanged: `entrypointHealth` rides the existing
     per-tick snapshot.
+
+## Implementation notes (deviations from this design)
+
+Implemented on branch `feat/entrypoint-bindings` on 2026-11-12 across tasks 1-6,
+with no x change and no `replace`: `github.com/go-gost/x` stays `v0.32.0`. The
+design was followed except for these points:
+
+1. **Old probes stop immediately after the swap.** `apply` stops the previous
+   `probeSet` as soon as the new hop is published and starts the new set there;
+   only the old hop close and the rewriter unregister stay in the 30s grace
+   window. Task 2's Step 4 prose originally put the stop inside the grace block;
+   an early plan commit corrected it before implementation.
+2. **`buildBindingsHop` takes an `entrypointID`.** The planned signature had no
+   way to name the entrypoint in the inner group's log name
+   (`entrypoint/<id>/<variant>`) or in its error messages.
+3. **Probe stderr is the head, not the tail.** `cappedBuffer` keeps the first
+   1 KiB so a chatty command cannot grow the process; the payload shape is
+   unchanged. §4 and the code comments say head.
+4. **Selection health comes from one marker read per binding.** `Snapshot`
+   reads `xs.IsFailed` once per binding and derives both `eligible` and the
+   `active` candidate from that read, so a probe landing mid-snapshot cannot
+   report the active binding as ineligible.
+5. **e2e fixtures use `test ! -f <flag>`.** Task 2's Step 4b sketch said
+   `test -f`, which is inverted relative to its own flow (creating the flag must
+   make the first binding ineligible); the tests and the manual smoke use
+   `test ! -f`.
+6. **The probe environment is exactly the five documented variables**, appended
+   to `os.Environ()`. A probe-less binding appears in the health payload but
+   starts no goroutine, and a draft entrypoint is absent from the payload.
 
 ## Deferred
 

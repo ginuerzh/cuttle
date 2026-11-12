@@ -3,7 +3,6 @@ import {
   connectEntrypointRoute,
   connectNodeProvider,
   disconnectEntrypointBinding,
-  disconnectEntrypointRoute,
   disconnectNodeProvider,
   planNodeProviderConnect,
 } from './drafts';
@@ -109,12 +108,5 @@ describe('disconnectEntrypointBinding', () => {
 
   it('keeps the entrypoint untouched when the route is not bound', () => {
     expect(disconnectEntrypointBinding(entrypoint, 'r_0000000009')).toBe(entrypoint);
-  });
-});
-
-describe('disconnectEntrypointRoute', () => {
-  it('clears every binding into a draft and keeps match order', () => {
-    const next = disconnectEntrypointRoute(entrypoint);
-    expect(next).toMatchObject({ id: 'e_0000000001', match: ['a*', 'b*'], routes: [] });
   });
 });

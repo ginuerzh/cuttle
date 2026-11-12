@@ -27,8 +27,9 @@ import (
 const (
 	defaultProbeInterval = 30 * time.Second
 	defaultProbeTimeout  = 5 * time.Second
-	// probeStderrLimit bounds the stderr tail kept for the health payload: a
-	// probe that spews output must not grow the process.
+	// probeStderrLimit bounds the stderr head kept for the health payload: the
+	// first 1 KiB is recorded, so a probe that spews output cannot grow the
+	// process.
 	probeStderrLimit = 1024
 	// probeWaitDelay bounds how long a probe process's pipes may outlive the
 	// process itself. A shell that leaves a grandchild holding the stderr pipe

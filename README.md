@@ -70,12 +70,9 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
     after it. At most one probe-less binding is allowed and it must be last.
   - If every binding is ineligible, the first binding still serves the request.
     That accepted fallback means the default route belongs first in the list.
-- A **probe** is command-only: `sh -c <command>` (`cmd /C` on Windows), exit `0`
-  = eligible, anything else = ineligible. It runs once per binding per interval,
-  never calls a provider API, and never marks a node `dead`. `probe.command` is
-  not environment-expanded at load time; `$` belongs to the shell. `interval`
-  defaults to `30s` and `timeout` to `5s`; `timeout` must be shorter than
-  `interval`.
+- A **probe** is command-only and decides eligibility at runtime, with no config
+  write and no reload; the full contract, environment variables and an example
+  are in [Route bindings and command probes](#route-bindings-and-command-probes).
 - A **route** contains only nodes, a selection strategy and an optional retry
   budget. It does not match anything by itself.
 - A **node** binds at most one provider and one provider model. `backup` marks
@@ -94,6 +91,75 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
   recorded as unrouted; it never falls through to a later entrypoint. Skip a
   trailing `*` draft entrypoint or it will claim every model.
 - If no entrypoint matches, the request is unrouted and returns an error.
+
+### Route bindings and command probes
+
+An entrypoint may bind several routes and let a command decide which one serves.
+Bindings are tried in declaration order and the first eligible one wins:
+
+```yaml
+entrypoints:
+  - id: e_2v8n5b1c7f
+    name: fast
+    match: ["claude-sonnet*"]
+    routes:
+      - route: r_7d2n5v8b1e
+        probe:
+          command: /usr/local/bin/cuttle-quota cheap   # exit 0 = eligible
+          interval: 15s
+          timeout: 3s
+      - route: r_f3k9x2m4qa                            # no probe: last resort
+```
+
+A probe is command-only: cuttle runs `sh -c <command>` (`cmd /C` on Windows) and
+reads the exit status. `0` makes the binding eligible; a non-zero exit, the
+probe `timeout`, or a failure to start the command makes it ineligible. cuttle
+never parses or splits the command, so quoting and `$` belong to the shell, and
+`probe.command` is not environment-expanded at load time.
+
+The command inherits cuttle's environment plus:
+
+| Variable | Value |
+| --- | --- |
+| `CUTTLE_ENTRYPOINT_ID`, `CUTTLE_ENTRYPOINT_NAME` | the entrypoint's id and display name |
+| `CUTTLE_ROUTE_ID`, `CUTTLE_ROUTE_NAME` | the bound route's id and display name |
+| `CUTTLE_BINDING_INDEX` | the zero-based position in `routes[]` |
+
+One script can therefore answer for every binding:
+
+```sh
+#!/bin/sh
+# Eligible while this route's maintenance flag is absent.
+test ! -f "/srv/cuttle/route-$CUTTLE_ROUTE_ID.down"
+```
+
+Replace the `test` with a quota lookup, a time window or a canary check; the
+variables say which binding is being asked about.
+
+A probe decides which route serves; it is not a health check on a provider.
+cuttle passes no provider credentials to it, and the command must never call a
+provider API: that would spend provider quota on every probe run and feed the
+probe's own traffic into the quota it is supposed to measure. A probe never
+marks a node `dead`; node markers keep their 429/5xx meaning.
+
+The command runs once per binding per `interval` (default `30s`; `timeout`
+defaults to `5s`), however many inbound protocol variants the binding compiles
+to, and runs immediately at startup and after a reload. The verdict applies to
+the next request after the run, so the switching latency is one `interval`: with
+a `15s` probe traffic can take up to 15 seconds to follow a change. `interval`
+and `timeout` are at least `1s`, and `timeout` must be shorter than `interval`.
+
+A binding without a `probe` is always eligible and therefore shadows every
+binding after it: at most one probe-less binding is allowed and it must be last.
+A list of only probed bindings is valid. When every binding is ineligible the
+first one still serves the request — an accepted fallback that never returns a
+502 and never hands the request to a later entrypoint — so the default route
+belongs first in the list.
+
+`GET /api/entrypoints/health` reports each entrypoint's bindings, the binding
+that serves next (`active`) and the last probe result; see
+[Admin API](#admin-api). The console shows the same state on the Entrypoints
+page and as edge badges on the topology monitor.
 
 > The routing model is intentionally strict. Old configurations using
 > `aliases`, route `match`, or node `models` maps are rejected at load time.
@@ -389,7 +455,7 @@ when `admin.passwordHash` is set.
 | Providers | Provider type, API base URLs, keys, model catalog, disabled models, health probes |
 | Nodes | Provider (empty while drafting), one model, backup flag, weight, enabled switch |
 | Routes | Ordered node list, selection strategy and the retry budget (`retries` / `retryCodes`) |
-| Entrypoints | Ordered model globs and the route they select (empty while drafting) |
+| Entrypoints | Ordered model globs and an ordered list of routes, each with an optional command probe (empty while drafting) |
 | Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
@@ -414,13 +480,17 @@ A provider's `type` and its non-`generic` API base URLs are immutable after
 creation. Delete and recreate the provider to change them, or edit the config
 file and reload.
 
-The topology view has monitor and edit modes. In monitor mode nodes are fixed;
-in edit mode you can drag an entrypoint onto a route, a route onto a node or a
-node onto a provider to change the configuration. A draft card is tagged
-`未连接` (not connected); its edge panel offers `断开` to clear the reference
-again. Node positions are stored in the stats SQLite
-database and shared by every admin; `localStorage` keeps a local backup and is
-used if the server cannot be reached.
+The topology view has monitor and edit modes. In monitor mode nodes are fixed
+and binding edges are badged from the latest probe run: an ineligible binding
+that is not serving shows `未通过` (unavailable), and the binding x falls back to
+when everything is ineligible shows `回退` (fallback). In edit mode you can drag
+an entrypoint onto a route, a route onto a node or a node onto a provider to
+change the configuration. Dragging onto a route appends a binding; dragging a
+route the entrypoint already binds changes nothing, and the entrypoint edge
+panel's `断开` removes just that one binding, so removing the last one makes the
+entrypoint a draft again. A draft card is tagged `未连接` (not connected). Node
+positions are stored in the stats SQLite database and shared by every admin;
+`localStorage` keeps a local backup and is used if the server cannot be reached.
 
 The monitor streams live data over the `GET /api/events` WebSocket. New traffic
 flashes the node icon once and sends light dots along the connection. The
@@ -449,6 +519,14 @@ The load order is: decode, migrate entity ids and write the file back, expand
 the environment, apply defaults, then validate. In practice ids are literals,
 because the generator never emits `$`. See [example.yaml](example.yaml) for a
 complete configuration.
+
+An entity reference cannot come from `${VAR}` in a hand-written file. Migration
+resolves `nodes[].provider`, `nodes[].key`, `routes[].nodes` and
+`entrypoints[].routes[].route` against ids and names *before* the environment is
+expanded, so a placeholder there fails the load as an unknown provider, node or
+route name. Write those references literally. Values such as provider URLs,
+keys, models and match globs still expand, and `probe.command` is deliberately
+never expanded because `$` belongs to the shell.
 
 A config file is optional; see [Zero-config first run](#zero-config-first-run)
 for the generated path and the four first-run environment variables. Once a
@@ -641,28 +719,32 @@ for short debugging sessions and protect the log stream.
 | `name` | yes | Unique display label |
 | `match` | yes | Non-empty list of client model globs |
 | `routes` | no | Ordered route bindings; an empty or absent list is a draft (the entrypoint then serves no traffic) |
-| `routes[].route` | yes | Existing route id |
+| `routes[].route` | yes | Existing route id (literal; see below) |
 | `routes[].probe` | no | Command probe; absent means the binding is always eligible |
 | `routes[].probe.command` | yes | Shell command; exit `0` means eligible |
-| `routes[].probe.interval` | no | `30s`; how often the command runs |
-| `routes[].probe.timeout` | no | `5s`; must be shorter than `interval` |
+| `routes[].probe.interval` | no | `30s` (minimum `1s`); how often the command runs |
+| `routes[].probe.timeout` | no | `5s` (minimum `1s`); must be shorter than `interval` |
 
 Declaration order is the matching precedence. Globs inside one entrypoint are a
 union.
 
 Bindings are tried in declaration order and the first eligible one serves the
 request. A probe is the external switch: while its command exits `0` the binding
-is eligible, and any other exit, timeout or exec failure makes it ineligible.
-The command runs as the cuttle process, gets no provider credentials from
-cuttle, and must never call a provider API.
+is eligible, and any other exit, timeout or exec failure makes it ineligible. It
+runs as the cuttle process with no provider credentials and must never call a
+provider API. The full contract, environment variables and an example are in
+[Route bindings and command probes](#route-bindings-and-command-probes).
 
 A binding without a probe is always eligible, which is how an explicit static
-default is written ("if no script claims the traffic, use this"). Because such a
-binding shadows everything after it, at most one probe-less binding is allowed
-and it must be the last binding. A list with only probed bindings is valid, and
-when every probe fails the first binding still serves the request: the fallback
-is "binding 0", never a 502 and never another entrypoint. Duplicate route ids
-inside one entrypoint are rejected.
+default is written ("if no script claims the traffic, use this"); it shadows
+everything after it, so at most one is allowed and it must be the last binding.
+A list with only probed bindings is valid. Duplicate route ids inside one
+entrypoint are rejected, and validation names the entrypoint and binding index
+(`entrypoint "fast": routes[1]: ...`).
+
+`routes[].route` is a literal route id and cannot be `${VAR}` in a hand-written
+file, because entity references are resolved before environment expansion (see
+the load order above).
 
 The configuration is a breaking change from the single-route schema:
 `entrypoint.route` no longer loads. Rewrite an existing file as a one-element
@@ -918,6 +1000,10 @@ dead, a node dead in some routes shows an amber partial badge, its dead
 `route -> node` edges are drawn dashed red, and the node panel lists the dead
 routes.
 
+Binding eligibility is not a node marker: it is separate in-memory state owned
+by the probe runner and reported by `GET /api/entrypoints/health`, so a failed
+probe never makes a node look `dead`.
+
 The graph API attributes each row to an entrypoint at query time by resolving
 the row's `client_model` through the current entrypoint list:
 
@@ -932,6 +1018,10 @@ entrypoint's current route. Editing an entrypoint's globs or reordering
 entrypoints therefore changes the historical attribution, while old rows keep
 the route id that actually served them. Rows with no recorded route are shown as
 `unrouted`.
+
+The structure graph draws one `entrypoint:<id> -> route:<id>` edge per binding;
+the edge to the serving route carries the traffic, the other bindings stay at
+zero until a probe switches traffic to them.
 
 The topology only counts rows that still belong to the current topology: the
 route must exist, the node must be referenced by that route, and the node's
@@ -964,6 +1054,7 @@ GET|POST      /api/routes
 GET           /api/routes/health
 PUT|DELETE    /api/routes/{id}
 GET|PUT       /api/entrypoints
+GET           /api/entrypoints/health
 
 GET|POST      /api/gateway-keys
 PUT|DELETE    /api/gateway-keys/{id}
@@ -986,6 +1077,30 @@ GET|POST      /api/captures
 DELETE        /api/captures/{id}
 PUT  /api/admin/password
 ```
+
+`GET /api/entrypoints/health` returns one row per entrypoint that has route
+bindings, in configuration order (a draft entrypoint has none and is absent), or
+`[]` when there are none:
+
+```json
+[{"entrypointId":"e_2v8n5b1c7f","entrypointName":"fast",
+  "active":{"routeId":"r_f3k9x2m4qa","fallback":false},
+  "bindings":[
+    {"index":0,"routeId":"r_7d2n5v8b1e","routeName":"cheap","eligible":false,
+     "last":{"at":"2026-11-12T10:00:00Z","ok":false,"exitCode":1,
+             "latencyMs":12,"error":"quota exhausted"}},
+    {"index":1,"routeId":"r_f3k9x2m4qa","routeName":"premium","eligible":true}]}]
+```
+
+`eligible` is the probe verdict; a binding without a probe, or one that has not
+run yet, is eligible. `last` is absent until the first run and carries the exit
+code (`-1` for a timeout or a command that could not start), latency and the
+first 1 KiB of stderr (or the exec error when stderr is empty). `active` is the
+binding that will serve the next request, computed with the same marker rule as
+the data plane: the first eligible binding, otherwise the first binding with
+`fallback: true`. The verdict is in-memory, rebuilt by the probe run that
+follows a reload, and separate from `GET /api/routes/health`, which still
+reports node markers.
 
 `GET /api/requests` accepts `errors=1`, `captured=1`, `errorClass=<class>`,
 `provider=<id>`, `route=<id>`, `node=<id>`, `entrypoint=<id>` and `key=<id>`
@@ -1053,7 +1168,9 @@ round-trippable through GET then PUT; send them explicitly with the update.
 
 `GET /api/events` is a WebSocket subscription. It accepts `range=...`,
 `since=<RFC3339>` to resume a session, or `reset=1` to start at zero. The server
-pushes absolute `{type:"snapshot",since,to,metrics}` messages every second.
+pushes absolute `{type:"snapshot",since,to,metrics}` messages every second. Each
+snapshot also carries `entrypointHealth`, the same rows as
+`GET /api/entrypoints/health`; the field is absent when the list is empty.
 Reverse proxies must forward the WebSocket Upgrade for `/api/events` and
 preserve the `Host` header; the server checks `Origin` against it. Vite's dev
 proxy uses `ws: true`. The HTTP `GET /api/stats/graph` endpoint remains

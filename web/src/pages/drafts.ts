@@ -44,8 +44,3 @@ export function disconnectEntrypointBinding(e: Entrypoint, routeID: string): Ent
   if (!routes.some((b) => b.route === routeID)) return e;
   return { ...e, routes: routes.filter((b) => b.route !== routeID) };
 }
-
-/** Turns an entrypoint back into a draft: it clears every binding, the model globs and order stay. */
-export function disconnectEntrypointRoute(e: Entrypoint): Entrypoint {
-  return { ...e, routes: [] };
-}
