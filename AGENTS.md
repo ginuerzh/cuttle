@@ -522,7 +522,8 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
 - Entrypoints reorder with up/down controls and save the whole list; routes no
   longer have order controls.
 - The topology has monitor and edit modes. Monitor mode must not allow node
-  dragging. Selection must not change node size, and the detail panel stays
+  dragging. Monitor mode hides the endpoint dots by opacity, because the handles
+  must stay mounted: React Flow measures them to anchor the edges. Selection must not change node size, and the detail panel stays
   hidden until a node or edge is selected. Positions are persisted server-side
   in the `topology_positions` table (shared by all admins) and mirrored to
   `localStorage` as a backup/fallback. Time presets are

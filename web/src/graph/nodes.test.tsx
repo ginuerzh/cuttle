@@ -36,6 +36,36 @@ describe('handleStyle', () => {
     expect(style.width).toBe(14);
     expect(style.height).toBe(14);
     expect(style.background).toBe('#6366f1');
+    expect(style.opacity).toBeUndefined();
+  });
+
+  it('hides the dot when no connection can start, keeping its box for the edges', () => {
+    const style = handleStyle('#6366f1', false);
+    expect(style.opacity).toBe(0);
+    expect(style.width).toBe(14);
+    expect(style.height).toBe(14);
+  });
+});
+
+describe('endpoint dots', () => {
+  const render = (isConnectable: boolean) =>
+    renderToStaticMarkup(
+      <ReactFlowProvider>
+        <RouteNode
+          {...({
+            id: 'route:x',
+            type: 'route',
+            data: { kind: 'route', label: 'x' },
+            selected: false,
+            isConnectable,
+          } as unknown as NodeProps<GraphNode>)}
+        />
+      </ReactFlowProvider>,
+    );
+
+  it('shows the dots only in edit mode', () => {
+    expect(render(false)).toContain('opacity:0');
+    expect(render(true)).not.toContain('opacity:0');
   });
 });
 

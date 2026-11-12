@@ -223,12 +223,17 @@ export function DraftBadge({ show }: { show?: boolean }) {
 
 const HANDLE_SIZE = 14;
 
-/** The endpoint dot size; also the connection start target in edit mode. */
-export function handleStyle(color: string): React.CSSProperties {
+/**
+ * The endpoint dot; also the connection start target in edit mode. Monitor mode
+ * hides it by opacity so the handle keeps its box: React Flow measures it to
+ * anchor the edges, and the dot is only useful when a connection can start.
+ */
+export function handleStyle(color: string, connectable = true): React.CSSProperties {
   return {
     width: HANDLE_SIZE,
     height: HANDLE_SIZE,
     background: color,
+    opacity: connectable ? undefined : 0,
   };
 }
 
@@ -305,7 +310,7 @@ export function EntrypointNode({ data, selected, isConnectable }: NodeProps<Grap
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
       <DraftBadge show={data.unconnected} />
-      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#6366f1')} />
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#6366f1', isConnectable)} />
     </div>
   );
 }
@@ -326,8 +331,8 @@ export function RouteNode({ data, selected, isConnectable }: NodeProps<GraphNode
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
-      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
-      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0ea5e9')} />
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0ea5e9', isConnectable)} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0ea5e9', isConnectable)} />
     </div>
   );
 }
@@ -370,8 +375,8 @@ export function BindingNode({ data, selected, isConnectable }: NodeProps<GraphNo
       <NodeStats metrics={data.metrics} showRate />
       <NodeMoodBadge mood={nodeMood(data.metrics, data.dead, partial)} title={title} />
       <DraftBadge show={data.unconnected} />
-      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
-      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2')} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#0891b2', isConnectable)} />
+      <Handle type="source" position={Position.Right} isConnectable={isConnectable} style={handleStyle('#0891b2', isConnectable)} />
     </div>
   );
 }
@@ -393,7 +398,7 @@ export function ProviderNode({ data, selected, isConnectable }: NodeProps<GraphN
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
       <NodeStats metrics={data.metrics} />
-      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#10b981')} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#10b981', isConnectable)} />
     </div>
   );
 }
@@ -405,7 +410,7 @@ export function UnroutedNode({ data, selected, isConnectable }: NodeProps<GraphN
         <WarningOutlined />
       </IconBadge>
       <NodeBody label={data.label} sub={data.sub} />
-      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#dc2626')} />
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable} style={handleStyle('#dc2626', isConnectable)} />
     </div>
   );
 }
