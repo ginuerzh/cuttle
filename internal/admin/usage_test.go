@@ -509,3 +509,38 @@ func TestProviderUsageUnsupportedKeyless(t *testing.T) {
 		}
 	}
 }
+
+func TestPutConfigPreservesUsageSampling(t *testing.T) {
+	srv, _, _, ts := newTestAdmin(t)
+	client, csrf := login(t, ts.URL)
+
+	off := config.Duration(0)
+	srv.mu.Lock()
+	srv.cfg.Usage.SampleInterval = &off
+	srv.mu.Unlock()
+
+	// The console never sends usage; a save must keep the stored setting
+	// (here "off") instead of resetting it to the default.
+	body := `{"gateway":{"listen":"127.0.0.1:0"}}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", body, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	srv.mu.Lock()
+	got := srv.cfg.Usage.SampleInterval
+	srv.mu.Unlock()
+	if got == nil || *got != 0 {
+		t.Fatalf("sampleInterval = %v after a PUT without usage, want the stored 0", got)
+	}
+
+	// An explicit value still wins.
+	body = `{"gateway":{"listen":"127.0.0.1:0"},"usage":{"sampleInterval":"20m"}}`
+	if resp := doJSON(t, client, http.MethodPut, ts.URL+"/api/config", body, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	srv.mu.Lock()
+	got = srv.cfg.Usage.SampleInterval
+	srv.mu.Unlock()
+	if got == nil || time.Duration(*got) != 20*time.Minute {
+		t.Fatalf("sampleInterval = %v after an explicit PUT, want 20m", got)
+	}
+}

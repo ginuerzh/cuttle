@@ -70,7 +70,7 @@ Vitest, inline SVG (no chart library).
   `PUT /api/config` keeps the stored `usage` when the body omits it (the console
   never sends it), while an explicit `{"usage":{"sampleInterval":"0"}}` wins.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestApplyDefaultsUsageSampleInterval(t *testing.T) {
@@ -102,12 +102,12 @@ func TestApplyDefaultsUsageSampleInterval(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `GOWORK=off go test ./internal/config -run TestApplyDefaultsUsageSampleInterval -count=1`
 Expected: FAIL with `undefined: Usage`.
 
-- [ ] **Step 3: Add the field, the type and the defaulting**
+- [x] **Step 3: Add the field, the type and the defaulting**
 
 Add to `Config` after `Stats`:
 
@@ -134,12 +134,12 @@ case v > UsageSampleMax:
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `GOWORK=off go test ./internal/config -run TestApplyDefaultsUsageSampleInterval -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Preserve the setting across an admin save**
+- [x] **Step 5: Preserve the setting across an admin save**
 
 `handlePutConfig` decodes a fresh `config.Config`, so a console save would drop
 `usage` and reset the interval to the 10 m default (turning an explicit `0` back
@@ -160,19 +160,19 @@ body back with the CSRF token, expect `204`, and assert the stored interval is
 still `0`. Then PUT a body carrying `{"usage":{"sampleInterval":"20m"}}` and
 assert it became 20 m.
 
-- [ ] **Step 6: Run the config and admin tests**
+- [x] **Step 6: Run the config and admin tests**
 
 Run: `GOWORK=off go test ./internal/config ./internal/admin -count=1`
 Expected: PASS, including `example.yaml` still loading.
 
-- [ ] **Step 7: Document the knob in `README.md`**
+- [x] **Step 7: Document the knob in `README.md`**
 
 Under the provider-usage / Usage page section, one paragraph: what the curve is,
 that readings come from a background sampler every `usage.sampleInterval`
 (default `10m`, `0` disables it, accepted range 5m–24h), that page visits record
 too, and that history starts when the feature is first run.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add internal/config/config.go internal/config/config_test.go \
@@ -181,12 +181,12 @@ git commit -m "feat(config): add usage.sampleInterval"
 ```
 
 **Implementation record — Task 1**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `f50a3633`)
+- Files changed: `internal/config/config.go` (`Usage` type, `Usage` field on `Config`, three bound constants, `applyDefaults` normalization), `internal/config/config_test.go` (`TestApplyDefaultsUsageSampleInterval`), `internal/admin/handlers.go` (`handlePutConfig` preserves an absent `usage`), `internal/admin/usage_test.go` (`TestPutConfigPreservesUsageSampling`), `README.md` (Usage section: the curve, the sampler and the knob; dropped the "not persisted" claim).
+- Tests run: RED `GOWORK=off go test ./internal/config -run TestApplyDefaultsUsageSampleInterval -count=1` → `undefined: Usage`; GREEN same → ok. RED `GOWORK=off go test ./internal/admin -run TestPutConfigPreservesUsageSampling -count=1` → `sampleInterval = 0x…, want the stored 0`; GREEN same → ok. Gate `GOWORK=off go test ./internal/config ./internal/admin -count=1` → both ok.
+- Review findings/fixes: none in-task (native execution; whole-branch review follows). Ruling: the README documents the finished behaviour while the sampler lands in Task 4 — the branch ships as a whole; cost if wrong: one intermediate commit reads slightly ahead of the code.
+- Deferred: none.
 
 ---
 

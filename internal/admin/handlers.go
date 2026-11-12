@@ -263,6 +263,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.mutate(func(dst *config.Config) error {
 		c.Admin.PasswordHash = dst.Admin.PasswordHash
+		// The console never shows usage.sampleInterval, so an absent block keeps
+		// the stored setting; an explicit value still wins.
+		if c.Usage.SampleInterval == nil {
+			if dst.Usage.SampleInterval != nil {
+				v := *dst.Usage.SampleInterval
+				c.Usage.SampleInterval = &v
+			}
+		}
 		// GET /api/config never returns key values, so an absent list must
 		// preserve them; only an explicit [] clears the set.
 		if c.Gateway.Keys == nil {
