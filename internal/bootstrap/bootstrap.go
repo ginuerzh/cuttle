@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	// DefaultDataDir is the default CUTTLE_DATA directory.
-	DefaultDataDir = "/data"
+	// DirName is the directory name used under the user config directory.
+	DirName = "cuttle"
 	// ConfigFileName is the config file name inside the data directory.
 	ConfigFileName = "cuttle.yaml"
 	// StatsFileName is the stats database name inside the data directory.
@@ -30,6 +30,29 @@ const (
 	// still need to be cleared. It is removed after a successful clear.
 	SessionsResetFileName = ".cuttle-sessions-reset"
 )
+
+// Seams for the user config directory and the working directory.
+var (
+	userConfigDir = os.UserConfigDir
+	getwd         = os.Getwd
+)
+
+// defaultDataDir returns <os.UserConfigDir>/cuttle. When the user config
+// directory is unavailable it falls back to the working directory and reports
+// the fallback so Prepare can warn.
+func defaultDataDir() (dir string, fallback bool) {
+	if dir, err := userConfigDir(); err == nil {
+		if dir = strings.TrimSpace(dir); dir != "" {
+			return filepath.Join(dir, DirName), false
+		}
+	}
+	if wd, err := getwd(); err == nil {
+		if wd = strings.TrimSpace(wd); wd != "" {
+			return wd, true
+		}
+	}
+	return ".", true
+}
 
 // DefaultSearchPaths are checked after the data-directory config and before a
 // new config is generated.
@@ -43,6 +66,9 @@ type Paths struct {
 	DataDir    string
 	ConfigPath string
 	Existing   bool
+	// DataDirFromFallback is true when CUTTLE_DATA was unset and the user
+	// config directory was unavailable, so the working directory was used.
+	DataDirFromFallback bool
 }
 
 // Resolve determines where the config lives. An explicit path must exist. With
@@ -57,15 +83,16 @@ func Resolve(explicitPath string, getenv func(string) string, searchPaths []stri
 	}
 
 	dataDir := strings.TrimSpace(getenv("CUTTLE_DATA"))
+	fromFallback := false
 	if dataDir == "" {
-		dataDir = DefaultDataDir
+		dataDir, fromFallback = defaultDataDir()
 	}
 	absDataDir, err := filepath.Abs(dataDir)
 	if err != nil {
 		return Paths{}, fmt.Errorf("CUTTLE_DATA %q: %w", dataDir, err)
 	}
 
-	paths := Paths{DataDir: absDataDir}
+	paths := Paths{DataDir: absDataDir, DataDirFromFallback: fromFallback}
 
 	if explicitPath != "" {
 		ok, err := fileExists(explicitPath)
