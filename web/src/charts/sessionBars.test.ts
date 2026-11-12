@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBars, bucketFor } from './sessionBars';
+import { axisTicks, buildBars, bucketFor } from './sessionBars';
 
 describe('bucketFor', () => {
   it('uses one-minute buckets for the 15 minute preset', () => {
@@ -67,5 +67,34 @@ describe('buildBars', () => {
 
     expect(bars).toHaveLength(1);
     expect(bars[0].requests).toBe(3);
+  });
+});
+
+describe('axisTicks', () => {
+  it('labels every bar when they all fit', () => {
+    expect(axisTicks(1)).toEqual([0]);
+    expect(axisTicks(3)).toEqual([0, 1, 2]);
+    expect(axisTicks(6)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('spreads at most six labels over a wider window, keeping both edges', () => {
+    // 15m/1m, 1h/2m and 24h/1h presets.
+    expect(axisTicks(15)).toEqual([0, 3, 6, 8, 11, 14]);
+    expect(axisTicks(30)).toEqual([0, 6, 12, 17, 23, 29]);
+    expect(axisTicks(24)).toEqual([0, 5, 9, 14, 18, 23]);
+  });
+
+  it('has nothing to label without bars', () => {
+    expect(axisTicks(0)).toEqual([]);
+  });
+
+  it('never repeats an index', () => {
+    for (const count of [7, 8, 9, 11, 13, 17, 40]) {
+      const ticks = axisTicks(count);
+      expect(ticks).toHaveLength(6);
+      expect(new Set(ticks).size).toBe(ticks.length);
+      expect(ticks[0]).toBe(0);
+      expect(ticks[ticks.length - 1]).toBe(count - 1);
+    }
   });
 });

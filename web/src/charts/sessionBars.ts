@@ -10,6 +10,7 @@ export interface Bar {
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const TARGET_BARS = 30;
+const MAX_TICKS = 6;
 
 /**
  * The bucket width for a window: about 30 bars, rounded to whole minutes and
@@ -44,4 +45,16 @@ export function buildBars(points: SeriesPoint[], from: number, to: number, bucke
     bars[index].errors += point.errors;
   }
   return bars;
+}
+
+/**
+ * The bars that carry an x-axis label: at most `maxTicks` of them, spread evenly
+ * and always including the first and the last bar so both window edges read.
+ * Labelling every bar of a 30 bar window would overlap.
+ */
+export function axisTicks(count: number, maxTicks = MAX_TICKS): number[] {
+  if (count <= 0) return [];
+  if (count <= maxTicks) return Array.from({ length: count }, (_, i) => i);
+  const step = (count - 1) / (maxTicks - 1);
+  return Array.from({ length: maxTicks }, (_, i) => Math.round(i * step));
 }

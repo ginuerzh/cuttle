@@ -951,7 +951,8 @@ cheap `hasCapture` flag and never carries `attempts`.
 It accepts `from`/`to`, `bucket=<duration>` (default `1h`, clamped to `1s..24h`,
 `400` when unparsable) and exactly the same filters as `GET /api/requests`, so
 the Sessions chart and its list can never disagree. Only non-empty buckets are
-returned; the console pads the gaps so a quiet bucket renders at zero height.
+returned; the console pads the gaps so a quiet bucket renders at zero height and
+labels the axis with the `HH:mm` time of about six buckets across the window.
 
 `GET /api/attempts` lists the discarded attempts of the window newest first with
 `from`/`to` plus the `route=<id>`, `node=<id>`, `provider=<id>`,

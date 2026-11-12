@@ -16,6 +16,14 @@ export function formatClock(value?: string | Date | number | null): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 
+/** Format a timestamp as local HH:mm, for short labels such as a chart axis. */
+export function formatHourMinute(value?: string | Date | number | null): string {
+  if (value === undefined || value === null || value === '') return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }

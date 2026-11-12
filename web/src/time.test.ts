@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatDurationMs, formatTokenRate } from './time';
+import { formatDateTime, formatDurationMs, formatHourMinute, formatTokenRate } from './time';
 
 describe('formatDateTime', () => {
   it('formats a Date in local time as YYYY-MM-DD HH:mm:ss', () => {
@@ -18,6 +18,19 @@ describe('formatDateTime', () => {
 
   it('leaves unparseable input untouched', () => {
     expect(formatDateTime('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('formatHourMinute', () => {
+  it('formats a timestamp as local HH:mm without seconds', () => {
+    expect(formatHourMinute(new Date(2026, 10, 6, 9, 8, 7))).toBe('09:08');
+    expect(formatHourMinute(new Date(2026, 10, 6, 9, 8, 7).getTime())).toBe('09:08');
+  });
+
+  it('returns a dash for missing input', () => {
+    expect(formatHourMinute(undefined)).toBe('—');
+    expect(formatHourMinute(null)).toBe('—');
+    expect(formatHourMinute('')).toBe('—');
   });
 });
 

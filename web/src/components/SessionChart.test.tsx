@@ -109,6 +109,40 @@ describe('SessionChart', () => {
     expect(onSelect).toHaveBeenLastCalledWith(undefined);
   });
 
+  it('labels the x axis with the time of each labelled bar', () => {
+    // Local time so the labels do not depend on the runner's time zone.
+    const start = new Date(2026, 10, 11, 10, 0, 0).getTime();
+    const { container } = render(
+      <SessionChart
+        points={[{ bucket: new Date(start).toISOString(), requests: 1, errors: 0 }]}
+        from={start}
+        to={start + 3 * 60_000}
+        bucket={60_000}
+        onSelect={() => undefined}
+      />,
+    );
+
+    const ticks = Array.from(container.querySelectorAll('[data-tick]')).map((el) => el.textContent);
+    expect(ticks).toEqual(['10:00', '10:01', '10:02']);
+  });
+
+  it('spreads six x axis labels over a 30 bar window', () => {
+    const start = new Date(2026, 10, 11, 10, 0, 0).getTime();
+    const { container } = render(
+      <SessionChart
+        points={[{ bucket: new Date(start).toISOString(), requests: 1, errors: 0 }]}
+        from={start}
+        to={start + 60 * 60_000}
+        bucket={2 * 60_000}
+        onSelect={() => undefined}
+      />,
+    );
+
+    expect(container.querySelectorAll('rect[data-bar]')).toHaveLength(30);
+    const ticks = Array.from(container.querySelectorAll('[data-tick]')).map((el) => el.textContent);
+    expect(ticks).toEqual(['10:00', '10:12', '10:24', '10:34', '10:46', '10:58']);
+  });
+
   it('says so when the window has no sessions', () => {
     const { container } = render(
       <SessionChart points={[]} from={from} to={to} bucket={bucket} onSelect={() => undefined} />,
