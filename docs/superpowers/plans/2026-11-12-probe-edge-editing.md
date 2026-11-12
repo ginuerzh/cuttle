@@ -270,10 +270,10 @@ git commit -m "feat(web): edit binding probes on the topology edge"
 - Date/status: 2026-11-12 / DONE (drawer, edge panel, edge styling, locale,
   carried cleanups; web + Go gates green).
 - Repository + commit: `cuttle`, branch `feat/probe-edge-editing`, work done on
-  top of `4728975d`. Code commit `feat(web): edit binding probes on the
-  topology edge`; its SHA is recorded by the follow-up commit
-  `docs: record task 2 commit`, because a commit cannot contain its own hash.
-  The code, tests, docs and this record share the code commit.
+  top of `4728975d`. Code commit `c2f77708 feat(web): edit binding probes on
+  the topology edge` carries the code, the tests, the docs and this record. The
+  SHA was filled in by the follow-up commit `docs: record task 2 commit`, which
+  touches only this plan file, because a commit cannot contain its own hash.
 - Files changed:
   - `web/src/pages/Edit.tsx` — `EntrypointBindingRow` keeps only `route`, so
     the drawer row is route select + up/down + delete; `entrypointBindingInputs
