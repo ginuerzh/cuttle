@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildGraph } from '../graph/build';
 import type { ConfigResponse, ErrorRow } from '../api/types';
-import { entrypointFromNodeId, errorMatchesNodeId } from './selection';
+import { entrypointFromNodeId, errorMatchesNodeId, splitEdgeId } from './selection';
 
 const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
   entrypoints: [
@@ -48,5 +48,25 @@ describe('errorMatchesNodeId', () => {
     expect(errorMatchesNodeId('entrypoint:e_0000000001', err)).toBe(true);
     expect(errorMatchesNodeId('entrypoint:e_0000000002', err)).toBe(false);
     expect(errorMatchesNodeId('route:r_0000000001', err)).toBe(true);
+  });
+});
+
+describe('splitEdgeId', () => {
+  it('splits an entrypoint binding edge drawn with an arrow', () => {
+    expect(splitEdgeId('entrypoint:e_0000000001->route:r_0000000001')).toEqual({
+      source: 'entrypoint:e_0000000001',
+      target: 'route:r_0000000001',
+    });
+  });
+
+  it('splits a pipe edge', () => {
+    expect(splitEdgeId('route:r_0000000001|node:n_0000000001')).toEqual({
+      source: 'route:r_0000000001',
+      target: 'node:n_0000000001',
+    });
+  });
+
+  it('returns the id as the source when there is no separator', () => {
+    expect(splitEdgeId('unrouted')).toEqual({ source: 'unrouted', target: '' });
   });
 });

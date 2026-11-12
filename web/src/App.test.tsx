@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AttemptCard, EdgePanel, mergeNodeActivity, NodePanel, SessionCard, sessionQuery } from './App';
 import { setActiveLang } from './i18n';
+import { configLabels } from './labels';
 import type { AttemptRow, ConfigResponse, RequestRow } from './api/types';
 
 beforeEach(() => setActiveLang('zh-CN'));
@@ -24,6 +25,40 @@ describe('EdgePanel', () => {
     expect(html).toContain('重试尝试');
     expect(html).toContain('2');
     expect(html).toContain('重试请求');
+  });
+
+  it('names both ends of a binding edge and lists its probe parameters', () => {
+    const cfg = {
+      gateway: { listen: ':8787' },
+      admin: { listen: ':8788', sessionTTL: '12h' },
+      providers: [],
+      nodes: [],
+      routes: [{ id: 'r_0000000002', name: 'bare', nodes: [] }],
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'fast',
+          match: ['*'],
+          routes: [
+            { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+          ],
+        },
+      ],
+    } as unknown as ConfigResponse;
+    const html = renderToStaticMarkup(
+      <EdgePanel
+        id="entrypoint:e_0000000001->route:r_0000000002"
+        config={cfg}
+        labels={configLabels(cfg)}
+      />,
+    );
+
+    expect(html).toContain('参数');
+    expect(html).toContain('fast');
+    expect(html).toContain('bare');
+    expect(html).not.toContain('entrypoint:e_0000000001');
+    expect(html).toContain('curl -fsS http://127.0.0.1:9/ready');
+    expect(html).toContain('生效顺序');
   });
 
   it('adds no attempt row when nothing was discarded', () => {

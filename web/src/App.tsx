@@ -47,8 +47,8 @@ import { VersionFooter } from './components/VersionFooter';
 import { OverviewToolbar } from './components/OverviewToolbar';
 import { Topology, type Selection } from './pages/Topology';
 import { UsagePage } from './pages/Usage';
-import { splitId } from './pages/selection';
-import { entityParams } from './pages/entityParams';
+import { splitEdgeId, splitId } from './pages/selection';
+import { edgeParams, entityParams } from './pages/entityParams';
 import { nodeRouteHealth } from './pages/routeHealth';
 import { configLabels, entityLabel, graphLabel, type ConfigLabels } from './labels';
 import { useLiveGraph } from './useLiveGraph';
@@ -509,13 +509,41 @@ export function NodePanel({
   );
 }
 
-export function EdgePanel({ id, metrics, labels }: { id: string; metrics?: EdgeMetrics; labels?: ConfigLabels }) {
-  const parts = id.split('|');
+export function EdgePanel({
+  id,
+  metrics,
+  labels,
+  config,
+  entrypointHealth = [],
+}: {
+  id: string;
+  metrics?: EdgeMetrics;
+  labels?: ConfigLabels;
+  config?: ConfigResponse;
+  entrypointHealth?: readonly EntrypointHealth[];
+}) {
+  const { source, target } = splitEdgeId(id);
+  const parts = target ? [source, target] : [source];
+  const params = config ? edgeParams(config, id, entrypointHealth) : [];
   return (
     <div>
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {translate('连线')}
       </Typography.Title>
+      {params.length > 0 ? (
+        <>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+            {translate('参数')}
+          </Typography.Text>
+          <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
+            {params.map((row) => (
+              <Descriptions.Item key={row.label} label={row.label}>
+                {row.value}
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+        </>
+      ) : null}
       <Descriptions size="small" column={1} bordered>
         <Descriptions.Item label={translate('路径')}>
           {parts.map((part) => (labels ? graphLabel(part, labels) : part)).join(' → ')}
@@ -955,7 +983,13 @@ export default function App() {
                 {selection.kind === 'node' ? (
                   renderNodePanel(selection.id)
                 ) : (
-                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} labels={labels ?? undefined} />
+                  <EdgePanel
+                    id={selection.id}
+                    metrics={metrics?.edges[selection.id]}
+                    labels={labels ?? undefined}
+                    config={config ?? undefined}
+                    entrypointHealth={entrypointHealth}
+                  />
                 )}
               </Drawer>
             ) : (
@@ -971,7 +1005,13 @@ export default function App() {
                 {selection.kind === 'node' ? (
                   renderNodePanel(selection.id)
                 ) : (
-                  <EdgePanel id={selection.id} metrics={metrics?.edges[selection.id]} labels={labels ?? undefined} />
+                  <EdgePanel
+                    id={selection.id}
+                    metrics={metrics?.edges[selection.id]}
+                    labels={labels ?? undefined}
+                    config={config ?? undefined}
+                    entrypointHealth={entrypointHealth}
+                  />
                 )}
               </aside>
             )

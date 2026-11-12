@@ -3,7 +3,7 @@ import { translate } from '../i18n';
 import { configLabels, entityLabel } from '../labels';
 import { formatDateTime } from '../time';
 import { configuredAPIs } from './presets';
-import { splitId } from './selection';
+import { splitEdgeId, splitId } from './selection';
 
 /** One read-only parameter row; both sides are already translated. */
 export interface ParamRow {
@@ -125,4 +125,57 @@ export function entityParams(
     default:
       return [];
   }
+}
+
+/**
+ * The read-only parameters of a topology edge. Only an entrypoint binding edge
+ * has configuration of its own (the probe); the other edges carry the node
+ * mapping, which lives on the node panel. The rows mirror the edge form and
+ * omit the state row until the binding has been probed at least once.
+ */
+export function edgeParams(
+  config: ConfigResponse,
+  graphId: string,
+  entrypointHealth?: readonly EntrypointHealth[],
+): ParamRow[] {
+  const { source, target } = splitEdgeId(graphId);
+  const [sourceKind, entrypointID] = splitId(source);
+  const [targetKind, routeID] = splitId(target);
+  if (sourceKind !== 'entrypoint' || targetKind !== 'route') return [];
+
+  const entrypoint = config.entrypoints.find((e) => e.id === entrypointID);
+  if (!entrypoint) return [];
+  const bindings = entrypoint.routes ?? [];
+  const index = bindings.findIndex((binding) => binding.route === routeID);
+  if (index < 0) return [];
+
+  const binding = bindings[index];
+  const rows: ParamRow[] = binding.probe
+    ? [
+        { label: translate('探测'), value: binding.probe.command },
+        { label: translate('探测间隔'), value: binding.probe.interval || '30s' },
+        { label: translate('超时'), value: binding.probe.timeout || '5s' },
+      ]
+    : [{ label: translate('探测'), value: translate('无探测') }];
+
+  const health = entrypointHealth?.find((h) => h.entrypointId === entrypoint.id);
+  const reported = health?.bindings?.find((b) => b.routeId === routeID);
+  if (reported) {
+    const parts = [reported.eligible ? translate('可用') : translate('未通过')];
+    if (health?.active.fallback && health.active.routeId === routeID) {
+      parts.push(translate('回退'));
+    }
+    if (reported.last) {
+      parts.push(
+        translate('退出码 {code}', { code: reported.last.exitCode }),
+        `${reported.last.latencyMs}ms`,
+        formatDateTime(reported.last.at),
+      );
+      if (reported.last.error) parts.push(reported.last.error);
+    }
+    rows.push({ label: translate('状态'), value: parts.join(' · ') });
+  }
+
+  rows.push({ label: translate('生效顺序'), value: String(index + 1) });
+  return rows;
 }

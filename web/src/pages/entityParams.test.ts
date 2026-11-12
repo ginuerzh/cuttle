@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ConfigResponse, EntrypointHealth } from '../api/types';
 import { setActiveLang } from '../i18n';
 import { formatDateTime } from '../time';
-import { entityParams } from './entityParams';
+import { edgeParams, entityParams } from './entityParams';
 
 beforeEach(() => setActiveLang('zh-CN'));
 
@@ -265,5 +265,78 @@ describe('entityParams', () => {
     expect(entityParams(config, 'node:n_gone000001')).toEqual([]);
     expect(entityParams(config, 'route:r_gone000001')).toEqual([]);
     expect(entityParams(config, 'edge:whatever')).toEqual([]);
+  });
+});
+
+describe('edgeParams', () => {
+  const bindingHealth: EntrypointHealth[] = [
+    {
+      entrypointId: 'e_0000000001',
+      entrypointName: 'fast',
+      active: { routeId: 'r_0000000002', fallback: true },
+      bindings: [
+        {
+          index: 0,
+          routeId: 'r_0000000001',
+          routeName: 'strong',
+          eligible: false,
+          last: {
+            at: '2026-11-12T10:00:00Z',
+            ok: false,
+            exitCode: 3,
+            latencyMs: 12,
+            error: 'quota exhausted',
+          },
+        },
+        { index: 1, routeId: 'r_0000000002', routeName: 'bare', eligible: false },
+      ],
+    },
+  ];
+  const at = formatDateTime('2026-11-12T10:00:00Z');
+
+  it('lists a probe-less binding with its state and position', () => {
+    expect(edgeParams(config, 'entrypoint:e_0000000001->route:r_0000000001', bindingHealth)).toEqual([
+      { label: '探测', value: '无探测' },
+      { label: '状态', value: `未通过 · 退出码 3 · 12ms · ${at} · quota exhausted` },
+      { label: '生效顺序', value: '1' },
+    ]);
+  });
+
+  it('lists a probed binding with its schedule, state and fallback', () => {
+    expect(edgeParams(config, 'entrypoint:e_0000000001->route:r_0000000002', bindingHealth)).toEqual([
+      { label: '探测', value: 'curl -fsS http://127.0.0.1:9/ready' },
+      { label: '探测间隔', value: '10s' },
+      { label: '超时', value: '2s' },
+      { label: '状态', value: '未通过 · 回退' },
+      { label: '生效顺序', value: '2' },
+    ]);
+  });
+
+  it('shows the effective schedule when a probe omits it and marks an eligible binding', () => {
+    const rows = edgeParams(
+      { ...config, entrypoints: [{ id: 'e_0000000001', name: 'fast', match: ['*'], routes: [{ route: 'r_0000000002', probe: { command: 'true' } }] }] },
+      'entrypoint:e_0000000001->route:r_0000000002',
+      [
+        {
+          entrypointId: 'e_0000000001',
+          entrypointName: 'fast',
+          active: { routeId: 'r_0000000002', fallback: false },
+          bindings: [{ index: 0, routeId: 'r_0000000002', routeName: 'bare', eligible: true }],
+        },
+      ],
+    );
+
+    expect(rows).toEqual([
+      { label: '探测', value: 'true' },
+      { label: '探测间隔', value: '30s' },
+      { label: '超时', value: '5s' },
+      { label: '状态', value: '可用' },
+      { label: '生效顺序', value: '1' },
+    ]);
+  });
+
+  it('returns no rows for an edge that is not an entrypoint binding', () => {
+    expect(edgeParams(config, 'route:r_0000000001|node:n_0000000001', bindingHealth)).toEqual([]);
+    expect(edgeParams(config, 'entrypoint:e_missing0001->route:r_0000000001', bindingHealth)).toEqual([]);
   });
 });

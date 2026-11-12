@@ -1,5 +1,21 @@
 import type { Entrypoint, ErrorRow } from '../api/types';
 
+/**
+ * Splits a topology edge id into its two graph ids. Entrypoint bindings are
+ * drawn as `entrypoint:<id>->route:<id>`; every other edge is `source|target`.
+ */
+export function splitEdgeId(id: string): { source: string; target: string } {
+  const arrow = id.indexOf('->');
+  if (arrow >= 0) {
+    return { source: id.slice(0, arrow), target: id.slice(arrow + 2) };
+  }
+  const bar = id.indexOf('|');
+  if (bar >= 0) {
+    return { source: id.slice(0, bar), target: id.slice(bar + 1) };
+  }
+  return { source: id, target: '' };
+}
+
 export function splitId(id: string): [string, string] {
   const i = id.indexOf(':');
   if (i < 0) return [id, ''];
