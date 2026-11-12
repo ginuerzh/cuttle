@@ -367,6 +367,49 @@ func TestPrepareExistingConfigWarnsOnDataDirFallback(t *testing.T) {
 	}
 }
 
+func TestPrepareFallsBackWhenDefaultDataDirIsUnusable(t *testing.T) {
+	base := t.TempDir()
+	blocked := filepath.Join(base, "blocked")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workDir := t.TempDir()
+	setUserConfigDir(t, func() (string, error) { return blocked, nil })
+	setGetwd(t, func() (string, error) { return workDir, nil })
+
+	res, err := Prepare(Options{Getenv: envMap(nil), SearchPaths: []string{}, Stderr: io.Discard})
+	if err != nil {
+		t.Fatalf("first run against an unusable user config directory should fall back: %v", err)
+	}
+	if !res.Generated || res.DataDir != workDir {
+		t.Fatalf("Generated = %v, DataDir = %q, want a first run in %q", res.Generated, res.DataDir, workDir)
+	}
+	want := "CUTTLE_DATA is unset and the user config directory is unavailable; using " + workDir
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), want) {
+		t.Fatalf("warnings = %v, want %q", res.Warnings, want)
+	}
+}
+
+func TestPrepareRejectsEmptyCUTTLEData(t *testing.T) {
+	setUserConfigDir(t, func() (string, error) {
+		t.Fatal("userConfigDir called although CUTTLE_DATA is set")
+		return "", nil
+	})
+
+	_, err := Prepare(Options{
+		Getenv:      envMap(map[string]string{"CUTTLE_DATA": ""}),
+		LookupEnv:   func(k string) (string, bool) { return "", k == "CUTTLE_DATA" },
+		SearchPaths: []string{},
+		Stderr:      io.Discard,
+	})
+	if err == nil {
+		t.Fatal("want an error for an explicitly empty CUTTLE_DATA")
+	}
+	if !strings.Contains(err.Error(), "CUTTLE_DATA") || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("error %q does not name CUTTLE_DATA and the empty value", err)
+	}
+}
+
 func TestPrepareRejectsShortPassword(t *testing.T) {
 	dataDir := t.TempDir()
 	var buf bytes.Buffer

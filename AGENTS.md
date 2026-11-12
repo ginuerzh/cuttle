@@ -197,7 +197,8 @@ Entrypoint -> Route -> Node -> Provider model
   defaults: they are used only when a new config is generated. `CUTTLE_DATA`
   (default `<os.UserConfigDir>/cuttle`, falling back to the working directory
   with a warning) is the data directory used on every start and determines
-  where an existing config is looked up or a missing one is generated.
+  where an existing config is looked up or a missing one is generated. A
+  set-but-empty `CUTTLE_DATA` is rejected.
 - Config resolution: explicit `-c` must exist; otherwise
   `$CUTTLE_DATA/cuttle.yaml`, `/etc/cuttle/cuttle.yaml`, `./cuttle.yaml`, then
   generate at `$CUTTLE_DATA/cuttle.yaml`.

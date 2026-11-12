@@ -194,6 +194,12 @@ injected by the release build through ldflags, so the upgrade needs no code or
 config change beyond reviewing the backups. To roll back, restore both backups
 and the previous image.
 
+**The default data directory changed.** `CUTTLE_DATA` now defaults to
+`<os.UserConfigDir>/cuttle` instead of `/data`. A non-Docker install that relied
+on the old default must set `CUTTLE_DATA=/data` or move its config and stats
+directory before upgrading; there is no automatic migration. The Docker image is
+unaffected because it sets `CUTTLE_DATA=/data`.
+
 ### Zero-config first run
 
 No config file is required. Start the binary (or the Docker image) and it

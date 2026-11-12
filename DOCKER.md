@@ -67,6 +67,10 @@ start, set `CUTTLE_ADMIN_LISTEN=127.0.0.1:8788`.
 or an orchestrator secret to inject it. The generated config stores only the
 bcrypt hash.
 
+Never pass an empty `CUTTLE_DATA` (`-e CUTTLE_DATA=` or a compose
+`${CUTTLE_DATA}` that renders empty): Cuttle rejects it instead of silently
+writing outside the volume.
+
 ## Existing config mount
 
 ```bash

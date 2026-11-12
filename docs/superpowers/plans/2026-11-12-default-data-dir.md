@@ -191,8 +191,8 @@ Append the Implementation record for this task to this plan file **before** the 
 - Repository + commit: `ginuerzh/cuttle` (branch `feat/default-data-dir`), code commit recorded below; spec/plan committed in the docs commit before it.
 - Files changed: `internal/bootstrap/bootstrap.go` (const `DefaultDataDir` → `DirName`, `userConfigDir`/`getwd` seams, `defaultDataDir`, `Paths.DataDirFromFallback`, `Resolve` fallback), `internal/bootstrap/bootstrap_test.go` (rewritten `TestResolveDefaultDataDir`, new fallback and explicit-env tests, seam helpers).
 - Tests/commands and results: RED — `go test ./internal/bootstrap -run 'TestResolve(DefaultDataDir|ExplicitDataDirIgnoresUserConfigDir)'` failed to build with the expected undefined symbols; GREEN — `GOWORK=off go test ./internal/bootstrap -count=1` → `ok`; `GOWORK=off go build ./... && GOWORK=off go vet ./...` → exit 0.
-- Review findings and fixes: none yet (final review pending).
-- Deferred items/limitations: the working-directory fallback is not yet warned about (Task 2); legacy `/data` is not detected by design.
+- Review findings and fixes: final whole-branch review. Important 1 — an *unusable* (resolvable but unwritable) user config directory hard-failed startup with an error blaming an unset `CUTTLE_DATA`; fixed by `applyWorkingDirFallback`, retried from both `Resolve` (unreadable path) and `generate` (mkdir failure), pinned by `TestPrepareFallsBackWhenDefaultDataDirIsUnusable` RED→GREEN. Important 2 — a set-but-empty `CUTTLE_DATA` silently moved the container off `/data`; fixed by rejecting it through the new `Options.LookupEnv` seam, pinned by `TestPrepareRejectsEmptyCUTTLEData` RED→GREEN.
+- Deferred items/limitations: Minors deferred — `TestResolveExplicitPathMustExist` still consults the real `$HOME`; the `return ".", true` branch of `defaultDataDir` is untested; no test pins the absence of the fallback warning on the normal default path; `Resolve`'s doc comment does not describe the new default source. Legacy `/data` is not detected by design.
 
 ---
 
@@ -307,7 +307,7 @@ git commit -m "feat(bootstrap): warn when CUTTLE_DATA falls back to the working 
 - Repository + commit: `ginuerzh/cuttle` (branch `feat/default-data-dir`), commit recorded below.
 - Files changed: `internal/bootstrap/bootstrap.go` (`dataDirFallbackWarning`, both `Prepare` warning paths), `internal/bootstrap/bootstrap_test.go` (two fallback-warning tests, `io` import).
 - Tests/commands and results: RED — `GOWORK=off go test ./internal/bootstrap -run 'TestPrepare(Warns|ExistingConfigWarns)OnDataDirFallback'` failed on the missing warning for both the generated and existing-config paths; GREEN — `GOWORK=off go test ./internal/bootstrap -count=1` → `ok`; `GOWORK=off go build ./... && GOWORK=off go vet ./...` → exit 0.
-- Review findings and fixes: none yet (final review pending).
+- Review findings and fixes: final whole-branch review found nothing specific to this task; the Important 1 fix reuses `DataDirFromFallback` before the warnings are built, so the retry and the warning stay consistent.
 - Deferred items/limitations: the fallback warning precedes the `0700` permission warning on first-run generation.
 
 ---
@@ -380,5 +380,5 @@ git commit -m "docs: document the user-config-dir default for CUTTLE_DATA"
 - Repository + commit: `ginuerzh/cuttle` (branch `feat/default-data-dir`), commit recorded below.
 - Files changed: `README.md` (default paragraph, table row, upgrade note, Docker section), `DOCKER.md`, `AGENTS.md` (configuration invariant and gotcha), `Dockerfile` (comment above `ENV CUTTLE_DATA=/data`, value unchanged).
 - Tests/commands and results: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` → all packages `ok`, exit 0. `grep '"/data"'` over non-test Go sources → no matches. No web change, so the web gate was not run.
-- Review findings and fixes: none yet (final review pending).
-- Deferred items/limitations: the Docker image still defaults to `/data` by design; a non-Docker install that relied on the old default must set `CUTTLE_DATA` (documented in the README upgrade note).
+- Review findings and fixes: final whole-branch review. Important 3 — the upgrade note lived only in the zero-config section, while operators read the release paragraph; fixed by announcing the change there too (and the `DOCKER.md`/`AGENTS.md` empty-`CUTTLE_DATA` rejection note).
+- Deferred items/limitations: the Docker image still defaults to `/data` by design; a non-Docker install that relied on the old default must set `CUTTLE_DATA` (documented in both README notes).
