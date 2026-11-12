@@ -345,7 +345,6 @@ export function NodePanel({
   rangeMs,
   dead = false,
   deadRoutes = [],
-  entrypointHealth = [],
 }: {
   config: ConfigResponse;
   id: string;
@@ -356,12 +355,10 @@ export function NodePanel({
   rangeMs: number;
   dead?: boolean;
   deadRoutes?: readonly string[];
-  /** Binding eligibility of the current build, for an entrypoint panel. */
-  entrypointHealth?: readonly EntrypointHealth[];
 }) {
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [detail, setDetail] = useState<RequestRow | null>(null);
-  const params = entityParams(config, id, entrypointHealth);
+  const params = entityParams(config, id);
   const { rows, loading, failed } = useNodeSessions(
     id,
     since,
@@ -683,7 +680,6 @@ export default function App() {
         rangeMs={rangeMs}
         dead={id.startsWith('node:') && nodeHealth.dead.has(id.slice('node:'.length))}
         deadRoutes={deadRouteLabels(id)}
-        entrypointHealth={entrypointHealth}
       />
     ) : null;
 

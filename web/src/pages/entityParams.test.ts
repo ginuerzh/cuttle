@@ -121,13 +121,16 @@ describe('entityParams', () => {
     ]);
   });
 
-  it('lists an entrypoint with each binding and its probe command', () => {
-    expect(entityParams(config, 'entrypoint:e_0000000001')).toEqual([
+  it('lists an entrypoint with its route bindings and no probe parameters', () => {
+    const rows = entityParams(config, 'entrypoint:e_0000000001');
+    expect(rows).toEqual([
       { label: '模型匹配', value: '*' },
       { label: '路由 1', value: 'strong' },
-      { label: '路由 2', value: 'bare · curl -fsS http://127.0.0.1:9/ready' },
+      { label: '路由 2', value: 'bare' },
       { label: '优先级', value: '1' },
     ]);
+    // Probe parameters belong to the edge panel, not the entrypoint panel.
+    expect(rows.map((row) => row.value).join('')).not.toContain('curl');
   });
 
   it('marks a draft entrypoint as unconnected', () => {
@@ -151,91 +154,6 @@ describe('entityParams', () => {
     ]);
   });
 
-  const health: EntrypointHealth[] = [
-    {
-      entrypointId: 'e_0000000001',
-      entrypointName: 'fast',
-      active: { routeId: 'r_0000000002', fallback: true },
-      bindings: [
-        {
-          index: 0,
-          routeId: 'r_0000000001',
-          routeName: 'strong',
-          eligible: false,
-          last: {
-            at: '2026-11-12T10:00:00Z',
-            ok: false,
-            exitCode: 3,
-            latencyMs: 12,
-            error: 'quota exhausted',
-          },
-        },
-        { index: 1, routeId: 'r_0000000002', routeName: 'bare', eligible: false },
-      ],
-    },
-  ];
-
-  const probedAt = formatDateTime('2026-11-12T10:00:00Z');
-
-  it('lists each binding with its state, fallback and last probe', () => {
-    expect(entityParams(config, 'entrypoint:e_0000000001', health)).toEqual([
-      { label: '模型匹配', value: '*' },
-      { label: '路由 1', value: `strong · 未通过 · 退出码 3 · 12ms · ${probedAt} · quota exhausted` },
-      { label: '路由 2', value: 'bare · curl -fsS http://127.0.0.1:9/ready · 未通过 · 回退' },
-      { label: '优先级', value: '1' },
-    ]);
-  });
-
-  it('marks an available binding that has probed', () => {
-    const rows = entityParams(config, 'entrypoint:e_0000000002', [
-      {
-        entrypointId: 'e_0000000002',
-        entrypointName: 'claude',
-        active: { routeId: 'r_0000000002', fallback: false },
-        bindings: [
-          {
-            index: 0,
-            routeId: 'r_0000000002',
-            routeName: 'bare',
-            eligible: true,
-            last: { at: '2026-11-12T10:00:00Z', ok: true, exitCode: 0, latencyMs: 7 },
-          },
-        ],
-      },
-    ]);
-
-    expect(rows).toContainEqual({ label: '路由 1', value: `bare · 可用 · 退出码 0 · 7ms · ${probedAt}` });
-    expect(rows.map((r) => r.value).join('')).not.toContain('回退');
-  });
-
-  it('omits the probe detail before the first run', () => {
-    const rows = entityParams(config, 'entrypoint:e_0000000002', [
-      {
-        entrypointId: 'e_0000000002',
-        entrypointName: 'claude',
-        active: { routeId: 'r_0000000002', fallback: false },
-        bindings: [{ index: 0, routeId: 'r_0000000002', routeName: 'bare', eligible: true }],
-      },
-    ]);
-
-    expect(rows).toContainEqual({ label: '路由 1', value: 'bare · 可用' });
-  });
-
-  it('renders the binding health rows in English', () => {
-    setActiveLang('en-US');
-    const rows = entityParams(config, 'entrypoint:e_0000000001', health);
-    setActiveLang('zh-CN');
-    expect(rows).toContainEqual({
-      label: 'Route 1',
-      value: `strong · Unavailable · exit code 3 · 12ms · ${probedAt} · quota exhausted`,
-    });
-    expect(rows).toContainEqual({
-      label: 'Route 2',
-      value: 'bare · curl -fsS http://127.0.0.1:9/ready · Unavailable · Fallback',
-    });
-    expect(rows.map((r) => r.label + r.value).join('')).not.toMatch(/[\u4e00-\u9fff]/);
-  });
-
   it('renders the binding rows in English', () => {
     setActiveLang('en-US');
     const rows = entityParams(config, 'entrypoint:e_0000000001');
@@ -243,7 +161,7 @@ describe('entityParams', () => {
     expect(rows.slice(0, 3)).toEqual([
       { label: 'Model match', value: '*' },
       { label: 'Route 1', value: 'strong' },
-      { label: 'Route 2', value: 'bare · curl -fsS http://127.0.0.1:9/ready' },
+      { label: 'Route 2', value: 'bare' },
     ]);
     expect(rows.map((r) => r.label + r.value).join('')).not.toMatch(/[\u4e00-\u9fff]/);
   });
