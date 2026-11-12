@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
-import type { EntrypointHealth } from '../api/types';
+import type { Entrypoint, EntrypointHealth } from '../api/types';
 import { translate } from '../i18n';
 
 interface FlowData extends Record<string, unknown> {
@@ -9,22 +9,45 @@ interface FlowData extends Record<string, unknown> {
   duration?: number;
 }
 
-/** How one binding edge in the topology is decorated from the health payload. */
+/** How one binding edge in the topology is decorated from health and config. */
 export interface BindingEdgeState {
   /** The binding's probe passed, so it may serve. */
   eligible: boolean;
   /** This binding is the one that serves the next request. */
   active: boolean;
-  /** No binding is eligible, so x falls back to the first binding. */
+  /** No probed binding is eligible, so this binding serves as the fallback. */
   fallback: boolean;
+  /**
+   * The configured binding carries a probe. The health payload does not say
+   * so, because the probe is inline config and no API field was added for it,
+   * so this is read from `entrypoints[].routes[].probe`.
+   */
+  hasProbe: boolean;
+}
+
+/** The configured bindings that carry a probe, keyed by entrypoint id + route id. */
+function configuredProbes(entrypoints?: readonly Entrypoint[]): Set<string> {
+  const probed = new Set<string>();
+  for (const entrypoint of entrypoints ?? []) {
+    for (const binding of entrypoint.routes ?? []) {
+      if (binding.probe) probed.add(`${entrypoint.id}\0${binding.route}`);
+    }
+  }
+  return probed;
 }
 
 /**
  * Keys binding health by the topology edge id, `entrypoint:<id>->route:<id>`.
  * That is the same key the graph and stats use, so a reorder never re-keys an
  * edge. A duplicate row keeps the first one, matching the first-match rule.
+ * `hasProbe` comes from the console's own config, so a binding the server no
+ * longer builds reads as probe-less.
  */
-export function bindingEdgeHealth(health?: readonly EntrypointHealth[]): Map<string, BindingEdgeState> {
+export function bindingEdgeHealth(
+  health?: readonly EntrypointHealth[],
+  entrypoints?: readonly Entrypoint[],
+): Map<string, BindingEdgeState> {
+  const probed = configuredProbes(entrypoints);
   const rows = new Map<string, BindingEdgeState>();
   for (const entrypoint of health ?? []) {
     const current = entrypoint.active;
@@ -36,6 +59,7 @@ export function bindingEdgeHealth(health?: readonly EntrypointHealth[]): Map<str
         eligible: binding.eligible,
         active: isActive && !current.fallback,
         fallback: isActive && current.fallback,
+        hasProbe: probed.has(`${entrypoint.entrypointId}\0${binding.routeId}`),
       });
     }
   }
@@ -43,23 +67,32 @@ export function bindingEdgeHealth(health?: readonly EntrypointHealth[]): Map<str
 }
 
 export interface BindingEdgeBadge {
-  /** Text to append to the edge label; absent when the binding needs no badge. */
+  /** The failure mark of a probed binding that is not eligible. */
+  mark?: '✕';
+  /** Text appended after the mark; present for the binding serving a fallback. */
   text?: string;
-  /** Style the edge as a warning: dashed amber. Both badges use it. */
+  /** Style the edge amber, because a probe is failing. */
   invalid: boolean;
+  /** Draw the edge dashed, because nothing checks this binding. */
+  dashed: boolean;
 }
 
 /**
- * The badge an edge carries: `未通过` for an ineligible binding that is not
- * serving, `回退` for the binding x falls back to when none is eligible. Both
- * are dashed amber because neither binding is serving by choice. The active
- * binding and a binding without health stay unlabelled and solid.
+ * The badge an edge carries. A probed binding whose probe fails is solid amber
+ * with a `✕`; the fallback binding adds `回退` (`✕ 回退` when probed). A binding
+ * without a probe is dashed and neutral, because nothing checks it, and carries
+ * no state label unless it serves the fallback. An eligible active binding and
+ * a binding without health stay solid and unlabelled.
  */
 export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
-  if (!state) return { invalid: false };
-  if (state.fallback) return { text: translate('回退'), invalid: true };
-  if (!state.eligible && !state.active) return { text: translate('未通过'), invalid: true };
-  return { invalid: false };
+  if (!state) return { invalid: false, dashed: false };
+  const invalid = state.hasProbe && !state.eligible;
+  return {
+    mark: invalid ? '✕' : undefined,
+    text: state.fallback ? translate('回退') : undefined,
+    invalid,
+    dashed: !state.hasProbe,
+  };
 }
 
 const DOTS = 3;

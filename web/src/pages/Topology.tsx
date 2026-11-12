@@ -179,8 +179,9 @@ export function decorateEdge(
   const dead = deadEdges?.has(e.id) ?? false;
   const badge = bindingEdgeBadge(bindingHealth?.get(e.id));
   const trafficLabel = m ? edgeLabel(m) : undefined;
-  const badgeLabel = badge.text ? (
-    badge.invalid ? <span style={{ color: '#d97706' }}>{badge.text}</span> : badge.text
+  const badgeText = [badge.mark, badge.text].filter(Boolean).join(' ');
+  const badgeLabel = badgeText ? (
+    badge.invalid ? <span style={{ color: '#d97706' }}>{badgeText}</span> : badgeText
   ) : null;
   // A dead binding stays silently red and dashed: the line style already
   // carries the state, so the label only keeps its traffic counts.
@@ -212,7 +213,7 @@ export function decorateEdge(
       ...e.style,
       stroke: color,
       strokeWidth: width,
-      strokeDasharray: dead || badge.invalid || data?.draft ? '6 4' : undefined,
+      strokeDasharray: dead || badge.dashed || data?.draft ? '6 4' : undefined,
     },
     markerEnd: undefined,
   } as Edge;
@@ -294,7 +295,10 @@ export function Topology({ config, metrics, onSelect, editable, onConnect, nodeH
   const labelRoute = useCallback((id: string) => graphLabel(`route:${id}`, routeLabels), [routeLabels]);
   // Binding eligibility keyed by edge id. The effects re-decorate the previous
   // edge objects with it, so React Flow's `selected` flag survives a snapshot.
-  const bindingHealth = useMemo(() => bindingEdgeHealth(entrypointHealth), [entrypointHealth]);
+  const bindingHealth = useMemo(
+    () => bindingEdgeHealth(entrypointHealth, config.entrypoints),
+    [entrypointHealth, config.entrypoints],
+  );
 
   useEffect(() => {
     if (!metrics) {

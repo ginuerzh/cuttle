@@ -170,7 +170,7 @@ export interface RouteBindingProbe {
 export interface EntrypointRoute {
   /** Route id this binding points at; it is never a display name. */
   route: string;
-  /** Optional eligibility probe; absent means always eligible, so only the last binding may omit it. */
+  /** Optional eligibility probe; absent means the binding only serves when every probe fails. */
   probe?: RouteBindingProbe;
 }
 
@@ -180,7 +180,7 @@ export interface Entrypoint {
   /** Display label. */
   name: string;
   match: string[];
-  /** Ordered route bindings; the first eligible one serves. Empty means a draft. */
+  /** Ordered route bindings; probed bindings outrank probe-less ones. Empty means a draft. */
   routes: EntrypointRoute[];
 }
 
@@ -197,7 +197,7 @@ export interface EntrypointHealthProbe {
 
 /** One binding's health; `routeId`/`routeName` identify the bound route. */
 export interface EntrypointHealthBinding {
-  /** Position in the configured binding list. */
+  /** Position in the configured binding list, not in the priority order. */
   index: number;
   routeId: string;
   routeName: string;
@@ -206,11 +206,11 @@ export interface EntrypointHealthBinding {
   last?: EntrypointHealthProbe;
 }
 
-/** The binding health of one entrypoint, in configuration order. */
+/** The binding health of one entrypoint, in selection priority order. */
 export interface EntrypointHealth {
   entrypointId: string;
   entrypointName: string;
-  /** The binding that serves the next request; `fallback` means no binding is eligible. */
+  /** The binding that serves the next request; `fallback` means no probed binding is eligible. */
   active: { routeId: string; fallback: boolean };
   bindings: EntrypointHealthBinding[];
 }

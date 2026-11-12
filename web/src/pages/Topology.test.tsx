@@ -1,7 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { EntrypointHealth, GraphMetrics } from '../api/types';
+import type { Entrypoint, EntrypointHealth, GraphMetrics } from '../api/types';
 import type { GraphNode } from '../graph/build';
 import { setActiveLang } from '../i18n';
 import type { NodeRouteHealth } from './routeHealth';
@@ -169,54 +169,86 @@ describe('binding badges', () => {
     })),
   });
 
-  it('draws an ineligible inactive binding as dashed amber labelled 未通过', () => {
-    const badges = bindingEdgeHealth([
-      health('r_0000000002', false, [
-        ['r_0000000001', false],
-        ['r_0000000002', true],
-      ]),
+  // r_0000000001 has a probe; r_0000000002 is probe-less. The console derives
+  // that from its own config because the health payload carries no probe flag.
+  const entrypoints: Entrypoint[] = [
+    {
+      id: 'e_0000000001',
+      name: 'all',
+      match: ['*'],
+      routes: [{ route: 'r_0000000001', probe: { command: 'true' } }, { route: 'r_0000000002' }],
+    },
+  ];
+  const badges = (activeRoute: string, fallback: boolean, bindings: [string, boolean][]) =>
+    bindingEdgeHealth([health(activeRoute, fallback, bindings)], entrypoints);
+
+  it('draws a probe-less binding as a neutral dashed edge with no state label', () => {
+    const states = badges('r_0000000001', false, [
+      ['r_0000000001', true],
+      ['r_0000000002', true],
     ]);
 
-    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, badges);
+    const decorated = decorateEdge(edge('r_0000000002'), null, undefined, true, undefined, states);
 
-    expect(decorated.style).toMatchObject({ stroke: '#d97706', strokeDasharray: '6 4' });
-    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('未通过');
+    expect(decorated.style).toMatchObject({ stroke: '#94a3b8', strokeDasharray: '6 4' });
+    expect(decorated.label).toBeUndefined();
   });
 
-  it('keeps the active binding in its normal style', () => {
-    const badges = bindingEdgeHealth([
-      health('r_0000000002', false, [
-        ['r_0000000001', false],
-        ['r_0000000002', true],
-      ]),
+  it('draws a failing probe binding as a solid amber edge marked ✕', () => {
+    const states = badges('r_0000000002', false, [
+      ['r_0000000001', false],
+      ['r_0000000002', true],
     ]);
 
-    const decorated = decorateEdge(edge('r_0000000002'), null, undefined, true, undefined, badges);
+    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, states);
+    const html = renderToStaticMarkup(<>{decorated.label}</>);
+
+    expect(decorated.style).toMatchObject({ stroke: '#d97706' });
+    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+    expect(html).toContain('✕');
+    expect(html).not.toContain('回退');
+  });
+
+  it('keeps an eligible active binding solid and unlabelled', () => {
+    const states = badges('r_0000000001', false, [['r_0000000001', true]]);
+
+    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, states);
 
     expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
     expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
-    expect(renderToStaticMarkup(<>{decorated.label}</>)).not.toContain('未通过');
+    expect(decorated.label).toBeUndefined();
   });
 
-  it('draws the binding x falls back to as dashed amber labelled 回退', () => {
-    const badges = bindingEdgeHealth([
-      health('r_0000000001', true, [
-        ['r_0000000001', false],
-        ['r_0000000002', false],
-      ]),
+  it('labels the probed fallback ✕ 回退 on a solid amber edge', () => {
+    const states = badges('r_0000000001', true, [['r_0000000001', false]]);
+
+    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, states);
+    const html = renderToStaticMarkup(<>{decorated.label}</>);
+
+    expect(html).toContain('✕ 回退');
+    expect(decorated.style).toMatchObject({ stroke: '#d97706' });
+    expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+  });
+
+  it('labels a probe-less fallback 回退 on a dashed edge', () => {
+    const states = badges('r_0000000002', true, [
+      ['r_0000000001', false],
+      ['r_0000000002', false],
     ]);
 
-    const decorated = decorateEdge(edge('r_0000000001'), null, undefined, true, undefined, badges);
+    const decorated = decorateEdge(edge('r_0000000002'), null, undefined, true, undefined, states);
+    const html = renderToStaticMarkup(<>{decorated.label}</>);
 
-    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('回退');
-    expect(decorated.style).toMatchObject({ stroke: '#d97706', strokeDasharray: '6 4' });
+    expect(html).toContain('回退');
+    expect(html).not.toContain('✕');
+    expect(decorated.style).toMatchObject({ stroke: '#94a3b8', strokeDasharray: '6 4' });
   });
 
   it('lets the dead decoration win over a fallback badge', () => {
     const fallbackEdge = edge('r_0000000001');
-    const badges = bindingEdgeHealth([health('r_0000000001', true, [['r_0000000001', false]])]);
+    const states = badges('r_0000000001', true, [['r_0000000001', false]]);
 
-    const decorated = decorateEdge(fallbackEdge, null, undefined, true, new Set([fallbackEdge.id]), badges);
+    const decorated = decorateEdge(fallbackEdge, null, undefined, true, new Set([fallbackEdge.id]), states);
     const html = renderToStaticMarkup(<>{decorated.label}</>);
 
     expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
@@ -226,22 +258,45 @@ describe('binding badges', () => {
 
   it('leaves the dead decoration of a route binding untouched', () => {
     const deadEdge = { id: 'route:r|node:n', source: 'route:r', target: 'node:n' } as Edge;
-    const badges = bindingEdgeHealth([health('r_0000000001', false, [['r_0000000001', false]])]);
+    const states = badges('r_0000000001', false, [['r_0000000001', false]]);
 
-    const decorated = decorateEdge(deadEdge, null, undefined, true, new Set([deadEdge.id]), badges);
+    const decorated = decorateEdge(deadEdge, null, undefined, true, new Set([deadEdge.id]), states);
 
     expect(decorated.style).toMatchObject({ stroke: '#dc2626', strokeDasharray: '6 4' });
     expect(decorated.label).toBeUndefined();
   });
 
   it('keeps an unbadged edge solid when the map has other bindings', () => {
-    const badges = bindingEdgeHealth([health('r_0000000002', false, [['r_0000000001', false]])]);
+    const states = badges('r_0000000002', false, [['r_0000000001', false]]);
     const other = { id: 'entrypoint:e_0000000001->route:r_0000000009', source: 'entrypoint:e_0000000001', target: 'route:r_0000000009' } as Edge;
 
-    const decorated = decorateEdge(other, null, undefined, true, undefined, badges);
+    const decorated = decorateEdge(other, null, undefined, true, undefined, states);
 
     expect(decorated.style).toMatchObject({ stroke: '#94a3b8' });
     expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+  });
+
+  it('keeps the traffic label and appends the binding mark', () => {
+    const metrics = {
+      nodes: {},
+      edges: { 'entrypoint:e_0000000001->route:r_0000000002': { requests: 10, errors: 0 } },
+    } as unknown as GraphMetrics;
+    const states = badges('r_0000000002', true, [
+      ['r_0000000001', false],
+      ['r_0000000002', false],
+    ]);
+
+    const decorated = decorateEdge(edge('r_0000000002'), metrics, undefined, true, undefined, states);
+    const text = renderToStaticMarkup(<>{decorated.label}</>).replace(/<[^>]+>/g, '');
+
+    expect(text).toContain('10');
+    expect(text).toContain('回退');
+  });
+
+  it('treats a failed binding as probe-less when the config no longer lists it', () => {
+    const states = bindingEdgeHealth([health('r_0000000001', false, [['r_0000000009', false]])]);
+
+    expect(states.get('entrypoint:e_0000000001->route:r_0000000009')).toMatchObject({ hasProbe: false });
   });
 });
 

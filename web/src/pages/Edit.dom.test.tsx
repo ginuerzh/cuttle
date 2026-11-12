@@ -57,6 +57,15 @@ function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
+function typeIntoTextArea(input: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+  act(() => {
+    input.focus();
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
 function mouseDown(el: Element) {
   act(() => {
     el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
@@ -543,6 +552,7 @@ describe('EntrypointForm bindings', () => {
     routes: [
       { id: 'r_0000000001', name: 'primary', nodes: [] },
       { id: 'r_0000000002', name: 'backup', nodes: [] },
+      { id: 'r_0000000003', name: 'tertiary', nodes: [] },
     ],
     entrypoints: [entrypoint],
   } as unknown as ConfigResponse;
@@ -565,40 +575,17 @@ describe('EntrypointForm bindings', () => {
     ]);
   });
 
-  it('reveals the probe fields behind the toggle and saves them', async () => {
-    const draft = {
-      id: 'e_0000000001',
-      name: 'all',
-      match: ['*'],
-      routes: [{ route: 'r_0000000001' }],
-    };
+  it('renders no probe input in the drawer', () => {
     const { container } = render(
-      <EntrypointForm
-        entrypoint={draft}
-        index={0}
-        config={{ ...config, entrypoints: [draft] } as unknown as ConfigResponse}
-        onSaved={async () => undefined}
-      />,
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
     );
 
     expect(container.querySelector('input[placeholder^="curl"]')).toBeNull();
-    act(() => {
-      buttonByText(container, '添加探测命令（可选）').click();
-    });
-    expect(container.textContent).toContain('移除探测命令');
-
-    typeInto(container.querySelector('input[placeholder^="curl"]') as HTMLInputElement, 'true');
-    typeInto(container.querySelector('input[placeholder="30s"]') as HTMLInputElement, '15s');
-    typeInto(container.querySelector('input[placeholder="5s"]') as HTMLInputElement, '3s');
-
-    await act(async () => {
-      buttonByText(container, '保存').click();
-    });
-
-    const [entrypoints] = putEntrypointsMock.mock.calls[0];
-    expect(entrypoints[0].routes).toEqual([
-      { route: 'r_0000000001', probe: { command: 'true', interval: '15s', timeout: '3s' } },
-    ]);
+    expect(container.querySelector('input[placeholder="30s"]')).toBeNull();
+    expect(container.querySelector('input[placeholder="5s"]')).toBeNull();
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(container.textContent).not.toContain('添加探测命令');
+    expect(container.textContent).not.toContain('移除探测命令');
   });
 
   it('saves a draft when every binding row is cleared', async () => {
@@ -643,6 +630,250 @@ describe('EntrypointForm bindings', () => {
       'r_0000000001',
     ]);
     expect(entrypoints[0].routes?.[1].probe?.command).toBe('curl -fsS http://127.0.0.1:9/ready');
+  });
+
+  it('keeps the probe of every remaining binding when one is removed', async () => {
+    const three = {
+      ...entrypoint,
+      routes: [
+        { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/a', interval: '20s' } },
+        { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/b' } },
+        { route: 'r_0000000003' },
+      ],
+    };
+    const { container } = render(
+      <EntrypointForm
+        entrypoint={three}
+        index={0}
+        config={{ ...config, entrypoints: [three] } as unknown as ConfigResponse}
+        onSaved={async () => undefined}
+      />,
+    );
+
+    const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-label="删除绑定"]'));
+    act(() => {
+      buttons[1].click();
+    });
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/a', interval: '20s' } },
+      { route: 'r_0000000003' },
+    ]);
+  });
+
+  it('gives a newly added binding row no probe', async () => {
+    const { container } = render(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+
+    act(() => {
+      buttonByText(container, '添加路由绑定').click();
+    });
+    selectOption(container, '选择路由', 'tertiary');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+      { route: 'r_0000000002' },
+      { route: 'r_0000000003' },
+    ]);
+  });
+});
+
+describe('EdgeForm probe editor', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  const config = {
+    providers: [],
+    nodes: [],
+    routes: [
+      { id: 'r_0000000001', name: 'primary', nodes: [] },
+      { id: 'r_0000000002', name: 'backup', nodes: [] },
+    ],
+    entrypoints: [
+      {
+        id: 'e_0000000001',
+        name: 'all',
+        match: ['*'],
+        routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
+      },
+    ],
+  } as unknown as ConfigResponse;
+
+  it('saves the command and schedule into the binding the edge names', async () => {
+    const { container } = render(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000002" config={config} onSaved={async () => undefined} />,
+    );
+    const command = container.querySelector('textarea') as HTMLTextAreaElement;
+    expect(command).not.toBeNull();
+    expect(command.tagName).toBe('TEXTAREA');
+    expect(command.getAttribute('style') ?? '').toContain('monospace');
+
+    typeIntoTextArea(command, 'curl -fsS http://127.0.0.1:9/ready');
+    typeInto(container.querySelector('input[placeholder="30s"]') as HTMLInputElement, '15s');
+    typeInto(container.querySelector('input[placeholder="5s"]') as HTMLInputElement, '3s');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001' },
+      { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '15s', timeout: '3s' } },
+    ]);
+  });
+
+  it('replaces an existing probe without touching the other binding', async () => {
+    const probed = {
+      ...config,
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'all',
+          match: ['*'],
+          routes: [
+            { route: 'r_0000000001', probe: { command: 'old', interval: '10s' } },
+            { route: 'r_0000000002' },
+          ],
+        },
+      ],
+    } as unknown as ConfigResponse;
+    const { container } = render(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000001" config={probed} onSaved={async () => undefined} />,
+    );
+
+    typeIntoTextArea(container.querySelector('textarea') as HTMLTextAreaElement, 'new');
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'new', interval: '10s' } },
+      { route: 'r_0000000002' },
+    ]);
+  });
+
+  it('keeps every other binding probe when saving one', async () => {
+    const probed = {
+      ...config,
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'all',
+          match: ['*'],
+          routes: [
+            { route: 'r_0000000001', probe: { command: 'keep', interval: '10s', timeout: '2s' } },
+            { route: 'r_0000000002', probe: { command: 'old' } },
+          ],
+        },
+      ],
+    } as unknown as ConfigResponse;
+    const { container } = render(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000002" config={probed} onSaved={async () => undefined} />,
+    );
+
+    typeIntoTextArea(container.querySelector('textarea') as HTMLTextAreaElement, 'new');
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'keep', interval: '10s', timeout: '2s' } },
+      { route: 'r_0000000002', probe: { command: 'new' } },
+    ]);
+  });
+
+  it('removes the probe when the command is cleared', async () => {
+    const probed = {
+      ...config,
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'all',
+          match: ['*'],
+          routes: [
+            { route: 'r_0000000001', probe: { command: 'old', interval: '10s' } },
+            { route: 'r_0000000002' },
+          ],
+        },
+      ],
+    } as unknown as ConfigResponse;
+    const { container } = render(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000001" config={probed} onSaved={async () => undefined} />,
+    );
+
+    typeIntoTextArea(container.querySelector('textarea') as HTMLTextAreaElement, '');
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([{ route: 'r_0000000001' }, { route: 'r_0000000002' }]);
+  });
+
+  it('refuses an interval below one second', async () => {
+    const { container } = render(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000001" config={config} onSaved={async () => undefined} />,
+    );
+
+    typeIntoTextArea(container.querySelector('textarea') as HTMLTextAreaElement, 'true');
+    typeInto(container.querySelector('input[placeholder="30s"]') as HTMLInputElement, '500ms');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    expect(putEntrypointsMock).not.toHaveBeenCalled();
+  });
+
+  it('removes the probe even when the stale schedule text is invalid', async () => {
+    const probed = {
+      ...config,
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'all',
+          match: ['*'],
+          routes: [
+            { route: 'r_0000000001', probe: { command: 'old', interval: '10s' } },
+            { route: 'r_0000000002' },
+          ],
+        },
+      ],
+    } as unknown as ConfigResponse;
+    const { container } = render(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000001" config={probed} onSaved={async () => undefined} />,
+    );
+
+    typeIntoTextArea(container.querySelector('textarea') as HTMLTextAreaElement, '');
+    typeInto(container.querySelector('input[placeholder="30s"]') as HTMLInputElement, 'soon');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([{ route: 'r_0000000001' }, { route: 'r_0000000002' }]);
   });
 });
 

@@ -32,7 +32,7 @@ import {
   updateNode,
   updateRoute,
 } from '../api/client';
-import type { ConfigResponse, Entrypoint, EntrypointRoute, Node as BindNode, Preset, Provider, ProviderApi, ProviderModel, Route, RouteHealth } from '../api/types';
+import type { ConfigResponse, Entrypoint, EntrypointRoute, Node as BindNode, Preset, Provider, ProviderApi, ProviderModel, Route, RouteBindingProbe, RouteHealth } from '../api/types';
 import { translate as tr } from '../i18n';
 import { entrypointFromNodeId, splitId } from './selection';
 import { addRouteNode, reorderNodes } from './routeNodes';
@@ -984,10 +984,9 @@ export function NodeForm({
   );
 }
 
-/** One binding row in the entrypoint editor; every field is optional while typing. */
+/** One binding row in the entrypoint editor: the probe is edited on the edge. */
 export interface EntrypointBindingRow {
   route?: string;
-  probe?: { command?: string; interval?: string; timeout?: string };
 }
 
 /** The default probe schedule the server applies when a field is blank. */
@@ -1056,56 +1055,96 @@ function probeRuleResult(message?: string): Promise<void> {
 
 /**
  * The ordered bindings a form row list saves. Blank rows are dropped so a form
- * with an untouched row saves a draft, and a probe without a command is dropped
- * so the server never sees an empty one (an empty probe would reject the save).
- * The order of the rows is the binding order and is never sorted.
+ * with an untouched row saves a draft. The row order is the binding order and
+ * is never sorted.
+ *
+ * The drawer no longer edits probes, so each binding inherits the probe its
+ * route already carried. Reordering and removing rows therefore never clears a
+ * probe, and a newly added route keeps none. The probe object is reused as is.
  */
-export function entrypointBindingInputs(rows?: EntrypointBindingRow[]): EntrypointRoute[] {
+export function entrypointBindingInputs(
+  rows?: EntrypointBindingRow[],
+  existing?: readonly EntrypointRoute[],
+): EntrypointRoute[] {
+  const probes = new Map<string, RouteBindingProbe>();
+  for (const binding of existing ?? []) {
+    if (binding.probe) probes.set(binding.route, binding.probe);
+  }
   const bindings: EntrypointRoute[] = [];
   for (const row of rows ?? []) {
     const route = (row?.route ?? '').trim();
     if (!route) continue;
-    const command = (row?.probe?.command ?? '').trim();
-    if (!command) {
-      bindings.push({ route });
-      continue;
-    }
-    const probe: EntrypointRoute['probe'] = { command };
-    const interval = (row?.probe?.interval ?? '').trim();
-    const timeout = (row?.probe?.timeout ?? '').trim();
-    if (interval) probe.interval = interval;
-    if (timeout) probe.timeout = timeout;
-    bindings.push({ route, probe });
+    const probe = probes.get(route);
+    bindings.push(probe ? { route, probe } : { route });
   }
   return bindings;
 }
 
+/** The probe form fields of the entrypoint → route edge panel. */
+export interface ProbeFormValues {
+  command?: string;
+  interval?: string;
+  timeout?: string;
+}
+
+/**
+ * The probe the edge form saves: an empty command removes the probe, and blank
+ * schedule fields are omitted so the server applies its defaults.
+ */
+export function probeFromForm(values?: ProbeFormValues): RouteBindingProbe | undefined {
+  const command = (values?.command ?? '').trim();
+  if (!command) return undefined;
+  const probe: RouteBindingProbe = { command };
+  const interval = (values?.interval ?? '').trim();
+  const timeout = (values?.timeout ?? '').trim();
+  if (interval) probe.interval = interval;
+  if (timeout) probe.timeout = timeout;
+  return probe;
+}
+
+/**
+ * Sets, replaces or clears the probe of one binding, addressed by entrypoint and
+ * route id. Every other entrypoint, binding and probe is untouched, so the edge
+ * form can save one probe without rewriting the whole list by hand. An unknown
+ * entrypoint or route returns the list unchanged.
+ */
+export function withBindingProbe(
+  entrypoints: Entrypoint[],
+  entrypointID: string,
+  routeID: string,
+  probe?: RouteBindingProbe,
+): Entrypoint[] {
+  const target = entrypoints.find((e) => e.id === entrypointID);
+  if (!target || !(target.routes ?? []).some((binding) => binding.route === routeID)) return entrypoints;
+  return entrypoints.map((entrypoint) => {
+    if (entrypoint.id !== entrypointID) return entrypoint;
+    return {
+      ...entrypoint,
+      routes: (entrypoint.routes ?? []).map((binding) => {
+        if (binding.route !== routeID) return binding;
+        if (!probe) {
+          const { probe: _dropped, ...rest } = binding;
+          return rest;
+        }
+        return { ...binding, probe };
+      }),
+    };
+  });
+}
+
 /** The editor rows of an entrypoint; a draft shows one empty row to fill in. */
 function entrypointBindingRows(entrypoint?: Entrypoint): EntrypointBindingRow[] {
-  const rows = (entrypoint?.routes ?? []).map((binding) => ({
-    route: binding.route,
-    probe: binding.probe ? { ...binding.probe } : undefined,
-  }));
+  const rows = (entrypoint?.routes ?? []).map((binding) => ({ route: binding.route }));
   return rows.length > 0 ? rows : [{}];
 }
 
 /**
- * Ordered route bindings with an optional probe. Bindings are inline config:
- * they carry no id, so rows are keyed by their position only. The probe fields
- * stay collapsed behind a toggle because most bindings never have one.
+ * Ordered route bindings: a route select, the move controls and delete. The
+ * probe of a binding is edited on the `entrypoint → route` edge in the topology,
+ * not here, so saving this form never touches one.
  */
 function EntrypointBindingsField({ routes }: { routes: Route[] }) {
-  const form = Form.useFormInstance();
   const routeOptions = routes.map((r) => ({ value: r.id, label: r.name }));
-
-  const toggleProbe = (index: number, on: boolean) => {
-    const rows: EntrypointBindingRow[] = [
-      ...((form.getFieldValue('routes') as EntrypointBindingRow[] | undefined) ?? []),
-    ];
-    const row = rows[index] ?? {};
-    rows[index] = { ...row, probe: on ? { command: '', interval: '', timeout: '' } : undefined };
-    form.setFieldValue('routes', rows);
-  };
 
   return (
     <Form.List name="routes">
@@ -1114,108 +1153,39 @@ function EntrypointBindingsField({ routes }: { routes: Route[] }) {
           {fields.map((field, index) => (
             <div
               key={field.key}
-              style={{ border: '1px solid var(--gw-border)', borderRadius: 6, padding: 8, marginTop: 8 }}
+              style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 8 }}
             >
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                <Form.Item name={[field.name, 'route']} noStyle>
-                  <Select
-                    allowClear
-                    showSearch
-                    optionFilterProp="label"
-                    options={routeOptions}
-                    placeholder={tr('选择路由')}
-                    style={{ flex: 1 }}
-                  />
-                </Form.Item>
-                <Button
-                  size="small"
-                  aria-label={tr('上移')}
-                  icon={<ArrowUpOutlined />}
-                  disabled={index === 0}
-                  onClick={() => move(index, index - 1)}
+              <Form.Item name={[field.name, 'route']} noStyle>
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={routeOptions}
+                  placeholder={tr('选择路由')}
+                  style={{ flex: 1 }}
                 />
-                <Button
-                  size="small"
-                  aria-label={tr('下移')}
-                  icon={<ArrowDownOutlined />}
-                  disabled={index === fields.length - 1}
-                  onClick={() => move(index, index + 1)}
-                />
-                <Button
-                  size="small"
-                  danger
-                  aria-label={tr('删除绑定')}
-                  icon={<MinusCircleOutlined />}
-                  onClick={() => remove(field.name)}
-                />
-              </div>
-              <Form.Item noStyle shouldUpdate>
-                {() => {
-                  const current =
-                    (form.getFieldValue('routes') as EntrypointBindingRow[] | undefined) ?? [];
-                  if (current[field.name]?.probe === undefined) {
-                    return (
-                      <Button
-                        type="link"
-                        size="small"
-                        style={{ paddingInline: 0 }}
-                        onClick={() => toggleProbe(field.name, true)}
-                      >
-                        {tr('添加探测命令（可选）')}
-                      </Button>
-                    );
-                  }
-                  return (
-                    <>
-                      <Form.Item
-                        name={[field.name, 'probe', 'command']}
-                        label={tr('探测命令')}
-                        rules={[{ required: true, message: tr('探测命令不能为空') }]}
-                        extra={tr('用 sh -c 执行，退出码 0 表示该绑定可用。')}
-                        style={{ marginTop: 8, marginBottom: 8 }}
-                      >
-                        <Input placeholder="curl -fsS http://127.0.0.1:8080/ready" />
-                      </Form.Item>
-                      <Space size={8} align="start" wrap>
-                        <Form.Item
-                          name={[field.name, 'probe', 'interval']}
-                          label={tr('探测间隔')}
-                          rules={[
-                            {
-                              validator: (_, value: string | undefined) =>
-                                probeRuleResult(probeIntervalError(value)),
-                            },
-                          ]}
-                          extra={tr('默认 30s，最小 1s')}
-                        >
-                          <Input placeholder="30s" style={{ width: 90 }} />
-                        </Form.Item>
-                        <Form.Item
-                          name={[field.name, 'probe', 'timeout']}
-                          label={tr('探测超时')}
-                          rules={[
-                            {
-                              validator: (_, value: string | undefined) =>
-                                probeRuleResult(
-                                  probeTimeoutError(
-                                    value,
-                                    form.getFieldValue(['routes', field.name, 'probe', 'interval']),
-                                  ),
-                                ),
-                            },
-                          ]}
-                          extra={tr('默认 5s，最小 1s，且小于间隔')}
-                        >
-                          <Input placeholder="5s" style={{ width: 90 }} />
-                        </Form.Item>
-                        <Button type="text" size="small" onClick={() => toggleProbe(field.name, false)}>
-                          {tr('移除探测命令')}
-                        </Button>
-                      </Space>
-                    </>
-                  );
-                }}
               </Form.Item>
+              <Button
+                size="small"
+                aria-label={tr('上移')}
+                icon={<ArrowUpOutlined />}
+                disabled={index === 0}
+                onClick={() => move(index, index - 1)}
+              />
+              <Button
+                size="small"
+                aria-label={tr('下移')}
+                icon={<ArrowDownOutlined />}
+                disabled={index === fields.length - 1}
+                onClick={() => move(index, index + 1)}
+              />
+              <Button
+                size="small"
+                danger
+                aria-label={tr('删除绑定')}
+                icon={<MinusCircleOutlined />}
+                onClick={() => remove(field.name)}
+              />
             </div>
           ))}
           <Button type="dashed" size="small" block icon={<PlusOutlined />} style={{ marginTop: 8 }} onClick={() => add({})}>
@@ -1252,7 +1222,7 @@ export function EntrypointForm({
               ...e,
               name: v.name,
               match: v.match,
-              routes: entrypointBindingInputs(v.routes as EntrypointBindingRow[] | undefined),
+              routes: entrypointBindingInputs(v.routes as EntrypointBindingRow[] | undefined, entrypoint.routes),
             }
           : e,
       );
@@ -1309,7 +1279,7 @@ export function EntrypointForm({
       </Form.Item>
       <Form.Item
         label={tr('路由绑定')}
-        extra={tr('按顺序尝试，第一个探测通过的绑定生效；没有探测的绑定总是可用，只能放在最后。没有绑定即为草稿：入口仍占用这些模型，但匹配的请求会失败。')}
+        extra={tr('有探测的绑定优先，顺序只决定探测绑定之间的先后；没有探测的绑定只有在所有探测都失败时才接管，且只有第一个。探测命令在拓扑的入口连线上编辑。没有绑定即为草稿：入口仍占用这些模型，但匹配的请求会失败。')}
         style={{ marginBottom: 12 }}
       >
         <EntrypointBindingsField routes={config.routes} />
@@ -1359,40 +1329,148 @@ export function disconnectEntrypointEdge(entrypoints: Entrypoint[], id: string):
   return entrypoints.map((e) => (e.id === entrypointID ? disconnectEntrypointBinding(e, routeID) : e));
 }
 
-export function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse; onSaved: () => Promise<void> }) {
+/**
+ * The panel of one `entrypoint:<id>->route:<id>` edge: the route it names and
+ * the probe editor. The probe lives on the binding, but the edge is where it is
+ * edited, so the entrypoint drawer stays a route list.
+ */
+export function EntrypointEdgeForm({
+  id,
+  config,
+  onSaved,
+}: {
+  id: string;
+  config: ConfigResponse;
+  onSaved: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
-  if (id.startsWith('entrypoint:')) {
-    const entrypointID = id.slice('entrypoint:'.length).split('->')[0] ?? '';
-    const entrypoint = config.entrypoints.find((e) => e.id === entrypointID);
-    const routeID = entrypointEdgeRoute(id);
+  const [form] = Form.useForm();
+  const entrypointID = id.slice('entrypoint:'.length).split('->')[0] ?? '';
+  const routeID = entrypointEdgeRoute(id);
+  const labels = configLabels(config);
+  const entrypoint = config.entrypoints.find((e) => e.id === entrypointID);
+  const binding = (entrypoint?.routes ?? []).find((b) => b.route === routeID);
+  const connected = !!entrypoint && !!binding;
+  // The timeout rule compares against the interval the operator currently sees.
+  const interval = Form.useWatch('interval', form) as string | undefined;
 
-    const remove = async () => {
-      if (!entrypoint || !routeID) return;
-      setBusy(true);
-      try {
-        await putEntrypoints(disconnectEntrypointEdge(config.entrypoints, id));
-        message.success(tr('已断开'));
-        await onSaved();
-      } catch (err) {
-        message.error(errorText(err));
-      } finally {
-        setBusy(false);
-      }
-    };
+  const save = async () => {
+    if (!entrypoint || !routeID) return;
+    // A blank command removes the probe, so stale duration text must not block
+    // that removal; the schedule rules only apply to a probe being written.
+    const probe = probeFromForm(form.getFieldsValue() as ProbeFormValues);
+    if (probe) {
+      const valid = await form
+        .validateFields()
+        .then(() => true)
+        .catch(() => false);
+      if (!valid) return;
+    }
+    setBusy(true);
+    try {
+      await putEntrypoints(withBindingProbe(config.entrypoints, entrypoint.id, routeID, probe));
+      message.success(tr('已保存'));
+      await onSaved();
+    } catch (err) {
+      message.error(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
-    return (
-      <div>
-        <Typography.Title level={5} style={{ marginTop: 0 }}>
-          {tr('入口连线')}
-        </Typography.Title>
-        <Typography.Paragraph type="secondary">
-          {tr('一条连线对应一个路由绑定；断开只会移除这一个绑定，其余绑定保持顺序不变。')}
+  const remove = async () => {
+    if (!entrypoint || !routeID) return;
+    setBusy(true);
+    try {
+      await putEntrypoints(disconnectEntrypointEdge(config.entrypoints, id));
+      message.success(tr('已断开'));
+      await onSaved();
+    } catch (err) {
+      message.error(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <Typography.Title level={5} style={{ marginTop: 0 }}>
+        {tr('入口连线')}
+      </Typography.Title>
+      <Typography.Paragraph>
+        {entityLabel(entrypointID, labels.entrypoints)} → {routeID ? entityLabel(routeID, labels.routes) : tr('未连接')}
+      </Typography.Paragraph>
+      <Typography.Paragraph type="secondary">
+        {tr('一条连线对应一个路由绑定；探测命令在这里编辑，留空即移除探测。断开只会移除这一个绑定，其余绑定保持顺序不变。')}
+      </Typography.Paragraph>
+      {connected ? (
+        <Form
+          form={form}
+          layout="vertical"
+          size="small"
+          initialValues={{
+            command: binding?.probe?.command ?? '',
+            interval: binding?.probe?.interval ?? '',
+            timeout: binding?.probe?.timeout ?? '',
+          }}
+        >
+          <Form.Item
+            name="command"
+            label={tr('探测命令')}
+            extra={tr('用 sh -c 执行，退出码 0 表示该绑定可用；留空表示不探测，绑定只在所有探测失败时接管。')}
+          >
+            <Input.TextArea
+              autoSize={{ minRows: 2, maxRows: 8 }}
+              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 }}
+              placeholder="curl -fsS http://127.0.0.1:8080/ready"
+            />
+          </Form.Item>
+          <Space size={8} align="start" wrap>
+            <Form.Item
+              name="interval"
+              label={tr('探测间隔')}
+              rules={[{ validator: (_, value: string | undefined) => probeRuleResult(probeIntervalError(value)) }]}
+              extra={tr('默认 30s，最小 1s')}
+            >
+              <Input placeholder="30s" style={{ width: 90 }} />
+            </Form.Item>
+            <Form.Item
+              name="timeout"
+              label={tr('探测超时')}
+              rules={[
+                {
+                  validator: (_, value: string | undefined) =>
+                    probeRuleResult(probeTimeoutError(value, interval)),
+                },
+              ]}
+              extra={tr('默认 5s，最小 1s，且小于间隔')}
+            >
+              <Input placeholder="5s" style={{ width: 90 }} />
+            </Form.Item>
+          </Space>
+        </Form>
+      ) : (
+        <Typography.Paragraph type="warning">
+          {routeID ? tr('该绑定已不存在。') : tr('这条连线不可直接编辑。')}
         </Typography.Paragraph>
+      )}
+      <Divider />
+      <Space>
+        <Button type="primary" loading={busy} onClick={save} disabled={!connected}>
+          {tr('保存')}
+        </Button>
         <Button danger loading={busy} onClick={remove} disabled={!entrypoint || !routeID}>
           {tr('断开')}
         </Button>
-      </div>
-    );
+      </Space>
+    </div>
+  );
+}
+
+export function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigResponse; onSaved: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  if (id.startsWith('entrypoint:')) {
+    return <EntrypointEdgeForm id={id} config={config} onSaved={onSaved} />;
   }
   const parts = id.split('|');
   const source = parts[0] ?? '';
@@ -1587,7 +1665,9 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
   const panel = useMemo(() => {
     if (!selection) return null;
     if (selection.kind === 'edge') {
-      return <EdgeForm id={selection.id} config={config} onSaved={onReload} />;
+      // One component instance per edge: the edge panel seeds its form from the
+      // selected binding, so a new selection must remount it.
+      return <EdgeForm key={selection.id} id={selection.id} config={config} onSaved={onReload} />;
     }
     const [kind, entityId] = splitId(selection.id);
     if (kind === 'provider') {

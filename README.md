@@ -469,7 +469,7 @@ when `admin.passwordHash` is set.
 | Providers | Provider type, API base URLs, keys, model catalog, disabled models, health probes |
 | Nodes | Provider (empty while drafting), one model, backup flag, weight, enabled switch |
 | Routes | Ordered node list, selection strategy and the retry budget (`retries` / `retryCodes`) |
-| Entrypoints | Ordered model globs and an ordered list of routes, each with an optional command probe (empty while drafting) |
+| Entrypoints | Ordered model globs and an ordered list of routes, each with an optional command probe edited on the entrypoint edge (empty while drafting) |
 | Gateway keys | Named data-plane credentials, per-key 24h/7d/30d usage, enable switches, rotation |
 | Sessions | Session history, timing, tokens, status and errors |
 | Usage | Per-provider local usage and upstream balance or quota windows |
@@ -495,20 +495,22 @@ creation. Delete and recreate the provider to change them, or edit the config
 file and reload.
 
 The topology view has monitor and edit modes. In monitor mode nodes are fixed
-and binding edges show the latest probe state: the binding that serves is
-emphasised, a failing probe binding carries a `✕` mark, and a binding that
-serves only because every probe failed carries `回退` (fallback). A binding
-without a probe is drawn dashed, because nothing checks it. Probe `command`,
-`interval` and `timeout` are edited in the `entrypoint → route` edge panel; an
-empty command removes the probe. In edit mode you can drag an entrypoint onto a
-route, a route onto a node or a node onto a provider to change the
-configuration. Dragging onto a route appends a binding; dragging a route the
-entrypoint already binds changes nothing, and the entrypoint edge panel's `断开`
-removes just that one binding, so removing the last one makes the entrypoint a
-draft again. A draft card is tagged
-`未连接` (not connected). Node positions are stored in the stats SQLite database
-and shared by every admin; `localStorage` keeps a local backup and is used if
-the server cannot be reached.
+and binding edges show the latest probe state by their shape: a binding whose
+probe fails is drawn solid amber with a `✕` mark, and the binding that serves
+only because every probe failed adds `回退` (fallback), so a probed fallback
+reads `✕ 回退` and a probe-less one reads `回退`. A binding without a probe is
+drawn dashed, because nothing checks it, and an eligible binding is solid and
+unlabelled. Probe `command`, `interval` and `timeout` are edited in the
+`entrypoint → route` edge panel; an empty command removes the probe. In edit
+mode you can drag an entrypoint onto a route, a route onto a node or a node onto
+a provider to change the configuration. Dragging onto a route adds a probe-less
+binding; when the last binding already has no probe the new one is inserted
+before it, because only the first probe-less binding can serve. Dragging a route
+the entrypoint already binds changes nothing, and the entrypoint edge panel's
+`断开` removes just that one binding, so removing the last one makes the
+entrypoint a draft again. A draft card is tagged `未连接` (not connected). Node
+positions are stored in the stats SQLite database and shared by every admin;
+`localStorage` keeps a local backup and is used if the server cannot be reached.
 
 The monitor streams live data over the `GET /api/events` WebSocket. New traffic
 flashes the node icon once and sends light dots along the connection. The

@@ -48,16 +48,13 @@ export const enUS: Record<string, string> = {
   '上移': 'Move up',
   '下移': 'Move down',
   '删除绑定': 'Delete binding',
-  '按顺序尝试，第一个探测通过的绑定生效；没有探测的绑定总是可用，只能放在最后。没有绑定即为草稿：入口仍占用这些模型，但匹配的请求会失败。':
-    'Tried in order; the first binding whose probe passes serves. A binding without a probe is always available and must be last. No bindings is a draft: the entrypoint still claims these models, but every matching request fails.',
+  '有探测的绑定优先，顺序只决定探测绑定之间的先后；没有探测的绑定只有在所有探测都失败时才接管，且只有第一个。探测命令在拓扑的入口连线上编辑。没有绑定即为草稿：入口仍占用这些模型，但匹配的请求会失败。':
+    'Probed bindings are tried first, and order only decides between them; a binding without a probe takes over only when every probe fails, and only the first such binding. Probe commands are edited on the entrypoint edges in the topology. No bindings is a draft: the entrypoint still claims these models, but every matching request fails.',
   '可以先留空作为草稿，之后再在入口面板里绑定路由。':
     'You can leave this empty as a draft and bind routes later from the entrypoint panel.',
-  '添加探测命令（可选）': 'Add probe command (optional)',
-  '移除探测命令': 'Remove probe command',
   '探测命令': 'Probe command',
-  '探测命令不能为空': 'The probe command cannot be empty',
-  '用 sh -c 执行，退出码 0 表示该绑定可用。':
-    'Runs through sh -c; exit code 0 makes this binding available.',
+  '用 sh -c 执行，退出码 0 表示该绑定可用；留空表示不探测，绑定只在所有探测失败时接管。':
+    'Runs through sh -c; exit code 0 makes this binding available. Leave it empty to probe nothing, in which case the binding only takes over when every probe fails.',
   '探测间隔': 'Probe interval',
   '探测超时': 'Probe timeout',
   '默认 30s，最小 1s': 'default 30s, minimum 1s',
@@ -139,8 +136,9 @@ export const enUS: Record<string, string> = {
   'Nodes（顺序 = 优先级）': 'Nodes (order = priority)',
   '快速 / *': 'fast / *',
   '入口连线': 'Entrypoint edge',
-  '一条连线对应一个路由绑定；断开只会移除这一个绑定，其余绑定保持顺序不变。':
-    'One edge is one route binding; disconnecting removes only that binding and keeps the rest in order.',
+  '一条连线对应一个路由绑定；探测命令在这里编辑，留空即移除探测。断开只会移除这一个绑定，其余绑定保持顺序不变。':
+    'One edge is one route binding; its probe command is edited here, and an empty command removes the probe. Disconnecting removes only that binding and keeps the rest in order.',
+  '该绑定已不存在。': 'This binding no longer exists.',
   '已断开': 'Disconnected',
   '模型映射和 backup/weight 都在 Node 面板里改。': 'Model mappings and backup/weight are edited in the Node panel.',
   '断开': 'Disconnect',

@@ -221,7 +221,7 @@ git commit -m "feat(gateway): probed bindings outrank probe-less bindings"
 - Produces: `bindingEdgeBadge(state?) : BindingEdgeBadge` where `BindingEdgeBadge = {mark?: '✕'; text?: string; invalid: boolean; dashed: boolean}`. Rules: no state → all false/absent; `hasProbe && !eligible` → `mark: '✕'`, `invalid: true`, solid; `dashed = !hasProbe`; `fallback` adds `text: translate('回退')`; eligible active → all false/absent.
 - Produces: pure helpers `probeFromForm(values): RouteBindingProbe | undefined` and `withBindingProbe(entrypoints, entrypointID, routeID, probe)` in `Edit.tsx` (or `drafts.ts` if that keeps the file smaller) — the tests target the helpers plus the save payloads.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `Edit.test.tsx`: `withBindingProbe` sets/replaces/clears (`undefined` → field removed) only the named binding and leaves every other binding and probe untouched.
 - `Edit.dom.test.tsx`: saving the entrypoint drawer after a reorder/removal keeps each remaining binding's existing probe (payload has the same `probe` objects), and a newly added row has none.
@@ -232,17 +232,17 @@ git commit -m "feat(gateway): probed bindings outrank probe-less bindings"
   solid and unlabelled; node `dead` decoration is unchanged.
 - `Edit.test.tsx`: the drawer no longer renders probe inputs (query by the old placeholder/label yields nothing).
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd web && npx vitest run src/pages/Edit.test.tsx src/pages/Edit.dom.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement the drawer change (probe-preserving save)**
+- [x] **Step 3: Implement the drawer change (probe-preserving save)**
 
 - `EntrypointForm`: binding rows become route select + up/down + delete. On save, map each row's route id back to the existing binding and carry its `probe`; the row order comes from the form. Update the hint: order decides among probed bindings; probes are edited on the topology edge; probe-less bindings only serve when every probe fails.
 - `AddEntrypointModal` unchanged (it creates no bindings).
 
-- [ ] **Step 4: Implement the edge form**
+- [x] **Step 4: Implement the edge form**
 
 - `EdgeForm` entrypoint branch: route label, `command` as an auto-sized multiline `Input.TextArea` (monospace), `interval`/`timeout` (Input, default shown), the same duration validation the drawer used (`probeDurationMs`, `probeIntervalError`, `probeTimeoutError`), Save + Disconnect.
 - Save uses `withBindingProbe` and `putEntrypoints`, then `onSaved`.
@@ -254,22 +254,137 @@ Expected: FAIL.
   precedence and the `selected` flag, and keep the traffic label combination.
 - `en-US.ts`: all new strings; remove the now-unused `未通过` edge key if nothing else uses it.
 
-- [ ] **Step 5: Run the web gate and rebuild**
+- [x] **Step 5: Run the web gate and rebuild**
 
 Run: `cd web && npm test && npx tsc --noEmit && npm run build && cd .. && GOWORK=off go build ./...`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web README.md
 git commit -m "feat(web): edit binding probes on the topology edge"
 ```
 
-**Implementation record (fill in after the task is complete)**
-- Date/status:
-- Repository + commit:
+**Implementation record**
+- Date/status: 2026-11-12 / DONE (drawer, edge panel, edge styling, locale,
+  carried cleanups; web + Go gates green).
+- Repository + commit: `cuttle`, branch `feat/probe-edge-editing`, work done on
+  top of `4728975d`. Code commit `feat(web): edit binding probes on the
+  topology edge`; its SHA is recorded by the follow-up commit
+  `docs: record task 2 commit`, because a commit cannot contain its own hash.
+  The code, tests, docs and this record share the code commit.
 - Files changed:
+  - `web/src/pages/Edit.tsx` — `EntrypointBindingRow` keeps only `route`, so
+    the drawer row is route select + up/down + delete; `entrypointBindingInputs
+    (rows, existing)` re-attaches each route's existing probe by route id (the
+    same object, never rebuilt) and gives a newly added row none; new pure
+    helpers `probeFromForm(values)` and `withBindingProbe(entrypoints,
+    entrypointID, routeID, probe)` (clearing drops the field instead of writing
+    `probe: undefined`); the drawer hint says probes are edited on the topology
+    edge and that order only decides between probed bindings; the
+    `entrypoint:` branch became its own `EntrypointEdgeForm` (entrypoint → route
+    label, route id, auto-sized monospace `Input.TextArea` command,
+    interval/timeout inputs that reuse `probeDurationMs` /
+    `probeIntervalError` / `probeTimeoutError`, Save through
+    `withBindingProbe` + `putEntrypoints`, Disconnect unchanged); `Edit` mounts
+    `EdgeForm` with `key={selection.id}` so a new selection remounts the form
+    instead of reusing one seeded from another binding.
+  - `web/src/pages/edges.tsx` — `BindingEdgeState` gains `hasProbe`, derived
+    from `entrypoints[].routes[].probe` through a `configuredProbes` helper
+    (no API field); `bindingEdgeHealth(health?, entrypoints?)` takes the config;
+    `BindingEdgeBadge` gains `mark: '✕'` and `dashed`, drops the `未通过` text,
+    and keeps `invalid` for the amber styling.
+  - `web/src/pages/Topology.tsx` — `bindingEdgeHealth(entrypointHealth,
+    config.entrypoints)`; the label is `mark` + `text` (`✕`, `✕ 回退`, `回退`);
+    the dash follows `badge.dashed` and the amber follows `badge.invalid`; node
+    `dead` precedence, the traffic-label combination and the
+    re-decorate-in-place `selected` preservation are unchanged. Binding state
+    is a monitor-mode decoration: `App.handleSnapshot` stops pushing graph
+    state in edit mode and `Edit` mounts `Topology` with `metrics={null}` and
+    no `entrypointHealth`.
+  - `web/src/api/types.ts` — comments only: bindings are in priority order,
+    `index` is the configuration index, a probe-less binding need not be last.
+  - `web/src/locales/en-US.ts` — added the new drawer hint, the edge-panel
+    hint, the command hint and “This binding no longer exists.”; removed the
+    stale “must be last” hint, the probe toggle keys and the empty-command key.
+    `未通过` stays: it is still the entrypoint list and detail-panel state word
+    (`Entrypoints.tsx`, `entityParams.ts`), only the edge usage went away.
+  - `web/src/pages/Edit.test.tsx` — `entrypointBindingInputs` carry-over and
+    object identity, `withBindingProbe` set/replace/clear/unknown-target,
+    `probeFromForm`, the drawer renders no probe input, the edge panel shows the
+    route name and a `<textarea>` command.
+  - `web/src/pages/Edit.dom.test.tsx` — the drawer keeps every remaining probe
+    across reorder and removal, a new row gets none, the edge form saves
+    command/interval/timeout into the named binding, keeps every other binding
+    probe, removes the probe on an empty command (even with stale invalid
+    schedule text) and refuses an interval below 1s.
+  - `web/src/pages/Topology.test.tsx`, `web/src/pages/edges.test.tsx` — the five
+    edge shapes (probe-less dashed/neutral/unlabelled, failing probe solid amber
+    `✕`, probed fallback `✕ 回退`, probe-less fallback `回退`, eligible solid and
+    unlabelled), `dead` precedence, the traffic+badge label, `hasProbe` from
+    config, and the `selected` flag on re-decoration.
+  - `internal/gateway/bindingprobe.go` — the `add` doc comment now says the
+    binding appears in selection priority order (probed first), not
+    configuration order.
+  - `README.md` — the drag-connect sentence matches `drafts.ts` (a dragged
+    route is added without a probe and inserted before a trailing probe-less
+    binding, not appended); the monitor-mode sentence now describes the shapes
+    the console draws; the console table says the probe is edited on the edge.
+  - `AGENTS.md` — the health invariant no longer opens with “in configuration
+    order” before the priority order.
 - Tests/commands and results:
-- Review findings and fixes:
+  - RED against the previous implementation (implementation files stashed, new
+    tests kept): `cd web && npx vitest run src/pages/Edit.test.tsx
+    src/pages/Edit.dom.test.tsx src/pages/Topology.test.tsx
+    src/pages/edges.test.tsx` — 4 files failed, 27 tests failed / 79 passed
+    (missing helpers, probe inputs still in the drawer, no `hasProbe`, old
+    `未通过`/dashed badge rules).
+  - GREEN, same command: 4 files, 106 tests passed.
+  - Mutation checks that the new tests bite: dropping the probes of the other
+    bindings in `withBindingProbe` fails “keeps every other binding probe when
+    saving one”; ignoring `existing` in `entrypointBindingInputs` fails the
+    drawer round-trip, reorder, removal and new-row tests.
+  - `cd web && npm test` — 51 files, 476 tests passed.
+  - `cd web && npx tsc --noEmit` — clean.
+  - `cd web && npm run build` — built into `internal/admin/dist` (git-ignored,
+    not committed).
+  - `GOWORK=off go build ./...` — OK. `GOWORK=off go vet ./internal/gateway` —
+    OK. `GOWORK=off go test ./internal/gateway -count=1` — ok (11.1s).
+- Review findings and fixes (self-review of the unverified draft):
+  - The draft was re-read against the brief line by line; the helper split, the
+    `EntrypointEdgeForm` extraction, the badge rules and the test set all match,
+    so they were kept. Rewritten: the README paragraph (the new drag sentence
+    was garbled at the line wrap and the monitor sentence claimed an
+    “emphasised” binding the console does not draw), the
+    `EntrypointEdgeForm.save` validation (a nested
+    `.then/.catch` inside an `if` became an explicit `if (probe)` block), the
+    `entrypointBindingInputs` probe map (a `filter/map` over a possibly
+    undefined probe became a typed loop) and the `configuredProbes` doc
+    comment.
+  - Added the missing review-focus test: saving one edge probe leaves another
+    binding's probe untouched (the draft only proved a probe-less neighbour is
+    untouched).
+  - Probe objects are carried by reference on both surfaces, so an untouched
+    probe is byte-for-byte what the config held (`toBe` in the test) and a
+    probe-less binding never gains a `probe: undefined` key.
+  - `未通过` was kept in the locale after verifying it is still rendered by the
+    entrypoint list and the detail panel; deleting the key would have shown
+    Chinese on the English UI. The brief's Step 4 states that condition.
+  - The `entrypoint:<id>->unrouted` draft edge has no `->route:` marker, so the
+    panel shows `未连接` + “this edge cannot be edited directly” instead of a
+    fake missing-binding warning, and Disconnect stays disabled.
+  - The edge form drops stale schedule text when the command is blank, so
+    removing a probe cannot be blocked by an invalid interval left in the form.
 - Deferred items/limitations:
+  - `hasProbe` comes from the console config, so a binding the server no longer
+    builds shows as probe-less; the health payload deliberately stays unchanged.
+  - Binding-edge probe styling is monitor mode only (`Edit` renders `Topology`
+    with `metrics={null}` and no `entrypointHealth`, and `handleSnapshot`
+    freezes graph state in edit mode). Passing health through `Edit` would show
+    the badges while editing; not done because the design and README frame the
+    probe decoration as monitor state.
+  - `EntityParams` still prints the probe command read-only in the entrypoint
+    detail panel; editing it is only on the edge.
+  - No browser visual check: the edge styling is covered by Vitest and
+    `renderToStaticMarkup` only.

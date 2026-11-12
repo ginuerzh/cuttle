@@ -298,8 +298,8 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   sockets with 4401 on logout or session expiry, 4408 when an open session
   exceeds `wsMaxAge`, and close them on shutdown.
 - List endpoints return `[]` for empty results, never `null`.
-- `GET /api/entrypoints/health` returns one row per entrypoint with bindings, in
-  configuration order, and `[]` when none (a draft is absent): each
+- `GET /api/entrypoints/health` returns one row per entrypoint with bindings, and
+  `[]` when none (a draft is absent): each
   `bindings[]` row carries `index` (the configuration index), `routeId`,
   `routeName`, the marker-derived `eligible` and an optional `last` probe
   result, and the list is ordered by selection priority (probed bindings in

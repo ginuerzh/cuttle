@@ -124,12 +124,36 @@ describe('bindingEdgeHealth', () => {
       eligible: false,
       active: false,
       fallback: false,
+      hasProbe: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
       eligible: true,
       active: true,
       fallback: false,
+      hasProbe: false,
     });
+  });
+
+  it('derives hasProbe from the configured binding, not from health', () => {
+    const rows = bindingEdgeHealth(
+      [
+        health('e_0000000001', { routeId: 'r_0000000002', fallback: false }, [
+          ['r_0000000001', false],
+          ['r_0000000002', true],
+        ]),
+      ],
+      [
+        {
+          id: 'e_0000000001',
+          name: 'all',
+          match: ['*'],
+          routes: [{ route: 'r_0000000001', probe: { command: 'true' } }, { route: 'r_0000000002' }],
+        },
+      ],
+    );
+
+    expect(rows.get('entrypoint:e_0000000001->route:r_0000000001')?.hasProbe).toBe(true);
+    expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')?.hasProbe).toBe(false);
   });
 
   it('marks the fallback binding when nothing is eligible', () => {
@@ -144,11 +168,13 @@ describe('bindingEdgeHealth', () => {
       eligible: false,
       active: false,
       fallback: true,
+      hasProbe: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
       eligible: false,
       active: false,
       fallback: false,
+      hasProbe: false,
     });
   });
 
@@ -174,13 +200,21 @@ describe('bindingEdgeHealth', () => {
       target: 'route:r_0000000001',
       selected: true,
     } as Edge;
-    const badges = bindingEdgeHealth([
-      health('e_0000000001', { routeId: 'r_0000000002', fallback: false }, [['r_0000000001', false]]),
-    ]);
+    const badges = bindingEdgeHealth(
+      [health('e_0000000001', { routeId: 'r_0000000002', fallback: false }, [['r_0000000001', false]])],
+      [
+        {
+          id: 'e_0000000001',
+          name: 'all',
+          match: ['*'],
+          routes: [{ route: 'r_0000000001', probe: { command: 'true' } }],
+        },
+      ],
+    );
 
     const decorated = decorateEdge(selected, null, undefined, true, undefined, badges);
 
     expect(decorated.selected).toBe(true);
-    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('未通过');
+    expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('✕');
   });
 });

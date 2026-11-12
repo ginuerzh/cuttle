@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AddButtons, connectEntrypointEdge, disconnectEntrypointEdge, EdgeForm, EntrypointForm, entrypointBindingInputs, NodeForm, probeDurationMs, probeIntervalError, probeTimeoutError, ProviderForm, RouteForm } from './Edit';
+import { AddButtons, connectEntrypointEdge, disconnectEntrypointEdge, EdgeForm, EntrypointForm, entrypointBindingInputs, NodeForm, probeDurationMs, probeFromForm, probeIntervalError, probeTimeoutError, ProviderForm, RouteForm, withBindingProbe } from './Edit';
 import { setActiveLang } from '../i18n';
-import type { ConfigResponse, Entrypoint, Node, Provider, Route } from '../api/types';
+import type { ConfigResponse, Entrypoint, EntrypointRoute, Node, Provider, Route } from '../api/types';
 
 beforeEach(() => setActiveLang('zh-CN'));
 
@@ -126,29 +126,89 @@ describe('RouteForm', () => {
 });
 
 describe('entrypointBindingInputs', () => {
-  it('keeps the row order and maps a filled probe', () => {
-    expect(
-      entrypointBindingInputs([
-        { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
-        { route: 'r_0000000001' },
-      ]),
-    ).toEqual([
-      { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
-      { route: 'r_0000000001' },
+  const existing: EntrypointRoute[] = [
+    { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+    { route: 'r_0000000002' },
+  ];
+
+  it('keeps the row order and carries the probe each route already has', () => {
+    expect(entrypointBindingInputs([{ route: 'r_0000000002' }, { route: 'r_0000000001' }], existing)).toEqual([
+      { route: 'r_0000000002' },
+      { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
     ]);
   });
 
-  it('drops blank rows and a probe without a command', () => {
-    expect(entrypointBindingInputs([{ route: '' }, { route: 'r_0000000001', probe: { command: '  ' } }])).toEqual([
-      { route: 'r_0000000001' },
-    ]);
-    expect(entrypointBindingInputs(undefined)).toEqual([]);
+  it('keeps the probe object identity, so an untouched probe is never rewritten', () => {
+    const [binding] = entrypointBindingInputs([{ route: 'r_0000000001' }], existing);
+
+    expect(binding.probe).toBe(existing[0].probe);
   });
 
-  it('omits blank optional probe fields so the server applies its defaults', () => {
-    expect(entrypointBindingInputs([{ route: 'r_0000000001', probe: { command: ' true ', interval: '', timeout: '' } }])).toEqual([
-      { route: 'r_0000000001', probe: { command: 'true' } },
+  it('drops blank rows and gives a newly added route no probe', () => {
+    expect(entrypointBindingInputs([{ route: '' }, { route: 'r_0000000003' }], existing)).toEqual([
+      { route: 'r_0000000003' },
     ]);
+    expect(entrypointBindingInputs(undefined, existing)).toEqual([]);
+  });
+});
+
+describe('withBindingProbe', () => {
+  const entrypoints: Entrypoint[] = [
+    {
+      id: 'e_0000000001',
+      name: 'all',
+      match: ['*'],
+      routes: [{ route: 'r_0000000001', probe: { command: 'old' } }, { route: 'r_0000000002' }],
+    },
+    { id: 'e_0000000002', name: 'other', match: ['gpt-*'], routes: [{ route: 'r_0000000001' }] },
+  ];
+
+  it('sets a probe on one binding and leaves every other binding and probe alone', () => {
+    const next = withBindingProbe(entrypoints, 'e_0000000001', 'r_0000000002', { command: 'true', interval: '15s' });
+
+    expect(next[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'old' } },
+      { route: 'r_0000000002', probe: { command: 'true', interval: '15s' } },
+    ]);
+    expect(next[1]).toBe(entrypoints[1]);
+  });
+
+  it('replaces the probe of the named binding only', () => {
+    const next = withBindingProbe(entrypoints, 'e_0000000001', 'r_0000000001', { command: 'new', timeout: '2s' });
+
+    expect(next[0].routes[0]).toEqual({ route: 'r_0000000001', probe: { command: 'new', timeout: '2s' } });
+    expect(next[0].routes[1]).toEqual({ route: 'r_0000000002' });
+  });
+
+  it('removes the probe field when the probe is cleared', () => {
+    const [entrypoint] = withBindingProbe(entrypoints, 'e_0000000001', 'r_0000000001', undefined);
+
+    expect(entrypoint.routes[0]).toEqual({ route: 'r_0000000001' });
+    expect('probe' in entrypoint.routes[0]).toBe(false);
+  });
+
+  it('returns the same list when the entrypoint or binding is unknown', () => {
+    expect(withBindingProbe(entrypoints, 'e_9999999999', 'r_0000000001', { command: 'true' })).toBe(entrypoints);
+    expect(withBindingProbe(entrypoints, 'e_0000000001', 'r_9999999999', { command: 'true' })).toBe(entrypoints);
+  });
+});
+
+describe('probeFromForm', () => {
+  it('builds a probe from the filled edge form', () => {
+    expect(probeFromForm({ command: ' true ', interval: '15s', timeout: '3s' })).toEqual({
+      command: 'true',
+      interval: '15s',
+      timeout: '3s',
+    });
+  });
+
+  it('omits blank optional fields so the server applies its defaults', () => {
+    expect(probeFromForm({ command: 'true', interval: ' ', timeout: '' })).toEqual({ command: 'true' });
+  });
+
+  it('removes the probe when the command is blank', () => {
+    expect(probeFromForm({ command: '  ', interval: '15s' })).toBeUndefined();
+    expect(probeFromForm(undefined)).toBeUndefined();
   });
 });
 
@@ -194,7 +254,7 @@ describe('EntrypointForm bindings', () => {
     entrypoints: [],
   } as unknown as ConfigResponse;
 
-  it('renders one ordered row per binding with its probe command', () => {
+  it('renders one ordered row per binding and no probe inputs', () => {
     const entrypoint: Entrypoint = {
       id: 'e_0000000001',
       name: 'all',
@@ -209,11 +269,15 @@ describe('EntrypointForm bindings', () => {
     );
     expect(html.indexOf('primary')).toBeGreaterThan(-1);
     expect(html.indexOf('primary')).toBeLessThan(html.indexOf('backup'));
-    expect(html).toContain('curl -fsS http://127.0.0.1:9/ready');
-    expect(html).toContain('value="10s"');
-    expect(html).toContain('value="2s"');
     expect(html).toContain('添加路由绑定');
-    expect(html).toContain('添加探测命令（可选）');
+    // The probe moved to the topology edge, so the drawer shows neither the
+    // command nor its schedule nor the old toggle.
+    expect(html).not.toContain('placeholder="curl');
+    expect(html).not.toContain('placeholder="30s"');
+    expect(html).not.toContain('placeholder="5s"');
+    expect(html).not.toContain('添加探测命令（可选）');
+    expect(html).not.toContain('移除探测命令');
+    expect(html).not.toContain('curl -fsS http://127.0.0.1:9/ready');
   });
 
   it('translates every binding string', () => {
@@ -230,8 +294,6 @@ describe('EntrypointForm bindings', () => {
     setActiveLang('zh-CN');
     expect(html).toContain('Route bindings');
     expect(html).toContain('Add route binding');
-    expect(html).toContain('Probe command');
-    expect(html).toContain('Remove probe command');
     expect(html).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
@@ -320,7 +382,10 @@ describe('EdgeForm', () => {
   const config = {
     providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', keys: [] }],
     nodes: [{ id: 'n_0000000001', name: 'n', provider: 'p_0000000001', model: 'm1' }],
-    routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
+    routes: [
+      { id: 'r_0000000001', name: 'primary', nodes: [] },
+      { id: 'r_0000000002', name: 'backup', nodes: [] },
+    ],
     entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
   } as unknown as ConfigResponse;
 
@@ -329,6 +394,32 @@ describe('EdgeForm', () => {
       <EdgeForm id="entrypoint:e_0000000001->route:r_0000000001" config={config} onSaved={async () => undefined} />,
     );
     expect(html.replace(/\s+/g, '')).toContain('断开');
+  });
+
+  it('shows the route name and the probe editor of the binding it names', () => {
+    const probed = {
+      ...config,
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'e',
+          match: ['*'],
+          routes: [
+            { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '15s', timeout: '3s' } },
+            { route: 'r_0000000002' },
+          ],
+        },
+      ],
+    } as unknown as ConfigResponse;
+    const html = renderToStaticMarkup(
+      <EdgeForm id="entrypoint:e_0000000001->route:r_0000000001" config={probed} onSaved={async () => undefined} />,
+    );
+    expect(html).toContain('primary');
+    expect(html).toContain('探测命令');
+    expect(html).toContain('<textarea');
+    expect(html).toContain('curl -fsS http://127.0.0.1:9/ready');
+    expect(html).toContain('value="15s"');
+    expect(html).toContain('value="3s"');
   });
 
   it('can disconnect a node from its provider', () => {

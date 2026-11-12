@@ -107,8 +107,8 @@ func newProbeSet(routeName func(string) string, log logger.Logger) *probeSet {
 }
 
 // add registers one binding. A binding without a probe is registered with an
-// empty command: it never runs, always reports eligible, and still appears in
-// the health payload in configuration order.
+// empty command: it never runs, always reports eligible, and appears in the
+// health payload in selection priority order (probed bindings first).
 func (s *probeSet) add(e gwconfig.Entrypoint, b gwconfig.RouteBinding, index int, entries []*xhop.HopEntry, failTimeout time.Duration) {
 	if s == nil {
 		return
