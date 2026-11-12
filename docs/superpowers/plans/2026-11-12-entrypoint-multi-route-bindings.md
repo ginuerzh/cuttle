@@ -362,9 +362,8 @@ git commit -m "feat(gateway): switch route bindings with a command probe"
 
 **Implementation record (fill in after the task is complete)**
 - Date/status: 2026-11-12 / done.
-- Repository + commit: `cuttle` — `feat(gateway): switch route bindings with a
-  command probe`, recorded with its SHA in the follow-up docs commit (same
-  pattern as Task 1).
+- Repository + commit: `cuttle` — `7c98872f` `feat(gateway): switch route
+  bindings with a command probe`.
 - Files changed:
   - `internal/gateway/bindingprobe.go` (new): `probeSet` (`add`, `Start`,
     `Stop`, `probeOnce`, `Snapshot`), `bindingProbe`, `probeState`, the
