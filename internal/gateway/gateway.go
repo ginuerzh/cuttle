@@ -158,6 +158,10 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		listener.LoggerOption(log),
 	)
 	if err := ln.Init(xmetadata.NewMetadata(nil)); err != nil {
+		// apply already built the data plane and started its probe runner. Close
+		// it so a failed New does not leave probe goroutines forking commands
+		// against a hop that nobody serves.
+		g.Close()
 		return nil, err
 	}
 	g.ln = ln

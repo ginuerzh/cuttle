@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	xs "github.com/go-gost/x/selector"
 
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
+	"github.com/ginuerzh/cuttle/internal/health"
 )
 
 // probeEntries builds the variant entries of one binding. The probe runner only
@@ -36,6 +39,64 @@ func testProbeSet() *probeSet {
 // how the runner tests count invocations.
 func probeCommand(path string) string {
 	return "echo run >> " + strconv.Quote(path)
+}
+
+// probeChildCommand builds a probe that starts one child process and publishes
+// its pid, then blocks. A test can therefore prove that a timeout or a Stop
+// kills the whole process group instead of leaving the child behind.
+func probeChildCommand(pidPath string) string {
+	return "sleep 30 & echo $! > " + strconv.Quote(pidPath) + "; wait"
+}
+
+// waitProbeChild waits for a probe to publish the pid of its child process.
+func waitProbeChild(t *testing.T, path string) int {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if b, err := os.ReadFile(path); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+				return pid
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s was never written", path)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// waitProbeProcessGone waits until pid no longer runs. A child killed together
+// with its group can linger as a zombie when nothing reaps it, so a zombie
+// counts as gone: it can no longer run.
+func waitProbeProcessGone(t *testing.T, pid int) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for probeProcessAlive(pid) {
+		if time.Now().After(deadline) {
+			t.Fatalf("probe child %d is still running after the probe stopped", pid)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// probeProcessAlive reports whether pid still runs. Linux exposes the process
+// state in /proc, where a zombie is dead for this purpose; elsewhere the signal-0
+// probe suffices because the platform reaps orphans.
+func probeProcessAlive(pid int) bool {
+	if b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat"); err == nil {
+		// The state is the field after the parenthesized command name.
+		if i := strings.LastIndexByte(string(b), ')'); i >= 0 && i+2 < len(b) {
+			return b[i+2] != 'Z'
+		}
+		return true
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return p.Signal(syscall.Signal(0)) == nil
 }
 
 func waitForFile(t *testing.T, path string) {
@@ -128,14 +189,15 @@ func TestProbeRunnerEnvironment(t *testing.T) {
 
 func TestProbeRunnerTimeout(t *testing.T) {
 	entries := probeEntries(1)
+	pidPath := filepath.Join(t.TempDir(), "child.pid")
 
 	set := testProbeSet()
 	set.add(
 		gwconfig.Entrypoint{ID: "e_0000000001", Name: "all"},
 		gwconfig.RouteBinding{Route: "r_0000000001", Probe: &gwconfig.Probe{
-			Command:  "sleep 5",
+			Command:  probeChildCommand(pidPath),
 			Interval: gwconfig.Duration(2 * time.Second),
-			Timeout:  gwconfig.Duration(100 * time.Millisecond),
+			Timeout:  gwconfig.Duration(300 * time.Millisecond),
 		}},
 		0, entries, 10*time.Second,
 	)
@@ -143,10 +205,15 @@ func TestProbeRunnerTimeout(t *testing.T) {
 	start := time.Now()
 	set.probeOnce(context.Background())
 	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("timed-out probe took %s, want about the 100ms timeout", elapsed)
+		t.Fatalf("timed-out probe took %s, want about the 300ms timeout", elapsed)
 	}
 	if !xs.IsFailed(entries[0], 1, 10*time.Second) {
 		t.Fatal("a timed-out probe did not mark its binding ineligible")
+	}
+	// The timeout must reach the shell's children too, or a pipeline such as
+	// `curl … | grep …` would keep running after the probe gave up.
+	if probeProcessGroups {
+		waitProbeProcessGone(t, waitProbeChild(t, pidPath))
 	}
 
 	snap := set.Snapshot()
@@ -184,13 +251,13 @@ func TestProbeRunnerOncePerBinding(t *testing.T) {
 }
 
 func TestProbeRunnerStopCancels(t *testing.T) {
-	started := filepath.Join(t.TempDir(), "started")
+	pidPath := filepath.Join(t.TempDir(), "child.pid")
 
 	set := testProbeSet()
 	set.add(
 		gwconfig.Entrypoint{ID: "e_0000000001", Name: "all"},
 		gwconfig.RouteBinding{Route: "r_0000000001", Probe: &gwconfig.Probe{
-			Command:  "touch " + strconv.Quote(started) + "; sleep 30",
+			Command:  probeChildCommand(pidPath),
 			Interval: gwconfig.Duration(2 * time.Second),
 			Timeout:  gwconfig.Duration(time.Minute),
 		}},
@@ -198,7 +265,7 @@ func TestProbeRunnerStopCancels(t *testing.T) {
 	)
 
 	set.Start(context.Background())
-	waitForFile(t, started)
+	pid := waitProbeChild(t, pidPath)
 
 	done := make(chan struct{})
 	go func() {
@@ -209,6 +276,12 @@ func TestProbeRunnerStopCancels(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Stop did not return within 2s")
+	}
+
+	// Stop must kill the whole process group: stopping only the shell would
+	// leave the probe's children running for as long as they please.
+	if probeProcessGroups {
+		waitProbeProcessGone(t, pid)
 	}
 
 	// Stop waits for the goroutine, so the canceled run must not have recorded
@@ -357,9 +430,107 @@ func TestReloadReplacesProbeSet(t *testing.T) {
 	}
 }
 
+// assertSnapshotConsistent checks the invariant the switching tests rely on: a
+// snapshot never names an active binding that it also reports ineligible, and a
+// fallback means no binding is eligible.
+func assertSnapshotConsistent(t *testing.T, snap []health.Entrypoint) {
+	t.Helper()
+
+	if len(snap) != 1 || len(snap[0].Bindings) != 2 {
+		t.Fatalf("snapshot = %+v, want one entrypoint with two bindings", snap)
+	}
+	ep := snap[0]
+	active := -1
+	for i, b := range ep.Bindings {
+		if b.RouteID == ep.Active.RouteID {
+			active = i
+			break
+		}
+	}
+	if active < 0 {
+		t.Fatalf("active route %q is not one of the bindings: %+v", ep.Active.RouteID, ep.Bindings)
+	}
+	if !ep.Active.Fallback && !ep.Bindings[active].Eligible {
+		t.Fatalf("active binding %d is reported ineligible: %+v", active, ep)
+	}
+	if ep.Active.Fallback {
+		for _, b := range ep.Bindings {
+			if b.Eligible {
+				t.Fatalf("binding %d is eligible but the payload fell back: %+v", b.Index, ep)
+			}
+		}
+	}
+}
+
+// TestProbeSnapshotActiveMatchesEligibility reads the health payload while the
+// probed binding keeps flipping. Eligibility and the active binding must come
+// from the same marker state: otherwise a request sent right after a snapshot
+// could reach a binding that the snapshot itself calls ineligible.
+func TestProbeSnapshotActiveMatchesEligibility(t *testing.T) {
+	flag := filepath.Join(t.TempDir(), "flag")
+
+	set := testProbeSet()
+	e := gwconfig.Entrypoint{ID: "e_0000000001", Name: "all"}
+	set.add(e, gwconfig.RouteBinding{Route: "r_0000000001", Probe: &gwconfig.Probe{
+		Command:  "test -f " + strconv.Quote(flag),
+		Interval: gwconfig.Duration(2 * time.Second),
+		Timeout:  gwconfig.Duration(time.Second),
+	}}, 0, probeEntries(2), 10*time.Second)
+	set.add(e, gwconfig.RouteBinding{Route: "r_0000000002"}, 1, probeEntries(2), 10*time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			if i%2 == 0 {
+				_ = os.Remove(flag)
+			} else {
+				_ = os.WriteFile(flag, nil, 0o600)
+			}
+			set.probeOnce(context.Background())
+		}
+	}()
+
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		assertSnapshotConsistent(t, set.Snapshot())
+	}
+}
+
 func TestEntrypointHealthNilSafe(t *testing.T) {
 	var gw Gateway
 	if got := gw.EntrypointHealth(); got != nil {
 		t.Fatalf("EntrypointHealth = %+v, want nil without a data plane", got)
+	}
+}
+
+// TestNewFailureStopsProbes covers a New that fails after apply already started
+// the probe runner: the failed build must not leave goroutines forking probe
+// commands for a hop nobody serves.
+func TestNewFailureStopsProbes(t *testing.T) {
+	counter := filepath.Join(t.TempDir(), "count")
+
+	// Hold the port so listener init fails after apply started the probes.
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+
+	cfg := probeReloadConfig(t, counter)
+	cfg.Gateway.Listen = busy.Addr().String()
+
+	if _, err := New(cfg, xlogger.Nop()); err == nil {
+		t.Fatal("New succeeded on an occupied listen address")
+	}
+
+	before := countLines(t, counter)
+	time.Sleep(150 * time.Millisecond)
+	if after := countLines(t, counter); after != before {
+		t.Fatalf("probes kept running after New failed: %d -> %d runs", before, after)
 	}
 }

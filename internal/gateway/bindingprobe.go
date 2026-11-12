@@ -205,10 +205,11 @@ func (s *probeSet) probeOnce(ctx context.Context) {
 }
 
 // Snapshot reports binding health grouped by entrypoint in configuration order.
-// Eligibility comes from the last probe verdict; the active binding comes from
-// the markers with the same xs.IsFailed rule the inner hop group applies, so
-// there is one verdict source. When no binding survives, the first one is
-// active with Fallback set, which is exactly what x's last resort serves.
+// Both Eligible and the active binding come from the entry markers with the same
+// xs.IsFailed rule the inner hop group applies, so the payload can never name an
+// active binding that it also reports ineligible. When no binding survives, the
+// first one is active with Fallback set, which is exactly what x's last resort
+// serves.
 func (s *probeSet) Snapshot() []health.Entrypoint {
 	if s == nil {
 		return nil
@@ -228,18 +229,22 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 
 		active, fallback := 0, true
 		for i, p := range g.probes {
+			// Read the markers once per binding: Eligible and the active
+			// candidate must come from the same read, or a probe landing between
+			// two reads could make the payload contradict itself.
+			failed := p.failed()
 			hb := health.Binding{
 				Index:     p.index,
 				RouteID:   p.routeID,
 				RouteName: p.routeName,
-				Eligible:  p.eligible(),
+				Eligible:  !failed,
 			}
 			if last := p.last(); last != nil {
 				hb.Last = last
 			}
 			he.Bindings = append(he.Bindings, hb)
 
-			if fallback && !p.failed() {
+			if fallback && !failed {
 				active, fallback = i, false
 			}
 		}
@@ -264,14 +269,6 @@ func (s *probeSet) groups() []probeGroup {
 	return out
 }
 
-// eligible is the raw probe verdict. A binding without a probe, or one that has
-// not probed yet, is eligible.
-func (p *bindingProbe) eligible() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return !p.state.ran || p.state.ok
-}
-
 func (p *bindingProbe) last() *health.Probe {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -288,8 +285,10 @@ func (p *bindingProbe) last() *health.Probe {
 }
 
 // failed reports whether every entry of the binding is currently marked failed.
-// The probe marks or resets all variants together, so this matches the inner
-// group's FailFilter verdict.
+// This is the single eligibility source for both the health payload and x's
+// inner binding group: the probe marks or resets all variants together, so it
+// matches the group's FailFilter verdict, and a binding that never probed (or
+// has no probe) has no marker set and reads as eligible.
 func (p *bindingProbe) failed() bool {
 	if len(p.entries) == 0 {
 		return false
@@ -338,6 +337,9 @@ func (p *bindingProbe) run(ctx context.Context) {
 		"CUTTLE_BINDING_INDEX="+strconv.Itoa(p.index),
 	)
 	cmd.WaitDelay = probeWaitDelay
+	// A probe is a shell that may start a pipeline: cancelling the timeout must
+	// kill every process the command spawned, not just the shell.
+	isolateProbeProcess(cmd)
 	var stderr cappedBuffer
 	stderr.max = probeStderrLimit
 	cmd.Stderr = &stderr
@@ -372,11 +374,10 @@ func (p *bindingProbe) run(ctx context.Context) {
 		}
 	}
 
-	p.mu.Lock()
-	prev := p.state
-	p.state = state
-	p.mu.Unlock()
-
+	// Apply the verdict to the markers first: they are the single source of
+	// truth for both routing and the health payload, so publishing the state
+	// first would let a snapshot report Eligible=false for a binding whose
+	// active row still names it.
 	for _, e := range p.entries {
 		if e == nil {
 			continue
@@ -387,6 +388,11 @@ func (p *bindingProbe) run(ctx context.Context) {
 		}
 		e.Marker().Mark()
 	}
+
+	p.mu.Lock()
+	prev := p.state
+	p.state = state
+	p.mu.Unlock()
 
 	// The command and its full output never reach the log: a probe command can
 	// carry credentials. Debug per run, info only on a verdict change.

@@ -361,23 +361,40 @@ git commit -m "feat(gateway): switch route bindings with a command probe"
 ```
 
 **Implementation record (fill in after the task is complete)**
-- Date/status: 2026-11-12 / done.
+- Date/status: 2026-11-12 / done; review fix round 1 done the same day.
 - Repository + commit: `cuttle` — `7c98872f` `feat(gateway): switch route
-  bindings with a command probe`.
+  bindings with a command probe`, `ead2fa62` `docs: record task 2 commit`.
+  Review fix round 1 is one commit carrying this record on
+  `feat/entrypoint-bindings`; its SHA is recorded in
+  `.superpowers/sdd/2026-11-12-entrypoint-multi-route-bindings/task-2-report.md`
+  under "Fix round 1" (a record cannot carry the SHA of the commit that contains
+  it).
 - Files changed:
   - `internal/gateway/bindingprobe.go` (new): `probeSet` (`add`, `Start`,
     `Stop`, `probeOnce`, `Snapshot`), `bindingProbe`, `probeState`, the
     `shellCmd` (`sh -c`, `cmd /C`) and `cappedBuffer` (1 KiB stderr) helpers.
     One goroutine per probed binding; it runs immediately and then once per
-    interval, `exec.CommandContext` with the probe timeout, `WaitDelay` so a
-    shell's grandchild cannot block the runner, and
+    interval, `exec.CommandContext` with the probe timeout, `WaitDelay`, and
     `CUTTLE_ENTRYPOINT_ID/NAME`, `CUTTLE_ROUTE_ID/NAME`,
     `CUTTLE_BINDING_INDEX` in the environment. Success resets, failure marks
     every variant `*xhop.HopEntry` of that binding; node `failCodes` markers and
     the stats store are untouched. Debug per run, info only on a verdict
-    transition, never the command or its output.
+    transition, never the command or its output. Fix round 1: the markers are
+    written before `probeState` is published, and `Snapshot` derives `Eligible`
+    and `Active` from one marker read per binding (`!p.failed()`); the process
+    group helper comes from the platform pair below.
+  - `internal/gateway/bindingprobe_posix.go` (new, `//go:build unix`): starts a
+    probe in its own process group (`SysProcAttr{Setpgid: true}`) and overrides
+    `cmd.Cancel` to kill the whole group, so a timeout or `Stop` also ends a
+    probe's pipeline; exports the `probeProcessGroups` constant the tests use.
+  - `internal/gateway/bindingprobe_other.go` (new, `//go:build !unix`): no-op
+    `isolateProbeProcess` and `probeProcessGroups = false`; `cmd /C` stays the
+    Windows shell.
   - `internal/gateway/bindingprobe_test.go` (new): the seven tests named in the
-    brief plus `TestEntrypointHealthNilSafe`.
+    brief plus `TestEntrypointHealthNilSafe`, and in fix round 1
+    `TestProbeSnapshotActiveMatchesEligibility` (payload invariant under a
+    flipping probe), `TestNewFailureStopsProbes` (no probe goroutines after a
+    failed `New`) and child-process assertions in the timeout and stop tests.
   - `internal/gateway/probe_e2e_test.go` (new):
     `TestEntrypointSwitchesRouteByProbe` and the Task 1 review follow-up
     `TestIneligibleBindingDoesNotFallThrough`.
@@ -388,6 +405,8 @@ git commit -m "feat(gateway): switch route bindings with a command probe"
     index and registered with one `add` call per entrypoint binding.
   - `internal/gateway/gateway.go`: `Gateway.probes`, start of the new set and
     stop of the old one in `apply`, stop in `Close`, and `EntrypointHealth()`.
+    Fix round 1: a `New` that fails at listener init calls `g.Close()`, so the
+    already-started probe runner is stopped.
   - `internal/gateway/bindings_test.go`: Task 1 review finding 1 — the fixture
     now carries a probe on the first binding and the probe-less binding last, so
     it passes `config.Validate`; `TestBindingFixtureIsSchemaValid` locks that in.
@@ -398,6 +417,12 @@ git commit -m "feat(gateway): switch route bindings with a command probe"
   - The same set with `-count=5 -race` — PASS, no flakes.
   - `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` — PASS.
   - `GOWORK=off go test ./internal/gateway -run TestBinding -count=1` — PASS.
+  - Fix round 1: the same `-count=5 -race` set — PASS (`ok ... 4.263s`, no stray
+    probe processes afterwards); `GOWORK=off go test ./internal/health
+    ./internal/gateway -count=1` — PASS; `GOWORK=off go build ./... && GOWORK=off
+    go vet ./... && GOWORK=off go test ./... -count=1` — PASS; `gofmt -l` clean.
+    Each new regression test was run against the pre-fix code and failed there
+    (see the report for the outputs).
 - Review findings and fixes:
   - Task 1 finding 1 (schema-invalid fixture): fixed as described above. A
     literal `Interval: 1s` cannot satisfy `Validate` (the timeout must be
@@ -416,11 +441,28 @@ git commit -m "feat(gateway): switch route bindings with a command probe"
     file exists", which contradicts its own "create the flag (r_1 ineligible)"
     step; the test uses `test ! -f <flag>` so the flag's presence makes the
     binding ineligible.
+  - Fix round 1, finding 1 (verdict published before the markers): markers are
+    now written first and `probeState` is published last, and `Snapshot` derives
+    `Eligible` and `Active` from the same single marker read per binding
+    (`!failed`), so the payload can never name an active binding it also reports
+    ineligible and the first request after a wait on `Eligible` cannot reach the
+    old binding. `TestProbeSnapshotActiveMatchesEligibility` guards it and fails
+    on the pre-fix code.
+  - Fix round 1, finding 3 (probe goroutines outliving a failed `New`): the
+    listener-init error path calls `g.Close()`.
+    `TestNewFailureStopsProbes` fails on the pre-fix code (0 -> 8 probe runs
+    after `New` returned an error).
+  - Fix round 1, finding 4 (timeout killed only the shell): `isolateProbeProcess`
+    runs each probe in its own process group and kills the group on timeout and
+    on `Stop`; the timeout and stop tests publish the child pid and assert it is
+    gone, and both fail when the group kill is reverted.
 - Deferred items/limitations: the admin endpoint, the events snapshot field and
   the console (tasks 3-6) are not wired yet; `Gateway.EntrypointHealth()` is the
   only new entry point. Probes start during `apply`, so they already run before
   `Gateway.Start` binds the listener, which is what the first-request test
   relies on. Bindings that bypass `config.Load` get the 30s/5s probe defaults.
+  Process-group kill is POSIX-only; the Windows path keeps `cmd /C` and the
+  child assertions are skipped there.
 
 ---
 

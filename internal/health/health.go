@@ -47,8 +47,9 @@ type ActiveBinding struct {
 
 // Binding is one entrypoint route binding. Index is its position in the
 // configured list and RouteID/RouteName name the bound route. Eligible is the
-// last probe verdict; a binding that has no probe or has not probed yet is
-// eligible. Last is the last probe result, absent until the first run.
+// binding's marker state, read with the same rule the inner binding group uses,
+// so it always agrees with Active; a binding that has no probe or has not probed
+// yet is eligible. Last is the last probe result, absent until the first run.
 type Binding struct {
 	Index     int    `json:"index"`
 	RouteID   string `json:"routeId"`
