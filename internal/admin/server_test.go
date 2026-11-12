@@ -25,13 +25,14 @@ import (
 )
 
 type recordingReloader struct {
-	cfg      *config.Config
-	err      error
-	calls    int
-	attempts int
-	store    *stats.Store
-	capture  *capture.Manager
-	health   []health.Route
+	cfg         *config.Config
+	err         error
+	calls       int
+	attempts    int
+	store       *stats.Store
+	capture     *capture.Manager
+	health      []health.Route
+	entrypoints []health.Entrypoint
 }
 
 func (r *recordingReloader) Stats() *stats.Store { return r.store }
@@ -39,6 +40,8 @@ func (r *recordingReloader) Stats() *stats.Store { return r.store }
 func (r *recordingReloader) Capture() *capture.Manager { return r.capture }
 
 func (r *recordingReloader) RouteHealth() []health.Route { return r.health }
+
+func (r *recordingReloader) EntrypointHealth() []health.Entrypoint { return r.entrypoints }
 
 func (r *recordingReloader) Reload(c *config.Config) error {
 	r.attempts++

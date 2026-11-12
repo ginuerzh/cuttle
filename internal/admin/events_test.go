@@ -19,12 +19,13 @@ import (
 )
 
 type eventSnapshot struct {
-	Type         string             `json:"type"`
-	Since        string             `json:"since"`
-	To           string             `json:"to"`
-	Metrics      stats.GraphMetrics `json:"metrics"`
-	Health       []health.Route     `json:"health"`
-	AuthFailures *authfail.Snapshot `json:"authFailures"`
+	Type             string              `json:"type"`
+	Since            string              `json:"since"`
+	To               string              `json:"to"`
+	Metrics          stats.GraphMetrics  `json:"metrics"`
+	Health           []health.Route      `json:"health"`
+	EntrypointHealth []health.Entrypoint `json:"entrypointHealth"`
+	AuthFailures     *authfail.Snapshot  `json:"authFailures"`
 }
 
 func newEventsAdmin(t *testing.T) (*Server, *recordingReloader, *httptest.Server) {
@@ -114,6 +115,35 @@ func TestEventsCarriesRouteHealth(t *testing.T) {
 	snap := readSnapshot(t, conn)
 	if len(snap.Health) != 1 || !snap.Health[0].Nodes[0].Dead {
 		t.Fatalf("health = %+v", snap.Health)
+	}
+}
+
+func TestSnapshotCarriesEntrypointHealth(t *testing.T) {
+	_, rel, ts := newEventsAdmin(t)
+	rel.entrypoints = []health.Entrypoint{{
+		ID:     "e_0000000001",
+		Name:   "fast",
+		Active: health.ActiveBinding{RouteID: "r_0000000001"},
+		Bindings: []health.Binding{
+			{Index: 0, RouteID: "r_0000000001", RouteName: "primary", Eligible: true},
+			{Index: 1, RouteID: "r_0000000002", RouteName: "backup", Eligible: false},
+		},
+	}}
+	client, _ := login(t, ts.URL)
+	conn, _, err := dialEvents(t, ts.URL, client.Jar, "?range=1h", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := readSnapshot(t, conn)
+	if len(snap.EntrypointHealth) != 1 {
+		t.Fatalf("entrypoint health = %+v, want 1", snap.EntrypointHealth)
+	}
+	ep := snap.EntrypointHealth[0]
+	if ep.ID != "e_0000000001" || ep.Name != "fast" || ep.Active.RouteID != "r_0000000001" {
+		t.Fatalf("entrypoint health = %+v", ep)
+	}
+	if len(ep.Bindings) != 2 || !ep.Bindings[0].Eligible || ep.Bindings[1].Eligible {
+		t.Fatalf("bindings = %+v", ep.Bindings)
 	}
 }
 

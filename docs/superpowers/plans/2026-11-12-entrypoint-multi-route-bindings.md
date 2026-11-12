@@ -479,7 +479,7 @@ git commit -m "feat(gateway): switch route bindings with a command probe"
 - Consumes: `health.Entrypoint`, `probeSet.Snapshot()` and `Gateway.EntrypointHealth()` from Task 2.
 - Produces: `GET /api/entrypoints/health` returning `[]health.Entrypoint` (never `null`); `GET /api/events` snapshot field `entrypointHealth`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // internal/admin/entrypoint_health_test.go
@@ -493,23 +493,23 @@ func TestEntrypointHealthDraftEntrypoint(t *testing.T)        // no bindings -> 
 func TestSnapshotCarriesEntrypointHealth(t *testing.T)        // snapshot JSON has the field
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestEntrypointHealth|TestSnapshotCarriesEntrypointHealth' -count=1`
 Expected: FAIL (404 or missing field).
 
-- [ ] **Step 3: Implement the endpoint and the snapshot field**
+- [x] **Step 3: Implement the endpoint and the snapshot field**
 
 - `admin.Server`: `entrypointHealth func() []health.Entrypoint`; wire from the router in `New` the same way as `routeHealth`; `api.HandleFunc("GET /api/entrypoints/health", s.handleEntrypointHealth)`.
 - `handleEntrypointHealth`: nil function → `writeJSON(w, 200, []health.Entrypoint{})`.
 - `handlers_events.go` snapshot struct: `EntrypointHealth []health.Entrypoint \`json:"entrypointHealth,omitempty"\``, filled from the same function.
 
-- [ ] **Step 4: Run the admin tests and the full gate**
+- [x] **Step 4: Run the admin tests and the full gate**
 
 Run: `GOWORK=off go test ./internal/admin -count=1 && GOWORK=off go test ./... -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/admin
@@ -517,12 +517,55 @@ git commit -m "feat(admin): expose entrypoint binding health"
 ```
 
 **Implementation record (fill in after the task is complete)**
-- Date/status:
-- Repository + commit:
+- Date/status: 2026-11-12 / done. HTTP surface only: the data plane's
+  `Gateway.EntrypointHealth()` is consumed, not changed.
+- Repository + commit: `cuttle` — see the follow-up docs commit that records
+  this SHA (`feat(admin): expose entrypoint binding health`); the code and this
+  record share that commit, so the SHA cannot be written here.
 - Files changed:
+  - `internal/admin/server.go`: `entrypointHealth func() []health.Entrypoint`
+    field, wired in `New` from the reloader's `EntrypointHealth()` when it
+    implements it, and `GET /api/entrypoints/health` registered inside the
+    authenticated `api` mux.
+  - `internal/admin/handlers.go`: `handleEntrypointHealth`; a nil function and a
+    nil slice both render `[]health.Entrypoint{}`.
+  - `internal/admin/handlers_events.go`: `eventMessage.EntrypointHealth
+    []health.Entrypoint \`json:"entrypointHealth,omitempty"\`` filled from
+    `currentEntrypointHealth()` on the first snapshot and on every tick.
+  - `internal/admin/entrypoint_health_test.go` (new): auth, payload shape and
+    draft tests.
+  - `internal/admin/events_test.go`: `eventSnapshot` carries the field;
+    `TestSnapshotCarriesEntrypointHealth`.
+  - `internal/admin/server_test.go`: `recordingReloader.entrypoints` plus its
+    `EntrypointHealth()` method, so the existing test server can expose binding
+    health. This test-support file is not in the brief's file list.
 - Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+  - RED: `GOWORK=off go test ./internal/admin -run
+    'TestEntrypointHealth|TestSnapshotCarriesEntrypointHealth' -count=1` —
+    `TestEntrypointHealthShape` and `TestEntrypointHealthDraftEntrypoint` got
+    `404 page not found`, and `TestSnapshotCarriesEntrypointHealth` read
+    `entrypoint health = [], want 1`. The auth test already passed because
+    `/api/` is guarded before route matching; it is a regression guard.
+  - GREEN: the same command — `ok github.com/ginuerzh/cuttle/internal/admin
+    0.369s`.
+  - `GOWORK=off go test ./internal/admin -count=1` — `ok ... 16.857s`.
+  - `GOWORK=off go build ./... && GOWORK=off go vet ./...` — clean.
+  - `GOWORK=off go test ./... -count=1` — PASS (admin 19.653s, gateway 19.336s,
+    stats 29.279s, every other package ok).
+- Review findings and fixes: none blocking. The shape test decodes a
+  test-local payload struct instead of `health.Entrypoint`, so it pins the JSON
+  names (`entrypointId`, `entrypointName`, `active.routeId`,
+  `active.fallback`, `bindings[].index/routeId/routeName/eligible`,
+  `last.at/ok/exitCode/latencyMs/error`) rather than the Go field names, and
+  asserts binding order, `eligible=false` with `last.exitCode=3`,
+  `active.routeId` = the first binding and `active.fallback=true`.
+- Deferred items/limitations: the console types, graph edges and panels
+  (tasks 4-5) and the README/AGENTS documentation (task 6) do not know these
+  fields yet. `entrypointHealth` is omitted from the events snapshot when the
+  data plane reports nothing, per the brief's `omitempty`; the REST endpoint
+  always returns an array. Draft entrypoints are absent from the list by design
+  (no bindings, no probe runner), so the payload cannot show them as `[]`
+  bindings.
 
 ---
 

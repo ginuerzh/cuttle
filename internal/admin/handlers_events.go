@@ -24,13 +24,16 @@ const (
 )
 
 type eventMessage struct {
-	Type         string              `json:"type"`
-	Since        string              `json:"since,omitempty"`
-	To           string              `json:"to,omitempty"`
-	Metrics      *stats.GraphMetrics `json:"metrics,omitempty"`
-	Health       []health.Route      `json:"health,omitempty"`
-	AuthFailures *authfail.Snapshot  `json:"authFailures,omitempty"`
-	Error        string              `json:"error,omitempty"`
+	Type    string              `json:"type"`
+	Since   string              `json:"since,omitempty"`
+	To      string              `json:"to,omitempty"`
+	Metrics *stats.GraphMetrics `json:"metrics,omitempty"`
+	Health  []health.Route      `json:"health,omitempty"`
+	// EntrypointHealth is the binding health of the current build. It is
+	// omitted when the data plane exposes none.
+	EntrypointHealth []health.Entrypoint `json:"entrypointHealth,omitempty"`
+	AuthFailures     *authfail.Snapshot  `json:"authFailures,omitempty"`
+	Error            string              `json:"error,omitempty"`
 }
 
 // authFailureSnapshot snapshots the optional tracker; nil keeps the field out
@@ -57,6 +60,15 @@ func (s *Server) currentRouteHealth() []health.Route {
 		return nil
 	}
 	return s.routeHealth()
+}
+
+// currentEntrypointHealth snapshots the binding health; nil keeps the field out
+// of the events payload when the data plane exposes none.
+func (s *Server) currentEntrypointHealth() []health.Entrypoint {
+	if s.entrypointHealth == nil {
+		return nil
+	}
+	return s.entrypointHealth()
 }
 
 type wsClient struct {
@@ -142,12 +154,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	prev := agg.Metrics(cfg.ResolveEntrypointID, cfg.TopologyIncludes, stats.GraphMetrics{}, true)
 	lastPct := time.Now()
 	if err := writeEvent(client, eventMessage{
-		Type:         "snapshot",
-		Since:        since.UTC().Format(time.RFC3339),
-		To:           now.UTC().Format(time.RFC3339),
-		Metrics:      &prev,
-		Health:       s.currentRouteHealth(),
-		AuthFailures: s.authFailureSnapshot(),
+		Type:             "snapshot",
+		Since:            since.UTC().Format(time.RFC3339),
+		To:               now.UTC().Format(time.RFC3339),
+		Metrics:          &prev,
+		Health:           s.currentRouteHealth(),
+		EntrypointHealth: s.currentEntrypointHealth(),
+		AuthFailures:     s.authFailureSnapshot(),
 	}); err != nil {
 		return
 	}
@@ -220,12 +233,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			prev = metrics
 			if err := writeEvent(client, eventMessage{
-				Type:         "snapshot",
-				Since:        since.UTC().Format(time.RFC3339),
-				To:           now.UTC().Format(time.RFC3339),
-				Metrics:      &metrics,
-				Health:       s.currentRouteHealth(),
-				AuthFailures: s.authFailureSnapshot(),
+				Type:             "snapshot",
+				Since:            since.UTC().Format(time.RFC3339),
+				To:               now.UTC().Format(time.RFC3339),
+				Metrics:          &metrics,
+				Health:           s.currentRouteHealth(),
+				EntrypointHealth: s.currentEntrypointHealth(),
+				AuthFailures:     s.authFailureSnapshot(),
 			}); err != nil {
 				return
 			}

@@ -49,6 +49,9 @@ type Server struct {
 	capture      *capture.Manager
 	authFailures *authfail.Tracker
 	routeHealth  func() []health.Route
+	// entrypointHealth reports the current build's binding health, ordered by
+	// entrypoint declaration and, inside an entrypoint, by binding order.
+	entrypointHealth func() []health.Entrypoint
 	// migrationError reports the stats identity migration failure, if any.
 	migrationError func() string
 
@@ -108,6 +111,11 @@ func New(cfgPath string, cfg *config.Config, r Reloader, log logger.Logger) *Ser
 	}
 	if hp, ok := r.(interface{ RouteHealth() []health.Route }); ok {
 		s.routeHealth = hp.RouteHealth
+	}
+	if ep, ok := r.(interface {
+		EntrypointHealth() []health.Entrypoint
+	}); ok {
+		s.entrypointHealth = ep.EntrypointHealth
 	}
 	if af, ok := r.(interface{ AuthFailures() *authfail.Tracker }); ok {
 		s.authFailures = af.AuthFailures()
@@ -174,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("PUT /api/routes/{id}", s.handleUpdateRoute)
 	api.HandleFunc("DELETE /api/routes/{id}", s.handleDeleteRoute)
 	api.HandleFunc("GET /api/entrypoints", s.handleGetEntrypoints)
+	api.HandleFunc("GET /api/entrypoints/health", s.handleEntrypointHealth)
 	api.HandleFunc("PUT /api/entrypoints", s.handlePutEntrypoints)
 	api.HandleFunc("GET /api/gateway-keys", s.handleListGatewayKeys)
 	api.HandleFunc("POST /api/gateway-keys", s.handleCreateGatewayKey)

@@ -842,6 +842,18 @@ func (s *Server) handleRouteHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, nonNilSlice(s.routeHealth()))
 }
 
+func (s *Server) handleEntrypointHealth(w http.ResponseWriter, r *http.Request) {
+	if s.entrypointHealth == nil {
+		writeJSON(w, http.StatusOK, []health.Entrypoint{})
+		return
+	}
+	// Already id-bearing: the payload carries entrypoint and route ids beside
+	// their display labels. Bindings keep configuration order and stay inline
+	// (they have no id of their own). A draft entrypoint has no bindings and no
+	// probe runner, so it is absent from the list.
+	writeJSON(w, http.StatusOK, nonNilSlice(s.entrypointHealth()))
+}
+
 func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 	var rt config.Route
 	if err := decode(w, r, &rt); err != nil {
