@@ -856,9 +856,10 @@ func (s *Server) handleEntrypointHealth(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// Already id-bearing: the payload carries entrypoint and route ids beside
-	// their display labels. Bindings keep configuration order and stay inline
-	// (they have no id of their own). A draft entrypoint has no bindings and no
-	// probe runner, so it is absent from the list.
+	// their display labels. Each entrypoint's bindings stay inline (they have
+	// no id of their own) and are listed in selection-priority order: probed
+	// bindings in configuration order, then probe-less ones. A draft entrypoint
+	// has no bindings and no probe runner, so it is absent from the list.
 	writeJSON(w, http.StatusOK, nonNilSlice(s.entrypointHealth()))
 }
 

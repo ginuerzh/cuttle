@@ -78,8 +78,10 @@ export function entityParams(
         const row = reported.get(binding.route);
         if (row) {
           parts.push(row.eligible ? translate('可用') : translate('未通过'));
-          // The server only marks a fallback when no binding is eligible, so
-          // the fallback row is also ineligible.
+          // The server sets the fallback flag when at least one binding has a
+          // probe and none of the probed bindings passed. The row that serves
+          // then is the first probe-less binding, which stays eligible, so the
+          // fallback row is not necessarily an ineligible one.
           if (health?.active.fallback && health.active.routeId === binding.route) {
             parts.push(translate('回退'));
           }

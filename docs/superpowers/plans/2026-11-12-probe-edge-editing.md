@@ -299,10 +299,10 @@ git commit -m "feat(web): edit binding probes on the topology edge"
     config.entrypoints)`; the label is `mark` + `text` (`✕`, `✕ 回退`, `回退`);
     the dash follows `badge.dashed` and the amber follows `badge.invalid`; node
     `dead` precedence, the traffic-label combination and the
-    re-decorate-in-place `selected` preservation are unchanged. Binding state
-    is a monitor-mode decoration: `App.handleSnapshot` stops pushing graph
-    state in edit mode and `Edit` mounts `Topology` with `metrics={null}` and
-    no `entrypointHealth`.
+    re-decorate-in-place `selected` preservation are unchanged. The badge stays a
+    monitor-mode decoration because `Edit` already mounts `Topology` without
+    metrics or `entrypointHealth`; neither that mount nor `App.handleSnapshot`
+    changed on this branch.
   - `web/src/api/types.ts` — comments only: bindings are in priority order,
     `index` is the configuration index, a probe-less binding need not be last.
   - `web/src/locales/en-US.ts` — added the new drawer hint, the edge-panel
@@ -328,7 +328,7 @@ git commit -m "feat(web): edit binding probes on the topology edge"
     binding appears in selection priority order (probed first), not
     configuration order.
   - `README.md` — the drag-connect sentence matches `drafts.ts` (a dragged
-    route is added without a probe and inserted before a trailing probe-less
+    route is added without a probe and inserted before the first probe-less
     binding, not appended); the monitor-mode sentence now describes the shapes
     the console draws; the console table says the probe is edited on the edge.
   - `AGENTS.md` — the health invariant no longer opens with “in configuration
@@ -379,11 +379,11 @@ git commit -m "feat(web): edit binding probes on the topology edge"
 - Deferred items/limitations:
   - `hasProbe` comes from the console config, so a binding the server no longer
     builds shows as probe-less; the health payload deliberately stays unchanged.
-  - Binding-edge probe styling is monitor mode only (`Edit` renders `Topology`
-    with `metrics={null}` and no `entrypointHealth`, and `handleSnapshot`
-    freezes graph state in edit mode). Passing health through `Edit` would show
-    the badges while editing; not done because the design and README frame the
-    probe decoration as monitor state.
+  - Binding-edge probe styling is monitor mode only: `Edit` mounts `Topology`
+    without metrics or `entrypointHealth` (that mount is unchanged by this
+    branch), so the badges do not appear while editing. Passing health through
+    `Edit` would show them there; not done because the design and README frame
+    the probe decoration as monitor state.
   - `EntityParams` still prints the probe command read-only in the entrypoint
     detail panel; editing it is only on the edge.
   - No browser visual check: the edge styling is covered by Vitest and

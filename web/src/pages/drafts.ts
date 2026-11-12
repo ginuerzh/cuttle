@@ -30,19 +30,17 @@ export function disconnectNodeProvider(node: Node): Node {
  * the entrypoint already binds is left alone: a binding is identified by its
  * route, so a second drag of the same edge must not duplicate it.
  *
- * The new binding has no probe, and a probe-less binding is always eligible, so
- * appending it after a trailing probe-less binding would leave it unreachable.
- * It is inserted before that binding instead.
+ * The new binding has no probe, and only the first probe-less binding can serve,
+ * so appending it after one would leave it unreachable. It is inserted before
+ * the first probe-less binding instead, and appended only when there is none.
  */
 export function connectEntrypointRoute(e: Entrypoint, routeID: string): Entrypoint {
   const routes = e.routes ?? [];
   if (!routeID || routes.some((b) => b.route === routeID)) return e;
   const binding = { route: routeID };
-  const last = routes[routes.length - 1];
-  if (last && !last.probe) {
-    return { ...e, routes: [...routes.slice(0, -1), binding, last] };
-  }
-  return { ...e, routes: [...routes, binding] };
+  const plain = routes.findIndex((b) => !b.probe);
+  if (plain < 0) return { ...e, routes: [...routes, binding] };
+  return { ...e, routes: [...routes.slice(0, plain), binding, ...routes.slice(plain)] };
 }
 
 /** Removes one route binding and leaves the rest in order. */

@@ -504,8 +504,8 @@ unlabelled. Probe `command`, `interval` and `timeout` are edited in the
 `entrypoint → route` edge panel; an empty command removes the probe. In edit
 mode you can drag an entrypoint onto a route, a route onto a node or a node onto
 a provider to change the configuration. Dragging onto a route adds a probe-less
-binding; when the last binding already has no probe the new one is inserted
-before it, because only the first probe-less binding can serve. Dragging a route
+binding; it is inserted before the first probe-less binding (the end when there
+is none), because only the first probe-less binding can serve. Dragging a route
 the entrypoint already binds changes nothing, and the entrypoint edge panel's
 `断开` removes just that one binding, so removing the last one makes the
 entrypoint a draft again. A draft card is tagged `未连接` (not connected). Node

@@ -250,9 +250,23 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 			}
 		}
 
-		order := probePriorityOrder(g.probes)
-		active := order[0]
-		for _, i := range order {
+		// A group with no probed binding is already in configuration order, so
+		// probePriorityOrder returns nil and no reorder is built for it: every
+		// tick with a probe-less entrypoint skips that work.
+		order := probePriorityOrder(g.probes, hasProbe)
+		n := len(g.probes)
+		if order != nil {
+			n = len(order)
+		}
+		active := 0
+		if order != nil {
+			active = order[0]
+		}
+		for pos := 0; pos < n; pos++ {
+			i := pos
+			if order != nil {
+				i = order[pos]
+			}
 			if !failed[i] {
 				active = i
 				break
@@ -263,7 +277,11 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 			Fallback: hasProbe && !probedEligible,
 		}
 
-		for _, i := range order {
+		for pos := 0; pos < n; pos++ {
+			i := pos
+			if order != nil {
+				i = order[pos]
+			}
 			p := g.probes[i]
 			hb := health.Binding{
 				Index:     p.index,
@@ -282,10 +300,15 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 }
 
 // probePriorityOrder returns the health order of one entrypoint's probes: probed
-// bindings first, then probe-less ones, each in configuration order. It mirrors
-// bindingOrder, which cannot be reused here because the probe set does not see
-// the configured bindings.
-func probePriorityOrder(probes []*bindingProbe) []int {
+// bindings first, then probe-less ones, each in configuration order. It returns
+// nil when no binding carries a probe, because configuration order is already
+// the priority order then, so the reorder is skipped. It mirrors bindingOrder,
+// which cannot be reused here because the probe set does not see the configured
+// bindings.
+func probePriorityOrder(probes []*bindingProbe, hasProbe bool) []int {
+	if !hasProbe {
+		return nil
+	}
 	order := make([]int, 0, len(probes))
 	plain := make([]int, 0, len(probes))
 	for i, p := range probes {

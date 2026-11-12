@@ -84,15 +84,30 @@ describe('connectEntrypointRoute', () => {
     expect(entrypoint.routes).toHaveLength(1);
   });
 
-  it('inserts before a trailing probe-less binding so the new one is reachable', () => {
+  it('inserts before the first probe-less binding so the new one can serve', () => {
     const bound: Entrypoint = {
       ...entrypoint,
       routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
     };
     const next = connectEntrypointRoute(bound, 'r_0000000003');
-    expect(next.routes.map((b) => b.route)).toEqual(['r_0000000001', 'r_0000000003', 'r_0000000002']);
-    expect(next.routes[1].probe).toBeUndefined();
+    expect(next.routes.map((b) => b.route)).toEqual(['r_0000000003', 'r_0000000001', 'r_0000000002']);
+    // Only the first probe-less binding can serve, and that is now the new one.
+    expect(next.routes[0].probe).toBeUndefined();
     expect(bound.routes.map((b) => b.route)).toEqual(['r_0000000001', 'r_0000000002']);
+  });
+
+  it('inserts before a probe-less binding that sits ahead of a probed one', () => {
+    const probed = { command: 'true', interval: '30s', timeout: '5s' };
+    const bound: Entrypoint = {
+      ...entrypoint,
+      routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002', probe: probed }],
+    };
+    const next = connectEntrypointRoute(bound, 'r_0000000003');
+    expect(next.routes.map((b) => b.route)).toEqual(['r_0000000003', 'r_0000000001', 'r_0000000002']);
+    // The new binding becomes the first probe-less one, so it serves when every
+    // probe is ineligible; the probed binding keeps its probe.
+    expect(next.routes.findIndex((b) => !b.probe)).toBe(0);
+    expect(next.routes[2].probe).toEqual(probed);
   });
 
   it('is a no-op for a route the entrypoint already binds', () => {

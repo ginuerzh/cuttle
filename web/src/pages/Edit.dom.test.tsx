@@ -414,7 +414,7 @@ describe('Edit canvas connections', () => {
     expect(updateNodeMock).toHaveBeenCalledWith('n_0000000001', expect.objectContaining({ provider: 'p_0000000001' }));
   });
 
-  it('adds a route binding before a trailing probe-less binding when one is dragged in', async () => {
+  it('inserts a dragged binding before the first probe-less binding', async () => {
     const { container } = render(<Edit config={config} onReload={async () => undefined} />);
     await act(async () => {
       buttonByText(container, 'connect-entrypoint').click();

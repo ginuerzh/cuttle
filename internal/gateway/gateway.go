@@ -295,8 +295,9 @@ func (g *Gateway) RouteHealth() []health.Route {
 }
 
 // EntrypointHealth returns the binding health of the current build: one row per
-// entrypoint with bindings, in configuration order. Draft entrypoints have no
-// bindings and no probe runner, so they are absent.
+// entrypoint with bindings, each row's bindings in selection-priority order
+// (probed bindings in configuration order, then probe-less ones). Draft
+// entrypoints have no bindings and no probe runner, so they are absent.
 func (g *Gateway) EntrypointHealth() []health.Entrypoint {
 	g.mu.Lock()
 	probes := g.probes

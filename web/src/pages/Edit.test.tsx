@@ -320,7 +320,7 @@ describe('entrypoint edge wiring', () => {
     ]);
   });
 
-  it('inserts before a trailing probe-less binding', () => {
+  it('inserts a dragged binding before the first probe-less binding', () => {
     const draft: Entrypoint = { ...entrypoint, routes: [{ route: 'r_0000000001' }] };
 
     const next = connectEntrypointEdge([draft], 'entrypoint:e_0000000001', 'route:r_0000000002');
