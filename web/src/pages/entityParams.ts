@@ -60,11 +60,20 @@ export function entityParams(config: ConfigResponse, graphId: string): ParamRow[
       const entrypoint = config.entrypoints.find((e) => e.id === id);
       if (!entrypoint) return [];
       const index = config.entrypoints.findIndex((e) => e.id === entrypoint.id);
-      return [
-        { label: translate('模型匹配'), value: entrypoint.match.join(', ') },
-        { label: translate('路由'), value: entityLabel(entrypoint.route, labels.routes) },
-        { label: translate('优先级'), value: String(index + 1) },
-      ];
+      const rows: ParamRow[] = [{ label: translate('模型匹配'), value: entrypoint.match.join(', ') }];
+      const bindings = entrypoint.routes ?? [];
+      if (bindings.length === 0) {
+        rows.push({ label: translate('路由'), value: translate('未连接') });
+      }
+      bindings.forEach((binding, i) => {
+        const name = entityLabel(binding.route, labels.routes) || binding.route;
+        rows.push({
+          label: translate('路由 {index}', { index: i + 1 }),
+          value: binding.probe ? `${name} · ${binding.probe.command}` : name,
+        });
+      });
+      rows.push({ label: translate('优先级'), value: String(index + 1) });
+      return rows;
     }
     case 'provider': {
       const provider = config.providers.find((p) => p.id === id);

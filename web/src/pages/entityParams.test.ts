@@ -50,8 +50,16 @@ const config = {
     { id: 'r_0000000002', name: 'bare', nodes: [] },
   ],
   entrypoints: [
-    { id: 'e_0000000001', name: 'fast', match: ['*'], route: 'r_0000000001' },
-    { id: 'e_0000000002', name: 'claude', match: ['gpt-*', 'claude-*'], route: 'r_0000000002' },
+    {
+      id: 'e_0000000001',
+      name: 'fast',
+      match: ['*'],
+      routes: [
+        { route: 'r_0000000001' },
+        { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+      ],
+    },
+    { id: 'e_0000000002', name: 'claude', match: ['gpt-*', 'claude-*'], routes: [{ route: 'r_0000000002' }] },
   ],
 } as unknown as ConfigResponse;
 
@@ -112,12 +120,46 @@ describe('entityParams', () => {
     ]);
   });
 
+  it('lists an entrypoint with each binding and its probe command', () => {
+    expect(entityParams(config, 'entrypoint:e_0000000001')).toEqual([
+      { label: '模型匹配', value: '*' },
+      { label: '路由 1', value: 'strong' },
+      { label: '路由 2', value: 'bare · curl -fsS http://127.0.0.1:9/ready' },
+      { label: '优先级', value: '1' },
+    ]);
+  });
+
+  it('marks a draft entrypoint as unconnected', () => {
+    expect(
+      entityParams(
+        { ...config, entrypoints: [{ id: 'e_0000000001', name: 'draft', match: ['*'], routes: [] }] },
+        'entrypoint:e_0000000001',
+      ),
+    ).toEqual([
+      { label: '模型匹配', value: '*' },
+      { label: '路由', value: '未连接' },
+      { label: '优先级', value: '1' },
+    ]);
+  });
+
   it('lists an entrypoint with its route name and position', () => {
     expect(entityParams(config, 'entrypoint:e_0000000002')).toEqual([
       { label: '模型匹配', value: 'gpt-*, claude-*' },
-      { label: '路由', value: 'bare' },
+      { label: '路由 1', value: 'bare' },
       { label: '优先级', value: '2' },
     ]);
+  });
+
+  it('renders the binding rows in English', () => {
+    setActiveLang('en-US');
+    const rows = entityParams(config, 'entrypoint:e_0000000001');
+    setActiveLang('zh-CN');
+    expect(rows.slice(0, 3)).toEqual([
+      { label: 'Model match', value: '*' },
+      { label: 'Route 1', value: 'strong' },
+      { label: 'Route 2', value: 'bare · curl -fsS http://127.0.0.1:9/ready' },
+    ]);
+    expect(rows.map((r) => r.label + r.value).join('')).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it('lists provider type, base URLs, key count and disabled state', () => {

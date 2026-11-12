@@ -5,8 +5,8 @@ import { entrypointFromNodeId, errorMatchesNodeId } from './selection';
 
 const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
   entrypoints: [
-    { id: 'e_0000000001', name: 'strong', match: ['claude-opus*'], route: 'r_0000000001' },
-    { id: 'e_0000000002', name: 'fast', match: ['gpt-4.5*'], route: 'r_0000000002' },
+    { id: 'e_0000000001', name: 'strong', match: ['claude-opus*'], routes: [{ route: 'r_0000000001' }] },
+    { id: 'e_0000000002', name: 'fast', match: ['gpt-4.5*'], routes: [{ route: 'r_0000000002' }] },
   ],
   providers: [{ id: 'p_0000000001', name: 'p1', type: 'deepseek', chat: 'https://a/v1', keys: [] }],
   nodes: [{ id: 'n_0000000001', name: 'p1', provider: 'p_0000000001', model: 'm1' }],
@@ -24,7 +24,7 @@ describe('entrypointFromNodeId', () => {
 
     const found = entrypointFromNodeId(cfg.entrypoints, node!.id);
     expect(found?.index).toBe(0);
-    expect(found?.entrypoint.route).toBe('r_0000000001');
+    expect(found?.entrypoint.routes.map((b) => b.route)).toEqual(['r_0000000001']);
   });
 
   it('returns null for an unknown or non-entrypoint id', () => {

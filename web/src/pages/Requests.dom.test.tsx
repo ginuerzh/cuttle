@@ -53,7 +53,7 @@ const config = {
   providers: [{ id: 'p_0000000001', name: 'DeepSeek 官方', type: 'deepseek', keys: [] }],
   nodes: [{ id: 'n_0000000001', name: 'ds-fast', provider: 'p_0000000001', model: 'm1' }],
   routes: [{ id: 'r_0000000001', name: 'strong', nodes: ['n_0000000001'] }],
-  entrypoints: [{ id: 'e_0000000001', name: 'fast', match: ['*'], route: 'r_0000000001' }],
+  entrypoints: [{ id: 'e_0000000001', name: 'fast', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
 } as unknown as ConfigResponse;
 
 function render(el: React.ReactNode) {

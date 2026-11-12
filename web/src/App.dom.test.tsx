@@ -75,7 +75,7 @@ const config = {
   providers: [{ id: 'p_0000000001', name: 'deepseek', type: 'deepseek', keys: [] }],
   nodes: [{ id: 'n_0000000001', name: 'fast', provider: 'p_0000000001', model: 'm1' }],
   routes: [{ id: 'r_0000000001', name: 'strong', nodes: ['n_0000000001'] }],
-  entrypoints: [{ id: 'e_0000000001', name: 'all', match: ['*'], route: 'r_0000000001' }],
+  entrypoints: [{ id: 'e_0000000001', name: 'all', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
 } as unknown as ConfigResponse;
 
 const metrics = {

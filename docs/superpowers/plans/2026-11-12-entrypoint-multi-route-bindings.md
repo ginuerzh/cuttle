@@ -584,48 +584,48 @@ git commit -m "feat(admin): expose entrypoint binding health"
 - Produces: `types.ts` `EntrypointRoute{route: string; probe?: RouteBindingProbe}`, `RouteBindingProbe{command: string; interval?: string; timeout?: string}`, `Entrypoint.routes: EntrypointRoute[]`, `EntrypointHealth`, `EntrypointHealthBinding`, `EntrypointHealthProbe`; `getEntrypointHealth(): Promise<EntrypointHealth[]>`; `App.tsx` state `entrypointHealth` set from the initial fetch and the events snapshot (Task 5 passes it to the topology; this task passes it to the Entrypoints page).
 - Produces: `drafts.ts` `connectEntrypointRoute(e, routeID)` (append, no-op when bound) and `disconnectEntrypointBinding(e, routeID)` (remove one); `disconnectEntrypointRoute` clears all bindings.
 
-- [ ] **Step 1: Write the failing web tests**
+- [x] **Step 1: Write the failing web tests**
 
 - `graph/build.test.ts`: replace `route:` fixtures with `routes: [{route: 'r_...'}]`; add "draws one edge per binding" (one entrypoint, two bindings → two edges, ids `entrypoint:e->route:r1` and `entrypoint:e->route:r2`) and "a draft entrypoint has no bindings and links to unrouted".
 - `Entrypoints.test.tsx`: card subtitle lists both route names with their eligibility (`未通过` / `可用`), and `回退` when the active binding is a fallback.
 - `Edit.test.tsx`: saving the form round-trips an ordered binding list with a probe (command, interval, timeout) and preserves order.
 - `drafts.test.ts`: `connectEntrypointRoute(e, 'r_2')` appends; connecting an already-bound route is a no-op; `disconnectEntrypointBinding(e, 'r_1')` removes only that binding; `disconnectEntrypointRoute` clears the list.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd web && npx vitest run src/graph/build.test.ts src/pages/Entrypoints.test.tsx src/pages/Edit.test.tsx src/pages/drafts.test.ts`
 Expected: FAIL (type errors / missing bindings).
 
-- [ ] **Step 3: Implement the types and the data plumbing**
+- [x] **Step 3: Implement the types and the data plumbing**
 
 - `types.ts`: new binding/health types; `Entrypoint.route` removed; document id fields as ids.
 - `client.ts`: `getEntrypointHealth()`.
 - `events.ts`: `SnapshotMessage.entrypointHealth?: EntrypointHealth[]`.
 - `App.tsx`: `entrypointHealth` state, initial `getEntrypointHealth()` fetch beside `getRouteHealth()` (same cancelled guard), `if (msg.entrypointHealth) setEntrypointHealth(...)`, pass to the Entrypoints page.
 
-- [ ] **Step 4: Implement the graph edges and the list page**
+- [x] **Step 4: Implement the graph edges and the list page**
 
 - `graph/build.ts`: `sub` joins route names; one edge per binding with the unchanged id `entrypoint:<id>->route:<id>`; `unconnected` when `routes.length === 0`; the unrouted edge appears only when there are no bindings.
 - `Entrypoints.tsx`: subtitle from bindings plus health (`未通过` / `可用` / `回退`).
 
-- [ ] **Step 5: Implement the form and the helpers**
+- [x] **Step 5: Implement the form and the helpers**
 
 - `Edit.tsx`: `Form.List name="routes"` with route select, optional probe command/interval/timeout, add/remove/up-down; save maps to `routes`; `AddEntrypointModal` starts with one optional binding.
 - `entityParams.ts`: show the binding list.
 - `drafts.ts`: `connectEntrypointRoute`, `disconnectEntrypointBinding`, `disconnectEntrypointRoute` = clear all.
 - `en-US.ts`: every new source string.
 
-- [ ] **Step 6: Run the web gate**
+- [x] **Step 6: Run the web gate**
 
 Run: `cd web && npm test && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 7: Rebuild the bundle and the Go gate**
+- [x] **Step 7: Rebuild the bundle and the Go gate**
 
 Run: `cd web && npm run build && cd .. && GOWORK=off go build ./... && GOWORK=off go test ./internal/admin ./internal/gateway -count=1`
 Expected: PASS (`internal/admin/dist` must be fresh before the Go build).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add web
@@ -633,12 +633,97 @@ git commit -m "feat(web): edit and show entrypoint route bindings"
 ```
 
 **Implementation record (fill in after the task is complete)**
-- Date/status:
-- Repository + commit:
+- Date/status: 2026-11-12 / done. Console only: the Go API, the probe runner and
+  the events snapshot are Task 3 and are consumed unchanged.
+- Repository + commit: `cuttle` — this commit
+  `feat(web): edit and show entrypoint route bindings` on
+  `feat/entrypoint-bindings`. It carries the code, the tests, the `AGENTS.md`
+  invariant fix and this record; a follow-up `docs: record task 4 commit`
+  commit writes this SHA only (a record cannot carry the SHA of the commit that
+  contains it).
 - Files changed:
+  - `web/src/api/types.ts`: `EntrypointRoute` and `RouteBindingProbe`;
+    `Entrypoint.routes` replaces `Entrypoint.route`; `EntrypointHealth`,
+    `EntrypointHealthBinding`, `EntrypointHealthProbe` (Go JSON names
+    `entrypointId`/`entrypointName`/`routeId`/`routeName`/`eligible`/`last`).
+  - `web/src/api/client.ts`: `getEntrypointHealth()` (null-guarded to `[]`);
+    `getConfig()` fills `routes: []` for an entrypoint the server serialized
+    with `omitempty`.
+  - `web/src/api/events.ts`: `SnapshotMessage.entrypointHealth` plus the same
+    array-shape validation `health` gets.
+  - `web/src/App.tsx`: `entrypointHealth` state, applied from the snapshot when
+    the key is present (absent keeps the previous rows, matching the
+    `omitempty` server side), refreshed beside `getRouteHealth()` in the
+    edit-mode poll (same cancelled guard), passed to `EntrypointsPage`.
+  - `web/src/graph/build.ts`: one `entrypoint:<id>->route:<id>` edge per
+    binding (unchanged edge id), `sub` joins the binding route names,
+    `unconnected` and the dashed amber `unrouted` edge only when there are no
+    bindings. A binding whose route id is not in the config draws no edge.
+  - `web/src/pages/Entrypoints.tsx`: `entrypointSubtitle` renders every
+    binding with `可用`/`未通过` from health and `回退` on the active fallback
+    binding; the page takes an optional `health` prop.
+  - `web/src/pages/Edit.tsx`: `entrypointBindingInputs` (row list → ordered
+    `routes`, blank rows and command-less probes dropped),
+    `entrypointBindingRows` (a draft opens with one empty row),
+    `EntrypointBindingsField` (`Form.List name="routes"` with route select,
+    add/remove/up/down, probe command/interval/timeout collapsed behind a
+    toggle, command required when a probe exists), `EntrypointForm` and
+    `AddEntrypointModal` save `routes`; `Edit.connect` uses
+    `connectEntrypointRoute` because the removed field no longer compiles; the
+    entrypoint edge text now names the `routes` list.
+  - `web/src/pages/entityParams.ts`: one `路由 {index}` row per binding, with
+    the probe command after `·`, and `路由: 未连接` for a draft.
+  - `web/src/pages/drafts.ts`: `connectEntrypointRoute` (append, no-op when the
+    route is already bound), `disconnectEntrypointBinding` (remove one),
+    `disconnectEntrypointRoute` (clear every binding).
+  - `web/src/locales/en-US.ts`: every new Chinese string (binding form, probe
+    fields, `可用`/`未通过`/`回退`, `路由 {index}`) plus the three replaced
+    entrypoint strings; the retired single-`route` strings are removed.
+  - `AGENTS.md`: the web invariant now lists `Entrypoint.routes[].route` and
+    says a binding carries no id.
+  - Tests: `web/src/graph/build.test.ts`, `web/src/pages/Entrypoints.test.tsx`,
+    `web/src/pages/Edit.test.tsx`, `web/src/pages/Edit.dom.test.tsx` (real save
+    round-trip, probe toggle, draft wipe, down-reorder, add modal),
+    `web/src/pages/drafts.test.ts`, `web/src/pages/entityParams.test.ts`,
+    `web/src/api/client.test.ts`, `web/src/api/events.test.ts`, and the
+    `route:` fixtures in `web/src/App.test.tsx`, `web/src/App.dom.test.tsx`,
+    `web/src/labels.test.ts`, `web/src/pages/selection.test.ts`,
+    `web/src/pages/Requests.dom.test.tsx`.
 - Tests/commands and results:
-- Review findings and fixes:
+  - RED: `cd web && npx vitest run src/graph/build.test.ts
+    src/pages/Entrypoints.test.tsx src/pages/Edit.test.tsx
+    src/pages/drafts.test.ts` → 23 failed (old `route` fixtures produced
+    `unrouted` edges, `connectEntrypointRoute`/`disconnectEntrypointBinding`
+    missing, no binding rows).
+  - GREEN: `cd web && npm test` → 404 passed (48 files); `npx tsc --noEmit` →
+    clean.
+  - `cd web && npm run build` → bundle rebuilt into `internal/admin/dist`
+    (git-ignored); `GOWORK=off go build ./...` → clean;
+    `GOWORK=off go test ./internal/admin ./internal/gateway -count=1` → ok
+    (19.9s / 14.9s).
+- Review findings and fixes (self-review of the diff):
+  - The first version of the DOM round-trip test used an empty
+    `config.entrypoints`, so the form replaced nothing; the fixture now holds
+    the entrypoint being edited.
+  - `UNROUTED_COLOR` became unreachable once a draft is the only unrouted
+    case; removed so `noUnusedLocals` stays satisfied.
+  - A probe toggled on and left blank would have saved an empty command the
+    server rejects; the form requires the command and the mapping also drops a
+    command-less probe.
+  - English render tests (`Entrypoints`, entrypoint `entityParams`,
+    `EntrypointForm`) assert no CJK leaks, so every new string is proven
+    translated rather than merely present in `en-US.ts`.
 - Deferred items/limitations:
+  - Topology badges (`未通过`/`回退` on edges), the monitor panel's binding
+    *health* rows and the edit-mode connect/disconnect rewiring (`EdgeForm`
+    still clears every binding through `disconnectEntrypointRoute`) are Task 5.
+    The connect path had to move to `connectEntrypointRoute` here because the
+    removed field no longer compiles.
+  - The binding form does not prevent picking the same route twice; the server
+    rejects a duplicate with the entrypoint name and `routes[i]`, and
+    `entrypointBindingInputs` deliberately does not deduplicate.
+  - `entrypointHealth` is still polled only in edit mode and streamed only in
+    monitor mode; nothing renders it on the topology until Task 5.
 
 ---
 

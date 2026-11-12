@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AddButtons, EdgeForm, EntrypointForm, NodeForm, ProviderForm, RouteForm } from './Edit';
+import { AddButtons, EdgeForm, EntrypointForm, entrypointBindingInputs, NodeForm, ProviderForm, RouteForm } from './Edit';
 import { setActiveLang } from '../i18n';
-import type { ConfigResponse, Node, Provider, Route } from '../api/types';
+import type { ConfigResponse, Entrypoint, Node, Provider, Route } from '../api/types';
 
 beforeEach(() => setActiveLang('zh-CN'));
 
@@ -125,18 +125,99 @@ describe('RouteForm', () => {
   });
 });
 
+describe('entrypointBindingInputs', () => {
+  it('keeps the row order and maps a filled probe', () => {
+    expect(
+      entrypointBindingInputs([
+        { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+        { route: 'r_0000000001' },
+      ]),
+    ).toEqual([
+      { route: 'r_0000000002', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+      { route: 'r_0000000001' },
+    ]);
+  });
+
+  it('drops blank rows and a probe without a command', () => {
+    expect(entrypointBindingInputs([{ route: '' }, { route: 'r_0000000001', probe: { command: '  ' } }])).toEqual([
+      { route: 'r_0000000001' },
+    ]);
+    expect(entrypointBindingInputs(undefined)).toEqual([]);
+  });
+
+  it('omits blank optional probe fields so the server applies its defaults', () => {
+    expect(entrypointBindingInputs([{ route: 'r_0000000001', probe: { command: ' true ', interval: '', timeout: '' } }])).toEqual([
+      { route: 'r_0000000001', probe: { command: 'true' } },
+    ]);
+  });
+});
+
+describe('EntrypointForm bindings', () => {
+  const config = {
+    providers: [],
+    nodes: [],
+    routes: [
+      { id: 'r_0000000001', name: 'primary', nodes: [] },
+      { id: 'r_0000000002', name: 'backup', nodes: [] },
+    ],
+    entrypoints: [],
+  } as unknown as ConfigResponse;
+
+  it('renders one ordered row per binding with its probe command', () => {
+    const entrypoint: Entrypoint = {
+      id: 'e_0000000001',
+      name: 'all',
+      match: ['*'],
+      routes: [
+        { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+        { route: 'r_0000000002' },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+    expect(html.indexOf('primary')).toBeGreaterThan(-1);
+    expect(html.indexOf('primary')).toBeLessThan(html.indexOf('backup'));
+    expect(html).toContain('curl -fsS http://127.0.0.1:9/ready');
+    expect(html).toContain('value="10s"');
+    expect(html).toContain('value="2s"');
+    expect(html).toContain('添加路由绑定');
+    expect(html).toContain('添加探测命令（可选）');
+  });
+
+  it('translates every binding string', () => {
+    const entrypoint: Entrypoint = {
+      id: 'e_0000000001',
+      name: 'all',
+      match: ['*'],
+      routes: [{ route: 'r_0000000001', probe: { command: 'true' } }, { route: 'r_0000000002' }],
+    };
+    setActiveLang('en-US');
+    const html = renderToStaticMarkup(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+    setActiveLang('zh-CN');
+    expect(html).toContain('Route bindings');
+    expect(html).toContain('Add route binding');
+    expect(html).toContain('Probe command');
+    expect(html).toContain('Remove probe command');
+    expect(html).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+});
+
 describe('draft editing', () => {
-  it('offers a clearable route select and no required marker for an entrypoint', () => {
+  it('starts an entrypoint with one empty binding row and explains the draft', () => {
     const config = { providers: [], nodes: [], routes: [], entrypoints: [] } as unknown as ConfigResponse;
     const html = renderToStaticMarkup(
       <EntrypointForm
-        entrypoint={{ id: 'e_0000000001', name: 'draft', match: ['*'], route: '' }}
+        entrypoint={{ id: 'e_0000000001', name: 'draft', match: ['*'], routes: [] }}
         index={0}
         config={config}
         onSaved={async () => undefined}
       />,
     );
-    expect(html).toContain('留空即为草稿');
+    expect(html).toContain('选择路由');
+    expect(html).toContain('没有绑定即为草稿');
   });
 
   it('offers a clearable provider select for a node', () => {
@@ -152,7 +233,7 @@ describe('EdgeForm', () => {
     providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', keys: [] }],
     nodes: [{ id: 'n_0000000001', name: 'n', provider: 'p_0000000001', model: 'm1' }],
     routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
-    entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
+    entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
   } as unknown as ConfigResponse;
 
   it('can disconnect an entrypoint from its route', () => {

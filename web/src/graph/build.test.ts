@@ -5,8 +5,13 @@ import type { ConfigResponse } from '../api/types';
 
 const cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
   entrypoints: [
-    { id: 'e_0000000001', name: 'strong', match: ['claude-opus*', 'gpt-5.5*'], route: 'r_0000000001' },
-    { id: 'e_0000000002', name: 'fast', match: ['gpt-4.5*'], route: 'r_0000000002' },
+    {
+      id: 'e_0000000001',
+      name: 'strong',
+      match: ['claude-opus*', 'gpt-5.5*'],
+      routes: [{ route: 'r_0000000001' }],
+    },
+    { id: 'e_0000000002', name: 'fast', match: ['gpt-4.5*'], routes: [{ route: 'r_0000000002' }] },
   ],
   providers: [
     { id: 'p_0000000001', name: 'p1', type: 'deepseek', chat: 'https://a/v1', keys: [] },
@@ -36,6 +41,49 @@ describe('buildGraph', () => {
     expect(edges.some((e) => e.id.startsWith('alias:'))).toBe(false);
   });
 
+  it('draws one edge per binding', () => {
+    const multi: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
+      ...cfg,
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'strong',
+          match: ['claude-opus*'],
+          routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
+        },
+      ],
+    };
+    const { nodes, edges } = buildGraph(multi);
+    const outgoing = edges.filter((e) => e.source === 'entrypoint:e_0000000001');
+    expect(outgoing.map((e) => e.id).sort()).toEqual([
+      'entrypoint:e_0000000001->route:r_0000000001',
+      'entrypoint:e_0000000001->route:r_0000000002',
+    ]);
+    expect(nodes.find((n) => n.id === 'entrypoint:e_0000000001')?.data.unconnected).toBe(false);
+    expect(nodes.find((n) => n.id === 'entrypoint:e_0000000001')?.data.sub).toContain('strong');
+    expect(nodes.find((n) => n.id === 'entrypoint:e_0000000001')?.data.sub).toContain('fast');
+  });
+
+  it('keeps a binding with a probe on the same edge id', () => {
+    const probed: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'> = {
+      ...cfg,
+      entrypoints: [
+        {
+          id: 'e_0000000001',
+          name: 'strong',
+          match: ['*'],
+          routes: [
+            { route: 'r_0000000001', probe: { command: 'true', interval: '30s', timeout: '5s' } },
+            { route: 'r_0000000002' },
+          ],
+        },
+      ],
+    };
+    const { edges } = buildGraph(probed);
+    expect(edges.some((e) => e.id === 'entrypoint:e_0000000001->route:r_0000000001')).toBe(true);
+    expect(edges.some((e) => e.id === 'entrypoint:e_0000000001->route:r_0000000002')).toBe(true);
+  });
+
   it('emits route -> node and node -> provider edges', () => {
     const { edges } = buildGraph(cfg);
     expect(edges.some((e) => e.id === 'route:r_0000000001|node:n_0000000001')).toBe(true);
@@ -52,19 +100,6 @@ describe('buildGraph', () => {
     expect(nodes.find((n) => n.id === 'entrypoint:e_0000000001')?.data.label).toBe('strong');
   });
 
-  it('adds an unrouted node when an entrypoint route is missing', () => {
-    const missing = {
-      ...cfg,
-      entrypoints: [
-        ...cfg.entrypoints,
-        { id: 'e_0000000003', name: 'broken', match: ['mystery*'], route: 'r_0000000009' },
-      ],
-    };
-    const { nodes, edges } = buildGraph(missing);
-    expect(nodes.some((n) => n.id === 'unrouted')).toBe(true);
-    expect(edges.some((e) => e.id === 'entrypoint:e_0000000003->unrouted')).toBe(true);
-  });
-
   it('marks a providerless node as a draft without a provider edge', () => {
     setActiveLang('zh-CN');
     const draft = {
@@ -78,11 +113,11 @@ describe('buildGraph', () => {
     expect(edges.some((e) => e.id.startsWith('node:n_0000000003|'))).toBe(false);
   });
 
-  it('marks a routeless entrypoint as a draft with a dashed amber unrouted edge', () => {
+  it('links a draft entrypoint with no bindings to unrouted', () => {
     setActiveLang('zh-CN');
     const draft = {
       ...cfg,
-      entrypoints: [...cfg.entrypoints, { id: 'e_0000000003', name: 'draft', match: ['mystery*'], route: '' }],
+      entrypoints: [...cfg.entrypoints, { id: 'e_0000000003', name: 'draft', match: ['mystery*'], routes: [] }],
     };
     const { nodes, edges } = buildGraph(draft);
     expect(nodes.find((n) => n.id === 'entrypoint:e_0000000003')?.data.unconnected).toBe(true);
@@ -90,5 +125,6 @@ describe('buildGraph', () => {
     const edge = edges.find((e) => e.id === 'entrypoint:e_0000000003->unrouted');
     expect(edge?.data?.color).toBe('#d97706');
     expect(edge?.data?.draft).toBe(true);
+    expect(edges.some((e) => e.id.startsWith('entrypoint:e_0000000003->route:'))).toBe(false);
   });
 });

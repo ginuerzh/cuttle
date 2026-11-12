@@ -467,8 +467,9 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
 - Types in `web/src/api/types.ts` mirror the Go JSON shapes. Use `entrypoints`,
   not `aliases`; a node has `model: string`, not `models`. Every entity type
   carries its immutable `id`, and every association field (`Node.provider`,
-  `Node.key`, `Route.nodes`, `Entrypoint.route`, `RouteNodeHealth.providerId`)
-  holds an id, with the field's doc comment saying so.
+  `Node.key`, `Route.nodes`, `Entrypoint.routes[].route`,
+  `RouteNodeHealth.providerId`) holds an id, with the field's doc comment saying
+  so. A route binding is inline config: it carries no id.
 - Ids are what the console sends and keys by: graph and edge ids are
   `provider:<id>`, `node:<id>`, `route:<id>`, `entrypoint:<id>`; selects store
   ids and show names; filters, detail links and the Sessions `?key=` query carry

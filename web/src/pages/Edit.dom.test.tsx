@@ -6,12 +6,13 @@ import type { ConfigResponse, Node, Provider } from '../api/types';
 
 vi.mock('../api/client', () => ({
   getProviderModels: vi.fn(async () => []),
+  putEntrypoints: vi.fn(async () => undefined),
   updateNode: vi.fn(async () => undefined),
   updateProvider: vi.fn(async () => undefined),
 }));
 
-import { getProviderModels, updateNode, updateProvider } from '../api/client';
-import { Edit, EntrypointForm, NodeForm, ProviderForm, RouteNodeList } from './Edit';
+import { getProviderModels, putEntrypoints, updateNode, updateProvider } from '../api/client';
+import { Edit, AddEntrypointModal, EntrypointForm, NodeForm, ProviderForm, RouteNodeList } from './Edit';
 import { setActiveLang } from '../i18n';
 
 setActiveLang('zh-CN');
@@ -20,6 +21,7 @@ setActiveLang('zh-CN');
 
 const updateProviderMock = vi.mocked(updateProvider);
 const updateNodeMock = vi.mocked(updateNode);
+const putEntrypointsMock = vi.mocked(putEntrypoints);
 
 function render(el: React.ReactNode) {
   const container = document.createElement('div');
@@ -373,7 +375,7 @@ describe('Edit canvas connections', () => {
       providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
       nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: 'm1' }],
       routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
-      entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
+      entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
     } as unknown as ConfigResponse;
     const { container } = render(<Edit config={config} onReload={async () => undefined} />);
     await act(async () => {
@@ -384,7 +386,7 @@ describe('Edit canvas connections', () => {
 });
 
 describe('draft affordance', () => {
-  it('shows the draft placeholder on the node and entrypoint selects', () => {
+  it('shows the draft placeholder on the node select and one empty binding row for an entrypoint', () => {
     const config = { providers: [], nodes: [], routes: [], entrypoints: [] } as unknown as ConfigResponse;
     const node: Node = { id: 'n_0000000001', name: 'draft', provider: '', model: '' };
     const nodeForm = render(<NodeForm node={node} config={config} onSaved={async () => undefined} />);
@@ -392,13 +394,195 @@ describe('draft affordance', () => {
 
     const entrypointForm = render(
       <EntrypointForm
-        entrypoint={{ id: 'e_0000000001', name: 'draft', match: ['*'], route: '' }}
+        entrypoint={{ id: 'e_0000000001', name: 'draft', match: ['*'], routes: [] }}
         index={0}
         config={config}
         onSaved={async () => undefined}
       />,
     );
-    expect(entrypointForm.container.textContent).toContain('未连接（草稿）');
+    expect(entrypointForm.container.textContent).toContain('选择路由');
+    expect(entrypointForm.container.textContent).toContain('没有绑定即为草稿');
+  });
+});
+
+describe('EntrypointForm bindings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  const entrypoint = {
+    id: 'e_0000000001',
+    name: 'all',
+    match: ['*'],
+    routes: [
+      { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+      { route: 'r_0000000002' },
+    ],
+  };
+
+  const config = {
+    providers: [],
+    nodes: [],
+    routes: [
+      { id: 'r_0000000001', name: 'primary', nodes: [] },
+      { id: 'r_0000000002', name: 'backup', nodes: [] },
+    ],
+    entrypoints: [entrypoint],
+  } as unknown as ConfigResponse;
+
+  it('round-trips the ordered bindings and their probe on save', async () => {
+    const { container } = render(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].id).toBe('e_0000000001');
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'curl -fsS http://127.0.0.1:9/ready', interval: '10s', timeout: '2s' } },
+      { route: 'r_0000000002' },
+    ]);
+  });
+
+  it('reveals the probe fields behind the toggle and saves them', async () => {
+    const draft = {
+      id: 'e_0000000001',
+      name: 'all',
+      match: ['*'],
+      routes: [{ route: 'r_0000000001' }],
+    };
+    const { container } = render(
+      <EntrypointForm
+        entrypoint={draft}
+        index={0}
+        config={{ ...config, entrypoints: [draft] } as unknown as ConfigResponse}
+        onSaved={async () => undefined}
+      />,
+    );
+
+    expect(container.querySelector('input[placeholder^="curl"]')).toBeNull();
+    act(() => {
+      buttonByText(container, '添加探测命令（可选）').click();
+    });
+    expect(container.textContent).toContain('移除探测命令');
+
+    typeInto(container.querySelector('input[placeholder^="curl"]') as HTMLInputElement, 'true');
+    typeInto(container.querySelector('input[placeholder="30s"]') as HTMLInputElement, '15s');
+    typeInto(container.querySelector('input[placeholder="5s"]') as HTMLInputElement, '3s');
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', probe: { command: 'true', interval: '15s', timeout: '3s' } },
+    ]);
+  });
+
+  it('saves a draft when every binding row is cleared', async () => {
+    const { container } = render(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+
+    const removeBinding = () => {
+      const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-label="删除绑定"]'));
+      act(() => {
+        buttons[0].click();
+      });
+    };
+    removeBinding();
+    removeBinding();
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([]);
+  });
+
+  it('reorders a binding with the down control', async () => {
+    const { container } = render(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+
+    const downButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-label="下移"]'));
+    act(() => {
+      downButtons[0].click();
+    });
+
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes?.map((b: { route: string }) => b.route)).toEqual([
+      'r_0000000002',
+      'r_0000000001',
+    ]);
+    expect(entrypoints[0].routes?.[1].probe?.command).toBe('curl -fsS http://127.0.0.1:9/ready');
+  });
+});
+
+describe('AddEntrypointModal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  it('starts with one optional binding row and saves a draft when it is left empty', async () => {
+    const config = {
+      providers: [],
+      nodes: [],
+      routes: [{ id: 'r_0000000001', name: 'primary', nodes: [] }],
+      entrypoints: [],
+    } as unknown as ConfigResponse;
+    render(
+      <AddEntrypointModal
+        open
+        config={config}
+        onClose={() => undefined}
+        onDone={async () => undefined}
+        onError={() => undefined}
+      />,
+    );
+
+    // Earlier renders in this file leave their portals in the document, so use
+    // the modal this test opened.
+    const modals = Array.from(document.querySelectorAll<HTMLElement>('.ant-modal-content'));
+    const modal = modals[modals.length - 1];
+    expect(modal.textContent).toContain('选择路由');
+
+    typeInto(modal.querySelector('input#name') as HTMLInputElement, 'new-ep');
+    const match = modal.querySelector('.ant-select-selection-search-input') as HTMLInputElement;
+    typeInto(match, 'gpt-*');
+    act(() => {
+      match.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    });
+
+    await act(async () => {
+      buttonByText(modal, 'OK').click();
+    });
+
+    expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].name).toBe('new-ep');
+    expect(entrypoints[0].match).toEqual(['gpt-*']);
+    expect(entrypoints[0].routes).toEqual([]);
   });
 });
 
@@ -411,7 +595,7 @@ describe('draft round trip against the panel', () => {
       providers: [{ id: 'p_0000000001', name: 'p', type: 'generic', chat: 'https://a/v1', keys: [] }],
       nodes: [{ id: 'n_0000000001', name: 'draft', provider: '', model: '' }],
       routes: [{ id: 'r_0000000001', name: 'r', nodes: [] }],
-      entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], route: 'r_0000000001' }],
+      entrypoints: [{ id: 'e_0000000001', name: 'e', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
     } as unknown as ConfigResponse;
     const { container } = render(<Edit config={config} onReload={async () => undefined} />);
 

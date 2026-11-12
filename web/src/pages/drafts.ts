@@ -25,7 +25,27 @@ export function disconnectNodeProvider(node: Node): Node {
   return { ...node, provider: '', model: '', key: '', api: undefined };
 }
 
-/** Turns an entrypoint back into a draft: the model globs and order stay. */
+/**
+ * Appends a route binding to an entrypoint and keeps the configured order. A
+ * route the entrypoint already binds is left alone: a binding is identified by
+ * its route, so a second drag of the same edge must not duplicate it. The
+ * appended binding has no probe, so it stays eligible and shadows nothing
+ * after it (it is the last binding).
+ */
+export function connectEntrypointRoute(e: Entrypoint, routeID: string): Entrypoint {
+  const routes = e.routes ?? [];
+  if (!routeID || routes.some((b) => b.route === routeID)) return e;
+  return { ...e, routes: [...routes, { route: routeID }] };
+}
+
+/** Removes one route binding and leaves the rest in order. */
+export function disconnectEntrypointBinding(e: Entrypoint, routeID: string): Entrypoint {
+  const routes = e.routes ?? [];
+  if (!routes.some((b) => b.route === routeID)) return e;
+  return { ...e, routes: routes.filter((b) => b.route !== routeID) };
+}
+
+/** Turns an entrypoint back into a draft: it clears every binding, the model globs and order stay. */
 export function disconnectEntrypointRoute(e: Entrypoint): Entrypoint {
-  return { ...e, route: '' };
+  return { ...e, routes: [] };
 }

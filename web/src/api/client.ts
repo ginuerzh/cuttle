@@ -1,4 +1,4 @@
-import type { Alert, AttemptRow, CaptureRule, ConfigResponse, Entrypoint, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, SeriesResponse, TopologyPosition } from './types';
+import type { Alert, AttemptRow, CaptureRule, ConfigResponse, Entrypoint, EntrypointHealth, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, SeriesResponse, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -68,7 +68,7 @@ export async function getConfig(): Promise<ConfigResponse> {
   const cfg = await request<ConfigResponse>('GET', '/api/config');
   return {
     ...cfg,
-    entrypoints: cfg.entrypoints ?? [],
+    entrypoints: (cfg.entrypoints ?? []).map((e) => ({ ...e, routes: e.routes ?? [] })),
     providers: cfg.providers ?? [],
     nodes: cfg.nodes ?? [],
     routes: cfg.routes ?? [],
@@ -164,6 +164,11 @@ export function deleteRoute(id: string): Promise<void> {
 
 export function getRouteHealth(): Promise<RouteHealth[]> {
   return request<RouteHealth[]>('GET', '/api/routes/health');
+}
+
+/** Binding health of every compiled entrypoint; empty when no data plane is running. */
+export function getEntrypointHealth(): Promise<EntrypointHealth[]> {
+  return request<EntrypointHealth[] | null>('GET', '/api/entrypoints/health').then((rows) => rows ?? []);
 }
 
 /**

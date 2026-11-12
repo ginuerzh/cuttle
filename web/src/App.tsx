@@ -29,8 +29,8 @@ import {
   SettingOutlined,
   SunOutlined,
 } from '@ant-design/icons';
-import { clearAuthFailures, getAttempts, getConfig, getHealth, getRequest, getRequests, getRouteHealth, logout, UnauthorizedError, type AttemptQuery, type RequestQuery } from './api/client';
-import type { AttemptRow, AuthFailureSnapshot, ConfigResponse, EdgeMetrics, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
+import { clearAuthFailures, getAttempts, getConfig, getEntrypointHealth, getHealth, getRequest, getRequests, getRouteHealth, logout, UnauthorizedError, type AttemptQuery, type RequestQuery } from './api/client';
+import type { AttemptRow, AuthFailureSnapshot, ConfigResponse, EdgeMetrics, EntrypointHealth, GraphMetrics, Health, NodeMetrics, RequestRow, RouteHealth } from './api/types';
 import type { SnapshotMessage } from './api/events';
 import { authFailureNotifications, sameAuthFailures } from './notifications';
 import { Login } from './pages/Login';
@@ -626,6 +626,7 @@ export default function App() {
   const [resetKey, setResetKey] = useState(0);
   const [sessionKey, setSessionKey] = useState(0);
   const [routeHealth, setRouteHealth] = useState<RouteHealth[]>([]);
+  const [entrypointHealth, setEntrypointHealth] = useState<EntrypointHealth[]>([]);
   const rangeMs = RANGES.find((item) => item.value === range)?.ms ?? 60 * 60_000;
   const nodeHealth = useMemo(() => nodeRouteHealth(routeHealth), [routeHealth]);
   const labels = useMemo(() => (config ? configLabels(config) : null), [config]);
@@ -720,6 +721,9 @@ export default function App() {
     setUpdatedAt(formatDateTime(msg.to));
     setStale(false);
     if (msg.health) setRouteHealth(msg.health);
+    // The server omits entrypointHealth when the build has none, so an absent
+    // field keeps the previous rows instead of clearing them.
+    if (msg.entrypointHealth) setEntrypointHealth(msg.entrypointHealth);
   }, [mode]);
 
   const handleStatus = useCallback((connected: boolean) => {
@@ -775,6 +779,13 @@ export default function App() {
         })
         .catch(() => {
           if (!cancelled) setRouteHealth([]);
+        });
+      getEntrypointHealth()
+        .then((rows) => {
+          if (!cancelled) setEntrypointHealth(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setEntrypointHealth([]);
         });
     };
     load();
@@ -911,7 +922,7 @@ export default function App() {
             ) : page === 'routes' ? (
               config ? <RoutesPage config={config} onReload={loadConfig} /> : null
             ) : page === 'entrypoints' ? (
-              config ? <EntrypointsPage config={config} onReload={loadConfig} /> : null
+              config ? <EntrypointsPage config={config} onReload={loadConfig} health={entrypointHealth} /> : null
             ) : page === 'gateway-keys' ? (
               <GatewayKeysPage />
             ) : page === 'requests' ? (

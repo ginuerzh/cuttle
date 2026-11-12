@@ -8,6 +8,8 @@ import {
   deleteProvider,
   deleteRoute,
   getAttempts,
+  getConfig,
+  getEntrypointHealth,
   getGatewayKeyUsage,
   getProviderModels,
   getProviderUsage,
@@ -326,4 +328,36 @@ it('sends entity ids as request filters', async () => {
   expect(params.get('node')).toBe('n_3k9x2m4q7a');
   expect(params.get('entrypoint')).toBe('e_3k9x2m4q7a');
   expect(params.get('key')).toBe('gk_3k9x2m4q7a');
+});
+
+it('requests the entrypoint binding health and never returns null', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const fetchMock = vi.fn(async () => new Response('null', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  await expect(getEntrypointHealth()).resolves.toEqual([]);
+  expect(fetchMock).toHaveBeenCalledWith('/api/entrypoints/health', expect.objectContaining({ method: 'GET' }));
+});
+
+it('normalizes entrypoints without bindings to an empty list', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          gateway: { listen: ':8787' },
+          admin: { listen: ':8788', sessionTTL: '12h' },
+          entrypoints: [{ id: 'e_0000000001', name: 'draft', match: ['*'] }],
+          providers: [],
+          nodes: [],
+          routes: [],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ),
+  );
+
+  const cfg = await getConfig();
+  expect(cfg.entrypoints[0].routes).toEqual([]);
 });

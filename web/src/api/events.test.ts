@@ -85,6 +85,48 @@ describe('parseLiveMessage', () => {
     expect(absent?.type === 'snapshot' && absent.authFailures).toBeUndefined();
   });
 
+  it('passes entrypoint binding health through', () => {
+    const snapshot = parseLiveMessage(
+      JSON.stringify({
+        type: 'snapshot',
+        since: '2026-11-12T11:00:00Z',
+        to: '2026-11-12T12:00:00Z',
+        metrics: { nodes: {}, edges: {}, errors: [] },
+        entrypointHealth: [
+          {
+            entrypointId: 'e_0000000001',
+            entrypointName: 'fast',
+            active: { routeId: 'r_0000000001', fallback: true },
+            bindings: [
+              {
+                index: 0,
+                routeId: 'r_0000000001',
+                routeName: 'primary',
+                eligible: false,
+                last: { at: '2026-11-12T11:59:00Z', ok: false, exitCode: 3, latencyMs: 12, error: 'refused' },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(snapshot?.type).toBe('snapshot');
+    if (snapshot?.type === 'snapshot') {
+      expect(snapshot.entrypointHealth?.[0].active.fallback).toBe(true);
+      expect(snapshot.entrypointHealth?.[0].bindings[0].last?.exitCode).toBe(3);
+    }
+
+    const absent = parseLiveMessage(
+      JSON.stringify({
+        type: 'snapshot',
+        since: 'x',
+        to: 'y',
+        metrics: { nodes: {}, edges: {}, errors: [] },
+      }),
+    );
+    expect(absent?.type === 'snapshot' && absent.entrypointHealth).toBeUndefined();
+  });
+
   it('rejects malformed messages', () => {
     expect(parseLiveMessage('not json')).toBeNull();
     expect(parseLiveMessage(JSON.stringify({ type: 'other' }))).toBeNull();
@@ -104,6 +146,11 @@ describe('parseLiveMessage', () => {
     expect(
       parseLiveMessage(
         JSON.stringify({ type: 'snapshot', since: 'x', to: 'y', metrics: {}, authFailures: {} }),
+      ),
+    ).toBeNull();
+    expect(
+      parseLiveMessage(
+        JSON.stringify({ type: 'snapshot', since: 'x', to: 'y', metrics: {}, entrypointHealth: {} }),
       ),
     ).toBeNull();
     expect(

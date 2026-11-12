@@ -53,7 +53,7 @@ const cfg = {
   providers: [{ id: 'p_0000000001', name: 'DeepSeek 官方', type: 'deepseek', keys: [] }],
   nodes: [{ id: 'n_0000000001', name: 'fast', provider: 'p_0000000001', model: 'deepseek-v4-flash' }],
   routes: [{ id: 'r_0000000001', name: 'strong', nodes: ['n_0000000001'] }],
-  entrypoints: [{ id: 'e_0000000001', name: 'all', match: ['*'], route: 'r_0000000001' }],
+  entrypoints: [{ id: 'e_0000000001', name: 'all', match: ['*'], routes: [{ route: 'r_0000000001' }] }],
 } as unknown as ConfigResponse;
 
 // ASCII labels only: the English panel test forbids CJK characters, and the

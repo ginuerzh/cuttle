@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { connectNodeProvider, disconnectEntrypointRoute, disconnectNodeProvider, planNodeProviderConnect } from './drafts';
+import {
+  connectEntrypointRoute,
+  connectNodeProvider,
+  disconnectEntrypointBinding,
+  disconnectEntrypointRoute,
+  disconnectNodeProvider,
+  planNodeProviderConnect,
+} from './drafts';
 import type { Entrypoint, Node, Provider } from '../api/types';
 
 const provider: Provider = {
@@ -61,9 +68,53 @@ describe('disconnectNodeProvider', () => {
   });
 });
 
+const entrypoint: Entrypoint = {
+  id: 'e_0000000001',
+  name: 'e',
+  match: ['a*', 'b*'],
+  routes: [{ route: 'r_0000000001', probe: { command: 'true', interval: '30s', timeout: '5s' } }],
+};
+
+describe('connectEntrypointRoute', () => {
+  it('appends a probe-less binding and keeps the configured order', () => {
+    const next = connectEntrypointRoute(entrypoint, 'r_0000000002');
+    expect(next.routes.map((b) => b.route)).toEqual(['r_0000000001', 'r_0000000002']);
+    // The new binding is the last one, so it is the only one that may omit a probe.
+    expect(next.routes[1].probe).toBeUndefined();
+    expect(next.routes[0].probe?.command).toBe('true');
+    expect(entrypoint.routes).toHaveLength(1);
+  });
+
+  it('is a no-op for a route the entrypoint already binds', () => {
+    const next = connectEntrypointRoute(entrypoint, 'r_0000000001');
+    expect(next).toBe(entrypoint);
+  });
+
+  it('connects the first route of a draft without touching the globs', () => {
+    const next = connectEntrypointRoute({ ...entrypoint, routes: [] }, 'r_0000000002');
+    expect(next.routes).toEqual([{ route: 'r_0000000002' }]);
+    expect(next.match).toEqual(['a*', 'b*']);
+  });
+});
+
+describe('disconnectEntrypointBinding', () => {
+  it('removes only the named binding', () => {
+    const bound: Entrypoint = {
+      ...entrypoint,
+      routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
+    };
+    const next = disconnectEntrypointBinding(bound, 'r_0000000001');
+    expect(next.routes).toEqual([{ route: 'r_0000000002' }]);
+  });
+
+  it('keeps the entrypoint untouched when the route is not bound', () => {
+    expect(disconnectEntrypointBinding(entrypoint, 'r_0000000009')).toBe(entrypoint);
+  });
+});
+
 describe('disconnectEntrypointRoute', () => {
-  it('clears the route and keeps match order', () => {
-    const e: Entrypoint = { id: 'e_0000000001', name: 'e', match: ['a*', 'b*'], route: 'r_0000000001' };
-    expect(disconnectEntrypointRoute(e)).toMatchObject({ id: 'e_0000000001', match: ['a*', 'b*'], route: '' });
+  it('clears every binding into a draft and keeps match order', () => {
+    const next = disconnectEntrypointRoute(entrypoint);
+    expect(next).toMatchObject({ id: 'e_0000000001', match: ['a*', 'b*'], routes: [] });
   });
 });

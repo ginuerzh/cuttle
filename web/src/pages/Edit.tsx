@@ -16,7 +16,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { HolderOutlined, MinusCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowUpOutlined, HolderOutlined, MinusCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import type { Connection } from '@xyflow/react';
 import {
   createNode,
@@ -32,7 +32,7 @@ import {
   updateNode,
   updateRoute,
 } from '../api/client';
-import type { ConfigResponse, Entrypoint, Node as BindNode, Preset, Provider, ProviderApi, ProviderModel, Route, RouteHealth } from '../api/types';
+import type { ConfigResponse, Entrypoint, EntrypointRoute, Node as BindNode, Preset, Provider, ProviderApi, ProviderModel, Route, RouteHealth } from '../api/types';
 import { translate as tr } from '../i18n';
 import { entrypointFromNodeId, splitId } from './selection';
 import { addRouteNode, reorderNodes } from './routeNodes';
@@ -57,7 +57,7 @@ import {
 } from './presets';
 import { ModelCard } from '../components/ModelCard';
 import { Topology, type Selection } from './Topology';
-import { disconnectEntrypointRoute, disconnectNodeProvider, planNodeProviderConnect } from './drafts';
+import { connectEntrypointRoute, disconnectEntrypointRoute, disconnectNodeProvider, planNodeProviderConnect } from './drafts';
 import type { NodeRouteHealth } from './routeHealth';
 import { entityLabel, labelMap, configLabels } from '../labels';
 
@@ -984,6 +984,168 @@ export function NodeForm({
   );
 }
 
+/** One binding row in the entrypoint editor; every field is optional while typing. */
+export interface EntrypointBindingRow {
+  route?: string;
+  probe?: { command?: string; interval?: string; timeout?: string };
+}
+
+/**
+ * The ordered bindings a form row list saves. Blank rows are dropped so a form
+ * with an untouched row saves a draft, and a probe without a command is dropped
+ * so the server never sees an empty one (an empty probe would reject the save).
+ * The order of the rows is the binding order and is never sorted.
+ */
+export function entrypointBindingInputs(rows?: EntrypointBindingRow[]): EntrypointRoute[] {
+  const bindings: EntrypointRoute[] = [];
+  for (const row of rows ?? []) {
+    const route = (row?.route ?? '').trim();
+    if (!route) continue;
+    const command = (row?.probe?.command ?? '').trim();
+    if (!command) {
+      bindings.push({ route });
+      continue;
+    }
+    const probe: EntrypointRoute['probe'] = { command };
+    const interval = (row?.probe?.interval ?? '').trim();
+    const timeout = (row?.probe?.timeout ?? '').trim();
+    if (interval) probe.interval = interval;
+    if (timeout) probe.timeout = timeout;
+    bindings.push({ route, probe });
+  }
+  return bindings;
+}
+
+/** The editor rows of an entrypoint; a draft shows one empty row to fill in. */
+function entrypointBindingRows(entrypoint?: Entrypoint): EntrypointBindingRow[] {
+  const rows = (entrypoint?.routes ?? []).map((binding) => ({
+    route: binding.route,
+    probe: binding.probe ? { ...binding.probe } : undefined,
+  }));
+  return rows.length > 0 ? rows : [{}];
+}
+
+/**
+ * Ordered route bindings with an optional probe. Bindings are inline config:
+ * they carry no id, so rows are keyed by their position only. The probe fields
+ * stay collapsed behind a toggle because most bindings never have one.
+ */
+function EntrypointBindingsField({ routes }: { routes: Route[] }) {
+  const form = Form.useFormInstance();
+  const routeOptions = routes.map((r) => ({ value: r.id, label: r.name }));
+
+  const toggleProbe = (index: number, on: boolean) => {
+    const rows: EntrypointBindingRow[] = [
+      ...((form.getFieldValue('routes') as EntrypointBindingRow[] | undefined) ?? []),
+    ];
+    const row = rows[index] ?? {};
+    rows[index] = { ...row, probe: on ? { command: '', interval: '', timeout: '' } : undefined };
+    form.setFieldValue('routes', rows);
+  };
+
+  return (
+    <Form.List name="routes">
+      {(fields, { add, remove, move }) => (
+        <>
+          {fields.map((field, index) => (
+            <div
+              key={field.key}
+              style={{ border: '1px solid var(--gw-border)', borderRadius: 6, padding: 8, marginTop: 8 }}
+            >
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <Form.Item name={[field.name, 'route']} noStyle>
+                  <Select
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    options={routeOptions}
+                    placeholder={tr('选择路由')}
+                    style={{ flex: 1 }}
+                  />
+                </Form.Item>
+                <Button
+                  size="small"
+                  aria-label={tr('上移')}
+                  icon={<ArrowUpOutlined />}
+                  disabled={index === 0}
+                  onClick={() => move(index, index - 1)}
+                />
+                <Button
+                  size="small"
+                  aria-label={tr('下移')}
+                  icon={<ArrowDownOutlined />}
+                  disabled={index === fields.length - 1}
+                  onClick={() => move(index, index + 1)}
+                />
+                <Button
+                  size="small"
+                  danger
+                  aria-label={tr('删除绑定')}
+                  icon={<MinusCircleOutlined />}
+                  onClick={() => remove(field.name)}
+                />
+              </div>
+              <Form.Item noStyle shouldUpdate>
+                {() => {
+                  const current =
+                    (form.getFieldValue('routes') as EntrypointBindingRow[] | undefined) ?? [];
+                  if (current[field.name]?.probe === undefined) {
+                    return (
+                      <Button
+                        type="link"
+                        size="small"
+                        style={{ paddingInline: 0 }}
+                        onClick={() => toggleProbe(field.name, true)}
+                      >
+                        {tr('添加探测命令（可选）')}
+                      </Button>
+                    );
+                  }
+                  return (
+                    <>
+                      <Form.Item
+                        name={[field.name, 'probe', 'command']}
+                        label={tr('探测命令')}
+                        rules={[{ required: true, message: tr('探测命令不能为空') }]}
+                        extra={tr('用 sh -c 执行，退出码 0 表示该绑定可用。')}
+                        style={{ marginTop: 8, marginBottom: 8 }}
+                      >
+                        <Input placeholder="curl -fsS http://127.0.0.1:8080/ready" />
+                      </Form.Item>
+                      <Space size={8} align="start" wrap>
+                        <Form.Item
+                          name={[field.name, 'probe', 'interval']}
+                          label={tr('探测间隔')}
+                          extra={tr('默认 30s')}
+                        >
+                          <Input placeholder="30s" style={{ width: 90 }} />
+                        </Form.Item>
+                        <Form.Item
+                          name={[field.name, 'probe', 'timeout']}
+                          label={tr('探测超时')}
+                          extra={tr('默认 5s')}
+                        >
+                          <Input placeholder="5s" style={{ width: 90 }} />
+                        </Form.Item>
+                        <Button type="text" size="small" onClick={() => toggleProbe(field.name, false)}>
+                          {tr('移除探测命令')}
+                        </Button>
+                      </Space>
+                    </>
+                  );
+                }}
+              </Form.Item>
+            </div>
+          ))}
+          <Button type="dashed" size="small" block icon={<PlusOutlined />} style={{ marginTop: 8 }} onClick={() => add({})}>
+            {tr('添加路由绑定')}
+          </Button>
+        </>
+      )}
+    </Form.List>
+  );
+}
+
 export function EntrypointForm({
   entrypoint,
   index,
@@ -1004,7 +1166,14 @@ export function EntrypointForm({
     setBusy(true);
     try {
       const next = config.entrypoints.map((e, i) =>
-        i === index ? { ...e, name: v.name, match: v.match, route: v.route ?? '' } : e,
+        i === index
+          ? {
+              ...e,
+              name: v.name,
+              match: v.match,
+              routes: entrypointBindingInputs(v.routes as EntrypointBindingRow[] | undefined),
+            }
+          : e,
       );
       await putEntrypoints(next);
       message.success(tr('已保存'));
@@ -1034,7 +1203,7 @@ export function EntrypointForm({
       form={form}
       layout="vertical"
       size="small"
-      initialValues={{ name: entrypoint.name, match: entrypoint.match, route: entrypoint.route || undefined }}
+      initialValues={{ name: entrypoint.name, match: entrypoint.match, routes: entrypointBindingRows(entrypoint) }}
     >
       <Typography.Title level={5} style={{ marginTop: 0 }}>
         {entrypoint.name}
@@ -1057,14 +1226,12 @@ export function EntrypointForm({
       >
         <Select mode="tags" tokenSeparators={[',']} placeholder="claude-opus*" />
       </Form.Item>
-      <Form.Item name="route" label={tr('路由')} extra={tr('留空即为草稿：入口先建卡片，之后在拓扑上拖线接路由。')}>
-        <Select
-          allowClear
-          showSearch
-          optionFilterProp="label"
-          options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
-          placeholder={tr('未连接（草稿）')}
-        />
+      <Form.Item
+        label={tr('路由绑定')}
+        extra={tr('按顺序尝试，第一个探测通过的绑定生效；没有探测的绑定总是可用，只能放在最后。没有绑定即为草稿：入口仍占用这些模型，但匹配的请求会失败。')}
+        style={{ marginBottom: 12 }}
+      >
+        <EntrypointBindingsField routes={config.routes} />
       </Form.Item>
       <Divider />
       <Space>
@@ -1107,7 +1274,7 @@ export function EdgeForm({ id, config, onSaved }: { id: string; config: ConfigRe
           {tr('入口连线')}
         </Typography.Title>
         <Typography.Paragraph type="secondary">
-          {tr('入口指向哪条 route 由 entrypoint 的 route 决定，请在入口面板里修改。')}
+          {tr('入口绑定哪些 route 由入口的 routes 列表决定，请在入口面板里修改。')}
         </Typography.Paragraph>
         <Button danger loading={busy} onClick={remove} disabled={!entrypoint}>
           {tr('断开')}
@@ -1273,7 +1440,7 @@ export function Edit({ config, onReload, nodeHealth }: Props) {
         if (!found) throw new Error('entrypoint not found');
         if (!config.routes.some((r) => r.id === tid)) throw new Error('route not found');
         const next = config.entrypoints.map((e, i) =>
-          i === found.index ? { ...e, route: tid } : e,
+          i === found.index ? connectEntrypointRoute(e, tid) : e,
         );
         await putEntrypoints(next);
       } else if (skind === 'node' && tkind === 'provider') {
@@ -1735,7 +1902,7 @@ export function AddEntrypointModal({
     try {
       await putEntrypoints([
         ...config.entrypoints,
-        { name: v.name, match: v.match, route: v.route ?? '' },
+        { name: v.name, match: v.match, routes: entrypointBindingInputs(v.routes as EntrypointBindingRow[] | undefined) },
       ]);
       form.resetFields();
       await onDone();
@@ -1755,7 +1922,7 @@ export function AddEntrypointModal({
       confirmLoading={busy}
       destroyOnClose
     >
-      <Form form={form} layout="vertical" size="small">
+      <Form form={form} layout="vertical" size="small" initialValues={{ routes: [{}] }}>
         <Form.Item name="name" label={tr('名称')} rules={[{ required: true }]}>
           <Input placeholder="fast" />
         </Form.Item>
@@ -1766,14 +1933,12 @@ export function AddEntrypointModal({
         >
           <Select mode="tags" tokenSeparators={[',']} placeholder="claude-opus*" />
         </Form.Item>
-        <Form.Item name="route" label={tr('路由')} extra={tr('留空即为草稿：入口先建卡片，之后在拓扑上拖线接路由。')}>
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            options={config.routes.map((r) => ({ value: r.id, label: r.name }))}
-            placeholder={tr('未连接（草稿）')}
-          />
+        <Form.Item
+          label={tr('路由绑定')}
+          extra={tr('可以先留空作为草稿，之后再在入口面板里绑定路由。')}
+          style={{ marginBottom: 0 }}
+        >
+          <EntrypointBindingsField routes={config.routes} />
         </Form.Item>
       </Form>
     </Modal>

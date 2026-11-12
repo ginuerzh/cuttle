@@ -156,14 +156,63 @@ export interface RouteHealth {
   nodes: RouteNodeHealth[];
 }
 
+/** One command probe on a binding: exit 0 makes the binding eligible. */
+export interface RouteBindingProbe {
+  /** Shell command; the runner uses `sh -c` (`cmd /C` on Windows). Never env-expanded. */
+  command: string;
+  /** Go duration string between runs; the server default is 30s. */
+  interval?: string;
+  /** Go duration string for one run; the server default is 5s. */
+  timeout?: string;
+}
+
+/** One ordered route binding of an entrypoint. */
+export interface EntrypointRoute {
+  /** Route id this binding points at; it is never a display name. */
+  route: string;
+  /** Optional eligibility probe; absent means always eligible, so only the last binding may omit it. */
+  probe?: RouteBindingProbe;
+}
+
 export interface Entrypoint {
   /** Immutable id; the handle every API path and association uses. */
   id: string;
   /** Display label. */
   name: string;
   match: string[];
-  /** Route id this entrypoint points at; empty while drafting. */
-  route: string;
+  /** Ordered route bindings; the first eligible one serves. Empty means a draft. */
+  routes: EntrypointRoute[];
+}
+
+/** One probe result of a binding; `last` is absent before the first run. */
+export interface EntrypointHealthProbe {
+  at: string;
+  ok: boolean;
+  /** -1 when the command could not be started or timed out. */
+  exitCode: number;
+  latencyMs: number;
+  /** Stderr tail of the failed run. */
+  error?: string;
+}
+
+/** One binding's health; `routeId`/`routeName` identify the bound route. */
+export interface EntrypointHealthBinding {
+  /** Position in the configured binding list. */
+  index: number;
+  routeId: string;
+  routeName: string;
+  /** Marker state read with the same rule the data plane uses. */
+  eligible: boolean;
+  last?: EntrypointHealthProbe;
+}
+
+/** The binding health of one entrypoint, in configuration order. */
+export interface EntrypointHealth {
+  entrypointId: string;
+  entrypointName: string;
+  /** The binding that serves the next request; `fallback` means no binding is eligible. */
+  active: { routeId: string; fallback: boolean };
+  bindings: EntrypointHealthBinding[];
 }
 
 export interface TopologyPosition {

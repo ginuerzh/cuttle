@@ -41,7 +41,6 @@ const PALETTE = [
 ];
 
 const ENTRYPOINT_COLOR = '#6366f1';
-const UNROUTED_COLOR = '#dc2626';
 const DRAFT_COLOR = '#d97706';
 
 /** Stable colour per route, so every edge of a route shares one identity. */
@@ -89,10 +88,11 @@ function edge(
 /**
  * Builds the routing DAG from the gateway config.
  *
- * An entrypoint owns the client model globs and points at exactly one route.
- * A route references nodes, and each node points at one provider model. Every
- * association is an entity id; names are display labels only, so graph ids stay
- * stable across a rename.
+ * An entrypoint owns the client model globs and an ordered list of route
+ * bindings, each of which draws one edge to its route. A route references
+ * nodes, and each node points at one provider model. Every association is an
+ * entity id; names are display labels only, so graph ids stay stable across a
+ * rename.
  */
 export function buildGraph(
   cfg: Pick<ConfigResponse, 'entrypoints' | 'routes' | 'providers' | 'nodes'>,
@@ -185,6 +185,10 @@ export function buildGraph(
       continue;
     }
     entrypointIds.add(id);
+    const bindings = e.routes ?? [];
+    const routeNames = bindings.map(
+      (b) => routeById.get(b.route)?.name ?? (b.route || t('未连接')),
+    );
     nodes.push({
       id,
       type: 'entrypoint',
@@ -192,18 +196,24 @@ export function buildGraph(
       data: {
         kind: 'entrypoint',
         label: e.name,
-        sub: `${(e.match ?? []).join(', ')} → ${routeById.get(e.route)?.name ?? (e.route || t('未连接'))}`,
+        sub: `${(e.match ?? []).join(', ')} → ${routeNames.join(', ') || t('未连接')}`,
         entrypoint: e,
-        unconnected: !e.route,
+        unconnected: bindings.length === 0,
       },
     });
 
-    const target = routeById.get(e.route);
-    if (target) {
-      edges.push(edge(`${id}->route:${target.id}`, id, `route:${target.id}`, undefined, undefined, { color: ENTRYPOINT_COLOR }));
-    } else {
+    // One edge per binding, keyed by the binding's route id exactly like the
+    // stats edge, so topology traffic stays joined across a reorder.
+    for (const b of bindings) {
+      if (!routeById.has(b.route)) {
+        continue;
+      }
+      edges.push(edge(`${id}->route:${b.route}`, id, `route:${b.route}`, undefined, undefined, { color: ENTRYPOINT_COLOR }));
+    }
+
+    // A draft has no binding at all, so nothing can serve its models.
+    if (bindings.length === 0) {
       needsUnrouted = true;
-      const draft = !e.route;
       edges.push(
         edge(
           `${id}->unrouted`,
@@ -211,8 +221,8 @@ export function buildGraph(
           'unrouted',
           undefined,
           undefined,
-          { color: draft ? DRAFT_COLOR : UNROUTED_COLOR, draft },
-          draft,
+          { color: DRAFT_COLOR, draft: true },
+          true,
         ),
       );
     }

@@ -1,4 +1,4 @@
-import type { AuthFailureSnapshot, GraphMetrics, RouteHealth } from './types';
+import type { AuthFailureSnapshot, EntrypointHealth, GraphMetrics, RouteHealth } from './types';
 
 export type SnapshotMessage = {
   type: 'snapshot';
@@ -6,6 +6,8 @@ export type SnapshotMessage = {
   to: string;
   metrics: GraphMetrics;
   health?: RouteHealth[];
+  /** Binding health of the current build; the server omits it when empty. */
+  entrypointHealth?: EntrypointHealth[];
   authFailures?: AuthFailureSnapshot;
 };
 
@@ -51,6 +53,9 @@ export function parseLiveMessage(data: string): LiveMessage | null {
     if (msg.health !== undefined && !Array.isArray(msg.health)) {
       return null;
     }
+    if (msg.entrypointHealth !== undefined && !Array.isArray(msg.entrypointHealth)) {
+      return null;
+    }
     let authFailures: AuthFailureSnapshot | undefined;
     if (msg.authFailures !== undefined) {
       if (
@@ -69,6 +74,9 @@ export function parseLiveMessage(data: string): LiveMessage | null {
       to: msg.to,
       metrics: msg.metrics as GraphMetrics,
       ...(Array.isArray(msg.health) ? { health: msg.health as RouteHealth[] } : {}),
+      ...(Array.isArray(msg.entrypointHealth)
+        ? { entrypointHealth: msg.entrypointHealth as EntrypointHealth[] }
+        : {}),
       ...(authFailures ? { authFailures } : {}),
     };
   }

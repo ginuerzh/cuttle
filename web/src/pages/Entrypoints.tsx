@@ -2,16 +2,59 @@ import { useState } from 'react';
 import { Button, Drawer, Empty, Popconfirm, Space, Typography, message } from 'antd';
 import { putEntrypoints } from '../api/client';
 import { translate as t } from '../i18n';
-import type { ConfigResponse } from '../api/types';
-import { entityLabel, labelMap } from '../labels';
+import type { ConfigResponse, Entrypoint, EntrypointHealth } from '../api/types';
+import { entityLabel, labelMap, type LabelMap } from '../labels';
 import { AddEntrypointModal, EntrypointForm } from './Edit';
 import { ListCard } from '../components/ListCard';
 import { ListPage } from '../components/ListPage';
 
-export function EntrypointsPage({ config, onReload }: { config: ConfigResponse; onReload: () => Promise<void> }) {
+/**
+ * One entrypoint card's subtitle: its globs and every binding in configured
+ * order. A binding shows its eligibility once the data plane reports it, and
+ * the binding the data plane falls back to is marked as such. Health is keyed
+ * by entrypoint id, the same key the graph and stats use.
+ */
+export function entrypointSubtitle(
+  entrypoint: Entrypoint,
+  routeNames: LabelMap,
+  health?: EntrypointHealth,
+): string {
+  const match = (entrypoint.match ?? []).join(', ');
+  const bindings = entrypoint.routes ?? [];
+  if (bindings.length === 0) {
+    return `${match} → ${t('未连接')}`;
+  }
+  const reported = new Map((health?.bindings ?? []).map((b) => [b.routeId, b]));
+  const active = health?.active;
+  const parts = bindings.map((binding) => {
+    const name = entityLabel(binding.route, routeNames) || binding.route;
+    const row = reported.get(binding.route);
+    const state: string[] = [];
+    if (row) {
+      state.push(row.eligible ? t('可用') : t('未通过'));
+    }
+    if (active?.fallback && active.routeId === binding.route) {
+      state.push(t('回退'));
+    }
+    return state.length > 0 ? `${name}（${state.join(' · ')}）` : name;
+  });
+  return `${match} → ${parts.join(', ')}`;
+}
+
+export function EntrypointsPage({
+  config,
+  onReload,
+  health = [],
+}: {
+  config: ConfigResponse;
+  onReload: () => Promise<void>;
+  /** Binding health of the current build, keyed by entrypoint id. */
+  health?: EntrypointHealth[];
+}) {
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const routeNames = labelMap(config.routes);
+  const healthById = new Map(health.map((h) => [h.entrypointId, h]));
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
@@ -47,13 +90,13 @@ export function EntrypointsPage({ config, onReload }: { config: ConfigResponse; 
         </Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
-        {t('用 ↑ ↓ 调整顺序。入口按顺序匹配客户端模型，第一个命中的入口决定 route。')}
+        {t('用 ↑ ↓ 调整顺序。入口按顺序匹配客户端模型，第一个命中的入口决定它绑定的路由。')}
       </Typography.Paragraph>
       {config.entrypoints.length === 0 ? <Empty /> : config.entrypoints.map((e, i) => (
         <ListCard
           key={e.id}
           title={`${i + 1}. ${e.name}`}
-          subtitle={`${(e.match ?? []).join(', ')} → ${entityLabel(e.route, routeNames) || t('未连接')}`}
+          subtitle={entrypointSubtitle(e, routeNames, healthById.get(e.id))}
           actions={
             <>
               <Button size="small" disabled={i === 0} onClick={() => void move(i, i - 1)}>↑</Button>
