@@ -42,6 +42,7 @@ RUN apk add --no-cache ca-certificates tzdata \
     && chown -R cuttle:cuttle /data \
     && chmod 700 /data
 
+# Keep the image on /data; the binary default is <user config dir>/cuttle.
 ENV CUTTLE_DATA=/data \
     CUTTLE_ADMIN_LISTEN=:8788
 

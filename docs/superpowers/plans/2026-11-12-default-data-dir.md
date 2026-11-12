@@ -376,9 +376,9 @@ git commit -m "docs: document the user-config-dir default for CUTTLE_DATA"
 ```
 
 **Implementation record (Task 3):**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-12, complete.
+- Repository + commit: `ginuerzh/cuttle` (branch `feat/default-data-dir`), commit recorded below.
+- Files changed: `README.md` (default paragraph, table row, upgrade note, Docker section), `DOCKER.md`, `AGENTS.md` (configuration invariant and gotcha), `Dockerfile` (comment above `ENV CUTTLE_DATA=/data`, value unchanged).
+- Tests/commands and results: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` → all packages `ok`, exit 0. `grep '"/data"'` over non-test Go sources → no matches. No web change, so the web gate was not run.
+- Review findings and fixes: none yet (final review pending).
+- Deferred items/limitations: the Docker image still defaults to `/data` by design; a non-Docker install that relied on the old default must set `CUTTLE_DATA` (documented in the README upgrade note).
