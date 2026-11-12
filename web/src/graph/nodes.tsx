@@ -225,15 +225,18 @@ const HANDLE_SIZE = 14;
 
 /**
  * The endpoint dot; also the connection start target in edit mode. Monitor mode
- * hides it by opacity so the handle keeps its box: React Flow measures it to
- * anchor the edges, and the dot is only useful when a connection can start.
+ * hides it, but the handle box stays mounted because React Flow measures it to
+ * anchor the edges, and it anchors to the *outer* edge of that box. A hidden dot
+ * therefore has to move flush inside the card (the class centres it on the
+ * border with `translate(50%, -50%)`), or every line stops half a dot short of
+ * the node.
  */
 export function handleStyle(color: string, connectable = true): React.CSSProperties {
   return {
     width: HANDLE_SIZE,
     height: HANDLE_SIZE,
     background: color,
-    opacity: connectable ? undefined : 0,
+    ...(connectable ? null : { opacity: 0, transform: 'translateY(-50%)' }),
   };
 }
 

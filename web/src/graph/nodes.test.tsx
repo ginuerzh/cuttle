@@ -45,6 +45,13 @@ describe('handleStyle', () => {
     expect(style.width).toBe(14);
     expect(style.height).toBe(14);
   });
+
+  it('moves the hidden dot flush inside the card so the line still reaches it', () => {
+    // React Flow anchors an edge to the outer edge of the handle box, so a dot
+    // centred on the border would leave a 7px gap once it is invisible.
+    expect(handleStyle('#6366f1', false).transform).toBe('translateY(-50%)');
+    expect(handleStyle('#6366f1').transform).toBeUndefined();
+  });
 });
 
 describe('endpoint dots', () => {
@@ -64,8 +71,12 @@ describe('endpoint dots', () => {
     );
 
   it('shows the dots only in edit mode', () => {
-    expect(render(false)).toContain('opacity:0');
-    expect(render(true)).not.toContain('opacity:0');
+    const monitor = render(false);
+    expect(monitor).toContain('opacity:0');
+    expect(monitor).toContain('translateY(-50%)');
+    const edit = render(true);
+    expect(edit).not.toContain('opacity:0');
+    expect(edit).not.toContain('translateY(-50%)');
   });
 });
 
