@@ -481,7 +481,7 @@ git commit -m "refactor(admin): share the usage query and record fresh balances"
   - `(*Server).SampleUsageOnce(ctx context.Context, now time.Time)`
   - `(*Server).usageSampleInterval() time.Duration` (0 when sampling is off)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestSampleUsageOnceRecordsPoints(t *testing.T) {
@@ -520,12 +520,12 @@ calls), `TestUsageSamplerOffWhenIntervalZero` (interval 0, run
 `StartUsageSampler` for ~50 ms, assert zero vendor calls), and
 `TestSampleUsageOnceIgnoresFailedRead` (vendor 500 → no points).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/admin -run 'TestSampleUsageOnce|TestUsageSampler' -count=1`
 Expected: FAIL with `srv.SampleUsageOnce undefined`.
 
-- [ ] **Step 3: Implement the sampler and wire it in `main.go`**
+- [x] **Step 3: Implement the sampler and wire it in `main.go`**
 
 `usageSampleInterval` reads `srv.cfg` under `srv.mu` and returns `0` for a nil
 pointer or a non-positive value.
@@ -540,17 +540,17 @@ and re-read; otherwise wait the interval, then `SampleUsageOnce(ctx, time.Now())
 Start it in `main.go` beside `adm.StartProbes(probeCtx)` with the same context.
 Log the effective interval once at startup (`info`) and each time it changes.
 
-- [ ] **Step 4: Run the admin package tests**
+- [x] **Step 4: Run the admin package tests**
 
 Run: `GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Build the binary to prove the wiring compiles**
+- [x] **Step 5: Build the binary to prove the wiring compiles**
 
 Run: `GOWORK=off go build ./...`
 Expected: success.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/admin/sampler.go internal/admin/sampler_test.go main.go
@@ -558,12 +558,12 @@ git commit -m "feat(admin): sample provider balances in the background"
 ```
 
 **Implementation record — Task 4**
-- Date/status: pending
-- Repo/commit: `ginuerzh/cuttle` —
-- Files changed:
-- Tests run:
-- Review findings/fixes:
-- Deferred:
+- Date/status: 2026-11-12 / complete
+- Repo/commit: `ginuerzh/cuttle` (branch `feat/balance-curve`, base `6158e115`)
+- Files changed: created `internal/admin/sampler.go` (`StartUsageSampler`, `SampleUsageOnce`, `usageSampleInterval`, `usageSampleIdle`), `internal/admin/sampler_test.go` (4 tests); modified `main.go` (starts the sampler on the probes' context).
+- Tests run: RED `GOWORK=off go test ./internal/admin -run 'TestSampleUsageOnce|TestUsageSampler' -count=1` → `srv.SampleUsageOnce undefined`; GREEN same → ok. Gate `GOWORK=off go test ./internal/admin -count=1` → ok (19.8s); `GOWORK=off go build ./...` → ok.
+- Review findings/fixes: `SampleUsageOnce` returns early when the stats store is nil and when `s.cfg` is nil; the interval loop re-reads the config every round (SIGHUP applies), logs once per effective value, and idles 30 s while off without touching a vendor.
+- Deferred: none.
 
 ---
 

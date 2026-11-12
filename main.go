@@ -105,6 +105,7 @@ func run(args []string) error {
 		probeCtx, probeCancel := context.WithCancel(context.Background())
 		defer probeCancel()
 		adm.StartProbes(probeCtx)
+		adm.StartUsageSampler(probeCtx)
 		go func() {
 			if err := adminSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Errorf("admin server: %v", err)
