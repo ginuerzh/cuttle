@@ -246,3 +246,17 @@ Also run `GOWORK=off go test ./internal/gateway/ -count=1` per-package before co
 **Files changed:** `README.md` (routing section: glob match is by specificity, exact > prefix > catch-all regardless of file order; tiebreak = fewer stars, then file order).
 **Gates:** `GOWORK=off go build ./...` ok; `go vet ./...` ok; `GOWORK=off go test -p 1 ./... -count=1` all packages ok (gateway 11.3s, admin 17.9s, stats 21.0s). Web untouched (no UI or type registry change); `npm test` not required — recorded.
 **Deferred:** none in this task. See overall follow-ups (release tag, README upgrade note is in-place).
+
+### Fix wave (final-review) - 2026-11-16 - status: complete
+
+**Repository:** /root/code/go-gost/cuttle.
+**Full review:** Approve with fixes; the required fix was `ResolveEntrypointID` (stats graph + /api/events attribution still used declaration order). Stale text then purged repo-wide.
+**Files changed:**
+- `internal/config/ordering.go` — byte-literal scoring (docs match code), index-order helper (`entrypointOrder`) shared and reused; `OrderEntrypoints` allocation is unchanged but only at compile plus admin read paths.
+- `internal/config/config.go` — `ResolveEntrypoint` walks `entrypointOrder` against the original slice (pointers into `c.Entrypoints`, no copies); doc comments moved to specificity; unit tests added (`TestResolveEntrypointMatchesSpecificityRegardlessOfDeclarationOrder`).
+- `internal/gateway/build.go`, `internal/config/config.go`, `internal/stats/store.go`, `internal/admin/handlers.go`, `internal/gateway/count_tokens_policy.go` — stale "declaration order is precedence" comments corrected.
+- `AGENTS.md` — five stale invariants updated (routing rule, draft claims-by-specificity, `?entrypoint=` filter exclusion set, `/api/entrypoints` order semantics).
+- `README.md` — draft bullet rewritten (catchall draft no longer shadows specific entries; ties break by order); the specificity bullet backed with byte-accurate wording plus an explicit trade-off note (a wider prefix with more literals beats a shorter "exact" match); Upgrading callout added for the configs that had specific entries below `*`.
+- `web/src/pages/Entrypoints.tsx` + `web/src/locales/en-US.ts` — operator-facing hint corrected (specific beats catchall; order only breaks ties). Locale source updated both ends; `npx tsc --noEmit` clean; `npm test` 490/490; `npm run build` clean (dist local, not committed).
+**Tests:** `GOWORK=off go build ./...`, `go vet ./...`, `go test -p 1 ./... -count=1` → all ok.
+**Deferred:** `/api/entrypoints/health` rows come out in specificity order while other lists stay declaration order; noted in the review, no UI change required (consumers key by id).

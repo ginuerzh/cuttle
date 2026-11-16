@@ -117,7 +117,7 @@ export function EntrypointsPage({
         </Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
-        {t('用 ↑ ↓ 调整顺序。入口按顺序匹配客户端模型，第一个命中的入口决定它绑定的路由。')}
+        {t('用 ↑ ↓ 调整顺序。具体匹配的入口优先进入路由决策；顺序仅在特异度相同时决胜。')}
       </Typography.Paragraph>
       {config.entrypoints.length === 0 ? <Empty /> : config.entrypoints.map((e, i) => (
         <ListCard

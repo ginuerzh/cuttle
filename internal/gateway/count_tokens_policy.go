@@ -10,8 +10,7 @@ import (
 )
 
 // countTokensPolicy maps the ordered entrypoint model globs to a per-route
-// estimate decision. The first matching entry wins, mirroring routing
-// precedence.
+// estimate decision. The more specific entry wins, mirroring routing precedence.
 type countTokensPolicy struct {
 	entries []countTokensEntry
 }

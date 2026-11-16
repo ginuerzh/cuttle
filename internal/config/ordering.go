@@ -7,14 +7,15 @@ import "sort"
 // entrypoint, so scoring sums the best case rather than all globs; adding a
 // redundant glob never promotes an entrypoint above an exact match.
 //
-// An empty match has score 0. The returned value is used only for relative
-// comparison between rule sets.
+// An empty match has score 0. Match globs are expected to be ASCII model
+// names; non-ASCII patterns are still counted per byte, which is monotone
+// and order-consistent with the rest of the config.
 func SpecificityScore(match []string) int {
 	best := 0
 	for _, g := range match {
 		n := 0
-		for _, r := range g {
-			if r != '*' {
+		for i := 0; i < len(g); i++ {
+			if g[i] != '*' {
 				n++
 			}
 		}
@@ -25,14 +26,14 @@ func SpecificityScore(match []string) int {
 	return best
 }
 
-// StarCount returns the total number of '*' characters across match. It is
-// the tiebreak between two rules with the same literal count: fewer
-// wildcards means more literal context and wins.
+// StarCount returns the total number of '*' bytes across match. It is the
+// tiebreak between two rules with the same literal count: fewer wildcards
+// means more literal context and wins.
 func StarCount(match []string) int {
 	stars := 0
 	for _, g := range match {
-		for _, r := range g {
-			if r == '*' {
+		for i := 0; i < len(g); i++ {
+			if g[i] == '*' {
 				stars++
 			}
 		}
@@ -40,40 +41,38 @@ func StarCount(match []string) int {
 	return stars
 }
 
-// OrderEntrypoints returns a copy of eps sorted by specificity, highest
-// first: score descending, then fewer '*' characters, then original
-// position (stable). The input is left untouched.
-//
-// The function exists so every consumer that uses declaration order as
-// precedence (the compiled hop group, the count-tokens policy, the admin
-// stats filter) agrees on a single rule set established by URI routing.
-func OrderEntrypoints(eps []Entrypoint) []Entrypoint {
-	out := make([]struct {
-		ep   Entrypoint
-		idx  int
-		sc   int
-		star int
-	}, len(eps))
+// entrypointOrder returns the indices into eps sorted by specificity,
+// highest first: score descending, then fewer total '*' characters, then
+// original position. The total order makes the sort deterministic without a
+// stability promise.
+func entrypointOrder(eps []Entrypoint) []int {
+	idx := make([]int, len(eps))
+	score := make([]int, len(eps))
+	star := make([]int, len(eps))
 	for i, e := range eps {
-		out[i] = struct {
-			ep   Entrypoint
-			idx  int
-			sc   int
-			star int
-		}{e, i, SpecificityScore(e.Match), StarCount(e.Match)}
+		idx[i] = i
+		score[i] = SpecificityScore(e.Match)
+		star[i] = StarCount(e.Match)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].sc != out[j].sc {
-			return out[i].sc > out[j].sc
+	sort.Slice(idx, func(a, b int) bool {
+		i, j := idx[a], idx[b]
+		if score[i] != score[j] {
+			return score[i] > score[j]
 		}
-		if out[i].star != out[j].star {
-			return out[i].star < out[j].star
+		if star[i] != star[j] {
+			return star[i] < star[j]
 		}
-		return out[i].idx < out[j].idx
+		return i < j
 	})
-	sorted := make([]Entrypoint, len(out))
-	for i := range out {
-		sorted[i] = out[i].ep
+	return idx
+}
+
+// OrderEntrypoints returns a copy of eps sorted by specificity, highest
+// first. The input is left untouched.
+func OrderEntrypoints(eps []Entrypoint) []Entrypoint {
+	sorted := make([]Entrypoint, len(eps))
+	for pos, i := range entrypointOrder(eps) {
+		sorted[pos] = eps[i]
 	}
 	return sorted
 }

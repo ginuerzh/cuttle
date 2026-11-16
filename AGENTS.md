@@ -76,11 +76,13 @@ The only routing chain is:
 Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
 ```
 
-- Entrypoint declaration order is the only precedence rule. Never make route
-  order semantic across entrypoints.
+- Entrypoint matching is by specificity, then by declaration order: exact
+  beats prefix beats `*`, scored by the literal byte count of the
+  longest-matching glob; ties go to the entry with fewer `*`, then to the
+  declaration order. Never make route order semantic across entrypoints.
 - An entrypoint has an immutable id, a display name, a non-empty list of
   client-model globs and an **ordered list of route bindings**. No bindings is a
-  draft: the entrypoint still claims its models in declaration order, but every
+  draft: the entrypoint still claims its models (by specificity), but every
   matching request fails with a 5xx (x returns 502 for the zero-node hop) and is
   recorded as unrouted. `*` is an explicit catch-all.
 - A binding is `{route, probe?}` and holds a route id, never a display name.
@@ -152,10 +154,11 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   models are skipped at compile time. If every node is skipped, the request
   fails; never fall through to another route or send the client model upstream.
 - Entrypoints without bindings compile against one shared zero-node hop. That
-  hop keeps the matcher in declaration order on purpose: a draft entrypoint must
-  not fall through to a later entrypoint. A draft entrypoint therefore makes
-  `count_tokens` pass through too (no local estimate). An entrypoint estimates
-  `count_tokens` locally when **any** of its bindings needs an estimate.
+  hop carries the entrypoint's matcher (specificity decides whom it outranks);
+  a draft therefore claims its models by specificity rather than by position.
+  A draft entrypoint therefore makes `count_tokens` pass through too (no
+  local estimate). An entrypoint estimates `count_tokens` locally when **any**
+  of its bindings needs an estimate.
 - Do not edit the sibling repositories (`../core`, `../x`,
   `../llm-api-converter`) as part of cuttle work. Publish a tag in the sibling
   repository, then bump the tagged dependency here; record that repository's
@@ -340,7 +343,8 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
 - `PUT /api/entrypoints` replaces the ordered list, keeps the id of an entry that
   carries one, and mints an id for an entry without one.
 - `GET /api/entrypoints` returns the ordered list; `PUT /api/entrypoints`
-  replaces the whole list. Order is precedence.
+  replaces the whole list. Order breaks ties between equally specific entries;
+  it is not a simple priority — specificity wins.
 - `GET /api/topology/positions` returns the shared layout map; `PUT` replaces it
   in one transaction. Reject empty IDs and maps above 10,000 entries; return
   `503` when the stats store is unavailable.
@@ -424,9 +428,9 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   a v1 name that looks like an id is deliberately left alone.
 - Entrypoint attribution is query-time: resolve each row's `client_model`
   through the current entrypoint list. Never store an entrypoint column. The
-  `?entrypoint=` filter follows the same first-match rule, so the globs of every
-  earlier entrypoint shadow the selected one: a catch-all lists only the rows no
-  earlier entrypoint claimed.
+  `?entrypoint=` filter follows the same specificity rule, so the globs of
+  every more specific entrypoint shadow the selected one; the exclusion set is
+  derived from the specificity order, not the file order.
 - A row failed by a draft entrypoint has no `client_model` (no node ran, so no
   rewriter recorded one). It is therefore attributed to whichever entrypoint
   matches an empty model, normally the catch-all, and the draft's own filter

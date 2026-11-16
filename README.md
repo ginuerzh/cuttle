@@ -62,11 +62,20 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
   list of model globs, and an ordered list of route bindings. The list may be
   empty while drafting.
 - Entrypoints are evaluated by **specificity**, not declaration order:
-  exact patterns beat prefixes beat `*` — scored by the literal (non-`*`)
-  byte count of the longest-matching glob, then by fewest `*` characters,
-  then by declaration order. So a `*` catchall never shadows a later
-  `claude-fable*`, wherever either is listed.
+  the literal (non-`*`) byte count of a glob is its weight, and the
+  highest-scoring entry wins (exact and prefix are not distinguished —
+  `claude-fable-5-*` (15 literal bytes) beats `claude-fable-5` (14)). Ties
+  break on fewer `*` characters, then on declaration order. So a `*`
+  catchall never shadows a later `claude-fable-*`, wherever either is
+  listed.
 - Globs are case-insensitive. `*` is the only wildcard.
+
+> Upgrading: configs that placed a specific entrypoint *below* a `*`
+> catchall (or below another broader entry) used to have requests silently
+> served by the broader one. After this change, the more specific entry
+> wins — including draft entrypoints. Review your entrypoint list after
+> upgrading; the Web UI ↑↓ buttons still edit the declaration order, which
+> now only breaks ties between equally specific entries.
 - A **binding** is `{route, probe?}`. Probed bindings are tried first, in
   declaration order; every probe-less binding comes after all of them, also in
   declaration order. The first eligible binding in that priority order serves
@@ -96,8 +105,9 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
 - An entrypoint without bindings, or a node without a provider, is a **draft**:
   it is saved, shown on the topology and shared with every admin, but it serves
   no traffic. A request that matches a draft entrypoint fails (502) and is
-  recorded as unrouted; it never falls through to a later entrypoint. Skip a
-  trailing `*` draft entrypoint or it will claim every model.
+  recorded as unrouted. A `*` draft no longer shadows more specific entries;
+  equally specific entries fall back to declaration order, so a trailing `*`
+  draft still claims models nothing else names.
 - If no entrypoint matches, the request is unrouted and returns an error.
 
 ### Route bindings and command probes

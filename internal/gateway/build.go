@@ -47,13 +47,15 @@ func nextBuildGeneration() string {
 }
 
 // buildHopGroup compiles the configured routes into a hop group and emits one
-// entry per entrypoint and inbound protocol group, in declaration order,
-// followed by the entrypoint's fallback entry. Each entry wraps an inner group
-// over the entrypoint's ordered route bindings, so a probe can make a binding
-// ineligible without touching the outer group. The FIFO group selector then
-// makes entrypoint order the single precedence rule. The returned probe set is
-// unstarted; the caller starts and stops it. The returned names are the
-// rewriters registered for this build; the caller owns their lifecycle.
+// entry per entrypoint and inbound protocol group, in specificity order
+// (see config.OrderEntrypoints), followed by the entrypoint's fallback entry.
+// Each entry wraps an inner group over the entrypoint's ordered route bindings,
+// so a probe can make a binding ineligible without touching the outer group.
+// The FIFO group selector then lets the first more specific entry claim a
+// request; declaration order only breaks ties between equally specific ones.
+// The returned probe set is unstarted; the caller starts and stops it.
+// The returned names are the rewriters registered for this build; the caller
+// owns their lifecycle.
 func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, *probeSet, []string, *countTokensPolicy, error) {
 	if err := registerHeaderRewriter(); err != nil {
 		return nil, nil, nil, nil, err
@@ -78,9 +80,9 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 	for _, e := range sortedEntrypoints {
 		if len(e.Routes) == 0 {
 			// A draft entrypoint compiles against the shared zero-node hop and
-			// gains no inner group. It keeps its matcher and its place in
-			// declaration order, which is what stops it from falling through
-			// to a later entrypoint.
+			// gains no inner group. It keeps its matcher (matched by the same
+			// specificity rule), which is what stops it from falling through
+			// to a more specific entrypoint listed later.
 			plan, ok := routePlans[draftPlanKey]
 			if !ok {
 				var err error
@@ -328,8 +330,8 @@ const draftPlanKey = ""
 
 // buildDraftPlan compiles the hop shared by every draft entrypoint. It has no
 // nodes, so selecting from it yields no node and the request fails; the
-// entrypoint keeps its matcher and its place in declaration order, which is
-// what stops a draft from falling through to a later entrypoint.
+// entrypoint keeps its matcher (matched by the same specificity rule), which
+// is what stops it from falling through to a more specific entrypoint.
 func buildDraftPlan(log logger.Logger) (*routePlan, error) {
 	h, err := hop_parser.ParseHop(&xconfig.HopConfig{
 		Name: "route/draft",

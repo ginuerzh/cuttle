@@ -440,6 +440,23 @@ func TestResolveEntrypointOrder(t *testing.T) {
 	}
 }
 
+func TestResolveEntrypointMatchesSpecificityRegardlessOfDeclarationOrder(t *testing.T) {
+	c := &Config{Entrypoints: []Entrypoint{
+		{ID: "e_catchall", Name: "fallback", Match: []string{"*"}},
+		{ID: "e_specific", Name: "specific", Match: []string{"claude-fable*"}},
+		{ID: "e_exact", Name: "exact", Match: []string{"claude-fable-5"}},
+	}}
+	if ep, ok := c.ResolveEntrypoint("claude-fable-5"); !ok || ep.Name != "exact" {
+		t.Fatalf("exact = %+v, %v, want exact (highest scoring literal)", ep, ok)
+	}
+	if ep, ok := c.ResolveEntrypoint("claude-fable-0"); !ok || ep.Name != "specific" {
+		t.Fatalf("specific = %+v, %v, want specific over the catchall", ep, ok)
+	}
+	if id := c.ResolveEntrypointID("claude-fable-5"); id != "e_exact" {
+		t.Fatalf("ResolveEntrypointID = %q, want e_exact", id)
+	}
+}
+
 func TestResolveEntrypointMultipleGlobsAndCase(t *testing.T) {
 	c := &Config{Entrypoints: []Entrypoint{
 		{Name: "claude", Match: []string{"claude-*", "claude*"}},

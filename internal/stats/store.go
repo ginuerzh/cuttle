@@ -75,9 +75,10 @@ type Filter struct {
 	ClientModel         string
 	ClientModelPatterns []string
 	// ClientModelExcludes holds globs that shadow ClientModelPatterns. Entrypoint
-	// attribution follows declaration order, so a row belongs to the first
-	// entrypoint whose glob matches; the globs of every earlier entrypoint are
-	// excluded here so a catch-all lists only the rows no earlier one handled.
+	// attribution follows specificity (exact > prefix > catchall), so a row belongs
+	// to the more specific matching entrypoint; the globs of every more specific
+	// entrypoint are excluded here so a catch-all lists only the rows no more
+	// specific entry handled.
 	ClientModelExcludes []string
 	Route               string
 	Node                string

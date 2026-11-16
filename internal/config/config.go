@@ -116,8 +116,8 @@ type Log struct {
 // Entrypoint is the client-facing ingress: it owns the model globs that select
 // it and an ordered list of route bindings. The id is the stable handle; the
 // name is a display label. No bindings is a draft: the entrypoint still claims
-// its models in declaration order but every matching request fails as
-// unrouted.
+// its models (matched by specificity — exact > prefix > catchall) but every
+// matching request fails as unrouted.
 type Entrypoint struct {
 	ID     string         `yaml:"id" json:"id"`
 	Name   string         `yaml:"name" json:"name"`
@@ -1304,13 +1304,16 @@ func Validate(c *Config) error {
 	return nil
 }
 
-// ResolveEntrypoint returns the first entrypoint, in declaration order, with a
-// match glob for clientModel.
+// ResolveEntrypoint returns the entrypoint with a match glob
+// for clientModel. Entrypoints compete by specificity: exact beats
+// prefix beats catchall — see OrderEntrypoints; declaration order is only
+// the final tiebreak between equally specific entries.
 func (c *Config) ResolveEntrypoint(clientModel string) (*Entrypoint, bool) {
-	for i := range c.Entrypoints {
-		for _, pattern := range c.Entrypoints[i].Match {
+	for _, i := range entrypointOrder(c.Entrypoints) {
+		e := &c.Entrypoints[i]
+		for _, pattern := range e.Match {
 			if globMatch(pattern, clientModel) {
-				return &c.Entrypoints[i], true
+				return e, true
 			}
 		}
 	}

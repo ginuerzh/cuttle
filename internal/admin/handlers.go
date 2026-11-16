@@ -979,8 +979,9 @@ func (s *Server) handlePutEntrypoints(w http.ResponseWriter, r *http.Request) {
 		}
 		// A full-list replacement keeps the id of every entry that carries
 		// one, keeps the stored identity of an id-less entry matched by
-		// name, and mints one for a genuinely new entry. Order is
-		// precedence and is never reordered here.
+		// name, and mints one for a genuinely new entry. Order is the
+		// final tiebreak between equally specific entries and is never
+		// reordered here; the compiled hop decides matching, not this list.
 		for i := range entrypoints {
 			id, err := adoptEntityID(identity.Entrypoint, entrypoints[i].ID, entrypoints[i].Name, storedByName)
 			if err != nil {
