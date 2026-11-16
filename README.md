@@ -796,7 +796,7 @@ The configuration is a breaking change from the single-route schema:
 | --- | --- | --- |
 | `id` | yes | Immutable provider id |
 | `name` | yes | Unique provider display label |
-| `type` | yes | `deepseek`, `opencode-go`, `opencode-zen`, `commandcode`, `openrouter`, `generic` |
+| `type` | yes | `deepseek`, `opencode-go`, `opencode-zen`, `commandcode`, `openrouter`, `gemini`, `generic` |
 | `chat` | no | OpenAI Chat Completions base URL |
 | `responses` | no | OpenAI Responses base URL |
 | `anthropic` | no | Anthropic Messages base URL |
@@ -875,6 +875,33 @@ Anthropic Messages endpoints. All three use `Authorization: Bearer`:
 OpenRouter does not implement `/v1/messages/count_tokens`, so its routes answer
 those requests with the gateway's local token estimate while still forwarding
 Messages to the native endpoint.
+
+`gemini` is a built-in provider type for Google AI Studio / Gemini API keys.
+The preset wires the OpenAI-compatible Chat base and the native Gemini base;
+it has no Responses or Anthropic Messages API:
+
+```yaml
+- id: p_4g7k2q9m3a
+  name: gemini
+  type: gemini
+  chat: https://generativelanguage.googleapis.com/v1beta/openai
+  gemini: https://generativelanguage.googleapis.com/v1beta
+  keys:
+    - id: pk_6m2q9x4a7k
+      name: default
+      key: "${GEMINI_API_KEY}"
+```
+
+`auto` routes an Anthropic-inbound `/v1/messages` request to the Chat base and
+converts it; there is no Anthropic surface to fall back to. AI Studio Pro/Ultra
+plan credits apply only inside AI Studio: an API key draws Google Cloud Billing
+(a $5 prepaid balance, plus any redeemed Google Cloud credits). The model
+catalog filters out embedding-only models and carries no pricing. Claude Code
+must not pin `node.api: gemini`: the native endpoint breaks streaming.
+Gemini-native clients reach the provider only through `*` entrypoints, because
+a Gemini request body carries no `model` field for the globs to match. Routes
+targeting Gemini answer `count_tokens` with the local estimate, like other
+non-Anthropic targets.
 
 ### `nodes[]`
 
@@ -1281,6 +1308,7 @@ appears. Token counts use k/M/B units. Upstream values are queried per API key:
 - **OpenRouter**: per-key `limit`, `limit_remaining`, `limit_reset` and
   `usage` from `/api/v1/key`. A key without a limit shows its all-time spend;
   account-wide `/credits` requires a management key and is not queried.
+- **Gemini**: no per-key balance API; the card shows a note. API keys consume Cloud Billing.
 
 OpenCode Zen does not expose a key's credits through an API; its card says to
 use the OpenCode console. `generic` providers have no known balance contract and

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -16,6 +17,14 @@ import (
 )
 
 const geminiCapabilityResponse = `{"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`
+
+// openAIChatStream is what a streaming OpenAI-compatible upstream returns:
+// one role chunk, one content chunk, one finish chunk with usage, and the
+// [DONE] sentinel. Non-streaming paths keep the plain JSON response.
+const openAIChatStream = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.5\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null},\"finish_reason\":null}],\"usage\":null}\n\n" +
+	"data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.5\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":null}],\"usage\":null}\n\n" +
+	"data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.5\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n" +
+	"data: [DONE]\n\n"
 
 // capabilityHit is one request observed by a fake upstream.
 type capabilityHit struct {
@@ -47,6 +56,17 @@ func newCapabilityUpstream(t *testing.T) *capabilityUpstream {
 			body:   string(b),
 		})
 		u.mu.Unlock()
+
+		// A streaming caller gets an SSE reply shaped like an OpenAI chat
+		// completion, so the converter exercises its streaming path instead
+		// of falling back to whole-body JSON rewriting. The chunks only
+		// fit the chat path; other paths keep the plain JSON response.
+		streaming := bytes.Contains(b, []byte(`"stream":true`)) || bytes.Contains(b, []byte(`"stream": true`))
+		if streaming && strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			io.WriteString(w, openAIChatStream)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -301,6 +321,53 @@ func TestProviderCapabilities(t *testing.T) {
 		}
 		if got := hit.header.Get("x-goog-api-key"); got != "gk" {
 			t.Fatalf("x-goog-api-key = %q, want gk", got)
+		}
+	})
+
+	t.Run("gemini type auto falls back to compatible chat base", func(t *testing.T) {
+		up := newCapabilityUpstream(t)
+		cfg := &gwconfig.Config{
+			Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+			Stats:   gwconfig.Stats{Path: filepath.Join(t.TempDir(), "stats.sqlite")},
+			Providers: []gwconfig.Provider{{
+				ID:     "p_0000000001",
+				Name:   "gm",
+				Type:   "gemini",
+				Chat:   up.srv.URL + "/v1beta/openai",
+				Gemini: up.srv.URL + "/v1beta",
+				Keys:   []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "key-1", Key: "gk"}},
+			}},
+			Nodes: []gwconfig.Node{{
+				ID:       "n_0000000001",
+				Name:     "n",
+				Provider: "p_0000000001",
+				Model:    "gemini-2.5-pro",
+			}},
+			Entrypoints: []gwconfig.Entrypoint{{ID: "e_0000000001", Name: "all", Match: []string{"*"}, Routes: bindings("r_0000000001")}},
+			Routes:      []gwconfig.Route{{ID: "r_0000000001", Name: "all", Nodes: []string{"n_0000000001"}}},
+		}
+		gw := startGateway(t, cfg)
+
+		body := `{"model":"gemini-2.5-pro","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"hi"}]}`
+		req, err := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+"/v1/messages", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d", resp.StatusCode)
+		}
+		if hit := up.last(t); hit.path != "/v1beta/openai/chat/completions" {
+			t.Fatalf("upstream path = %q, want /v1beta/openai/chat/completions (not the gemini native path)", hit.path)
+		}
+		if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
+			t.Fatalf("response content-type = %q, want text/event-stream", got)
 		}
 	})
 
