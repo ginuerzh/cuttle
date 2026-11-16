@@ -25,7 +25,7 @@ func bindings(ids ...string) []config.RouteBinding {
 	return out
 }
 
-func writeEntrypointConfig(t *testing.T, dir, upstream string, defaultFirst bool) string {
+func writeEntrypointConfig(t *testing.T, dir, upstream string, catchallBeforeStrong bool) string {
 	t.Helper()
 	entrypoints := `
 entrypoints:
@@ -42,7 +42,7 @@ entrypoints:
     routes:
       - route: fast
 `
-	if defaultFirst {
+	if catchallBeforeStrong {
 		entrypoints = `
 entrypoints:
   - name: fast
@@ -149,8 +149,9 @@ func TestEntrypointConfigEndToEnd(t *testing.T) {
 		}
 	}
 
-	// Reorder entrypoints so the catch-all is before strong. Reloading the
-	// running gateway must change precedence without a restart.
+	// Reorder entrypoints so the catch-all is before strong. Specificity,
+	// not file order, decides precedence: claude-opus-4-5 still matches
+	// claude-opus* and must route to strong.
 	reloaded, err := config.Load(writeEntrypointConfig(t, dir, upstream.URL, true))
 	if err != nil {
 		t.Fatalf("reload load: %v", err)
@@ -160,7 +161,12 @@ func TestEntrypointConfigEndToEnd(t *testing.T) {
 	}
 	gotModel = ""
 	postModelAndBody(t, gw, "claude-opus-4-5")
-	if !strings.Contains(gotModel, `"model":"fast-model"`) {
-		t.Fatalf("after reorder upstream body = %s, want fast-model", gotModel)
+	if !strings.Contains(gotModel, `"model":"strong-model"`) {
+		t.Fatalf("after reorder upstream body = %s, want strong-model", gotModel)
+	}
+	gotModel = ""
+	postModelAndBody(t, gw, "gpt-5.5")
+	if !strings.Contains(gotModel, `"model":"strong-model"`) {
+		t.Fatalf("after reorder upstream body = %s, want strong-model (gpt-5.5* beats the catchall)", gotModel)
 	}
 }

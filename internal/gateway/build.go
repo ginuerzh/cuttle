@@ -66,10 +66,16 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 		return id
 	}, log)
 
+	// Entrypoints are compiled in specificity order (URI routing style),
+	// which makes "match more specifically" win regardless of declaration
+	// order. Declaration order survives only as the final tiebreak inside
+	// the sort.
+	sortedEntrypoints := gwconfig.OrderEntrypoints(cfg.Entrypoints)
+
 	routePlans := make(map[string]*routePlan, len(cfg.Routes))
 	var rewriters []string
-	entries := make([]*xhop.HopEntry, 0, len(cfg.Entrypoints)*(len(inboundGroups)+1))
-	for _, e := range cfg.Entrypoints {
+	entries := make([]*xhop.HopEntry, 0, len(sortedEntrypoints)*(len(inboundGroups)+1))
+	for _, e := range sortedEntrypoints {
 		if len(e.Routes) == 0 {
 			// A draft entrypoint compiles against the shared zero-node hop and
 			// gains no inner group. It keeps its matcher and its place in

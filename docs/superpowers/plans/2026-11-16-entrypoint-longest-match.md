@@ -225,3 +225,10 @@ Also run `GOWORK=off go test ./internal/gateway/ -count=1` per-package before co
 **Tests:** `GOWORK=off go test ./internal/config/ -run 'Specificity|OrderEntrypoints' -count=1 -v` → all PASS.
 **Findings:** The plan's original test expectation (all-wildcard → declaration order) was wrong: `*` beats `**`+`*` on the fewer-stars tiebreak, so the test was corrected and a pure `*`-vs-`*` declaration-order case added.
 **Deferred:** none.
+
+### Task 2 - 2026-11-16 - status: complete
+
+**Repository:** /root/code/go-gost/cuttle.
+**Files changed:** `internal/gateway/build.go` (sort `cfg.Entrypoints` via `gwconfig.OrderEntrypoints` before compiling entries; comment), `internal/gateway/entrypoint_e2e_test.go` (renamed param, updated the reload section to assert specificity: `claude-opus-4-5` AND `gpt-5.5` still route to `strong-model` when the catchall is declared before it).
+**Tests:** `GOWORK=off go test ./internal/gateway/ -count=1` → ok; `TestEntrypointConfigEndToEnd` → PASS (0.30s); `TestProviderCapabilities` → PASS.
+**Deferred:** admin stats entrypoint filter and count-tokens policy ordering → Task 3.
