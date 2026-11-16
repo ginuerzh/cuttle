@@ -22,7 +22,9 @@ const modelsTimeout = 30 * time.Second
 // Models fetches the model catalog from the adapter's primary listing
 // endpoint. Generic providers list every configured API; the vendor adapters
 // prefer chat and otherwise use the first configured API. A failed endpoint
-// does not discard models returned by another one.
+// does not discard models returned by another one. Adapters that force a
+// specific listing API (today: gemini) fail loudly instead, when none of the
+// hinted APIs is configured.
 func (p *baseProvider) Models(ctx context.Context) ([]Model, error) {
 	if err := p.catalogHintConflict(); err != nil {
 		return nil, err
@@ -136,6 +138,9 @@ func (p *baseProvider) hintIntersection(hint []API) []API {
 // catalogHintConflict reports the error for an adapter whose non-empty
 // catalog hint intersects no configured API: the catalog is read from the
 // hinted endpoint only, never by falling back to the slim compatible list.
+// The message names this codebase's only hint implementer (gemini); if a
+// future adapter implements the hint, parameterize the message by hinted
+// API.
 func (p *baseProvider) catalogHintConflict() error {
 	h, ok := p.adapter.(catalogAPIsHint)
 	if !ok {
