@@ -48,17 +48,19 @@ func (s *Server) requestFilter(r *http.Request) (f stats.Filter, ok bool) {
 		Offset:      atoi(q.Get("offset")),
 	}
 	// The entrypoint filter is a client-model match, so it resolves the id
-	// against the current entrypoint list instead of a stored column. Order is
-	// precedence, so the globs of every earlier entrypoint shadow this one.
+	// against the entrypoint list instead of a stored column. Specificity is
+	// precedence (exact > prefix > catchall — see config.OrderEntrypoints),
+	// so the globs of every more specific shadow this entry.
 	if id := q.Get("entrypoint"); id != "" {
 		cfg := s.monitorConfig()
 		found := false
-		for i, ep := range cfg.Entrypoints {
+		sorted := config.OrderEntrypoints(cfg.Entrypoints)
+		for i, ep := range sorted {
 			if ep.ID != id {
 				continue
 			}
 			f.ClientModelPatterns = ep.Match
-			for _, earlier := range cfg.Entrypoints[:i] {
+			for _, earlier := range sorted[:i] {
 				f.ClientModelExcludes = append(f.ClientModelExcludes, earlier.Match...)
 			}
 			found = true

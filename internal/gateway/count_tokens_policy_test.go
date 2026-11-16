@@ -97,6 +97,30 @@ func TestBuildCountTokensPolicyFromConfig(t *testing.T) {
 	}
 }
 
+func TestBuildCountTokensPolicySpecificBeatsWildcardRegardlessOfOrder(t *testing.T) {
+	cfg := &gwconfig.Config{
+		Entrypoints: []gwconfig.Entrypoint{
+			{ID: "e_0000000001", Name: "wildcard-first", Match: []string{"*"}, Routes: bindings("r_0000000001")},
+			{ID: "e_0000000002", Name: "specific", Match: []string{"claude-*"}, Routes: bindings("r_0000000002")},
+		},
+		Routes: []gwconfig.Route{
+			{ID: "r_0000000001", Name: "a"},
+			{ID: "r_0000000002", Name: "r"},
+		},
+	}
+	plans := map[string]*routePlan{
+		"r_0000000001": {countTokensEstimate: true},
+		"r_0000000002": {countTokensEstimate: false},
+	}
+	p, err := buildCountTokensPolicy(cfg, plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.estimateFor("claude-opus-4-5") {
+		t.Fatal("specific entrypoint must pass through even when the wildcard is declared first")
+	}
+}
+
 func TestBuildCountTokensPolicyDraftEntrypoint(t *testing.T) {
 	cfg := &gwconfig.Config{
 		Entrypoints: []gwconfig.Entrypoint{

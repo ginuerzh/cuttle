@@ -232,3 +232,10 @@ Also run `GOWORK=off go test ./internal/gateway/ -count=1` per-package before co
 **Files changed:** `internal/gateway/build.go` (sort `cfg.Entrypoints` via `gwconfig.OrderEntrypoints` before compiling entries; comment), `internal/gateway/entrypoint_e2e_test.go` (renamed param, updated the reload section to assert specificity: `claude-opus-4-5` AND `gpt-5.5` still route to `strong-model` when the catchall is declared before it).
 **Tests:** `GOWORK=off go test ./internal/gateway/ -count=1` → ok; `TestEntrypointConfigEndToEnd` → PASS (0.30s); `TestProviderCapabilities` → PASS.
 **Deferred:** admin stats entrypoint filter and count-tokens policy ordering → Task 3.
+
+### Task 3 - 2026-11-16 - status: complete
+
+**Repository:** /root/code/go-gost/cuttle.
+**Files changed:** `internal/gateway/count_tokens_policy.go` (policy now iterates `OrderEntrypoints`), `internal/admin/handlers_stats.go` (entrypoint filter's ClientModelExcludes now derived from specificity order; stale comment updated), `internal/gateway/count_tokens_policy_test.go` (new `TestBuildCountTokensPolicySpecificBeatsWildcardRegardlessOfOrder` — wildcard declared first must not shadow a specific passthrough binding).
+**Tests:** `GOWORK=off go test ./internal/gateway/ -count=1` (incl. CountTokensPolicy group) PASS; `GOWORK=off go test ./internal/admin/ -count=1` PASS; `GOWORK=off go build ./...` ok; `go vet` on the three packages clean; gofmt none.
+**Deferred:** none.

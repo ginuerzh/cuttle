@@ -50,9 +50,10 @@ func routeNeedsCountTokensEstimate(plans []nodePlan) bool {
 }
 
 func buildCountTokensPolicy(cfg *gwconfig.Config, plans map[string]*routePlan) (*countTokensPolicy, error) {
-	p := &countTokensPolicy{entries: make([]countTokensEntry, 0, len(cfg.Entrypoints))}
-	for i := range cfg.Entrypoints {
-		e := &cfg.Entrypoints[i]
+	sorted := gwconfig.OrderEntrypoints(cfg.Entrypoints)
+	p := &countTokensPolicy{entries: make([]countTokensEntry, 0, len(sorted))}
+	for i := range sorted {
+		e := &sorted[i]
 		pattern, catchAll, err := modelGlobPattern(e.Match)
 		if err != nil {
 			return nil, fmt.Errorf("entrypoint %q: %w", e.Name, err)
