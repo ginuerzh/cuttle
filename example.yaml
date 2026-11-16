@@ -109,6 +109,7 @@ providers:
 # Gemini (Google AI Studio) serves the OpenAI-compatible Chat endpoint and
 # the native Gemini endpoint; it has no Responses or Anthropic API.
 # providers:
+# node.api must stay unset (auto) for Claude Code; pinning 'gemini' breaks streaming.
 #   - id: p_4g7k2q9m3a
 #     name: gemini
 #     type: gemini
@@ -118,7 +119,6 @@ providers:
 #       - id: pk_6m2q9x4a7k
 #         name: default
 #         key: "${GEMINI_API_KEY}"
-# node.api must stay unset (auto) for Claude Code; pinning 'gemini' breaks streaming.
 # A node binds one provider model plus routing policy. `provider` and the
 # optional `key` pin are ids, not names. backup: true makes it a fallback;
 # weight controls the round-robin share.

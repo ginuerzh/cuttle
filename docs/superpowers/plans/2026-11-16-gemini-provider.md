@@ -382,7 +382,7 @@ t.Run("gemini type auto falls back to compatible chat base", func(t *testing.T) 
 
 - [ ] **Step 2: Run the new test; expect PASS**
 
-Run: `GOWORK=off go test ./internal/gateway/ -run 'gemini type' -count=1 -v`
+Run: `GOWORK=off go test ./internal/gateway/ -run TestProviderCapabilities/gemini_type -count=1 -v`
 Expected: PASS. (If it fails, that is the bug this plan exists to catch — stop and fix before continuing.)
 
 - [ ] **Step 3: example.yaml**
@@ -483,7 +483,7 @@ commit.)
 
 - **Date/status:** 2026-11-16 — complete (no reviewer yet).
 - **Repository + commit:** cuttle, code committed as `c4193980`, then folded with this record via `git commit --amend --no-edit` per plan procedure (a commit cannot contain its own final SHA; see `git log --oneline -1` for the final SHA).
-- **Files actually changed:** `web/src/pages/presets.ts` (`PROVIDER_TYPES` gains `'gemini'` before `'generic'`: `['deepseek', 'opencode-go', 'opencode-zen', 'commandcode', 'openrouter', 'gemini', 'generic']`), `web/src/pages/presets.test.ts` (`presetFormValues` `gemini` fixture next to `opencodeZen` plus a test asserting exact fill of `type: 'gemini'`/`chat`/`gemini` with empty `responses`/`anthropic`; `PROVIDER_TYPES` describe renamed to "includes OpenRouter and Gemini" and asserts `toContain('gemini')`), `docs/superpowers/plans/2026-11-16-gemini-provider.md` (this record). The web bundle was rebuilt into `internal/admin/dist` (`index.html`, `assets/index-BCyLQKlW.css`, `assets/index-Bc4sEeYE.js`) but that directory is git-ignored here (`.gitignore` `/internal/admin/dist/*`, only `.gitkeep` tracked), so no dist files are in the commit; the local rebuild satisfies the `go:embed all:dist` requirement.
+- **Files actually changed:** `web/src/pages/presets.ts` (`PROVIDER_TYPES` gains `'gemini'` before `'generic'`: `['deepseek', 'opencode-go', 'opencode-zen', 'commandcode', 'openrouter', 'gemini', 'generic']`), `web/src/pages/presets.test.ts` (`presetFormValues` `gemini` fixture next to `opencodeZen` plus a test asserting exact fill of `type: 'gemini'`/`chat`/`gemini` with empty `responses`/`anthropic`; `PROVIDER_TYPES` describe renamed to "includes OpenRouter and Gemini" and asserts `toContain('gemini')`), `docs/superpowers/plans/2026-11-16-gemini-provider.md` (this record). The web bundle was rebuilt into `internal/admin/dist` (`index.html`, `assets/index-BCyLQKlW.css`, `assets/index-Bc4sEeYE.js`) but that directory is git-ignored here (`.gitignore` `/internal/admin/dist/*`, nothing under `internal/admin/dist/` is tracked), so no dist files are in the commit; releases and Docker rebuild the console before the Go build, and a fresh-checkout local build needs `npm run build` first.
 - **Tests/commands and results:**
   - `cd web && npm test -- presets.test.ts` (before implementation) → FAIL as expected: `expected [ 'deepseek', 'opencode-go', …(4) ] to include 'gemini'` (1 failed, 62 passed).
   - `cd web && npm test` → `Test Files  51 passed (51)`, `Tests  490 passed (490)`.
@@ -524,3 +524,36 @@ commit.)
   4. Only after all three pass: tag/release or push.
 - **Review findings and fixes:** none (no reviewer run yet).
 - **Deferred items/limitations:** maintainer-run verification: pending. Step 3 (real Gemini endpoint smoke) was deliberately not run — it requires a real Gemini API key and a live Claude Code session and is reserved for the maintainer. `npm run build` was not re-run (web bundle already built and verified in Task 4; `internal/admin/dist` is git-ignored). No code, config or web source changed in this task.
+
+# Fix wave
+
+## Fix 1: final-review fixes (error on missing native base, dedupe, deadline, test pins)
+
+- **Date/status:** 2026-11-16 — complete.
+- **Repository + commit:** cuttle, code committed as `576c4f2b`, then folded with this record via `git commit --amend --no-edit` per repo procedure (a commit cannot contain its own final SHA; see `git log --oneline -1` for the final SHA). Commit message: `fix(gemini): final-review fixes (error on missing native base, dedupe, deadline, test pins)`.
+- **Files actually changed:**
+  - `internal/provider/models.go` — finding 1: new `catalogHintConflict()` (and shared `hintIntersection()`); `Models()` checks the conflict before listing and returns `provider "<name>": gemini (native) API base URL not configured; the catalog is read from the native endpoint only` with zero models; `listAPIs()` returns nil in the empty-intersection arm instead of falling through to the chat-first logic (no compatible-endpoint HTTP request at all); finding 2: new shared `catalogGet()` (request build, catalog-keyless note, `applyAuth`, `ApplyAnthropicVersion`, non-2xx drain+close, `unexpected status` error) used by both `fetchModels` and `fetchGeminiModels`; finding 3: `fetchGeminiModels` wraps its pagination loop in a 60s `context.WithTimeout`; finding 10: one-line comment on the `decodeModels` Gemini arm noting the production path is the paginated `fetchGeminiModels` (single page shape kept intentionally, `nextPageToken` skipped).
+  - `internal/provider/models_test.go` — finding 1 test `TestModelsGeminiChatOnlyFailsLoudly` (Chat-only `gemini` provider: `Models(ctx)` returns an error mentioning the provider name and the missing native base, zero models, and the compatible endpoint is never queried — `t.Errorf`-flagging handler, mirroring `TestModelsGeminiCatalogFromNativeOnly`); finding 8: `TestModelsGeminiPageTokenForwarded` drops the redundant `paths` slice (page size/token already pinned via `Query()`); finding 9: `TestModelsGeminiFiltersEmbeddingOnly` also asserts each listed model's `Price == nil`; `strings` import added.
+  - `internal/admin/probe_test.go` — finding 4: `TestProbeUsesChatBaseForGeminiPreset` captures the `auth` return of `probeTarget` and asserts `auth.Header == "Authorization"` and `auth.Prefix == "Bearer "`.
+  - `internal/gateway/provider_capabilities_test.go` — finding 7: the `gemini_type_auto_falls_back_to_compatible_chat_base` subtest decodes the recorded upstream body and asserts `model == "gemini-2.5-pro"` and a `"stream":true` substring.
+  - `web/src/pages/presets.test.ts` — finding 5: `describe('isBaseURLLocked')` gains `expect(isBaseURLLocked('gemini')).toBe(true)`.
+  - `example.yaml` — finding 11: the one-line `node.api` warning moved inside the commented `# providers:` gemini block (as the block's leading comment line after `# providers:`); it no longer sits between the providers fragment and the `nodes` intro.
+  - `docs/superpowers/plans/2026-11-16-gemini-provider.md` — finding 6: Task 4 Implementation record corrected in-place (nothing under `internal/admin/dist/` is tracked; releases and Docker rebuild the console before the Go build; a fresh-checkout local build needs `npm run build` first; the "only `.gitkeep` tracked" claim removed); finding 11: the broken `-run 'gemini type'` selector in Step 2 replaced with `GOWORK=off go test ./internal/gateway/ -run TestProviderCapabilities/gemini_type -count=1 -v` (the historical Task 5 record lines that mention `-run 'gemini type'` are left intact — they accurately record what was run); this Fix 1 record.
+- **Tests/commands and results:**
+  - `GOWORK=off go build ./...` → PASS (no output).
+  - `GOWORK=off go vet ./...` → PASS (no output).
+  - `GOWORK=off go test -p 1 ./... -count=1` → PASS (all packages `ok`, same list as Task 6; `internal/health` has no test files).
+  - `GOWORK=off go test ./internal/provider/ -run TestModelsGemini -count=1 -v` → PASS (7 tests incl. `TestModelsGeminiChatOnlyFailsLoudly`).
+  - `GOWORK=off go test ./internal/gateway/ -run TestProviderCapabilities/gemini_type -count=1 -v` → PASS (0.23s).
+  - `GOWORK=off go test ./internal/admin/ -run TestProbeUsesChatBaseForGeminiPreset -count=1 -v` → PASS.
+  - `GOWORK=off go test ./internal/config/ -run TestExampleConfigLoads -count=1 -v` → PASS.
+  - `cd web && npm test` → PASS (`Test Files  51 passed (51)`, `Tests  490 passed (490)`).
+  - `cd web && npx tsc --noEmit` → PASS (no output).
+- **Review findings and fixes:** all 11 triaged findings from the whole-branch final review, fixed:
+  1. A gemini-typed provider whose native-hint intersection with configured APIs is empty now fails the catalog listing loudly (zero models, no HTTP to any endpoint, compatible included) instead of silently listing from the slim `/v1beta/openai/models` partition; the committed spec's hard constraint (compatible list never fetched) is restored. Rule enforced in `Models()` via `catalogHintConflict()` before any listing; `listAPIs()` returns nil in that arm as well.
+  2. The shared catalog-request subset extracted into `catalogGet()` so the two catalog paths cannot diverge silently on auth (key resolution, `CatalogKeyless()` note, `applyAuth`, `ApplyAnthropicVersion`, status check with body drain+close). Note: the finding's `markClosed` identifier does not exist in the codebase; read as the body-close handling around the non-2xx drain — that now lives in `catalogGet()` for the error path (unchanged semantics: drain then close) and at the call sites for the success path.
+  3. The Gemini catalog pagination loop is wrapped in a 60s overall `context.WithTimeout`.
+  4–9. Test pins/assertions added as listed under Files; no existing assertion was weakened.
+  10. `decodeModels` Gemini arm comment added as specified.
+  11. Plan selector fixed in Step 2; `example.yaml` warning relocated as specified.
+- **Deferred items/limitations:** finding 2's `markClosed` identifier not found — see above. The only behavior change is finding 1 (failing listing for a gemini provider with no native base); everything else is tests, comments, docs, example.yaml comment placement and a code-only dedupe with identical semantics. All existing tests stayed green; nothing was deleted or weakened. `.superpowers/` remains untracked (not part of the commit). The maintainer smoke checklist (Task 6) is unchanged and still pending; `npm run build` was not re-run (no web source changed, only a test file).

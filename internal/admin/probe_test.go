@@ -45,11 +45,14 @@ func TestProbeUsesChatBaseForGeminiPreset(t *testing.T) {
 		Gemini: "https://generativelanguage.googleapis.com/v1beta",
 		Keys:   []config.ProviderKey{{Name: "k", Key: "sk-test"}},
 	}
-	base, api, _, _, ok := probeTarget(p)
+	base, api, auth, _, ok := probeTarget(p)
 	if !ok {
 		t.Fatal("probeTarget: ok = false")
 	}
 	if api != provider.Chat || base != p.Chat {
 		t.Fatalf("probe = (%s, %s), want chat base with Bearer", base, api)
+	}
+	if auth.Header != "Authorization" || auth.Prefix != "Bearer " {
+		t.Fatalf("auth = (%q, %q), want Authorization/Bearer ", auth.Header, auth.Prefix)
 	}
 }

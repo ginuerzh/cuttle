@@ -369,6 +369,13 @@ func TestProviderCapabilities(t *testing.T) {
 		if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
 			t.Fatalf("response content-type = %q, want text/event-stream", got)
 		}
+		upstream := up.last(t)
+		if v := decodeBody(t, upstream.body); v["model"] != "gemini-2.5-pro" {
+			t.Fatalf("upstream model = %v, want gemini-2.5-pro", v["model"])
+		}
+		if !strings.Contains(upstream.body, `"stream":true`) {
+			t.Fatalf("upstream body = %s, want a %q substring", upstream.body, `"stream":true`)
+		}
 	})
 
 	t.Run("unknown model falls back to the first configured API", func(t *testing.T) {

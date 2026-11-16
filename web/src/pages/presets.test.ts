@@ -385,6 +385,7 @@ describe('isBaseURLLocked', () => {
     expect(isBaseURLLocked('deepseek')).toBe(true);
     expect(isBaseURLLocked('opencode-go')).toBe(true);
     expect(isBaseURLLocked('openrouter')).toBe(true);
+    expect(isBaseURLLocked('gemini')).toBe(true);
     expect(isBaseURLLocked('generic')).toBe(false);
     expect(isBaseURLLocked(' Generic ')).toBe(false);
   });

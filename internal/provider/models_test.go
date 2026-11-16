@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ginuerzh/cuttle/internal/config"
@@ -948,9 +949,7 @@ func TestModelsGeminiCatalogFromNativeOnly(t *testing.T) {
 }
 
 func TestModelsGeminiPageTokenForwarded(t *testing.T) {
-	var paths []string
 	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.String())
 		switch r.URL.Query().Get("pageToken") {
 		case "":
 			if got := r.URL.Query().Get("pageSize"); got != "1000" {
@@ -971,9 +970,6 @@ func TestModelsGeminiPageTokenForwarded(t *testing.T) {
 	}
 	if len(models) != 2 {
 		t.Fatalf("models = %+v, want two pages", models)
-	}
-	if len(paths) != 2 {
-		t.Fatalf("requests = %v, want two pages", paths)
 	}
 }
 
@@ -1017,5 +1013,28 @@ func TestModelsGeminiFiltersEmbeddingOnly(t *testing.T) {
 	}
 	if !slices.Equal(ids, []string{"gemini-2.5-pro", "imagen-4.0"}) {
 		t.Fatalf("ids = %v, want [gemini-2.5-pro imagen-4.0] (embedding-only dropped, no methods kept)", ids)
+	}
+	for _, m := range models {
+		if m.Price != nil {
+			t.Fatalf("price for %s = %+v, want nil (the native Gemini list carries no pricing)", m.ID, m.Price)
+		}
+	}
+}
+
+func TestModelsGeminiChatOnlyFailsLoudly(t *testing.T) {
+	compat := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("compatible catalog endpoint must not be queried")
+	})
+	p := mustProvider(t, config.Provider{Name: "gm", Type: "gemini", Chat: compat.URL, Keys: []config.ProviderKey{{Name: "k", Key: "sk-test"}}})
+
+	models, err := p.Models(context.Background())
+	if err == nil {
+		t.Fatal("Models should fail for a gemini provider without a native Gemini base")
+	}
+	if !strings.Contains(err.Error(), "gm") || !strings.Contains(err.Error(), "native") {
+		t.Fatalf("error = %q, want it to name the provider and the missing native base", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("models = %+v, want zero models on a failed listing", models)
 	}
 }

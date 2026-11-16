@@ -24,6 +24,9 @@ const modelsTimeout = 30 * time.Second
 // prefer chat and otherwise use the first configured API. A failed endpoint
 // does not discard models returned by another one.
 func (p *baseProvider) Models(ctx context.Context) ([]Model, error) {
+	if err := p.catalogHintConflict(); err != nil {
+		return nil, err
+	}
 	apis := p.listAPIs()
 	if len(apis) == 0 {
 		return nil, fmt.Errorf("provider %q: no API base URL configured", p.cfg.Name)
@@ -95,18 +98,12 @@ func (p *baseProvider) Models(ctx context.Context) ([]Model, error) {
 func (p *baseProvider) listAPIs() []API {
 	if h, ok := p.adapter.(catalogAPIsHint); ok {
 		if hint := h.catalogAPIs(); len(hint) > 0 {
-			configured := p.configuredAPIs()
-			var out []API
-			for _, api := range configured {
-				for _, want := range hint {
-					if api == want {
-						out = append(out, api)
-					}
-				}
-			}
-			if len(out) > 0 {
+			if out := p.hintIntersection(hint); len(out) > 0 {
 				return out
 			}
+			// Models() reports catalogHintConflict's error; never fall back
+			// to the compatible catalog here.
+			return nil
 		}
 	}
 	if !p.adapter.listAll() {
@@ -120,6 +117,34 @@ func (p *baseProvider) listAPIs() []API {
 		return nil
 	}
 	return p.configuredAPIs()
+}
+
+// hintIntersection returns the configured APIs that appear in hint, in
+// canonical configured order.
+func (p *baseProvider) hintIntersection(hint []API) []API {
+	var out []API
+	for _, api := range p.configuredAPIs() {
+		for _, want := range hint {
+			if api == want {
+				out = append(out, api)
+			}
+		}
+	}
+	return out
+}
+
+// catalogHintConflict reports the error for an adapter whose non-empty
+// catalog hint intersects no configured API: the catalog is read from the
+// hinted endpoint only, never by falling back to the slim compatible list.
+func (p *baseProvider) catalogHintConflict() error {
+	h, ok := p.adapter.(catalogAPIsHint)
+	if !ok {
+		return nil
+	}
+	if hint := h.catalogAPIs(); len(hint) > 0 && len(p.hintIntersection(hint)) == 0 {
+		return fmt.Errorf("provider %q: gemini (native) API base URL not configured; the catalog is read from the native endpoint only", p.cfg.Name)
+	}
+	return nil
 }
 
 func (p *baseProvider) configuredAPIs() []API {
@@ -145,11 +170,12 @@ type modelItem struct {
 	EndpointsKnown bool
 }
 
-func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([]modelItem, error) {
-	if api == Gemini {
-		return p.fetchGeminiModels(ctx, base)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ModelsURL(base, api), nil)
+// catalogGet issues a catalog GET request at rawURL with the provider's
+// auth applied (catalog keyless note honored) and returns the response for
+// the caller to consume and close. A non-2xx status drains and closes the
+// body and returns an error carrying the status.
+func (p *baseProvider) catalogGet(ctx context.Context, rawURL string, api API) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -164,14 +190,25 @@ func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	body := io.LimitReader(resp.Body, 8<<20)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, body)
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 8<<20))
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("unexpected status %s", resp.Status)
 	}
-	return decodeModels(body, api)
+	return resp, nil
+}
+
+func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([]modelItem, error) {
+	if api == Gemini {
+		return p.fetchGeminiModels(ctx, base)
+	}
+	resp, err := p.catalogGet(ctx, ModelsURL(base, api), api)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	return decodeModels(io.LimitReader(resp.Body, 8<<20), api)
 }
 
 // geminiMaxCatalogPages bounds the native Gemini catalog loop so a
@@ -183,6 +220,11 @@ const geminiMaxCatalogPages = 100
 // error, including a rejected status or exceeding the page bound, fails the
 // whole listing: a partial catalog is never returned as if it were complete.
 func (p *baseProvider) fetchGeminiModels(ctx context.Context, base string) ([]modelItem, error) {
+	// Overall deadline for the whole pagination loop so a slow upstream
+	// cannot hold the catalog endpoint open indefinitely.
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
 	items := make([]modelItem, 0)
 	pageToken := ""
 	for page := 0; ; page++ {
@@ -199,28 +241,11 @@ func (p *baseProvider) fetchGeminiModels(ctx context.Context, base string) ([]mo
 			q.Set("pageToken", pageToken)
 		}
 		u.RawQuery = q.Encode()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		resp, err := p.catalogGet(ctx, u.String(), Gemini)
 		if err != nil {
 			return nil, err
 		}
-		key, _ := p.cfg.FirstEnabledKey()
-		if p.CatalogKeyless() {
-			key = ""
-		}
-		applyAuth(req, p.Auth(Gemini), key)
-		ApplyAnthropicVersion(req, Gemini)
-
-		resp, err := p.client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		body := io.LimitReader(resp.Body, 8<<20)
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			_, _ = io.Copy(io.Discard, body)
-			resp.Body.Close()
-			return nil, fmt.Errorf("unexpected status %s", resp.Status)
-		}
-		pageItems, next, err := decodeGeminiPage(body)
+		pageItems, next, err := decodeGeminiPage(io.LimitReader(resp.Body, 8<<20))
 		resp.Body.Close()
 		if err != nil {
 			return nil, err
@@ -463,6 +488,9 @@ type modelListJSON struct {
 
 func decodeModels(r io.Reader, api API) ([]modelItem, error) {
 	if api == Gemini {
+		// The production path reads the paginated native catalog via
+		// fetchGeminiModels; decodeModels keeps the single-page shape for the
+		// shared decoder and callers, skipping nextPageToken intentionally.
 		items, _, err := decodeGeminiPage(r)
 		return items, err
 	}
