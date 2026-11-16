@@ -172,8 +172,9 @@ export function getEntrypointHealth(): Promise<EntrypointHealth[]> {
 }
 
 /**
- * One entry in the full entrypoint replacement. Order is precedence; an entry
- * without an id is new and gets one from the admin API.
+ * One entry in the full entrypoint replacement. Order breaks ties between
+ * equally specific entries; an entry without an id is new and gets one from
+ * the admin API (an id-less entry matched by name adopts the stored id).
  */
 export type EntrypointInput = Omit<Entrypoint, 'id'> & { id?: string };
 

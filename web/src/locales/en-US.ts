@@ -80,7 +80,7 @@ export const enUS: Record<string, string> = {
   '已添加': 'Added',
   '客户端模型 glob': 'Client model glob',
   '至少填写一个模型 glob': 'Enter at least one model glob',
-  '顺序见入口列表；同一个入口内多个 glob 等价。': 'Priority follows the entrypoint list; multiple globs in one entrypoint are equivalent.',
+  '顺序见入口列表；同一个入口内多个 glob 等价。': 'Order is the tie-break for equally specific entries; multiple globs in one entrypoint are equivalent.',
   '模型 ID': 'Model ID',
   '请填写模型': 'Enter a model',
   '添加': 'Add',

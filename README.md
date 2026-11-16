@@ -76,6 +76,7 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
 > wins — including draft entrypoints. Review your entrypoint list after
 > upgrading; the Web UI ↑↓ buttons still edit the declaration order, which
 > now only breaks ties between equally specific entries.
+
 - A **binding** is `{route, probe?}`. Probed bindings are tried first, in
   declaration order; every probe-less binding comes after all of them, also in
   declaration order. The first eligible binding in that priority order serves

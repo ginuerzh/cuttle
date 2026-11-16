@@ -606,9 +606,11 @@ GOWORK=off go test ./internal/stats -count=1
 
 ## Gotchas
 
-- A draft entrypoint with `*` declared before working entrypoints blackholes
-  every model by design (no fallthrough). The console tags it `未连接`; fix its
-  route or delete it. The same warning is logged at build time.
+- A draft entrypoint with `*` claims only models no more specific (or equally
+  specific, earlier-listed) entrypoint matches — the specificity rule now outranks
+  a `*` draft regardless of its listed position. It does not blackhole more
+  specific entries; those blackhole themselves only with an equal-specificity
+  claim. Fix its route or delete it.
 
 - `internal/admin/dist` is ignored but required by `go:embed all:dist`. A plain
   `go build` fails on a fresh checkout until the web bundle is built.
