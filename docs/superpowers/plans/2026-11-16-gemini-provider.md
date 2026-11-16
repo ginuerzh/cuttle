@@ -505,3 +505,22 @@ commit.)
   - `GOWORK=off go vet ./internal/gateway/` → no findings. `gofmt -l internal/gateway/provider_capabilities_test.go` → clean.
 - **Review findings and fixes:** none (no reviewer run yet).
 - **Deferred items/limitations:** The brief's `-run 'gemini type'` selector runs zero tests; the effective selector is `-run 'TestProviderCapabilities/gemini_type'`. The scratch upstream (`newCapabilityUpstream`) could never satisfy the `text/event-stream` pin as written — it answered `application/json` unconditionally — so it gained a minimal streaming branch for `/chat/completions` paths only; every other subtest is unchanged (none posts `stream:true`). No gateway implementation code was changed; the new test only pins existing `auto` fallback behavior. README does not claim an upstream balance query for Gemini (the admin card shows `GeminiUsageNote`).
+
+### Task 6: Full gates + maintainer smoke bar
+
+- **Date/status:** 2026-11-16 — complete (no reviewer yet). Gates green; maintainer smoke pending.
+- **Repository + commit:** cuttle, record committed as the `docs: task 6 record` commit (see `git log --oneline -1`; a commit cannot contain its own final SHA). No code or config files changed in this task.
+- **Files actually changed:** `docs/superpowers/plans/2026-11-16-gemini-provider.md` (this record) only.
+- **Tests/commands and results:**
+  - `GOWORK=off go build ./...` → PASS (no output).
+  - `GOWORK=off go vet ./...` → PASS (no output).
+  - `GOWORK=off go test -p 1 ./... -count=1` → PASS (all packages `ok`; `-p 1` used because wildcard suites hang in this workspace): `cuttle` 0.510s, `internal/admin` 17.736s, `internal/authfail` 0.002s, `internal/bootstrap` 1.146s, `internal/capture` 0.002s, `internal/config` 0.718s, `internal/gateway` 11.265s, `internal/identity` 0.003s, `internal/logging` 0.003s, `internal/provider` 0.050s, `internal/rewriter` 0.006s, `internal/stats` 21.011s, `internal/tokenest` 0.004s, `internal/version` 0.002s; `internal/health` has no test files.
+  - `cd web && npm test` → PASS (`Test Files  51 passed (51)`, `Tests  490 passed (490)`).
+  - `cd web && npx tsc --noEmit` → PASS (no output).
+- **Smoke checklist (manual verification bar — maintainer only, before merge), state: pending maintainer; NOT run by this task:**
+  1. Build & run the binary; web console → Providers → New → Gemini preset with a real Gemini API key.
+  2. Point a Claude Code-facing entrypoint/route at a Gemini model on that provider (`auto`, no `node.api` pin).
+  3. Run a real Claude Code session with at least one agentic tool-use turn; confirm streaming and token usage stats.
+  4. Only after all three pass: tag/release or push.
+- **Review findings and fixes:** none (no reviewer run yet).
+- **Deferred items/limitations:** maintainer-run verification: pending. Step 3 (real Gemini endpoint smoke) was deliberately not run — it requires a real Gemini API key and a live Claude Code session and is reserved for the maintainer. `npm run build` was not re-run (web bundle already built and verified in Task 4; `internal/admin/dist` is git-ignored). No code, config or web source changed in this task.
