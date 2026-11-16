@@ -22,6 +22,8 @@ const (
 
 	// OpenCodeZenUsageNote explains why Zen has no per-key balance.
 	OpenCodeZenUsageNote = "OpenCode Zen exposes credits only in the OpenCode console: https://opencode.ai/console"
+	// GeminiUsageNote explains why there is no balance or quota endpoint to show.
+	GeminiUsageNote = "Gemini API usage is billed per Google Cloud. AI Studio plan credits only apply inside AI Studio; there is no per-key balance API."
 	// GenericUsageNote is returned for provider types without a known contract.
 	GenericUsageNote = "provider type has no known balance query"
 )
@@ -86,6 +88,8 @@ func UsageSupport(typ string) (bool, string) {
 		return true, ""
 	case "opencode-zen":
 		return false, OpenCodeZenUsageNote
+	case "gemini":
+		return false, GeminiUsageNote
 	default:
 		return false, GenericUsageNote
 	}

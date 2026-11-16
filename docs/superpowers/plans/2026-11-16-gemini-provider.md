@@ -457,3 +457,13 @@ commit.)
   - `GOWORK=off go test ./internal/provider/ -run 'TestGeminiClassifyAndResolve|TestGeminiAuth|TestModelsGemini' -count=1 -v` → all 8 tests PASS (incl. pre-existing `TestModelsGeminiNamesAreStripped`, `TestModelsGeminiLimits`).
 - **Review findings and fixes:** none (no reviewer run yet).
 - **Deferred items/limitations:** none. Semantics pinned by this task: catalog reads the native endpoint only when both a `gemini` type provider and a native `Gemini` base are configured; a Gemini-hint adapter whose `catalogAPIs()` intersects no configured API falls back to the existing chat-first behavior (per plan). Partial multi-page failure fails the whole listing (zero models); `imagen`-style entries with no `supportedGenerationMethods` are kept, embedding-only entries are dropped.
+### Task 2: Admin probe pin + Gemini usage note
+
+- **Date/status:** 2026-11-16 — complete (no reviewer yet).
+- **Repository + commit:** cuttle, code committed as `95ac928b`, then folded with this record via `git commit --amend --no-edit` per plan procedure (a commit cannot contain its own final SHA; see `git log --oneline -1` for the final SHA).
+- **Files actually changed:** `internal/admin/probe_test.go` (new `TestProbeUsesChatBaseForGeminiPreset` pinning `probeTarget` to the chat base for a gemini preset provider — the documented/conscious plan decision; also gains the `internal/provider` import for `provider.Chat`), `internal/provider/usage.go` (`GeminiUsageNote` const next to `OpenCodeZenUsageNote`; `UsageSupport` gains `case "gemini": return false, GeminiUsageNote`), `internal/provider/usage_test.go` (`TestUsageGeminiSupport` next to `TestUsageOpenRouterSupport`). `probeTarget` and `internal/provider/adapter_gemini.go` / `internal/provider/models.go` were not touched.
+- **Tests/commands and results:**
+  - `GOWORK=off go test ./internal/admin/ ./internal/provider/ -count=1` → `ok  github.com/ginuerzh/cuttle/internal/admin	17.739s`; `ok  github.com/ginuerzh/cuttle/internal/provider	0.055s`
+  - `gofmt -l internal/admin/probe_test.go internal/provider/usage.go internal/provider/usage_test.go` → no output (clean).
+- **Review findings and fixes:** none (no reviewer run yet).
+- **Deferred items/limitations:** none. Probe semantics pinned as documented: a gemini preset provider probes the chat base (canonical order, `[Chat, Responses, Anthropic, Gemini]`), while the native `Gemini` base serves the catalog; `probeTarget()` is unchanged.

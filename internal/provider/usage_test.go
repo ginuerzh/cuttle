@@ -498,6 +498,12 @@ func TestUsageOpenRouterSupport(t *testing.T) {
 	}
 }
 
+func TestUsageGeminiSupport(t *testing.T) {
+	if supported, note := UsageSupport("gemini"); supported || note != GeminiUsageNote {
+		t.Fatalf("UsageSupport(gemini) = %v, %q", supported, note)
+	}
+}
+
 func TestUsageOpenRouterAnthropicOnlyBase(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/key" {
