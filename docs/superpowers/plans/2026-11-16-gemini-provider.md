@@ -478,3 +478,16 @@ commit.)
   - `GOWORK=off go test ./internal/admin/ -count=1` → `ok  github.com/ginuerzh/cuttle/internal/admin	17.666s`
 - **Review findings and fixes:** none (no reviewer run yet).
 - **Deferred items/limitations:** none. Admin preset side is now consistent with `providerTypes`, `provider.New` and the web `PROVIDER_TYPES` list; `config.providerTypes` and non-`generic` preset immutability were untouched.
+
+### Task 4: Web preset wiring + dist rebuild
+
+- **Date/status:** 2026-11-16 — complete (no reviewer yet).
+- **Repository + commit:** cuttle, code committed as `c4193980`, then folded with this record via `git commit --amend --no-edit` per plan procedure (a commit cannot contain its own final SHA; see `git log --oneline -1` for the final SHA).
+- **Files actually changed:** `web/src/pages/presets.ts` (`PROVIDER_TYPES` gains `'gemini'` before `'generic'`: `['deepseek', 'opencode-go', 'opencode-zen', 'commandcode', 'openrouter', 'gemini', 'generic']`), `web/src/pages/presets.test.ts` (`presetFormValues` `gemini` fixture next to `opencodeZen` plus a test asserting exact fill of `type: 'gemini'`/`chat`/`gemini` with empty `responses`/`anthropic`; `PROVIDER_TYPES` describe renamed to "includes OpenRouter and Gemini" and asserts `toContain('gemini')`), `docs/superpowers/plans/2026-11-16-gemini-provider.md` (this record). The web bundle was rebuilt into `internal/admin/dist` (`index.html`, `assets/index-BCyLQKlW.css`, `assets/index-Bc4sEeYE.js`) but that directory is git-ignored here (`.gitignore` `/internal/admin/dist/*`, only `.gitkeep` tracked), so no dist files are in the commit; the local rebuild satisfies the `go:embed all:dist` requirement.
+- **Tests/commands and results:**
+  - `cd web && npm test -- presets.test.ts` (before implementation) → FAIL as expected: `expected [ 'deepseek', 'opencode-go', …(4) ] to include 'gemini'` (1 failed, 62 passed).
+  - `cd web && npm test` → `Test Files  51 passed (51)`, `Tests  490 passed (490)`.
+  - `cd web && npx tsc --noEmit` → no output (clean).
+  - `cd web && npm run build` → PASS (`tsc && vite build`); dist regenerated, 3454 modules transformed.
+- **Review findings and fixes:** none (no reviewer run yet).
+- **Deferred items/limitations:** `internal/admin/dist` was rebuilt but is git-ignored in this repository, so it cannot ride along in the commit; the Go embed build therefore depends on a local rebuild on a fresh checkout. Web-side gemini wiring was verified only via Vitest, `tsc --noEmit` and the production build — no browser visual check. Non-`generic` base-URL immutability is unchanged (still enforced by `isBaseURLLocked`, which returns true for `gemini`).

@@ -87,7 +87,7 @@ export function presetFormValues(preset: Preset): PresetFormValues {
 const apiOrder: ProviderApi[] = ['chat', 'responses', 'anthropic', 'gemini'];
 
 /** Provider adapter names accepted by the backend configuration. */
-export const PROVIDER_TYPES = ['deepseek', 'opencode-go', 'opencode-zen', 'commandcode', 'openrouter', 'generic'] as const;
+export const PROVIDER_TYPES = ['deepseek', 'opencode-go', 'opencode-zen', 'commandcode', 'openrouter', 'gemini', 'generic'] as const;
 
 /**
  * Provider identity is fixed at creation time. Only `generic` providers may

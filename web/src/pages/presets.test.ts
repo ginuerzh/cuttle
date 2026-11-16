@@ -46,6 +46,13 @@ const opencodeZen: Preset = {
   anthropic: 'https://opencode.ai/zen',
 };
 
+const gemini: Preset = {
+  name: 'gemini',
+  type: 'gemini',
+  chat: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+};
+
 describe('presetFormValues', () => {
   it('fills the name, type and every API base URL', () => {
     expect(presetFormValues(opencodeGo)).toEqual({
@@ -70,6 +77,17 @@ describe('presetFormValues', () => {
     const values = presetFormValues(opencodeZen);
     expect(values).not.toHaveProperty('protocol');
     expect(values).not.toHaveProperty('pathMap');
+  });
+
+  it('fills exactly the gemini preset fields', () => {
+    expect(presetFormValues(gemini)).toEqual({
+      name: 'gemini',
+      type: 'gemini',
+      chat: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      responses: '',
+      anthropic: '',
+      gemini: 'https://generativelanguage.googleapis.com/v1beta',
+    });
   });
 });
 
@@ -373,8 +391,9 @@ describe('isBaseURLLocked', () => {
 });
 
 describe('PROVIDER_TYPES', () => {
-  it('includes OpenRouter', () => {
+  it('includes OpenRouter and Gemini', () => {
     expect(PROVIDER_TYPES).toContain('openrouter');
+    expect(PROVIDER_TYPES).toContain('gemini');
   });
 });
 
