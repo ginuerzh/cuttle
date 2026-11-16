@@ -216,3 +216,12 @@ Also run `GOWORK=off go test ./internal/gateway/ -count=1` per-package before co
 ## Implementation record
 
 (Per task: date/status, repo+SHA, files actually changed, tests and results, review findings, deferred items.)
+
+### Task 1 - 2026-11-16 - status: complete
+
+**Repository:** /root/code/go-gost/cuttle.
+**Final commit:** (recorded in commit message / git log).
+**Files changed:** `internal/config/ordering.go` (new: SpecificityScore max-literal rule, StarCount tiebreak, OrderEntrypoints stable sort), `internal/config/ordering_test.go` (new).
+**Tests:** `GOWORK=off go test ./internal/config/ -run 'Specificity|OrderEntrypoints' -count=1 -v` → all PASS.
+**Findings:** The plan's original test expectation (all-wildcard → declaration order) was wrong: `*` beats `**`+`*` on the fewer-stars tiebreak, so the test was corrected and a pure `*`-vs-`*` declaration-order case added.
+**Deferred:** none.
