@@ -8,6 +8,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -91,6 +93,22 @@ func (p *baseProvider) Models(ctx context.Context) ([]Model, error) {
 }
 
 func (p *baseProvider) listAPIs() []API {
+	if h, ok := p.adapter.(catalogAPIsHint); ok {
+		if hint := h.catalogAPIs(); len(hint) > 0 {
+			configured := p.configuredAPIs()
+			var out []API
+			for _, api := range configured {
+				for _, want := range hint {
+					if api == want {
+						out = append(out, api)
+					}
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		}
+	}
 	if !p.adapter.listAll() {
 		if _, ok := p.BaseURL(Chat); ok {
 			return []API{Chat}
@@ -128,6 +146,9 @@ type modelItem struct {
 }
 
 func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([]modelItem, error) {
+	if api == Gemini {
+		return p.fetchGeminiModels(ctx, base)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ModelsURL(base, api), nil)
 	if err != nil {
 		return nil, err
@@ -151,6 +172,65 @@ func (p *baseProvider) fetchModels(ctx context.Context, api API, base string) ([
 		return nil, fmt.Errorf("unexpected status %s", resp.Status)
 	}
 	return decodeModels(body, api)
+}
+
+// geminiMaxCatalogPages bounds the native Gemini catalog loop so a
+// misbehaving upstream cannot page forever. Exceeding the bound fails the
+// whole listing, like any other page error.
+const geminiMaxCatalogPages = 100
+
+// fetchGeminiModels lists the native Gemini catalog page by page. Any page
+// error, including a rejected status or exceeding the page bound, fails the
+// whole listing: a partial catalog is never returned as if it were complete.
+func (p *baseProvider) fetchGeminiModels(ctx context.Context, base string) ([]modelItem, error) {
+	items := make([]modelItem, 0)
+	pageToken := ""
+	for page := 0; ; page++ {
+		if page >= geminiMaxCatalogPages {
+			return nil, fmt.Errorf("gemini: catalog listing exceeded %d pages", geminiMaxCatalogPages)
+		}
+		u, err := url.Parse(ModelsURL(base, Gemini))
+		if err != nil {
+			return nil, err
+		}
+		q := u.Query()
+		q.Set("pageSize", "1000")
+		if pageToken != "" {
+			q.Set("pageToken", pageToken)
+		}
+		u.RawQuery = q.Encode()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		key, _ := p.cfg.FirstEnabledKey()
+		if p.CatalogKeyless() {
+			key = ""
+		}
+		applyAuth(req, p.Auth(Gemini), key)
+		ApplyAnthropicVersion(req, Gemini)
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body := io.LimitReader(resp.Body, 8<<20)
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_, _ = io.Copy(io.Discard, body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status %s", resp.Status)
+		}
+		pageItems, next, err := decodeGeminiPage(body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, pageItems...)
+		if next == "" {
+			return items, nil
+		}
+		pageToken = next
+	}
 }
 
 // ModelsURL returns the model-list URL for api at base. Anthropic bases are
@@ -368,44 +448,31 @@ func apiFromEndpoint(endpoint string) (API, bool) {
 }
 
 type geminiModelJSON struct {
-	Name             string `json:"name"`
-	DisplayName      string `json:"displayName"`
-	InputTokenLimit  int    `json:"inputTokenLimit"`
-	OutputTokenLimit int    `json:"outputTokenLimit"`
+	Name                       string   `json:"name"`
+	DisplayName                string   `json:"displayName"`
+	InputTokenLimit            int      `json:"inputTokenLimit"`
+	OutputTokenLimit           int      `json:"outputTokenLimit"`
+	SupportedGenerationMethods []string `json:"supportedGenerationMethods,omitempty"`
 }
 
 type modelListJSON struct {
-	Data   []openAIModelJSON `json:"data"`
-	Models []geminiModelJSON `json:"models"`
+	Data          []openAIModelJSON `json:"data"`
+	Models        []geminiModelJSON `json:"models"`
+	NextPageToken string            `json:"nextPageToken,omitempty"`
 }
 
 func decodeModels(r io.Reader, api API) ([]modelItem, error) {
+	if api == Gemini {
+		items, _, err := decodeGeminiPage(r)
+		return items, err
+	}
+
 	var payload modelListJSON
 	if err := json.NewDecoder(r).Decode(&payload); err != nil {
 		return nil, err
 	}
 
 	var out []modelItem
-	if api == Gemini {
-		for _, m := range payload.Models {
-			id := strings.TrimPrefix(strings.TrimSpace(m.Name), "models/")
-			if id == "" {
-				continue
-			}
-			name := m.DisplayName
-			if name == "" {
-				name = id
-			}
-			out = append(out, modelItem{
-				ID:      id,
-				Name:    name,
-				Context: m.InputTokenLimit,
-				Output:  m.OutputTokenLimit,
-			})
-		}
-		return out, nil
-	}
-
 	for _, m := range payload.Data {
 		if strings.TrimSpace(m.ID) == "" {
 			continue
@@ -413,6 +480,38 @@ func decodeModels(r io.Reader, api API) ([]modelItem, error) {
 		out = append(out, m.toItem())
 	}
 	return out, nil
+}
+
+// decodeGeminiPage decodes one native Gemini /models page. Models whose
+// supportedGenerationMethods is non-empty and does not contain generateContent
+// (for example embedding-only models, which 400 at request time) are dropped.
+// Models that report no methods are kept.
+func decodeGeminiPage(r io.Reader) (items []modelItem, nextPageToken string, err error) {
+	var payload modelListJSON
+	if err := json.NewDecoder(r).Decode(&payload); err != nil {
+		return nil, "", err
+	}
+
+	for _, m := range payload.Models {
+		if len(m.SupportedGenerationMethods) > 0 && !slices.Contains(m.SupportedGenerationMethods, "generateContent") {
+			continue
+		}
+		id := strings.TrimPrefix(strings.TrimSpace(m.Name), "models/")
+		if id == "" {
+			continue
+		}
+		name := m.DisplayName
+		if name == "" {
+			name = id
+		}
+		items = append(items, modelItem{
+			ID:      id,
+			Name:    name,
+			Context: m.InputTokenLimit,
+			Output:  m.OutputTokenLimit,
+		})
+	}
+	return items, payload.NextPageToken, nil
 }
 
 // normalizeModalities lowercases modality names, reduces MIME values to their

@@ -920,3 +920,102 @@ func TestModelsDeepSeekMetadata(t *testing.T) {
 		t.Fatalf("price = %+v, want nil (DeepSeek list has no price)", m.Price)
 	}
 }
+
+func TestModelsGeminiCatalogFromNativeOnly(t *testing.T) {
+	native := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("pageToken") {
+		case "":
+			fmt.Fprint(w, `{"models":[{"name":"models/gemini-2.5-pro","displayName":"Gemini 2.5 Pro","inputTokenLimit":1048576,"outputTokenLimit":65536,"supportedGenerationMethods":["generateContent"]}],"nextPageToken":"p2"}`)
+		default: // "p2"
+			fmt.Fprint(w, `{"models":[{"name":"models/gemini-2.5-flash","displayName":"Gemini 2.5 Flash","supportedGenerationMethods":["generateContent"]}]}`)
+		}
+	})
+	compat := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("compatible catalog endpoint must not be queried")
+	})
+	p := mustProvider(t, config.Provider{Name: "gm", Type: "gemini", Chat: compat.URL, Gemini: native.URL, Keys: []config.ProviderKey{{Name: "k", Key: "sk-test"}}})
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, m := range models {
+		ids = append(ids, m.ID)
+	}
+	if !slices.Equal(ids, []string{"gemini-2.5-pro", "gemini-2.5-flash"}) {
+		t.Fatalf("ids = %v", ids)
+	}
+}
+
+func TestModelsGeminiPageTokenForwarded(t *testing.T) {
+	var paths []string
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.String())
+		switch r.URL.Query().Get("pageToken") {
+		case "":
+			if got := r.URL.Query().Get("pageSize"); got != "1000" {
+				t.Errorf("pageSize = %q, want 1000", got)
+			}
+			fmt.Fprint(w, `{"models":[{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]}],"nextPageToken":"abc"}`)
+		case "abc":
+			fmt.Fprint(w, `{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]}]}`)
+		default:
+			t.Errorf("pageToken = %q, want abc", r.URL.Query().Get("pageToken"))
+		}
+	})
+	p := mustProvider(t, config.Provider{Name: "gm", Type: "gemini", Gemini: srv.URL + "/v1beta", Keys: []config.ProviderKey{{Name: "k", Key: "sk-test"}}})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("models = %+v, want two pages", models)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("requests = %v, want two pages", paths)
+	}
+}
+
+func TestModelsGeminiPartialFailureFailsAll(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("pageToken") {
+		case "":
+			fmt.Fprint(w, `{"models":[{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]}],"nextPageToken":"abc"}`)
+		default:
+			http.Error(w, "boom", http.StatusInternalServerError)
+		}
+	})
+	p := mustProvider(t, config.Provider{Name: "gm", Type: "gemini", Gemini: srv.URL + "/v1beta", Keys: []config.ProviderKey{{Name: "k", Key: "sk-test"}}})
+
+	models, err := p.Models(context.Background())
+	if err == nil {
+		t.Fatal("Models should fail when a later page fails")
+	}
+	if len(models) != 0 {
+		t.Fatalf("models = %+v, want zero models on a failed listing", models)
+	}
+}
+
+func TestModelsGeminiFiltersEmbeddingOnly(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"models":[
+			{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]},
+			{"name":"models/gemini-embedding-exp-001","supportedGenerationMethods":["embedContent"]},
+			{"name":"models/imagen-4.0"}
+		]}`)
+	})
+	p := mustProvider(t, config.Provider{Name: "gm", Type: "gemini", Gemini: srv.URL + "/v1beta", Keys: []config.ProviderKey{{Name: "k", Key: "sk-test"}}})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, m := range models {
+		ids = append(ids, m.ID)
+	}
+	if !slices.Equal(ids, []string{"gemini-2.5-pro", "imagen-4.0"}) {
+		t.Fatalf("ids = %v, want [gemini-2.5-pro imagen-4.0] (embedding-only dropped, no methods kept)", ids)
+	}
+}

@@ -75,6 +75,11 @@ type Provider interface {
 	CatalogKeyless() bool
 }
 
+// catalogAPIsHint is implemented by adapters that must catalog from a
+// different API than the default chat-first preference. baseProvider.listAPIs
+// honors it when present, falling back to the existing logic.
+type catalogAPIsHint interface{ catalogAPIs() []API }
+
 // adapter supplies the vendor-specific classification and auth behavior.
 type adapter interface {
 	classify(id string) []API
@@ -115,6 +120,8 @@ func New(cfg config.Provider) (Provider, error) {
 		a = commandCodeAdapter{}
 	case "openrouter":
 		a = openRouterAdapter{}
+	case "gemini":
+		a = geminiAdapter{}
 	case "generic":
 		a = genericAdapter{}
 	default:

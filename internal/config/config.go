@@ -203,6 +203,7 @@ var providerTypes = map[string]struct{}{
 	"opencode-zen": {},
 	"commandcode":  {},
 	"openrouter":   {},
+	"gemini":       {},
 	"generic":      {},
 }
 

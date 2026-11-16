@@ -443,3 +443,17 @@ Append the Task 6 record (commands + results + state of the smoke checklist) to 
 changed, tests/commands and results, review findings and fixes, deferred
 items/limitations. The record and the task's files land in that task's one
 commit.)
+
+### Task 1: Provider type `gemini` — adapter, catalog hook, paginated native catalog
+
+- **Date/status:** 2026-11-16 — complete (no reviewer yet).
+- **Repository + commit:** cuttle, code committed as `4161cd9d`, then folded with this record via `git commit --amend --no-edit` per plan procedure (a commit cannot contain its own final SHA; see `git log --oneline -1` for the final SHA).
+- **Files actually changed:** `internal/config/config.go` (`providerTypes` gains `"gemini"` after `"openrouter"`), `internal/provider/adapter_gemini.go` (new: `geminiAdapter`, static `[chat gemini]` classification, `defaultAuth`, `listAll=false`, `keylessCatalog=false`, `catalogAPIs()=[Gemini]`), `internal/provider/adapter_gemini_test.go` (new: `TestGeminiClassifyAndResolve`, `TestGeminiAuth`), `internal/provider/provider.go` (`catalogAPIsHint` interface next to `adapter`; factory `case "gemini"` after `openrouter`), `internal/provider/models.go` (`listAPIs` honors `catalogAPIsHint` before the existing chat-first logic, falling through when absent or the intersection with configured APIs is empty; Gemini arm of `decodeModels` extracted into `decodeGeminiPage` with `NextPageToken` and `SupportedGenerationMethods` filtering; new `fetchGeminiModels` loops `?pageSize=1000&pageToken=…` with a URL-escaped token, a 100-page bound, and all-or-nothing failure semantics; `fetchModels` dispatches `api == Gemini` before its single-request path; `modelListJSON` gains `nextPageToken`), `internal/provider/models_test.go` (+`TestModelsGeminiCatalogFromNativeOnly`, `TestModelsGeminiPageTokenForwarded`, `TestModelsGeminiPartialFailureFailsAll`, `TestModelsGeminiFiltersEmbeddingOnly`), `internal/provider/provider_test.go` (factory list gains `"gemini"`).
+- **Tests/commands and results:**
+  - `GOWORK=off go test ./internal/provider/ -run 'TestGeminiClassifyAndResolve|TestGeminiAuth' -count=1 -v` (before implementation) → FAIL, `provider "gm": unknown type "gemini"` as expected.
+  - `GOWORK=off go test ./internal/provider/ -count=1` → `ok  github.com/ginuerzh/cuttle/internal/provider	0.050s`
+  - `GOWORK=off go vet ./internal/provider/ ./internal/config/` → no findings.
+  - `GOWORK=off go test ./internal/provider/ ./internal/config/ -count=1` → `ok  github.com/ginuerzh/cuttle/internal/provider	0.052s`; `ok  github.com/ginuerzh/cuttle/internal/config	0.773s`
+  - `GOWORK=off go test ./internal/provider/ -run 'TestGeminiClassifyAndResolve|TestGeminiAuth|TestModelsGemini' -count=1 -v` → all 8 tests PASS (incl. pre-existing `TestModelsGeminiNamesAreStripped`, `TestModelsGeminiLimits`).
+- **Review findings and fixes:** none (no reviewer run yet).
+- **Deferred items/limitations:** none. Semantics pinned by this task: catalog reads the native endpoint only when both a `gemini` type provider and a native `Gemini` base are configured; a Gemini-hint adapter whose `catalogAPIs()` intersects no configured API falls back to the existing chat-first behavior (per plan). Partial multi-page failure fails the whole listing (zero models); `imagen`-style entries with no `supportedGenerationMethods` are kept, embedding-only entries are dropped.
