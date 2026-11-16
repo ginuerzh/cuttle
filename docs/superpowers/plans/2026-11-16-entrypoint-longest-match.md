@@ -239,3 +239,10 @@ Also run `GOWORK=off go test ./internal/gateway/ -count=1` per-package before co
 **Files changed:** `internal/gateway/count_tokens_policy.go` (policy now iterates `OrderEntrypoints`), `internal/admin/handlers_stats.go` (entrypoint filter's ClientModelExcludes now derived from specificity order; stale comment updated), `internal/gateway/count_tokens_policy_test.go` (new `TestBuildCountTokensPolicySpecificBeatsWildcardRegardlessOfOrder` — wildcard declared first must not shadow a specific passthrough binding).
 **Tests:** `GOWORK=off go test ./internal/gateway/ -count=1` (incl. CountTokensPolicy group) PASS; `GOWORK=off go test ./internal/admin/ -count=1` PASS; `GOWORK=off go build ./...` ok; `go vet` on the three packages clean; gofmt none.
 **Deferred:** none.
+
+### Task 4 - 2026-11-16 - status: complete
+
+**Repository:** /root/code/go-gost/cuttle.
+**Files changed:** `README.md` (routing section: glob match is by specificity, exact > prefix > catch-all regardless of file order; tiebreak = fewer stars, then file order).
+**Gates:** `GOWORK=off go build ./...` ok; `go vet ./...` ok; `GOWORK=off go test -p 1 ./... -count=1` all packages ok (gateway 11.3s, admin 17.9s, stats 21.0s). Web untouched (no UI or type registry change); `npm test` not required — recorded.
+**Deferred:** none in this task. See overall follow-ups (release tag, README upgrade note is in-place).

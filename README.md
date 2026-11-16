@@ -47,7 +47,7 @@ Every request follows one chain:
 
 ```text
 client model
-    │  glob match, entrypoint order
+    │  glob match, by specificity
     ▼
 Entrypoint ──► route bindings ──► Route ──► Node ──► Provider model
                   │                 │          │
@@ -61,8 +61,11 @@ Entrypoint ──► route bindings ──► Route ──► Node ──► Pro
 - An **entrypoint** is the client-facing ingress. It has a name, a non-empty
   list of model globs, and an ordered list of route bindings. The list may be
   empty while drafting.
-- Entrypoints are evaluated in declaration order. The first entrypoint with a
-  matching glob wins; `*` is the explicit catch-all.
+- Entrypoints are evaluated by **specificity**, not declaration order:
+  exact patterns beat prefixes beat `*` — scored by the literal (non-`*`)
+  byte count of the longest-matching glob, then by fewest `*` characters,
+  then by declaration order. So a `*` catchall never shadows a later
+  `claude-fable*`, wherever either is listed.
 - Globs are case-insensitive. `*` is the only wildcard.
 - A **binding** is `{route, probe?}`. Probed bindings are tried first, in
   declaration order; every probe-less binding comes after all of them, also in
