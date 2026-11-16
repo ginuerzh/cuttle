@@ -467,3 +467,14 @@ commit.)
   - `gofmt -l internal/admin/probe_test.go internal/provider/usage.go internal/provider/usage_test.go` → no output (clean).
 - **Review findings and fixes:** none (no reviewer run yet).
 - **Deferred items/limitations:** none. Probe semantics pinned as documented: a gemini preset provider probes the chat base (canonical order, `[Chat, Responses, Anthropic, Gemini]`), while the native `Gemini` base serves the catalog; `probeTarget()` is unchanged.
+
+### Task 3: Admin server preset + preset test 5→6
+
+- **Date/status:** 2026-11-16 — complete (no reviewer yet).
+- **Repository + commit:** cuttle, code committed as `05dc3494`, then folded with this record via `git commit --amend --no-edit` per plan procedure (a commit cannot contain its own final SHA; see `git log --oneline -1` for the final SHA).
+- **Files actually changed:** `internal/admin/presets.go` (appends the `gemini` preset: `Name: "gemini"`, `Type: "gemini"`, `Chat: "https://generativelanguage.googleapis.com/v1beta/openai"`, `Gemini: "https://generativelanguage.googleapis.com/v1beta"`; no `Responses`/`Anthropic`, and no `Enabled` — not a `Preset` field), `internal/admin/server_test.go` (`TestPresetsMatchSpec` expects 6 presets, new `{"gemini", "gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "", "", "https://generativelanguage.googleapis.com/v1beta"}` checks entry; trailing `opencode-go.Chat != opencode-zen.Chat` sanity check unchanged).
+- **Tests/commands and results:**
+  - `GOWORK=off go test ./internal/admin/ -run TestPresetsMatchSpec -count=1 -v` (before implementation) → FAIL, `presets = 5, want one per endpoint (6)` as expected.
+  - `GOWORK=off go test ./internal/admin/ -count=1` → `ok  github.com/ginuerzh/cuttle/internal/admin	17.666s`
+- **Review findings and fixes:** none (no reviewer run yet).
+- **Deferred items/limitations:** none. Admin preset side is now consistent with `providerTypes`, `provider.New` and the web `PROVIDER_TYPES` list; `config.providerTypes` and non-`generic` preset immutability were untouched.

@@ -450,8 +450,8 @@ func TestPresetsMatchSpec(t *testing.T) {
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 5 {
-		t.Fatalf("presets = %d, want one per endpoint (5)", len(got))
+	if len(got) != 6 {
+		t.Fatalf("presets = %d, want one per endpoint (6)", len(got))
 	}
 	byName := make(map[string]Preset, len(got))
 	for _, p := range got {
@@ -470,6 +470,7 @@ func TestPresetsMatchSpec(t *testing.T) {
 		{"opencode-zen", "opencode-zen", "https://opencode.ai/zen/v1", "https://opencode.ai/zen/v1", "https://opencode.ai/zen", ""},
 		{"commandcode", "commandcode", "https://api.commandcode.ai/provider/v1", "https://api.commandcode.ai/provider/v1", "https://api.commandcode.ai/provider", ""},
 		{"openrouter", "openrouter", "https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1", "https://openrouter.ai/api", ""},
+		{"gemini", "gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "", "", "https://generativelanguage.googleapis.com/v1beta"},
 	}
 	for _, want := range checks {
 		p, ok := byName[want.name]

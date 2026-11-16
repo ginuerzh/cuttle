@@ -48,4 +48,10 @@ var presets = []Preset{
 		Responses: "https://openrouter.ai/api/v1",
 		Anthropic: "https://openrouter.ai/api",
 	},
+	{
+		Name:   "gemini",
+		Type:   "gemini",
+		Chat:   "https://generativelanguage.googleapis.com/v1beta/openai",
+		Gemini: "https://generativelanguage.googleapis.com/v1beta",
+	},
 }
