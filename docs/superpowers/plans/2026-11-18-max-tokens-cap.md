@@ -41,7 +41,7 @@
 - Produces: `type catalogLimits map[string]map[string]int` (provider ID → model ID → `Output`).
 - Produces: `func fetchCatalogLimits(ctx context.Context, cfg *gwconfig.Config, log logger.Logger) catalogLimits`.
 
-- [ ] **Step 1: Write the failing catalog test**
+- [x] **Step 1: Write the failing catalog test**
 
 ```go
 func TestFetchCatalogLimitsDeduplicatesProviders(t *testing.T) {
@@ -72,7 +72,7 @@ func TestFetchCatalogLimitsDeduplicatesProviders(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the failing best-effort test**
+- [x] **Step 2: Write the failing best-effort test**
 
 ```go
 func TestFetchCatalogLimitsBestEffort(t *testing.T) {
@@ -94,28 +94,39 @@ func TestFetchCatalogLimitsBestEffort(t *testing.T) {
 
 Also add a case where `/models` returns a model with no `limit.output` and assert no cap entry for it.
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -run TestFetchCatalogLimits -count=1`
 Expected: FAIL with `undefined: fetchCatalogLimits`
 
-- [ ] **Step 4: Implement `fetchCatalogLimits`**
+- [x] **Step 4: Implement `fetchCatalogLimits`**
 
 Collect provider IDs referenced by `cfg.Nodes`, then for each matching `cfg.Providers` entry create one `provider.New(p)` and call `Models(ctx)`. For every returned `provider.Model` with `Output > 0`, set `limits[p.ID][m.ID] = m.Output`. On `provider.New` error or `Models` error (including context cancellation), call `log.Warnf(...)` and continue. Return the map even when empty.
 
-- [ ] **Step 5: Run the tests and the package gate**
+- [x] **Step 5: Run the tests and the package gate**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -run TestFetchCatalogLimits -count=1`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add internal/gateway/catalog_limits.go internal/gateway/catalog_limits_test.go
 git -C /root/code/go-gost/cuttle commit -m "feat(gateway): resolve target model output limits from provider catalogs"
 ```
 
-**Implementation record** (fill after completion): date/status; repo + commit SHA; files changed; tests/commands + results; review findings + fixes; deferred items/limitations.
+**Implementation record — Task 1**
+
+- Date/status: 2026-11-18, DONE. All Task 1 steps completed; focused tests and the full `internal/gateway` package gate pass.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle`, branch `feat/max-tokens-cap`), implementation commit `4067c84b082a8268e71f807de5903210464ca1f1` (`feat(gateway): resolve target model output limits from provider catalogs`); this implementation record is updated in a follow-up commit in the same task (see `git log -1 --format=%H` for its SHA, which cannot be embedded in its own content).
+- Files changed: created `internal/gateway/catalog_limits.go` (`catalogLimits`, `fetchCatalogLimits`); created `internal/gateway/catalog_limits_test.go` (deduplication, best-effort, no-output/zero-output, warning and provider-not-configured tests); updated this plan's Task 1 checkboxes and implementation record.
+- Tests/commands and results:
+  - RED, before implementation: `GOWORK=off go test ./internal/gateway -run TestFetchCatalogLimits -count=1` → FAIL (build failed: `undefined: fetchCatalogLimits` at four call sites).
+  - GREEN, after implementation: `GOWORK=off go test ./internal/gateway -run TestFetchCatalogLimits -count=1 -v` → PASS (4 top-level tests, 5 warning subtests).
+  - Package gate: `GOWORK=off go test ./internal/gateway -count=1` → PASS, twice (before and after the final test-only self-review fix), ~11.2 s.
+  - `gofmt -l` on both new files → no output; `GOWORK=off go vet ./internal/gateway` → no output.
+- Review findings and fixes: self-review found the warning-capture test stub embedded a nil `logger.Logger`, so a future non-warning log call would panic; initialized it with `xlogger.Nop()` and re-ran the focused tests, vet, and package gate. No production-code defects found.
+- Deferred items/limitations: the resolver deliberately does not impose a timeout; Task 4 supplies the overall bounded context. Provider catalogs are fetched sequentially, and caps are read at build/reload time only (no last-good cache). No config, sibling repository, `go.mod`, or local `replace` changes.
 
 ---
 
