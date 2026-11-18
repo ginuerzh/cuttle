@@ -141,7 +141,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): resolve target model 
 - Produces: `compileNodeTargets(p gwconfig.Provider, n gwconfig.Node, limits catalogLimits) (nodeTargets, error)`.
 - Produces: `upstreamTarget.maxOutputTokens int` (0 means no cap).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add `nil` as the third argument to the existing `compileNodeTargets` calls in `upstream_target_test.go`, then add:
 
@@ -167,28 +167,39 @@ func TestCompileNodeTargetsCarriesCatalogCap(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -run TestCompileNodeTargets -count=1`
 Expected: FAIL (compile error: too many arguments)
 
-- [ ] **Step 3: Implement the cap on the target**
+- [x] **Step 3: Implement the cap on the target**
 
 Change `compileTarget` to take the cap as `int` and set `upstreamTarget.maxOutputTokens`. In `compileNodeTargets`, read `limits[p.ID][targetModel]` once and pass it to every `compileTarget` call (default and variants).
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -run TestCompileNodeTargets -count=1`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add internal/gateway/upstream.go internal/gateway/upstream_target_test.go
 git -C /root/code/go-gost/cuttle commit -m "feat(gateway): attach model output cap to compiled targets"
 ```
 
-**Implementation record** (fill after completion): date/status; repo + commit SHA; files changed; tests/commands + results; review findings + fixes; deferred items/limitations.
+**Implementation record — Task 2**
+
+- Date/status: 2026-11-18, DONE. All Task 2 steps completed; the focused compile-node-target tests and the full `internal/gateway` package gate pass.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle`, worktree `/root/code/go-gost/cuttle/.worktrees/feat-max-tokens-cap`, branch `feat/max-tokens-cap`), this commit (`feat(gateway): attach model output cap to compiled targets`); the actual SHA is listed in the task report.
+- Files changed: `internal/gateway/upstream.go` (new `maxOutputTokens` field on `upstreamTarget`, `catalogLimits` parameter on `compileNodeTargets`, cap threaded through every `compileTarget` call and stored on each target); `internal/gateway/upstream_target_test.go` (existing calls pass `nil`, new `TestCompileNodeTargetsCarriesCatalogCap`); `internal/gateway/build.go` (temporary `nil` third argument to keep the production caller compiling); this plan's Task 2 checkboxes and implementation record.
+- Tests/commands and results:
+  - RED, before implementation: `GOWORK=off go test ./internal/gateway -run TestCompileNodeTargets -count=1` → FAIL (build failed: `too many arguments in call to compileNodeTargets` at the eight test call sites plus `targets.defaultTarget.maxOutputTokens undefined`).
+  - GREEN, after implementation: `GOWORK=off go test ./internal/gateway -run TestCompileNodeTargets -count=1 -v` → PASS (8 top-level tests, including the new one).
+  - Package gate: `GOWORK=off go test ./internal/gateway -count=1` → PASS (~11.3 s).
+  - `GOWORK=off go vet ./internal/gateway` → no output; `gofmt -l` on the three changed Go files → no output.
+- Review findings and fixes: self-review confirmed the cap is read once from `limits[p.ID][targetModel]`, nil/empty maps yield 0, and all three `compileTarget` paths (pinned, default, variants) receive the same value. No defects found; no fixes needed. `build.go` deliberately still passes `nil`: Task 4 supplies `fetchCatalogLimits` there.
+- Deferred items/limitations: the cap is carried on the compiled target only; body clamping and rewriter wiring belong to Tasks 3 and 4. No config schema, sibling repository, `go.mod`, or local `replace` changes.
 
 ---
 

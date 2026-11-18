@@ -18,7 +18,7 @@ func TestCompileNodeTargetsAutoDeepSeek(t *testing.T) {
 	}
 	n := gwconfig.Node{Name: "n", Provider: "ds", Model: "deepseek-v4-flash"}
 
-	targets, err := compileNodeTargets(p, n)
+	targets, err := compileNodeTargets(p, n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestCompileNodeTargetsOpenRouter(t *testing.T) {
 	}
 	n := gwconfig.Node{Name: "n", Provider: "or", Model: "anthropic/claude-sonnet-4"}
 
-	targets, err := compileNodeTargets(p, n)
+	targets, err := compileNodeTargets(p, n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestCompileNodeTargetsGenericUnknownModel(t *testing.T) {
 	}
 	n := gwconfig.Node{Name: "n", Provider: "gm", Model: "model-not-in-the-catalog"}
 
-	targets, err := compileNodeTargets(p, n)
+	targets, err := compileNodeTargets(p, n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestCompileNodeTargetsStaticClassificationExcludes(t *testing.T) {
 	}
 	n := gwconfig.Node{Name: "n", Provider: "oc", Model: "deepseek-v4-flash"}
 
-	targets, err := compileNodeTargets(p, n)
+	targets, err := compileNodeTargets(p, n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestCompileNodeTargetsPinnedRescuesDefault(t *testing.T) {
 	}
 	n := gwconfig.Node{Name: "n", Provider: "cc", Model: "claude-sonnet-4", API: "chat"}
 
-	targets, err := compileNodeTargets(p, n)
+	targets, err := compileNodeTargets(p, n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestCompileNodeTargetsPinnedMissingBase(t *testing.T) {
 	}
 	n := gwconfig.Node{Name: "n", Provider: "p", Model: "m", API: "anthropic"}
 
-	_, err := compileNodeTargets(p, n)
+	_, err := compileNodeTargets(p, n, nil)
 	if err == nil {
 		t.Fatal("compileNodeTargets accepted a pinned API without a base URL")
 	}
@@ -160,7 +160,27 @@ func TestCompileNodeTargetsDisabledModel(t *testing.T) {
 	}
 	n := gwconfig.Node{Name: "n", Provider: "p", Model: "m"}
 
-	if _, err := compileNodeTargets(p, n); err == nil || !strings.Contains(err.Error(), errModelDisabled.Error()) {
+	if _, err := compileNodeTargets(p, n, nil); err == nil || !strings.Contains(err.Error(), errModelDisabled.Error()) {
 		t.Fatalf("error = %v, want errModelDisabled", err)
+	}
+}
+
+func TestCompileNodeTargetsCarriesCatalogCap(t *testing.T) {
+	p := gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: "https://gw.example/v1", Anthropic: "https://gw.example/anthropic"}
+	n := gwconfig.Node{ID: "n1", Name: "n1", Provider: "p1", Model: "glm-5.3"}
+	limits := catalogLimits{"p1": {"glm-5.3": 131072}}
+
+	targets, err := compileNodeTargets(p, n, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := targets.defaultTarget.maxOutputTokens; got != 131072 {
+		t.Fatalf("default cap = %d, want 131072", got)
+	}
+	if got := targets.variants[provider.Anthropic].maxOutputTokens; got != 131072 {
+		t.Fatalf("anthropic variant cap = %d, want 131072", got)
+	}
+	if targets2, err := compileNodeTargets(p, n, nil); err != nil || targets2.defaultTarget.maxOutputTokens != 0 {
+		t.Fatalf("nil limits = %+v, %v; want no cap", targets2, err)
 	}
 }

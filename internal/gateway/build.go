@@ -382,7 +382,7 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 		if strings.TrimSpace(provider.UserAgent) == "" {
 			provider.UserAgent = cfg.Gateway.UserAgent
 		}
-		targets, err := compileNodeTargets(provider, *n)
+		targets, err := compileNodeTargets(provider, *n, nil)
 		if err != nil {
 			if errors.Is(err, errModelDisabled) {
 				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
