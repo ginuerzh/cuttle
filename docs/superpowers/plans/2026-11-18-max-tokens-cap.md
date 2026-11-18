@@ -118,7 +118,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): resolve target model 
 **Implementation record — Task 1**
 
 - Date/status: 2026-11-18, DONE. All Task 1 steps completed; focused tests and the full `internal/gateway` package gate pass.
-- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle`, branch `feat/max-tokens-cap`), implementation commit `4067c84b082a8268e71f807de5903210464ca1f1` (`feat(gateway): resolve target model output limits from provider catalogs`); this implementation record is updated in a follow-up commit in the same task (see `git log -1 --format=%H` for its SHA, which cannot be embedded in its own content).
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle`, branch `feat/max-tokens-cap`), implementation commit `4067c84b082a8268e71f807de5903210464ca1f1` (`feat(gateway): resolve target model output limits from provider catalogs`); implementation-record commit `7817c7c9901a8917858a293121f48435d547dce0` (`docs: record task 1 max-tokens cap implementation`), with a follow-up docs commit in this task adding its SHA (a commit cannot contain its own SHA).
 - Files changed: created `internal/gateway/catalog_limits.go` (`catalogLimits`, `fetchCatalogLimits`); created `internal/gateway/catalog_limits_test.go` (deduplication, best-effort, no-output/zero-output, warning and provider-not-configured tests); updated this plan's Task 1 checkboxes and implementation record.
 - Tests/commands and results:
   - RED, before implementation: `GOWORK=off go test ./internal/gateway -run TestFetchCatalogLimits -count=1` → FAIL (build failed: `undefined: fetchCatalogLimits` at four call sites).
