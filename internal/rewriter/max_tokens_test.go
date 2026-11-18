@@ -16,12 +16,13 @@ func TestClampMaxTokensProtocols(t *testing.T) {
 	cases := []struct {
 		name, protocol, body string
 		field                []string
+		wantSibling          string
 	}{
-		{"anthropic", "anthropic", `{"max_tokens":256000,"messages":[]}`, []string{"max_tokens"}},
-		{"chat max_tokens", "chat", `{"max_tokens":256000,"messages":[]}`, []string{"max_tokens"}},
-		{"chat completion tokens", "chat", `{"max_completion_tokens":256000,"messages":[]}`, []string{"max_completion_tokens"}},
-		{"responses", "responses", `{"max_output_tokens":256000,"messages":[]}`, []string{"max_output_tokens"}},
-		{"gemini", "gemini", `{"generationConfig":{"maxOutputTokens":256000}}`, []string{"generationConfig", "maxOutputTokens"}},
+		{"anthropic", "anthropic", `{"max_tokens":256000,"system":"keep <anthropic> & more","messages":[]}`, []string{"max_tokens"}, "keep <anthropic> & more"},
+		{"chat max_tokens", "chat", `{"max_tokens":256000,"system":"keep <chat> & more","messages":[]}`, []string{"max_tokens"}, "keep <chat> & more"},
+		{"chat completion tokens", "chat", `{"max_completion_tokens":256000,"system":"keep <completion> & more","messages":[]}`, []string{"max_completion_tokens"}, "keep <completion> & more"},
+		{"responses", "responses", `{"max_output_tokens":256000,"system":"keep <responses> & more","messages":[]}`, []string{"max_output_tokens"}, "keep <responses> & more"},
+		{"gemini", "gemini", `{"generationConfig":{"maxOutputTokens":256000},"system":"keep <gemini> & more"}`, []string{"generationConfig", "maxOutputTokens"}, "keep <gemini> & more"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -31,6 +32,9 @@ func TestClampMaxTokensProtocols(t *testing.T) {
 			}
 			if got := nestedInt(t, out, tc.field); got != 131072 {
 				t.Fatalf("clampMaxTokens(%s, %q, 131072) field %v = %d, want 131072; body %s", tc.body, tc.protocol, tc.field, got, out)
+			}
+			if got := nestedString(t, out, []string{"system"}); got != tc.wantSibling {
+				t.Fatalf("clampMaxTokens(%s, %q, 131072) system = %q, want %q; body %s", tc.body, tc.protocol, got, tc.wantSibling, out)
 			}
 		})
 	}
@@ -118,6 +122,29 @@ func TestRewriteClampSkipsResponseAndCountTokens(t *testing.T) {
 			}
 		})
 	}
+}
+
+func nestedString(t *testing.T, body []byte, path []string) string {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	for _, key := range path {
+		obj, ok := v.(map[string]any)
+		if !ok {
+			t.Fatalf("body %s: %q is not an object", body, key)
+		}
+		v, ok = obj[key]
+		if !ok {
+			t.Fatalf("body %s: field %q missing", body, key)
+		}
+	}
+	s, ok := v.(string)
+	if !ok {
+		t.Fatalf("body %s: field %v = %v, want string", body, path, v)
+	}
+	return s
 }
 
 func nestedInt(t *testing.T, body []byte, path []string) int64 {

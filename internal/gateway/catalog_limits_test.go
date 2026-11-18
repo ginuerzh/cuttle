@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-gost/core/logger"
 	xlogger "github.com/go-gost/x/logger"
@@ -95,6 +96,66 @@ func TestFetchCatalogLimitsSkipsModelsWithoutOutput(t *testing.T) {
 	}
 	if got := limits["p1"]["unreferenced"]; got != 4096 {
 		t.Fatalf("unreferenced cap = %d, want 4096", got)
+	}
+}
+
+func TestFetchCatalogLimitsSkipsDisabledNode(t *testing.T) {
+	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer blocked.Close()
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"glm-5.3","limit":{"output":131072}}]}`)
+	}))
+	defer live.Close()
+
+	disabled := false
+	cfg := &gwconfig.Config{
+		Providers: []gwconfig.Provider{
+			{ID: "p-blocked", Name: "p-blocked", Type: "generic", Chat: blocked.URL},
+			{ID: "p-live", Name: "p-live", Type: "generic", Chat: live.URL},
+		},
+		Nodes: []gwconfig.Node{
+			{ID: "n-blocked", Name: "n-blocked", Provider: "p-blocked", Model: "blocked", Enabled: &disabled},
+			{ID: "n-live", Name: "n-live", Provider: "p-live", Model: "glm-5.3"},
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	limits := fetchCatalogLimits(ctx, cfg, xlogger.Nop())
+	if got := limits["p-live"]["glm-5.3"]; got != 131072 {
+		t.Fatalf("enabled model cap = %d, want 131072; limits = %v", got, limits)
+	}
+}
+
+func TestFetchCatalogLimitsSkipsDisabledProvider(t *testing.T) {
+	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer blocked.Close()
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"glm-5.3","limit":{"output":131072}}]}`)
+	}))
+	defer live.Close()
+
+	disabled := false
+	cfg := &gwconfig.Config{
+		Providers: []gwconfig.Provider{
+			{ID: "p-blocked", Name: "p-blocked", Type: "generic", Chat: blocked.URL, Enabled: &disabled},
+			{ID: "p-live", Name: "p-live", Type: "generic", Chat: live.URL},
+		},
+		Nodes: []gwconfig.Node{
+			{ID: "n-blocked", Name: "n-blocked", Provider: "p-blocked", Model: "blocked"},
+			{ID: "n-live", Name: "n-live", Provider: "p-live", Model: "glm-5.3"},
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	limits := fetchCatalogLimits(ctx, cfg, xlogger.Nop())
+	if got := limits["p-live"]["glm-5.3"]; got != 131072 {
+		t.Fatalf("enabled model cap = %d, want 131072; limits = %v", got, limits)
 	}
 }
 

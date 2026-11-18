@@ -31,6 +31,9 @@ func fetchCatalogLimits(ctx context.Context, cfg *gwconfig.Config, log logger.Lo
 	// that references the same missing model.
 	wanted := make(map[string]map[string]bool)
 	for _, n := range cfg.Nodes {
+		if !n.EnabledValue() {
+			continue
+		}
 		providerID := strings.TrimSpace(n.Provider)
 		modelID := strings.TrimSpace(n.Model)
 		if providerID == "" || modelID == "" {
@@ -43,6 +46,9 @@ func fetchCatalogLimits(ctx context.Context, cfg *gwconfig.Config, log logger.Lo
 	}
 
 	for _, p := range cfg.Providers {
+		if !p.EnabledValue() {
+			continue
+		}
 		providerID := strings.TrimSpace(p.ID)
 		models, ok := wanted[providerID]
 		if !ok {
