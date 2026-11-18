@@ -27,7 +27,7 @@ func countingUpstream(t *testing.T) (*httptest.Server, *hitCounter) {
 	t.Helper()
 
 	c := &hitCounter{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.mu.Lock()
 		c.hits++
 		c.mu.Unlock()

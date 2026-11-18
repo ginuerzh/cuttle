@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -61,6 +62,12 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 		return nil, nil, nil, nil, err
 	}
 
+	// One bounded context covers every catalog lookup for this build. Failures
+	// are best-effort: fetchCatalogLimits logs them and returns no cap.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	limits := fetchCatalogLimits(ctx, cfg, log)
+
 	probes := newProbeSet(func(id string) string {
 		if r, ok := cfg.Route(id); ok {
 			return r.Name
@@ -110,7 +117,7 @@ func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts 
 			if _, ok := routePlans[r.ID]; ok {
 				continue
 			}
-			plan, err := buildRoutePlan(cfg, build, *r, log, facts, captureMgr)
+			plan, err := buildRoutePlan(cfg, build, *r, limits, log, facts, captureMgr)
 			if plan != nil {
 				rewriters = append(rewriters, plan.rewriters...)
 			}
@@ -355,7 +362,7 @@ type nodePlan struct {
 	keys     []gwconfig.ProviderKey
 }
 
-func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
+func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, limits catalogLimits, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
 	var plans []nodePlan
 	for _, ref := range r.Nodes {
 		n, ok := cfg.Node(ref)
@@ -382,7 +389,7 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, log lo
 		if strings.TrimSpace(provider.UserAgent) == "" {
 			provider.UserAgent = cfg.Gateway.UserAgent
 		}
-		targets, err := compileNodeTargets(provider, *n, nil)
+		targets, err := compileNodeTargets(provider, *n, limits)
 		if err != nil {
 			if errors.Is(err, errModelDisabled) {
 				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
@@ -760,14 +767,15 @@ func unregisterRewriters(names []string) {
 func registerRewriter(name string, p gwconfig.Provider, n gwconfig.Node, target upstreamTarget, routeID string, facts *stats.Facts, captureMgr *capture.Manager, log logger.Logger) error {
 	registry.RewriterRegistry().Unregister(name)
 	if err := registry.RewriterRegistry().Register(name, gwrewriter.New(newNodeEngine(target), gwrewriter.Options{
-		Provider:    p.ID,
-		Protocol:    string(target.api),
-		Route:       routeID,
-		Node:        n.ID,
-		TargetModel: target.targetModel,
-		Sink:        facts,
-		Capture:     captureMgr,
-		Logger:      log,
+		Provider:        p.ID,
+		Protocol:        string(target.api),
+		Route:           routeID,
+		Node:            n.ID,
+		TargetModel:     target.targetModel,
+		MaxOutputTokens: target.maxOutputTokens,
+		Sink:            facts,
+		Capture:         captureMgr,
+		Logger:          log,
 	})); err != nil {
 		return fmt.Errorf("register rewriter %s: %w", name, err)
 	}

@@ -138,7 +138,7 @@ func bindingPlans(t *testing.T, cfg *gwconfig.Config) map[string]*routePlan {
 	log := xlogger.Nop()
 	plans := make(map[string]*routePlan, len(cfg.Routes))
 	for _, r := range cfg.Routes {
-		plan, err := buildRoutePlan(cfg, "bindings-test", r, log, nil, nil)
+		plan, err := buildRoutePlan(cfg, "bindings-test", r, nil, log, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

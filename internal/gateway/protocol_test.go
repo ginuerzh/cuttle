@@ -25,7 +25,7 @@ func captureUpstream(t *testing.T) (*httptest.Server, *capturedRequest) {
 	t.Helper()
 
 	got := &capturedRequest{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		got.path = r.URL.Path
 		got.body = string(b)

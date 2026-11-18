@@ -15,7 +15,7 @@ import (
 )
 
 func stickyUpstream(name string) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Test-Provider", name)
 		if r.Header.Get("X-Test-Fail") != "" {
 			w.WriteHeader(http.StatusServiceUnavailable)

@@ -10,7 +10,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -70,7 +69,7 @@ func TestCountTokensEstimatesForChatTarget(t *testing.T) {
 
 func TestCountTokensPassesThroughForAnthropicTarget(t *testing.T) {
 	got := &capturedRequest{}
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		got.path, got.body = r.URL.Path, string(b)
 		w.Header().Set("Content-Type", "application/json")
@@ -191,7 +190,7 @@ func TestCountTokensWritesNoStats(t *testing.T) {
 func TestCountTokensReloadFlipsPolicy(t *testing.T) {
 	chatUp, chatGot := captureUpstream(t)
 	anthGot := &capturedRequest{}
-	anthUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	anthUp := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		anthGot.path, anthGot.body = r.URL.Path, string(b)
 		w.Header().Set("Content-Type", "application/json")

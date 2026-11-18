@@ -207,7 +207,7 @@ func (l *authLog) all() []string {
 func namedKeyUpstream(t *testing.T) (*httptest.Server, *authLog) {
 	t.Helper()
 	log := &authLog{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.add(r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, openAIChatResponse)

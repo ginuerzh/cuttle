@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -87,7 +86,7 @@ func startGateway(t *testing.T, cfg *gwconfig.Config) *Gateway {
 }
 
 func TestRouteHealthUsesRouteFailSettings(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer upstream.Close()
@@ -218,7 +217,7 @@ func TestBuildUsesEntityIDs(t *testing.T) {
 // TestRouteHealthReportsIDs proves the health payload carries ids while the
 // display names stay available for the console.
 func TestRouteHealthReportsIDs(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer upstream.Close()
@@ -284,7 +283,7 @@ func TestRouteHealthReportsIDs(t *testing.T) {
 func TestFailMarkerAccumulatesAcrossRequests(t *testing.T) {
 	var failing atomic.Bool
 	failing.Store(true)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if failing.Load() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -339,7 +338,7 @@ func TestFailMarkerAccumulatesAcrossRequests(t *testing.T) {
 
 func TestGatewayForwardsAndRewrites(t *testing.T) {
 	var gotPath, gotQuery, gotAuth, gotBody string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
 		gotAuth = r.Header.Get("Authorization")
@@ -383,7 +382,7 @@ func TestGatewayForwardsAndRewrites(t *testing.T) {
 
 func TestGatewayPassesThroughUnmappedPathWithoutKey(t *testing.T) {
 	var gotPath, gotAuth string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusOK)
@@ -411,7 +410,7 @@ func TestGatewayPassesThroughUnmappedPathWithoutKey(t *testing.T) {
 }
 
 func TestGatewayRequestIDHeader(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"ok":true}`))
@@ -433,7 +432,7 @@ func TestGatewayRequestIDHeader(t *testing.T) {
 }
 
 func TestGatewayRequestIDMatchesStatsRow(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"ok":true}`))

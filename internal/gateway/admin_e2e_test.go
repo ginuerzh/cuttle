@@ -50,7 +50,7 @@ func entityID(t *testing.T, client *http.Client, url, name string) string {
 
 func TestAdminCreatesProviderAndTakesEffect(t *testing.T) {
 	var hitPath, hitAuth string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hitPath = r.URL.Path
 		hitAuth = r.Header.Get("Authorization")
 		io.WriteString(w, `{"ok":true}`)

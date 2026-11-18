@@ -29,7 +29,7 @@ func envMap(m map[string]string) func(string) string {
 
 func TestZeroConfigOnboarding(t *testing.T) {
 	var hitPath, hitAuth string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hitPath = r.URL.Path
 		hitAuth = r.Header.Get("Authorization")
 		io.WriteString(w, `{"ok":true}`)

@@ -21,7 +21,7 @@ func probingUpstream(t *testing.T) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
 
 	var hits atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "application/json")

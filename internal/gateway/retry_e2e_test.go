@@ -3,7 +3,6 @@ package gateway_test
 import (
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,7 +22,7 @@ import (
 func TestGatewayRetriesRetryableUpstream(t *testing.T) {
 	var firstHits, secondHits atomic.Int32
 
-	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	first := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		firstHits.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -31,7 +30,7 @@ func TestGatewayRetriesRetryableUpstream(t *testing.T) {
 	}))
 	defer first.Close()
 
-	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	second := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secondHits.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
@@ -127,7 +126,7 @@ func TestGatewayRetryUsesProviderCredentials(t *testing.T) {
 	var mu sync.Mutex
 	var firstAuth, secondAuth []string
 
-	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	first := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		firstAuth = append(firstAuth, r.Header.Get("Authorization"))
 		mu.Unlock()
@@ -137,7 +136,7 @@ func TestGatewayRetryUsesProviderCredentials(t *testing.T) {
 	}))
 	defer first.Close()
 
-	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	second := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		secondAuth = append(secondAuth, r.Header.Get("Authorization"))
 		mu.Unlock()

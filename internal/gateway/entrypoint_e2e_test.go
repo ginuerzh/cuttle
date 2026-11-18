@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,7 +121,7 @@ func postModelAndBody(t *testing.T, gw *gateway.Gateway, model string) string {
 
 func TestEntrypointConfigEndToEnd(t *testing.T) {
 	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		gotModel = string(b)
 		w.Header().Set("Content-Type", "application/json")

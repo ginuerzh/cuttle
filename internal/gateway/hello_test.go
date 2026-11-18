@@ -3,14 +3,13 @@ package gateway
 import (
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 )
 
 func TestHelloProbeAnsweredLocally(t *testing.T) {
 	var hits atomic.Int32
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		w.WriteHeader(http.StatusNotFound)
 	}))

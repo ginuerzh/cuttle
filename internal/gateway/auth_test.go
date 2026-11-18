@@ -31,7 +31,7 @@ func authUpstream(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 
 	var hits atomic.Int32
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "application/json")
@@ -308,7 +308,7 @@ func TestGatewayAuthKeyNotForwarded(t *testing.T) {
 		mu      sync.Mutex
 		headers http.Header
 	)
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		headers = r.Header.Clone()
 		mu.Unlock()
@@ -348,7 +348,7 @@ func TestGatewayAuthReplaysLargeBody(t *testing.T) {
 		gotHead string
 		gotTail string
 	)
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		mu.Lock()
 		if err == nil {
@@ -504,7 +504,7 @@ func TestGatewayAuthSecondChunkedRequestOnSameConnectionIsRejected(t *testing.T)
 		gotBody string
 		hits    atomic.Int32
 	)
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		b, err := io.ReadAll(r.Body)
 		mu.Lock()

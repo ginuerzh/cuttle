@@ -316,7 +316,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(rewriter): clamp oversized outp
 - Consumes: `fetchCatalogLimits`, `compileNodeTargets(..., limits)`, `gwrewriter.Options.MaxOutputTokens`.
 - Produces: every registered node rewriter carries the cap from its compiled target.
 
-- [ ] **Step 1: Write the failing end-to-end build test**
+- [x] **Step 1: Write the failing end-to-end build test**
 
 Using the config fixture style from `internal/gateway/bindings_test.go`, build a config with one `httptest` provider serving `{"data":[{"id":"glm-5.3","limit":{"output":131072}}]}` at `/models`, one node with `Model: "glm-5.3"`, one route referencing that node, and one entrypoint matching `claude-opus*`. Call `buildHopGroup(cfg, "cap-build", xlogger.Nop(), stats.NewFacts(), nil)`, then:
 
@@ -332,26 +332,26 @@ if got := nestedInt(t, out, []string{"max_tokens"}); got != 131072 { t.Fatalf("o
 
 Unregister the returned rewriter names with `defer` (or `t.Cleanup`). Reuse the small `nestedInt` helper idea from Task 3 inside this test file.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -run TestBuildCap -count=1`
 Expected: FAIL (registered rewriter returns 256000)
 
-- [ ] **Step 3: Wire the build**
+- [x] **Step 3: Wire the build**
 
 In `buildHopGroup`, create `ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)` and `defer cancel()`; call `fetchCatalogLimits(ctx, cfg, log)` and pass the result to every `compileNodeTargets` call. In `registerRewriter`, set `MaxOutputTokens: target.maxOutputTokens` in `gwrewriter.Options`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -run TestBuildCap -count=1`
 Expected: PASS
 
-- [ ] **Step 5: Run the full Go gate**
+- [x] **Step 5: Run the full Go gate**
 
 Run: `cd cuttle && GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Expected: PASS
 
-- [ ] **Step 6: Verify manually after deployment**
+- [ ] **Step 6: Verify manually after deployment** (DEFERRED: not executed in this task)
 
 ```bash
 curl -sS -o /tmp/glm-cap.json -w '%{http_code}\n' \
@@ -362,11 +362,23 @@ curl -sS -o /tmp/glm-cap.json -w '%{http_code}\n' \
 
 Expected: `200`. The new request capture's rewritten body must show model `glm-5.3` and `max_tokens: 131072`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add internal/gateway/build.go internal/gateway/build_cap_test.go
 git -C /root/code/go-gost/cuttle commit -m "feat(gateway): apply catalog output caps to registered rewriters"
 ```
 
-**Implementation record** (fill after completion): date/status; repo + commit SHA; files changed; tests/commands + results; review findings + fixes; deferred items/limitations.
+**Implementation record — Task 4**
+
+- Date/status: 2026-11-18, DONE. All local Task 4 steps completed; the focused build test, the full `internal/gateway` package gate and the full Go gate pass.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-max-tokens-cap`, branch `feat/max-tokens-cap`), this commit (`feat(gateway): apply catalog output caps to registered rewriters`); the actual SHA is listed in the task report.
+- Files changed: `internal/gateway/build.go` (one 5s bounded context and `fetchCatalogLimits` per build, limits threaded through `buildRoutePlan` into `compileNodeTargets`, `MaxOutputTokens: target.maxOutputTokens` on registered rewriters); created `internal/gateway/build_cap_test.go` (end-to-end build test plus `nestedInt` helper); created `internal/gateway/upstream_fixture_test.go` and `internal/gateway/upstream_fixture_external_test.go` (fake upstreams answer build-time GET `*/models` with an empty catalog instead of treating it as a routed request); `internal/gateway/bindings_test.go`, `internal/gateway/route_retry_test.go`, `internal/gateway/protocol_auto_test.go` (pass `nil` limits to `buildRoutePlan`); `admin_e2e_test.go`, `auth_test.go`, `count_tokens_test.go`, `entrypoint_e2e_test.go`, `gateway_test.go`, `hello_test.go`, `model_disabled_test.go`, `node_keys_test.go`, `probe_e2e_test.go`, `provider_capabilities_test.go`, `reload_test.go`, `retry_e2e_test.go`, `routing_extra_test.go`, `stats_test.go`, `sticky_test.go`, `stream_compression_test.go`, `useragent_test.go`, `zero_config_e2e_test.go` (use the shared wrapping helper); this plan's Task 4 checkboxes and implementation record.
+- Tests/commands and results:
+  - RED, before implementation: `GOWORK=off go test ./internal/gateway -run TestBuildCap -count=1` → FAIL (`max_tokens = 256000, want 131072`, with the initial empty variant name). After fixing the test to use `variantKey("")` and temporarily removing only `MaxOutputTokens` from `registerRewriter`, the same command → FAIL (`max_tokens = 256000, want 131072; body = {"max_tokens":256000,...,"model":"glm-5.3"}`), proving the cap wiring is what makes it pass.
+  - GREEN, after implementation: `GOWORK=off go test ./internal/gateway -run TestBuildCap -count=1 -v` → PASS (`TestBuildCapReachesRegisteredRewriter`).
+  - Package gate: `GOWORK=off go test ./internal/gateway -count=1` → PASS (~11.6 s), after the fixture adaptation.
+  - Full gate: `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` → PASS (all 14 packages with tests; no build or vet errors).
+  - `gofmt -l` on the changed Go files → no output.
+- Review findings and fixes: the test's first `buildRewriterName(..., "", ...)` did not match the registered default variant (`variantKey("") == "default"`), and x's lazy rewriter wrapper silently passes bodies through for unknown names; fixed by using `variantKey("")` and asserting `IsRegistered` before calling `Rewrite`. Adding build-time catalog reads made existing gateway e2e fake upstreams count catalog GETs as data-plane hits (49 failing assertions across auth, routing, count_tokens, stats and other tests); fixed centrally with `testUpstream` wrappers that answer GET `*/models` with an empty catalog, keeping the method guard so the POST `/v1/models` fallback test still reaches its upstream. No production-code defects found.
+- Deferred items/limitations: Step 6's manual post-deployment `curl` check (HTTP 200 and captured rewritten body) was deliberately not run; no deployment or manual production verification was performed. Catalog lookup remains build/reload-time only with no last-good cache, and is best-effort: failures log a warning and leave no cap. No config schema, sibling repository, `go.mod`, local `replace`, converter release or web bundle changes.

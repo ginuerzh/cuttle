@@ -3,7 +3,6 @@ package gateway
 import (
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -264,7 +263,7 @@ func TestRouteVariantKeepsBackupMetadata(t *testing.T) {
 		Nodes: []string{cfg.Nodes[0].ID, cfg.Nodes[1].ID, cfg.Nodes[2].ID},
 	}
 
-	plan, err := buildRoutePlan(cfg, "test-build", route, xlogger.Nop(), stats.NewFacts(), capture.NewManager(capture.Policy{Mode: "off"}))
+	plan, err := buildRoutePlan(cfg, "test-build", route, nil, xlogger.Nop(), stats.NewFacts(), capture.NewManager(capture.Policy{Mode: "off"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +402,7 @@ func TestSuccessfulReloadKeepsInFlightResponseRewriter(t *testing.T) {
 	var mu sync.Mutex
 	var gotPath string
 
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)
 		mu.Lock()
 		gotPath = r.URL.Path

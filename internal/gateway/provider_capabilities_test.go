@@ -46,7 +46,7 @@ func newCapabilityUpstream(t *testing.T) *capabilityUpstream {
 	t.Helper()
 
 	u := &capabilityUpstream{}
-	u.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	u.srv = testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 
 		u.mu.Lock()

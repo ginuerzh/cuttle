@@ -16,7 +16,7 @@ import (
 func slowStreamServer(t *testing.T, tag string) *httptest.Server {
 	t.Helper()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		flusher, _ := w.(http.Flusher)
@@ -34,7 +34,7 @@ func slowStreamServer(t *testing.T, tag string) *httptest.Server {
 
 func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 	upA := slowStreamServer(t, "A")
-	upB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upB := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("B"))
 	}))
 	defer upB.Close()
@@ -104,7 +104,7 @@ func getBody(t *testing.T, gw *Gateway) string {
 var _ = gwconfig.Config{}
 
 func TestReloadAppliesCapturePolicy(t *testing.T) {
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	}))
 	defer up.Close()

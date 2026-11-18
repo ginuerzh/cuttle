@@ -3,7 +3,6 @@ package gateway
 import (
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -12,7 +11,7 @@ import (
 
 func TestUpstreamUserAgentIsGatewayOwned(t *testing.T) {
 	var got string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
@@ -40,7 +39,7 @@ func TestUpstreamUserAgentIsGatewayOwned(t *testing.T) {
 
 func TestOpenCodeSessionHeaderInjected(t *testing.T) {
 	var got string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("x-opencode-session")
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
@@ -68,7 +67,7 @@ func TestOpenCodeSessionHeaderInjected(t *testing.T) {
 
 func TestOpenCodeSessionHeaderNotInjectedForGenericProvider(t *testing.T) {
 	var got string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("x-opencode-session")
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
@@ -95,7 +94,7 @@ func TestOpenCodeSessionHeaderNotInjectedForGenericProvider(t *testing.T) {
 
 func TestProviderHeadersAreApplied(t *testing.T) {
 	var gotUA, gotCustom string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUA = r.Header.Get("User-Agent")
 		gotCustom = r.Header.Get("X-Custom")
 		w.Header().Set("Content-Type", "application/json")
@@ -128,7 +127,7 @@ func TestProviderHeadersAreApplied(t *testing.T) {
 
 func TestProviderUserAgentOverride(t *testing.T) {
 	var got string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)

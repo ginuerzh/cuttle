@@ -3,7 +3,6 @@ package gateway
 import (
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -28,7 +27,7 @@ func TestMultiKey429Rotation(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
 
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("Authorization")
 		mu.Lock()
 		seen = append(seen, key)
@@ -73,14 +72,14 @@ func TestMultiKey429Rotation(t *testing.T) {
 }
 
 func TestBackupProviderUsedOnlyAfterPrimaryFails(t *testing.T) {
-	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	primary := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer primary.Close()
 
 	var mu sync.Mutex
 	backupHits := 0
-	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backup := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		backupHits++
 		mu.Unlock()

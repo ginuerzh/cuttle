@@ -34,7 +34,7 @@ func buildRetryRouteHop(t *testing.T, route gwconfig.Route) hop.NodeList {
 		},
 	}
 
-	plan, err := buildRoutePlan(cfg, "retry-build", route, xlogger.Nop(), stats.NewFacts(), capture.NewManager(capture.Policy{Mode: "off"}))
+	plan, err := buildRoutePlan(cfg, "retry-build", route, nil, xlogger.Nop(), stats.NewFacts(), capture.NewManager(capture.Policy{Mode: "off"}))
 	if err != nil {
 		t.Fatal(err)
 	}
