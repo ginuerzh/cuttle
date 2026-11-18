@@ -35,9 +35,11 @@ type Options struct {
 	Route       string
 	Node        string
 	TargetModel string
-	Sink        Sink
-	Capture     *capture.Manager
-	Logger      logger.Logger
+	// MaxOutputTokens caps oversized output-token fields on requests; 0 disables it.
+	MaxOutputTokens int
+	Sink            Sink
+	Capture         *capture.Manager
+	Logger          logger.Logger
 }
 
 // Rewriter is an in-process core/rewriter.Rewriter backed by an engine.
@@ -116,6 +118,22 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 			"event_index":      meta.EventIndex,
 		}).Errorf("rewrite %s: %v", meta.Direction, err)
 		return b, err
+	}
+	if strings.EqualFold(meta.Direction, "request") && r.opts.MaxOutputTokens > 0 && !isCountTokensURI(meta.URI) {
+		clamped, err := clampMaxTokens(res.Data, r.opts.Protocol, r.opts.MaxOutputTokens)
+		if err != nil {
+			r.opts.Logger.WithFields(map[string]any{
+				"sid":       meta.SID,
+				"route":     r.opts.Route,
+				"node":      r.opts.Node,
+				"provider":  r.opts.Provider,
+				"protocol":  r.opts.Protocol,
+				"direction": meta.Direction,
+				"uri":       meta.URI,
+			}).Debugf("clamp max tokens: %v", err)
+		} else {
+			res.Data = clamped
+		}
 	}
 	r.captureRewrite(meta, b, res.Data, res, attempt)
 	if level := requestEffort(meta.Direction, b); level != "" {

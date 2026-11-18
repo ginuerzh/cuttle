@@ -214,7 +214,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): attach model output c
 - Produces: `Options.MaxOutputTokens int`.
 - Produces: `func clampMaxTokens(body []byte, protocol string, cap int) ([]byte, error)`.
 
-- [ ] **Step 1: Write the protocol table test**
+- [x] **Step 1: Write the protocol table test**
 
 ```go
 func TestClampMaxTokensProtocols(t *testing.T) {
@@ -242,11 +242,11 @@ func TestClampMaxTokensProtocols(t *testing.T) {
 
 `nestedInt` is a test helper that unmarshals into `map[string]any` and reads the path.
 
-- [ ] **Step 2: Write the no-op test**
+- [x] **Step 2: Write the no-op test**
 
 `TestClampMaxTokensNoops`: table with `{"max_tokens":8192}` under cap 131072 (unchanged), `{"messages":[]}` (no field injected), `{"max_tokens":"big"}` (non-integer unchanged), `nope` (invalid JSON returns original bytes, `err == nil`), and `cap == 0` (unchanged). Assert byte-for-byte equality with the input.
 
-- [ ] **Step 3: Write the Rewrite integration test**
+- [x] **Step 3: Write the Rewrite integration test**
 
 ```go
 func TestRewriteClampsBeforeCapture(t *testing.T) {
@@ -270,28 +270,39 @@ func TestRewriteClampsBeforeCapture(t *testing.T) {
 
 Add `TestRewriteClampSkipsResponseAndCountTokens`: response-direction body `{"max_tokens":256000}` and request-direction `/v1/messages/count_tokens` with the same value must come back unchanged.
 
-- [ ] **Step 4: Run the tests to verify they fail**
+- [x] **Step 4: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/rewriter -run 'TestClampMaxTokens|TestRewriteClamp' -count=1`
 Expected: FAIL (`undefined: clampMaxTokens`, then `unknown field MaxOutputTokens`)
 
-- [ ] **Step 5: Implement the clamp and wire it into `Rewrite`**
+- [x] **Step 5: Implement the clamp and wire it into `Rewrite`**
 
 `clampMaxTokens` unmarshals into `map[string]json.RawMessage`, reads the first present field from the protocol's candidate list, decodes it as an integer, and re-marshals only when `value > cap`. For `gemini`, read/modify the nested `generationConfig` object. Never add a missing field; return the original bytes on parse/decode errors. In `Rewrite`, after `eng.Rewrite` and before `captureRewrite`, apply it only when `meta.Direction` is `request`, `r.opts.MaxOutputTokens > 0`, and `!isCountTokensURI(meta.URI)`; assign the result to `res.Data` and ignore clamp errors after logging at debug level.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/rewriter -count=1`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add internal/rewriter/rewriter.go internal/rewriter/max_tokens.go internal/rewriter/max_tokens_test.go
 git -C /root/code/go-gost/cuttle commit -m "feat(rewriter): clamp oversized output tokens to target model limit"
 ```
 
-**Implementation record** (fill after completion): date/status; repo + commit SHA; files changed; tests/commands + results; review findings + fixes; deferred items/limitations.
+**Implementation record — Task 3**
+
+- Date/status: 2026-11-18, DONE. All Task 3 steps completed; the focused clamp tests and the full `internal/rewriter` package gate pass.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-max-tokens-cap`, branch `feat/max-tokens-cap`), this commit (`feat(rewriter): clamp oversized output tokens to target model limit`); the actual SHA is listed in the task report.
+- Files changed: `internal/rewriter/rewriter.go` (new `Options.MaxOutputTokens`, clamping after `eng.Rewrite` and before `captureRewrite`, scoped to request direction, positive cap, and non-`count_tokens` URIs, with debug logging on clamp errors); created `internal/rewriter/max_tokens.go` (`clampMaxTokens` plus protocol field selection, nested Gemini handling, integer decoding and replacement helpers); created `internal/rewriter/max_tokens_test.go` (protocol table, no-op table, capture-order integration test, response/`count_tokens` pass-through test and `nestedInt` helper); updated this plan's Task 3 checkboxes and implementation record.
+- Tests/commands and results:
+  - RED, before implementation: `GOWORK=off go test ./internal/rewriter -run 'TestClampMaxTokens|TestRewriteClamp' -count=1` → FAIL (build failed: `undefined: clampMaxTokens` at two call sites, `unknown field MaxOutputTokens in struct literal of type Options` at two call sites).
+  - GREEN, after implementation: `GOWORK=off go test ./internal/rewriter -run 'TestClampMaxTokens|TestRewriteClamp' -count=1 -v` → PASS (4 top-level tests, 5 protocol subtests, 12 no-op subtests, 2 pass-through subtests).
+  - Package gate: `GOWORK=off go test ./internal/rewriter -count=1` → PASS (`ok github.com/ginuerzh/cuttle/internal/rewriter 0.007s`); re-run after the final test-only self-review fix.
+  - `gofmt -l` on `max_tokens.go`, `max_tokens_test.go` and `rewriter.go` → no output; `GOWORK=off go vet ./internal/rewriter` → no output.
+- Review findings and fixes: self-review found that the response/`count_tokens` test only checked the `max_tokens` value, so a test that silently reformatted the body would not catch it; strengthened it to assert byte-for-byte pass-through and re-ran that test plus the package gate. No production-code defects found.
+- Deferred items/limitations: `Options.MaxOutputTokens` defaults to 0, so this task alone changes no live behavior; Task 4 wires the compiled target's catalog `Output` into it. Clamping is a ceiling only: no field injection, no raising, non-integer/malformed bodies stay untouched. No config schema, sibling repository, `go.mod`, local `replace`, or web bundle changes.
 
 ---
 
