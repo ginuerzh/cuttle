@@ -23,12 +23,16 @@ func TestCaptureHeadersAllowlist(t *testing.T) {
 		"X-Goog-Api-Key":                         {"secret"},
 		"Api-Key":                                {"secret"},
 		"X-Other":                                {"ignored"},
+		"X-Claude-Code-Agent-Id":                 {"agent-7"},
+		"X-Parent-Session-Id":                    {"ses-parent"},
+		"X-Openai-Subagent":                      {"review"},
 	}
 	got := captureHeaders(h)
 	for _, want := range []string{
 		"content-type", "user-agent", "retry-after", "x-request-id",
 		"x-cuttle-request-id", "x-opencode-session", "cf-ray",
 		"anthropic-ratelimit-requests-remaining", "x-ratelimit-limit",
+		"x-claude-code-agent-id", "x-parent-session-id", "x-openai-subagent",
 	} {
 		if _, ok := got[want]; !ok {
 			t.Fatalf("missing %q in %+v", want, got)
