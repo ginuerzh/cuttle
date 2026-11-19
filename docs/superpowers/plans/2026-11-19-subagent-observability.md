@@ -355,12 +355,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): sessions subagent filter 
 
 **Implementation record — Task 5**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. Sessions filter and detail row live; full web gate green.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-subagent-observability`, branch `feat/subagent-observability`), implementation commit `dbe73e6d`; this record follows it.
+- Files changed: `web/src/api/types.ts` (`RequestRow.subagent`/`subagentSource`); `web/src/api/client.ts` (`RequestQuery.subagent` and the `subagent=` parameter); `web/src/pages/Requests.tsx` (state, filter select, query wiring, effect deps); `web/src/components/RequestDetail.tsx` (marker row); `web/src/locales/en-US.ts` (`子代理`, `标记来源`); tests in `web/src/api/client.test.ts`, `web/src/components/RequestDetail.test.tsx`, `web/src/i18n.test.ts`.
+- Tests/commands and results: RED — `npm test -- --run src/api/client.test.ts src/components/RequestDetail.test.tsx src/i18n.test.ts` → 3 failing (missing `subagent=1` parameter, no `标记来源` row, untranslated keys). GREEN — same command → 35 passed. Full gate — `npm test` → 51 files / 494 tests passed; `npx tsc --noEmit` → clean; `npm run build` → built in 8.89s.
+- Review findings and fixes: the worktree had no `web/node_modules` (git-ignored), so the tree was seeded from the main checkout before the gate; no source change needed. The filter uses the existing `allowClear` idiom instead of a new "全部" string, keeping the string table minimal.
+- Deferred items/limitations: no browser visual regression suite exists; the console surface is verified by TypeScript, Vitest and the production build only. Filtering by `subagent_source` is deferred.
 
 ---
 
