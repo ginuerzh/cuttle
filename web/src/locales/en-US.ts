@@ -190,6 +190,8 @@ export const enUS: Record<string, string> = {
   '耗时': 'Duration',
   '流式': 'Streaming',
   '是': 'Yes',
+  '子代理': 'Subagent',
+  '标记来源': 'Marker source',
   '否': 'No',
   '仅错误': 'Errors only',
   '{count} 条': '{count} rows',

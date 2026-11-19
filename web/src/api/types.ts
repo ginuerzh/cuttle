@@ -441,6 +441,10 @@ export interface RequestRow {
   durationMs: number;
   /** Retry attempts made before the recorded final attempt. */
   retries?: number;
+  /** Whether the request carried a subagent marker. Detail-only field. */
+  subagent?: boolean;
+  /** Which client's subagent marker matched: claude_code, opencode or codex. */
+  subagentSource?: string;
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;

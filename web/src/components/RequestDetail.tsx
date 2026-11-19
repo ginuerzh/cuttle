@@ -82,6 +82,14 @@ export function RequestDetail({ request }: { request: RequestRow }) {
         <Descriptions.Item label="node">{request.nodeName || request.node || '—'}</Descriptions.Item>
         <Descriptions.Item label="client model">{request.clientModel || '—'}</Descriptions.Item>
         <Descriptions.Item label="provider model">{request.model}</Descriptions.Item>
+        {request.subagent ? (
+          <Descriptions.Item label={t('标记来源')}>
+            <Tag color="blue">{t('子代理')}</Tag>
+            {request.subagentSource ? (
+              <Typography.Text type="secondary">{request.subagentSource}</Typography.Text>
+            ) : null}
+          </Descriptions.Item>
+        ) : null}
         <Descriptions.Item label="effort">
           {request.effort && request.effort !== 'none' ? request.effort : '—'}
         </Descriptions.Item>
