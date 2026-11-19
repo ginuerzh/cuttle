@@ -28,7 +28,8 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 // requestFilter builds the stats filter shared by the list and series
 // endpoints. ok is false when the request names an entrypoint that no longer
 // exists: the caller answers with an empty result instead of an error, exactly
-// as the list endpoint always has.
+// as the list endpoint always has. An invalid subagent value is a bad request,
+// not an empty result, so the handlers reject what parseSubagent returns.
 func (s *Server) requestFilter(r *http.Request) (f stats.Filter, ok bool) {
 	from, to := parseRange(r)
 	q := r.URL.Query()
@@ -47,6 +48,9 @@ func (s *Server) requestFilter(r *http.Request) (f stats.Filter, ok bool) {
 		Limit:       atoi(q.Get("limit")),
 		Offset:      atoi(q.Get("offset")),
 	}
+	// The subagent filter is tri-state: absent means either, "1" and "0" select
+	// one class. Anything else is rejected by the caller.
+	f.Subagent = parseSubagent(q.Get("subagent"))
 	// The entrypoint filter is a client-model match, so it resolves the id
 	// against the entrypoint list instead of a stored column. Specificity is
 	// precedence (exact > prefix > catchall — see config.OrderEntrypoints),
@@ -76,9 +80,33 @@ func (s *Server) requestFilter(r *http.Request) (f stats.Filter, ok bool) {
 	return f, true
 }
 
+// validSubagentValue reports whether ?subagent= carries an accepted value.
+// Absent means "either class"; "1" and "0" select one; anything else is a
+// client error rather than a silently ignored filter.
+func validSubagentValue(v string) bool {
+	return v == "" || v == "1" || v == "0"
+}
+
+// parseSubagent maps a validated ?subagent= value onto the tri-state filter.
+func parseSubagent(v string) *bool {
+	switch v {
+	case "1":
+		yes := true
+		return &yes
+	case "0":
+		no := false
+		return &no
+	}
+	return nil
+}
+
 func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 	if s.stats == nil {
 		writeError(w, http.StatusServiceUnavailable, "stats disabled")
+		return
+	}
+	if !validSubagentValue(r.URL.Query().Get("subagent")) {
+		writeError(w, http.StatusBadRequest, "invalid subagent filter")
 		return
 	}
 	f, ok := s.requestFilter(r)
@@ -145,6 +173,10 @@ func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !validSubagentValue(r.URL.Query().Get("subagent")) {
+		writeError(w, http.StatusBadRequest, "invalid subagent filter")
+		return
+	}
 	f, ok := s.requestFilter(r)
 	if !ok {
 		writeJSON(w, http.StatusOK, seriesResponse{Bucket: bucket.String(), Points: []stats.SeriesPoint{}})
@@ -186,6 +218,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	labels := s.newLabelSet(r.Context())
 	view := labels.requestView(*row)
+	view.withSubagent()
 	attempts, err := s.stats.AttemptsForRequest(r.Context(), row.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

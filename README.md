@@ -705,9 +705,11 @@ time/limit-bounded, in-memory, and lost on restart. `stats.storeBody` is removed
 
 Captured failures also include an allowlisted header subset: `content-type`,
 `user-agent`, `retry-after`, `x-request-id`, `x-cuttle-request-id`,
-`x-opencode-session`, `cf-ray`, `anthropic-version`, and
-`anthropic-ratelimit-*` / `x-ratelimit-*`. Authorization, cookie, set-cookie
-and API-key headers are never stored.
+`x-opencode-session`, `cf-ray`, `anthropic-version`,
+`x-claude-code-agent-id`, `x-parent-session-id`, `x-openai-subagent`, and
+`anthropic-ratelimit-*` / `x-ratelimit-*`. The three agent headers are the
+subagent markers described under "Subagent traffic". Authorization, cookie,
+set-cookie and API-key headers are never stored.
 
 Captured bodies may contain prompts and tool arguments; keep capture off outside
 an investigation, use a short retention, and protect the admin session and
@@ -1172,14 +1174,39 @@ verdict is in-memory, rebuilt by the probe run that follows a reload, and
 separate from `GET /api/routes/health`, which still reports node markers.
 
 `GET /api/requests` accepts `errors=1`, `captured=1`, `errorClass=<class>`,
-`provider=<id>`, `route=<id>`, `node=<id>`, `entrypoint=<id>` and `key=<id>`
-(exact gateway key id). Request rows store ids and add resolved
+`provider=<id>`, `route=<id>`, `node=<id>`, `entrypoint=<id>`, `subagent=1|0`
+and `key=<id>` (exact gateway key id). Request rows store ids and add resolved
 `providerName`/`nodeName`/`routeName`/`gatewayKeyName` labels (the current config
 wins over the last stored label; an unknown entity falls back to its id); the
 Sessions list and detail show those names. Request detail includes an optional
 `capture` object and an optional `attempts` array of the discarded upstream
 attempts of that request (absent when there were none); the list only reports a
 cheap `hasCapture` flag and never carries `attempts`.
+
+### Subagent traffic
+
+Every request row records whether the caller was a subagent and which client
+said so: `subagent` (0/1) and `subagent_source` (`claude_code`, `opencode`,
+`codex`, or empty). The class is measured only — nothing routes on it yet — and
+it is derived at record time from the client headers, so a request that fails
+before a node still carries it. No raw header value is stored on the row.
+
+| Client | Session identity | Subagent marker | Notes |
+| --- | --- | --- | --- |
+| Claude Code | `x-claude-code-session-id` | `x-claude-code-agent-id` | Production-verified (the sticky key already separates a subagent's traffic) |
+| OpenCode | `x-session-affinity` / `X-Session-Id` (third-party providers), `x-opencode-session` (its own) | `x-parent-session-id` | Requires a build with anomalyco/opencode#43188 (2026-08-18): v1.18.16–v1.18.18 dropped all session headers, and forks such as Kilo predate the restore. Verified at the gateway with a synthetic child-session request; a live OpenCode child session has not been observed yet, so confirm it with a capture before relying on the measurement |
+| Codex | `session-id` / `thread-id` | `x-openai-subagent` (`review`, `compact`, `memory_consolidation`, `collab_spawn`, or a custom label) | Source-verified from the Codex client; whether it reaches a third-party base URL is unverified, so confirm it with a capture before relying on `subagent=codex` |
+
+The three marker headers are on the capture allowlist, so an on-demand capture
+shows the value that produced the class. The request row never stores them; the
+detail drawer shows `标记来源` when a request carried one, and the Sessions page
+has a `子代理` filter.
+
+Workflow: filter Sessions by `subagent=1` for a week and compare the request and
+token shares against the totals. Only if the share is significant is it worth
+splitting traffic by class (the `when` design in
+`docs/superpowers/specs/2026-11-19-subagent-tiered-routing-design.md`, phase 2).
+
 `GET /api/stats/series` returns the session trend for a window as
 `{"bucket":"<duration>","points":[{"bucket":"<RFC3339>","requests":n,"errors":m}]}`.
 It accepts `from`/`to`, `bucket=<duration>` (default `1h`, clamped to `1s..24h`,

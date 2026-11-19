@@ -13,6 +13,7 @@ import (
 	xlogger "github.com/go-gost/x/logger"
 	xrecorder "github.com/go-gost/x/recorder"
 
+	"github.com/ginuerzh/cuttle/internal/agent"
 	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
@@ -145,6 +146,7 @@ func (r *Recorder) Record(ctx context.Context, b []byte, opts ...recorder.Record
 		Retries:    ro.Retries,
 	}
 	req.URI, req.Method, req.ClientIP, req.UserAgent, req.Upstream = requestContext(&ro)
+	req.SubagentSource, req.Subagent = agent.Classify(clientRequestHeaders(&ro))
 	req.GatewayKey = GatewayKeyIDFromContext(ctx)
 	if req.ID == "" {
 		req.ID = fmt.Sprintf("%d", time.Now().UnixNano())

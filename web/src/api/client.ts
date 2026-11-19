@@ -206,6 +206,8 @@ export interface RequestQuery {
   errorsOnly?: boolean;
   capturedOnly?: boolean;
   errorClass?: string;
+  /** '' means either class; '1' and '0' select one. */
+  subagent?: string;
   limit?: number;
 }
 
@@ -224,6 +226,7 @@ export function getRequests(q: RequestQuery): Promise<RequestRow[]> {
   if (q.errorsOnly) params.set('errors', '1');
   if (q.capturedOnly) params.set('captured', '1');
   if (q.errorClass) params.set('errorClass', q.errorClass);
+  if (q.subagent) params.set('subagent', q.subagent);
   return request<RequestRow[] | null>('GET', `/api/requests?${params.toString()}`).then((rows) => rows ?? []);
 }
 
@@ -276,6 +279,7 @@ export function getSeries(q: SeriesQuery): Promise<SeriesResponse> {
   if (q.errorsOnly) params.set('errors', '1');
   if (q.capturedOnly) params.set('captured', '1');
   if (q.errorClass) params.set('errorClass', q.errorClass);
+  if (q.subagent) params.set('subagent', q.subagent);
   return request<SeriesResponse>('GET', `/api/stats/series?${params.toString()}`);
 }
 

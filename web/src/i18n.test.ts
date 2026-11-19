@@ -39,3 +39,10 @@ describe('translateFor', () => {
     expect(translateFor('en-US', '（{count} 个禁用）', { count: 1 })).toBe(' (1 disabled)');
   });
 });
+
+describe('subagent strings', () => {
+  it('translates the new filter and detail labels', () => {
+    expect(translateFor('en-US', '子代理')).toBe('Subagent');
+    expect(translateFor('en-US', '标记来源')).toBe('Marker source');
+  });
+});

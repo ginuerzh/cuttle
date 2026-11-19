@@ -43,6 +43,7 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
   const [node, setNode] = useState('');
   const [entrypoint, setEntrypoint] = useState('');
   const [gatewayKey, setGatewayKey] = useState('');
+  const [subagent, setSubagent] = useState('');
   const [gatewayKeys, setGatewayKeys] = useState<GatewayKey[]>([]);
   const [clientModel, setClientModel] = useState('');
   const [errorsOnly, setErrorsOnly] = useState(false);
@@ -87,6 +88,7 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
         errorsOnly,
         capturedOnly,
         errorClass: errorClass || undefined,
+        subagent: subagent || undefined,
       };
       const [list, summary, activeAlerts, trend] = await Promise.all([
         getRequests({ from, to, ...filters, limit: 200 }),
@@ -105,7 +107,7 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
     } finally {
       setLoading(false);
     }
-  }, [rangeMs, provider, route, node, entrypoint, gatewayKey, clientModel, errorsOnly, capturedOnly, errorClass, zoom]);
+  }, [rangeMs, provider, route, node, entrypoint, gatewayKey, clientModel, errorsOnly, capturedOnly, errorClass, subagent, zoom]);
 
   const loadCaptures = useCallback(async () => {
     try {
@@ -285,6 +287,19 @@ export function RequestsPage({ config }: { config: ConfigResponse }) {
           onChange={(value?: string) => setGatewayKey(value ?? '')}
           options={gatewayKeys.map((k) => ({ value: k.id, label: k.name }))}
           style={{ width: isMobile ? '100%' : 160 }}
+        />
+        <Select
+          size="small"
+          allowClear
+          placeholder={t('子代理')}
+          aria-label={t('子代理')}
+          value={subagent || undefined}
+          onChange={(value?: string) => setSubagent(value ?? '')}
+          options={[
+            { value: '1', label: t('是') },
+            { value: '0', label: t('否') },
+          ]}
+          style={{ width: isMobile ? '100%' : 120 }}
         />
         <Input
           size="small"

@@ -21,45 +21,50 @@ import (
 
 // Request is one recorded request. It deliberately has no header/body fields.
 type Request struct {
-	ID              string           `json:"requestId"`
-	SID             string           `json:"sid"`
-	TS              time.Time        `json:"ts"`
-	Model           string           `json:"model"`
-	ClientModel     string           `json:"clientModel,omitempty"`
-	Provider        string           `json:"provider"`
-	Route           string           `json:"route,omitempty"`
-	Node            string           `json:"node,omitempty"`
-	GatewayKey      string           `json:"gatewayKey,omitempty"`
-	Protocol        string           `json:"protocol"`
-	InboundProtocol string           `json:"inboundProtocol,omitempty"`
-	URI             string           `json:"uri,omitempty"`
-	Method          string           `json:"method,omitempty"`
-	ClientIP        string           `json:"clientIp,omitempty"`
-	UserAgent       string           `json:"userAgent,omitempty"`
-	Upstream        string           `json:"upstream,omitempty"`
-	ErrorStage      string           `json:"errorStage,omitempty"`
-	ErrorDirection  string           `json:"errorDirection,omitempty"`
-	SSEPhase        string           `json:"ssePhase,omitempty"`
-	EventIndex      int              `json:"eventIndex,omitempty"`
-	Effort          string           `json:"effort"`
-	Status          int              `json:"status"`
-	ClientStatus    int              `json:"clientStatus,omitempty"`
-	Error           string           `json:"error,omitempty"`
-	ErrorClass      string           `json:"errorClass,omitempty"`
-	DurationMS      int64            `json:"durationMs"`
-	TTFTMS          int64            `json:"ttftMs,omitempty"`
-	InputTokens     int64            `json:"inputTokens"`
-	OutputTokens    int64            `json:"outputTokens"`
-	CachedTokens    int64            `json:"cachedTokens"`
-	Stream          bool             `json:"stream"`
-	SawDone         bool             `json:"sawDone,omitempty"`
-	Truncated       bool             `json:"truncated,omitempty"`
-	Retries         int              `json:"retries"`
-	FinishReason    string           `json:"finishReason,omitempty"`
-	BytesIn         uint64           `json:"bytesIn"`
-	BytesOut        uint64           `json:"bytesOut"`
-	HasCapture      bool             `json:"hasCapture,omitempty"`
-	Capture         *capture.Capture `json:"capture,omitempty"`
+	ID              string    `json:"requestId"`
+	SID             string    `json:"sid"`
+	TS              time.Time `json:"ts"`
+	Model           string    `json:"model"`
+	ClientModel     string    `json:"clientModel,omitempty"`
+	Provider        string    `json:"provider"`
+	Route           string    `json:"route,omitempty"`
+	Node            string    `json:"node,omitempty"`
+	GatewayKey      string    `json:"gatewayKey,omitempty"`
+	Protocol        string    `json:"protocol"`
+	InboundProtocol string    `json:"inboundProtocol,omitempty"`
+	URI             string    `json:"uri,omitempty"`
+	Method          string    `json:"method,omitempty"`
+	ClientIP        string    `json:"clientIp,omitempty"`
+	UserAgent       string    `json:"userAgent,omitempty"`
+	Upstream        string    `json:"upstream,omitempty"`
+	ErrorStage      string    `json:"errorStage,omitempty"`
+	ErrorDirection  string    `json:"errorDirection,omitempty"`
+	SSEPhase        string    `json:"ssePhase,omitempty"`
+	EventIndex      int       `json:"eventIndex,omitempty"`
+	Effort          string    `json:"effort"`
+	Status          int       `json:"status"`
+	ClientStatus    int       `json:"clientStatus,omitempty"`
+	Error           string    `json:"error,omitempty"`
+	ErrorClass      string    `json:"errorClass,omitempty"`
+	DurationMS      int64     `json:"durationMs"`
+	TTFTMS          int64     `json:"ttftMs,omitempty"`
+	InputTokens     int64     `json:"inputTokens"`
+	OutputTokens    int64     `json:"outputTokens"`
+	CachedTokens    int64     `json:"cachedTokens"`
+	Stream          bool      `json:"stream"`
+	SawDone         bool      `json:"sawDone,omitempty"`
+	Truncated       bool      `json:"truncated,omitempty"`
+	Retries         int       `json:"retries"`
+	// Subagent and SubagentSource classify the caller: whether the request
+	// carried a subagent marker and which client's marker matched. They stay
+	// out of JSON so only the request detail can surface them.
+	Subagent       bool             `json:"-"`
+	SubagentSource string           `json:"-"`
+	FinishReason   string           `json:"finishReason,omitempty"`
+	BytesIn        uint64           `json:"bytesIn"`
+	BytesOut       uint64           `json:"bytesOut"`
+	HasCapture     bool             `json:"hasCapture,omitempty"`
+	Capture        *capture.Capture `json:"capture,omitempty"`
 	// Attempts holds the discarded attempts of this client request when it
 	// arrived for recording; it is never selected back into Request.
 	Attempts []Attempt `json:"attempts,omitempty"`
@@ -87,6 +92,7 @@ type Filter struct {
 	OnlyErrors          bool
 	Captured            bool
 	ErrorClass          string
+	Subagent            *bool
 	Limit               int
 	Offset              int
 }
@@ -342,6 +348,8 @@ func (s *Store) migrate(fresh bool) error {
 		"seq":              "INTEGER NOT NULL DEFAULT 0",
 		"gateway_key":      "TEXT NOT NULL DEFAULT ''",
 		"retries":          "INTEGER NOT NULL DEFAULT 0",
+		"subagent":         "INTEGER NOT NULL DEFAULT 0",
+		"subagent_source":  "TEXT NOT NULL DEFAULT ''",
 	}); err != nil {
 		return err
 	}
@@ -963,14 +971,15 @@ func (s *Store) Insert(ctx context.Context, r Request) error {
 		 effort, status, error, error_class, duration_ms, ttft_ms,
 		 input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		 uri, method, client_ip, user_agent, upstream, client_status,
-		 finish_reason, saw_done, truncated, retries)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 finish_reason, saw_done, truncated, retries, subagent, subagent_source)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, seq, r.SID, r.TS.UnixMilli(), r.Model, r.ClientModel, r.Provider, r.Route, r.Node, r.GatewayKey,
 		r.Protocol, r.InboundProtocol, r.ErrorStage, r.ErrorDirection, r.SSEPhase, r.EventIndex,
 		r.Effort, r.Status, r.Error, r.ErrorClass, r.DurationMS, r.TTFTMS,
 		r.InputTokens, r.OutputTokens, r.CachedTokens, boolInt(r.Stream), int64(r.BytesIn), int64(r.BytesOut),
 		r.URI, r.Method, r.ClientIP, r.UserAgent, r.Upstream, r.ClientStatus,
-		r.FinishReason, boolInt(r.SawDone), boolInt(r.Truncated), r.Retries)
+		r.FinishReason, boolInt(r.SawDone), boolInt(r.Truncated), r.Retries,
+		boolInt(r.Subagent), r.SubagentSource)
 	if err != nil {
 		return err
 	}
@@ -1078,7 +1087,7 @@ func (s *Store) Query(ctx context.Context, f Filter) ([]Request, error) {
 		effort, status, error, error_class,
 		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		uri, method, client_ip, user_agent, upstream, client_status,
-		finish_reason, saw_done, truncated, retries,
+		finish_reason, saw_done, truncated, retries, subagent, subagent_source,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests` + where + ` ORDER BY ts DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, max(f.Offset, 0))
@@ -1098,7 +1107,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Request, error) {
 		effort, status, error, error_class,
 		duration_ms, ttft_ms, input_tokens, output_tokens, cached_tokens, stream, bytes_in, bytes_out,
 		uri, method, client_ip, user_agent, upstream, client_status,
-		finish_reason, saw_done, truncated, retries,
+		finish_reason, saw_done, truncated, retries, subagent, subagent_source,
 		EXISTS(SELECT 1 FROM request_captures c WHERE c.request_id = requests.request_id)
 		FROM requests WHERE request_id = ?`
 	rows, err := s.db.QueryContext(ctx, q, id)
@@ -1232,6 +1241,7 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var ts int64
 		var stream int
 		var sawDone, truncated int
+		var subagent int
 		var bytesIn, bytesOut int64
 		var hasCapture int
 		if err := rows.Scan(&r.ID, &r.SID, &ts, &r.Model, &r.ClientModel,
@@ -1240,13 +1250,14 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 			&r.Effort, &r.Status, &r.Error, &r.ErrorClass, &r.DurationMS, &r.TTFTMS, &r.InputTokens, &r.OutputTokens, &r.CachedTokens,
 			&stream, &bytesIn, &bytesOut,
 			&r.URI, &r.Method, &r.ClientIP, &r.UserAgent, &r.Upstream, &r.ClientStatus,
-			&r.FinishReason, &sawDone, &truncated, &r.Retries, &hasCapture); err != nil {
+			&r.FinishReason, &sawDone, &truncated, &r.Retries, &subagent, &r.SubagentSource, &hasCapture); err != nil {
 			return nil, err
 		}
 		r.TS = time.UnixMilli(ts).UTC()
 		r.Stream = stream != 0
 		r.SawDone = sawDone != 0
 		r.Truncated = truncated != 0
+		r.Subagent = subagent != 0
 		r.BytesIn = uint64(bytesIn)
 		r.BytesOut = uint64(bytesOut)
 		r.HasCapture = hasCapture != 0
@@ -1466,6 +1477,10 @@ func (f Filter) where() (string, []any) {
 	if f.ErrorClass != "" {
 		conds = append(conds, "error_class = ?")
 		args = append(args, f.ErrorClass)
+	}
+	if f.Subagent != nil {
+		conds = append(conds, "subagent = ?")
+		args = append(args, boolInt(*f.Subagent))
 	}
 	if f.Status > 0 {
 		conds = append(conds, "status = ?")

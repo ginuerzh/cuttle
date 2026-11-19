@@ -6,7 +6,9 @@ import (
 )
 
 // headerAllowlist is deliberately small: these headers explain upstream
-// throttling and correlation without carrying prompts or credentials.
+// throttling and correlation without carrying prompts or credentials. The three
+// subagent markers are kept so a capture can show why a request was classified
+// as it was (internal/agent); they are ids and labels, never prompt content.
 var headerExact = map[string]bool{
 	"content-type":        true,
 	"user-agent":          true,
@@ -16,6 +18,10 @@ var headerExact = map[string]bool{
 	"x-opencode-session":  true,
 	"cf-ray":              true,
 	"anthropic-version":   true,
+
+	"x-claude-code-agent-id": true,
+	"x-parent-session-id":    true,
+	"x-openai-subagent":      true,
 }
 
 var headerPrefixes = []string{

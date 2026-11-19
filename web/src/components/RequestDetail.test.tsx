@@ -147,3 +147,18 @@ describe('RequestDetail', () => {
     expect(renderToStaticMarkup(<RequestDetail request={{ ...base, attempts: [] }} />)).not.toContain('上游尝试');
   });
 });
+
+describe('RequestDetail subagent marker', () => {
+  it('shows the marker source for a subagent request', () => {
+    const html = renderToStaticMarkup(
+      <RequestDetail request={{ ...base, subagent: true, subagentSource: 'opencode' }} />,
+    );
+    expect(html).toContain('标记来源');
+    expect(html).toContain('opencode');
+  });
+
+  it('omits the marker row for a lead request', () => {
+    const html = renderToStaticMarkup(<RequestDetail request={{ ...base, subagent: false }} />);
+    expect(html).not.toContain('标记来源');
+  });
+});

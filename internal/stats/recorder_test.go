@@ -8,6 +8,7 @@ import (
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 
+	"github.com/ginuerzh/cuttle/internal/agent"
 	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
@@ -559,5 +560,62 @@ func TestRecorderAttemptFallsBackToParent(t *testing.T) {
 	}
 	if len(a.ResponseHeaders) != 0 || a.BodyPreview != "" {
 		t.Fatalf("dial failure headers/preview = %+v/%q", a.ResponseHeaders, a.BodyPreview)
+	}
+}
+
+func TestRecorderSubagentClass(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	// No node: the request failed before a node ran, and the class must still
+	// come from the client headers.
+	body, err := json.Marshal(map[string]any{
+		"sid":  "sub",
+		"time": time.Now().UTC(),
+		"http": map[string]any{
+			"statusCode": 502,
+			"request": map[string]any{
+				"header": map[string][]string{
+					"X-Parent-Session-Id": {"ses_parent1"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(ctx, body); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(ctx, "sub")
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if !got.Subagent || got.SubagentSource != agent.SourceOpenCode {
+		t.Fatalf("row = %+v, want subagent opencode", got)
+	}
+
+	lead, err := json.Marshal(map[string]any{
+		"sid":  "lead",
+		"time": time.Now().UTC(),
+		"http": map[string]any{
+			"statusCode": 200,
+			"request": map[string]any{
+				"header": map[string][]string{"User-Agent": {"opencode/2.3.0"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRecorder(s, NewFacts(), nil, nil).Record(ctx, lead); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.Get(ctx, "lead")
+	if err != nil || got == nil {
+		t.Fatalf("get = %+v err=%v", got, err)
+	}
+	if got.Subagent || got.SubagentSource != "" {
+		t.Fatalf("row = %+v, want no subagent", got)
 	}
 }
