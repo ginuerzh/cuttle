@@ -400,12 +400,12 @@ git -C /root/code/go-gost/cuttle commit -m "docs: document subagent observabilit
 
 **Implementation record — Task 6**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE with one deferred verification (see below). README documents the columns, the client matrix and the measure-then-enable workflow; the end-to-end check runs through a real cuttle binary.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-subagent-observability`, branch `feat/subagent-observability`), this commit (its literal SHA is in the task-done ledger line).
+- Files changed: `README.md` (the `subagent=1|0` filter, a "Subagent traffic" section with the per-client table and the workflow, the capture note); this plan's Task 6 record.
+- Tests/commands and results: full Go gate — `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` → all 15 test packages `ok`, build and vet silent. Web gate (Task 5) — 494 tests, `tsc --noEmit` clean, production build ok. End-to-end — built `cuttle` into `/tmp/opencode/verify-subagent`, ran it against a local header-echo upstream with a `generic` provider, a `dump`-style route and a `*` entrypoint, and sent a chat request carrying `x-parent-session-id` through the gateway; the forwarded request reached the upstream with the marker intact and the stored rows read `subagent=1`, `subagent_source=opencode`. The 503 row from a first attempt made before the upstream was up also read `subagent=1` / `opencode` with an empty `model`, which is the "fails before a node still classifies" case.
+- Review findings and fixes: the first cuttle start used `-c` before `serve` and printed the usage line; `serve -c <path>` is the working order. The echo upstream logs `GET /models` as unsupported, so the catalog lookup warns at build time; that is best-effort by design and does not affect routing.
+- Deferred items/limitations: **driving a real OpenCode child session was not completed.** `opencode serve` (v2.3.0) authenticates its HTTP API and exposes no flag to disable it, so the parent/child session calls could not be driven from this shell, and spoofing a `subagent` tool call would need a tool-call-capable upstream. The OpenCode child-session marker therefore stays source-verified (anomalyco/opencode#43188) plus verified at the cuttle layer via the synthetic request above; a live OpenCode run remains an owner smoke item, alongside the Codex marker (`x-openai-subagent`, source-verified only). Neither blocks this change: a client that never sends the marker simply records `subagent=0`.
 
 ---
 
