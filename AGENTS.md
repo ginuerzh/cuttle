@@ -475,6 +475,14 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   `requests` row per client request; discarded attempts go to `request_attempts`
   and never to `requests`/`rollups`. Body capture keeps the final attempt only,
   selected through the rewriter's `attempt` metadata.
+- `requests.subagent` (`INTEGER NOT NULL DEFAULT 0`) and
+  `requests.subagent_source` (`TEXT NOT NULL DEFAULT ''`) are additive and are
+  filled at record time from the client headers by `internal/agent`, never
+  through `stats.Facts` (a request that fails before a node must still carry its
+  class). The source is a fixed label (`claude_code`, `opencode`, `codex`) and a
+  row never stores a raw header value. Filter with `Filter.Subagent`
+  (`GET /api/requests?subagent=1|0`); pre-upgrade rows read `0`/`''` and are not
+  backfilled.
 - Hourly `key_rollups` (bucket + gateway_key id) store per-key requests, errors
   and token counters. Insert them only for authenticated requests, in the same
   transaction as `rollups`. `Cleanup` deletes them with the same

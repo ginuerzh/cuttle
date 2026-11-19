@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ginuerzh/cuttle/internal/agent"
 	"github.com/ginuerzh/cuttle/internal/capture"
 )
 
@@ -920,5 +921,91 @@ func TestProviderUsageMigratesOldRollups(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Provider != "old" || got[0].CachedTokens != 0 {
 		t.Fatalf("old rollup = %+v", got)
+	}
+}
+
+func TestStoreSubagentColumns(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC)
+	window := Filter{From: base, To: base.Add(time.Hour)}
+
+	for _, r := range []Request{
+		{ID: "sub", TS: base.Add(1 * time.Minute), Provider: "p", Model: "m", Subagent: true, SubagentSource: agent.SourceCodex},
+		{ID: "lead", TS: base.Add(2 * time.Minute), Provider: "p", Model: "m"},
+	} {
+		if err := s.Insert(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := s.Query(ctx, window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]Request{}
+	for _, row := range all {
+		byID[row.ID] = row
+	}
+	if got := byID["sub"]; !got.Subagent || got.SubagentSource != agent.SourceCodex {
+		t.Fatalf("sub row = %+v, want subagent codex", got)
+	}
+	if got := byID["lead"]; got.Subagent || got.SubagentSource != "" {
+		t.Fatalf("lead row = %+v, want no subagent", got)
+	}
+
+	yes, no := true, false
+	subs, err := s.Query(ctx, Filter{From: base, To: base.Add(time.Hour), Subagent: &yes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 1 || subs[0].ID != "sub" {
+		t.Fatalf("subagent=1 rows = %+v, want only sub", subs)
+	}
+	leads, err := s.Query(ctx, Filter{From: base, To: base.Add(time.Hour), Subagent: &no})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leads) != 1 || leads[0].ID != "lead" {
+		t.Fatalf("subagent=0 rows = %+v, want only lead", leads)
+	}
+}
+
+func TestStoreSubagentColumnsAddedToExistingDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.sqlite")
+	ctx := context.Background()
+	base := time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC)
+
+	seed, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Insert(ctx, Request{ID: "old", TS: base, Provider: "p", Model: "m"}); err != nil {
+		seed.Close()
+		t.Fatal(err)
+	}
+	// Simulate a database written before these columns existed.
+	for _, col := range []string{"subagent", "subagent_source"} {
+		if _, err := seed.db.Exec(`ALTER TABLE requests DROP COLUMN ` + col); err != nil {
+			seed.Close()
+			t.Fatalf("drop %s: %v", col, err)
+		}
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	row, err := s.Get(ctx, "old")
+	if err != nil || row == nil {
+		t.Fatalf("get old = %+v err=%v", row, err)
+	}
+	if row.Subagent || row.SubagentSource != "" {
+		t.Fatalf("old row = %+v, want zero subagent fields", row)
 	}
 }
