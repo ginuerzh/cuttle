@@ -207,12 +207,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(stats): record subagent class o
 
 **Implementation record — Task 2**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. Both columns are written at record time and filterable; focused and package tests green, full build and vet clean.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-subagent-observability`, branch `feat/subagent-observability`), implementation commit `3850c698`; this record follows it (a commit cannot name its own SHA).
+- Files changed: `internal/stats/store.go` (`Request.Subagent`/`SubagentSource` with `json:"-"`, both columns in `ensureColumns`, the INSERT list and values, both SELECT lists, `scanRequests`, `Filter.Subagent` and its `where()` clause); `internal/stats/recorder.go` (`agent.Classify(clientRequestHeaders(&ro))` right after `requestContext`, source first, class second); `internal/stats/store_test.go` (`TestStoreSubagentColumns`, `TestStoreSubagentColumnsAddedToExistingDatabase`); `internal/stats/recorder_test.go` (`TestRecorderSubagentClass`); `AGENTS.md` (one Stats-invariants entry).
+- Tests/commands and results: RED — `GOWORK=off go test ./internal/stats -run 'TestStoreSubagentColumns|TestRecorderSubagentClass' -count=1` → FAIL (build: `unknown field SubagentSource in struct literal of type Request`, `got.Subagent undefined`). GREEN — same command → `ok github.com/ginuerzh/cuttle/internal/stats 0.812s`. Package gate — `GOWORK=off go test ./internal/stats -count=1` → `ok ... 22.575s`. `GOWORK=off go build ./... && GOWORK=off go vet ./...` → clean; `gofmt -l internal/agent internal/stats` → no output.
+- Review findings and fixes: none; the legacy-database test drops both columns with `ALTER TABLE ... DROP COLUMN` and reopens, so `ensureColumns` is proven rather than assumed. The graph queries keep their own explicit column lists and are untouched.
+- Deferred items/limitations: no rollups, charts or alerts by class (Phase 2 decision 8); pre-upgrade rows read `0`/`''` with no backfill; `Filter.Subagent` has no admin surface until Task 3.
 
 ---
 
