@@ -386,3 +386,26 @@ it('passes the subagent filter and leaves it out when unset', async () => {
   expect(urls[1]).not.toContain('subagent=');
   expect(urls[2]).toContain('subagent=0');
 });
+
+it('applies the subagent filter to the series too', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const urls: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify({ bucket: '1h', points: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }),
+  );
+
+  const from = new Date('2026-11-19T00:00:00Z');
+  const to = new Date('2026-11-19T01:00:00Z');
+  await getSeries({ from, to, bucket: 3_600_000, subagent: '1' });
+  await getSeries({ from, to, bucket: 3_600_000 });
+
+  expect(urls[0]).toContain('subagent=1');
+  expect(urls[1]).not.toContain('subagent=');
+});

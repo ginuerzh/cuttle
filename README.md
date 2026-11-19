@@ -705,9 +705,11 @@ time/limit-bounded, in-memory, and lost on restart. `stats.storeBody` is removed
 
 Captured failures also include an allowlisted header subset: `content-type`,
 `user-agent`, `retry-after`, `x-request-id`, `x-cuttle-request-id`,
-`x-opencode-session`, `cf-ray`, `anthropic-version`, and
-`anthropic-ratelimit-*` / `x-ratelimit-*`. Authorization, cookie, set-cookie
-and API-key headers are never stored.
+`x-opencode-session`, `cf-ray`, `anthropic-version`,
+`x-claude-code-agent-id`, `x-parent-session-id`, `x-openai-subagent`, and
+`anthropic-ratelimit-*` / `x-ratelimit-*`. The three agent headers are the
+subagent markers described under "Subagent traffic". Authorization, cookie,
+set-cookie and API-key headers are never stored.
 
 Captured bodies may contain prompts and tool arguments; keep capture off outside
 an investigation, use a short retention, and protect the admin session and
@@ -1192,7 +1194,7 @@ before a node still carries it. No raw header value is stored on the row.
 | Client | Session identity | Subagent marker | Notes |
 | --- | --- | --- | --- |
 | Claude Code | `x-claude-code-session-id` | `x-claude-code-agent-id` | Production-verified (the sticky key already separates a subagent's traffic) |
-| OpenCode | `x-session-affinity` / `X-Session-Id` (third-party providers), `x-opencode-session` (its own) | `x-parent-session-id` | Requires a build with anomalyco/opencode#43188 (2026-08-18): v1.18.16–v1.18.18 dropped all session headers, and forks such as Kilo predate the restore |
+| OpenCode | `x-session-affinity` / `X-Session-Id` (third-party providers), `x-opencode-session` (its own) | `x-parent-session-id` | Requires a build with anomalyco/opencode#43188 (2026-08-18): v1.18.16–v1.18.18 dropped all session headers, and forks such as Kilo predate the restore. Verified at the gateway with a synthetic child-session request; a live OpenCode child session has not been observed yet, so confirm it with a capture before relying on the measurement |
 | Codex | `session-id` / `thread-id` | `x-openai-subagent` (`review`, `compact`, `memory_consolidation`, `collab_spawn`, or a custom label) | Source-verified from the Codex client; whether it reaches a third-party base URL is unverified, so confirm it with a capture before relying on `subagent=codex` |
 
 The three marker headers are on the capture allowlist, so an on-demand capture

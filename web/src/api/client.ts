@@ -279,6 +279,7 @@ export function getSeries(q: SeriesQuery): Promise<SeriesResponse> {
   if (q.errorsOnly) params.set('errors', '1');
   if (q.capturedOnly) params.set('captured', '1');
   if (q.errorClass) params.set('errorClass', q.errorClass);
+  if (q.subagent) params.set('subagent', q.subagent);
   return request<SeriesResponse>('GET', `/api/stats/series?${params.toString()}`);
 }
 

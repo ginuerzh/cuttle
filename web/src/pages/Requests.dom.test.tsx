@@ -141,6 +141,21 @@ describe('RequestsPage filters', () => {
     );
   });
 
+  it('sends the subagent class to the list and the chart alike', async () => {
+    const { container } = render(<RequestsPage config={config} />);
+    await settle();
+
+    selectOption(container, '子代理', '是');
+    await settle();
+
+    expect(getRequestsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subagent: '1' }),
+    );
+    expect(getSeriesMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subagent: '1' }),
+    );
+  });
+
   it('offers every entity filter and never free text', async () => {
     const { container } = render(<RequestsPage config={config} />);
     await settle();
