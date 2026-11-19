@@ -106,6 +106,19 @@ type requestView struct {
 	// request detail fills it; the list leaves it empty, so the key stays out of
 	// list payloads.
 	Attempts []attemptView `json:"attempts,omitempty"`
+	// Subagent and SubagentSource shadow the row fields, which carry json:"-".
+	// The request detail fills both; the list leaves them zero so the keys stay
+	// out of list payloads.
+	Subagent       *bool  `json:"subagent,omitempty"`
+	SubagentSource string `json:"subagentSource,omitempty"`
+}
+
+// withSubagent exposes the row's class fields for the detail payload. The
+// pointer is set for both classes; the source stays empty for a lead request.
+func (v *requestView) withSubagent() {
+	subagent := v.Request.Subagent
+	v.Subagent = &subagent
+	v.SubagentSource = v.Request.SubagentSource
 }
 
 func (l labelSet) requestView(row stats.Request) requestView {
