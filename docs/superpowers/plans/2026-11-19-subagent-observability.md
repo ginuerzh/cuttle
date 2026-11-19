@@ -309,12 +309,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(stats): keep subagent markers o
 
 **Implementation record — Task 4**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. Captures now keep the three marker headers.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-subagent-observability`, branch `feat/subagent-observability`), implementation commit `f830bce6`; this record follows it.
+- Files changed: `internal/stats/headers.go` (three exact allowlist entries plus a comment tying them to `internal/agent`); `internal/stats/headers_test.go` (the three headers in the kept set, banned headers unchanged).
+- Tests/commands and results: RED — `GOWORK=off go test ./internal/stats -run TestCaptureHeadersAllowlist -count=1` → FAIL (`missing "x-claude-code-agent-id" in map[...]`). GREEN — `GOWORK=off go test ./internal/stats -count=1` → `ok ... 22.758s`; `gofmt -l internal/stats` → no output.
+- Review findings and fixes: none; the test keeps asserting that `authorization`, `cookie` and the API-key headers stay out, so widening the allowlist did not weaken the security assertion.
+- Deferred items/limitations: capture remains opt-in (`off` by default), rule-bounded and 24h-retained; the marker values are ids/labels, and the row-level "no raw header values" rule is unchanged.
 
 ---
 
