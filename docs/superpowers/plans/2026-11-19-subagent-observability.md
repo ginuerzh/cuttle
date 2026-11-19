@@ -263,12 +263,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(admin): filter sessions by suba
 
 **Implementation record — Task 3**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. The filter is tri-state and validated; the detail carries the class, the list does not.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-subagent-observability`, branch `feat/subagent-observability`), implementation commit `9ab2515f`; this record follows it.
+- Files changed: `internal/admin/handlers_stats.go` (`validSubagentValue`, `parseSubagent`, `f.Subagent` in `requestFilter`, a `400` guard in both `handleRequests` and `handleSeries`, `view.withSubagent()` in `handleRequest`); `internal/admin/labels.go` (`requestView.Subagent`/`SubagentSource` shadow fields plus `withSubagent`); `internal/admin/handlers_stats_test.go` (`TestRequestsSubagentFilter`, `TestRequestDetailCarriesSubagentClass`).
+- Tests/commands and results: RED — `GOWORK=off go test ./internal/admin -run 'TestRequestsSubagentFilter|TestRequestDetailCarriesSubagentClass' -count=1` → FAIL (`subagent=1 rows = [lead sub], want [sub]`; `detail subagent = <nil> (present false), want true`). GREEN — same command → `ok ... 0.216s`. Package gate — `GOWORK=off go test ./internal/admin -count=1` → `ok ... 17.997s`. `GOWORK=off go build ./... && GOWORK=off go vet ./...` → clean; `gofmt -l internal/admin` → no output.
+- Review findings and fixes: the series endpoint shares `requestFilter`, so it needed the same validation to keep the chart and the list from disagreeing (per the AGENTS.md rule); that guard was added in the same change. `subagent=0` is a real filter here, unlike the attempts `status=0` convention, because `0` is a stored value and not a "no response" sentinel.
+- Deferred items/limitations: filtering by `subagent_source` is deferred (decision 14); the list payload keeps the fields out by design, so the Sessions list shows the class only through the detail drawer until Task 5 adds the filter and row.
 
 ---
 
