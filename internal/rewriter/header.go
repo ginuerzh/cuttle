@@ -52,6 +52,10 @@ func (r *HeaderRewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewr
 	}
 	h := http.Header(header)
 	h.Set(RequestIDHeaderName, sid)
+	// The gateway serves exactly one request per connection and closes it when
+	// the response is written. Say so, so a pooling client does not reuse a
+	// socket that is already gone (a reused dead socket loses the next stream).
+	h.Set("Connection", "close")
 
 	var out bytes.Buffer
 	if err := h.Write(&out); err != nil {

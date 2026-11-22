@@ -23,6 +23,21 @@ func TestHeaderRewriterAddsRequestID(t *testing.T) {
 	}
 }
 
+// The gateway serves one request per connection, so a response must tell the
+// client not to reuse it. Without this a pooled client socket is dead the
+// moment the next request reuses it (broken pipe, stream with no terminal).
+func TestHeaderRewriterAsksForConnectionClose(t *testing.T) {
+	in := []byte("Content-Type: text/event-stream;charset=utf-8\r\n\r\n")
+	md := map[string]any{"sid": "req-123", "direction": "response", "kind": "header"}
+	out, err := (&HeaderRewriter{}).Rewrite(nil, in, corerewriter.MetadataRewriteOption(md))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "Connection: close") {
+		t.Fatalf("Connection: close missing: %q", out)
+	}
+}
+
 func TestOpenCodeSessionRewriterAddsFallback(t *testing.T) {
 	in := []byte("Content-Type: application/json\r\n\r\n")
 	out, err := (&OpenCodeSessionRewriter{}).Rewrite(nil, in, corerewriter.MetadataRewriteOption(

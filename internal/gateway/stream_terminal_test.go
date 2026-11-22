@@ -107,3 +107,33 @@ func TestChatTruncatedStreamReportsError(t *testing.T) {
 		t.Fatalf("truncated stream must not carry [DONE]:\n%s", body)
 	}
 }
+
+// The gateway closes the client connection after every response, so the
+// response must say so. A client that pools the socket otherwise reuses a dead
+// connection and loses the next stream.
+func TestChatStreamAsksForConnectionClose(t *testing.T) {
+	up := testUpstream(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", chatFinishChunk)
+	}))
+	defer up.Close()
+
+	gw := startGateway(t, testConfig(up.URL))
+	req, err := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+"/v1/chat/completions", strings.NewReader(chatStreamRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	// net/http turns the header into resp.Close; check the semantics the
+	// client acts on, not the raw header text.
+	if !resp.Close {
+		t.Fatalf("resp.Close = false (Connection header %q), want a non-reusable connection", resp.Header.Get("Connection"))
+	}
+}
