@@ -3,7 +3,7 @@ module github.com/ginuerzh/cuttle
 go 1.26.4
 
 require (
-	github.com/ginuerzh/llm-api-converter v0.7.3
+	github.com/ginuerzh/llm-api-converter v0.7.4
 	github.com/go-gost/core v0.6.1
 	github.com/go-gost/x v0.32.0
 	github.com/gorilla/websocket v1.5.3
