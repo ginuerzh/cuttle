@@ -385,12 +385,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(admin): round-trip the binding 
 
 **Implementation record — Task 4**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. `when` round-trips through the admin API and the wire key is pinned.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), commit `b51a9938` (tests only — the admin layer needed no production change); this record follows it.
+- Files changed: `internal/admin/entrypoint_health_test.go` (`TestEntrypointWhenRoundTrip`, `TestEntrypointWhenJSONKey`).
+- Tests/commands and results: `GOWORK=off go test ./internal/admin -run 'TestEntrypointWhen' -count=1` → both PASS; package gate `GOWORK=off go test ./internal/admin -count=1` → `ok ... 18.269s`. Revert-proof — removing `json:"when,omitempty"` makes `TestEntrypointWhenJSONKey` fail (`want a lowercase when key`), so the wire name is genuinely guarded.
+- Review findings and fixes: **no production change was needed.** The admin layer marshals `config.Entrypoint` directly, so `when` rode along; the plan's step 3 assumed a separate payload might exist. The first test written (a round-trip through decoded structs) passed even with the JSON tag removed, because Go matches JSON keys case-insensitively — it proved nothing, so `TestEntrypointWhenJSONKey` was added to assert the raw payload contains `"when":"subagent"`.
+- Deferred items/limitations: `PUT /api/config` round-trip is covered by the same shared type; the events snapshot carries `when` via `health.Binding` from Task 3.
 
 ---
 
