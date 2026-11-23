@@ -142,12 +142,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(config): add the subagent-only 
 
 **Implementation record — Task 1**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. `when` is in the schema, validated, and both failure modes are pinned.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `969b607e`; this record follows it.
+- Files changed: `internal/config/config.go` (`RouteBinding.When`, `BindingWhenSubagent`, trim in `applyDefaults`, the `when` enum check and the servability check in `Validate`); `internal/config/config_test.go` (`bindingsFixture` helper plus `TestValidateUnknownWhen`, `TestValidateServability`, `TestValidateDraftExempt`, `TestValidateWhenAccepted`).
+- Tests/commands and results: RED — `GOWORK=off go test ./internal/config -run 'TestValidateUnknownWhen|TestValidateServability|TestValidateDraftExempt|TestValidateWhenAccepted' -count=1` → FAIL (`unknown field When in struct literal of type RouteBinding`). GREEN — same command → all four PASS. Package gate — `GOWORK=off go test ./internal/config -count=1` → `ok ... 0.723s`; `gofmt -l internal/config` → no output.
+- Review findings and fixes: the plan sketched `cfg.Validate()` but this repository exposes `config.Validate(cfg)` as a function; the tests use the real signature. The servability check runs after the per-binding loop so a draft (`len(e.Routes) == 0`) is exempt, and an entrypoint whose bindings are all conditioned names itself in the error.
+- Deferred items/limitations: no `when: lead` value by design; `expandEnv` deliberately does not touch `When` (it is an enum, not a reference).
 
 ---
 
