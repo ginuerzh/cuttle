@@ -131,8 +131,18 @@ type Entrypoint struct {
 // API path.
 type RouteBinding struct {
 	Route string `yaml:"route" json:"route"`
+	// When limits the binding to one traffic class; empty means any request.
+	// The only non-empty value is BindingWhenSubagent: subagent traffic then
+	// prefers this binding and every other request uses the bindings without
+	// it. Cuttle derives the class from a fixed marker-header table
+	// (internal/agent), never from arbitrary request attributes.
+	When  string `yaml:"when,omitempty" json:"when,omitempty"`
 	Probe *Probe `yaml:"probe,omitempty" json:"probe,omitempty"`
 }
+
+// BindingWhenSubagent is the only non-empty RouteBinding.When value: the
+// binding serves subagent traffic in preference to the unconditional ones.
+const BindingWhenSubagent = "subagent"
 
 // Probe is the command probe attached to one route binding. The command runs
 // through a shell, so it is never environment-expanded at load time: "$"
@@ -666,6 +676,7 @@ func (c *Config) applyDefaults() {
 		for j := range e.Routes {
 			b := &e.Routes[j]
 			b.Route = strings.TrimSpace(b.Route)
+			b.When = strings.TrimSpace(b.When)
 			if b.Probe == nil {
 				continue
 			}
@@ -1270,6 +1281,7 @@ func Validate(c *Config) error {
 			return fmt.Errorf("entrypoint %q: match is required", name)
 		}
 		seenRoutes := make(map[string]bool, len(e.Routes))
+		hasUnconditional := false
 		for j := range e.Routes {
 			b := &e.Routes[j]
 			scope := fmt.Sprintf("entrypoint %q: routes[%d]", name, j)
@@ -1279,6 +1291,12 @@ func Validate(c *Config) error {
 			}
 			if !routeIDs[route] {
 				return nameRefError(scope, "route", route, routeIDByName)
+			}
+			if b.When != "" && b.When != BindingWhenSubagent {
+				return fmt.Errorf(`%s: when must be "" or %q`, scope, BindingWhenSubagent)
+			}
+			if b.When == "" {
+				hasUnconditional = true
 			}
 			if seenRoutes[route] {
 				return fmt.Errorf("%s: duplicate route %q", scope, route)
@@ -1299,6 +1317,12 @@ func Validate(c *Config) error {
 			if b.Probe.Timeout >= b.Probe.Interval {
 				return fmt.Errorf("%s: probe timeout must be less than the interval", scope)
 			}
+		}
+		// Lead traffic must always have a binding: with every binding
+		// conditioned, x would find no eligible entry and answer 502 for the
+		// operator's main session. A draft (zero bindings) stays valid.
+		if len(e.Routes) > 0 && !hasUnconditional {
+			return fmt.Errorf("entrypoint %q: at least one binding without when is required", name)
 		}
 	}
 	return nil
