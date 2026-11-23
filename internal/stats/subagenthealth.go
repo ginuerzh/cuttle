@@ -49,7 +49,10 @@ func (s *Store) SubagentHealth(ctx context.Context, from, to time.Time) ([]Subag
 			byClient[client] = row
 		}
 		row.Requests += n
-		if source != "" {
+		// Only this client's own marker counts. A fork or a proxy that injects
+		// another client's marker must not make this client look healthy: the
+		// whole point is to catch this client's header going missing.
+		if source != "" && agent.SourceOfClient(client) == source {
 			row.Marked += n
 		}
 	}

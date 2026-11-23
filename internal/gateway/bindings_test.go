@@ -568,11 +568,20 @@ func TestBuildNoWhenIsNilMatcher(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("no entries compiled")
 	}
-	// x does not expose the entry matcher, so the no-op is proven by behavior:
-	// a marker-carrying request must still follow plain configuration order,
-	// which only holds when no matcher filtered it out.
+	// x does not expose the entry matcher, so the no-op is proven by behavior.
+	// The load-bearing case is a MARKER-LESS request: if any binding silently
+	// acquired the subagent matcher, this request would be filtered out of
+	// every entry and the group would return nil — a 502 for ordinary traffic.
+	if node := h.Select(context.Background(), hop.HeaderSelectOption(http.Header{})); node == nil {
+		t.Fatal("a marker-less request selected nothing, so a matcher was attached")
+	} else if got := configNodeID(node); got != "n_0000000001" {
+		t.Fatalf("selected node = %q, want the first configured binding %q", got, "n_0000000001")
+	}
+
+	// With the first binding marked failed, the marker-less request still
+	// falls through to the second, which a matcher would also block.
 	entries[0].Marker().Mark()
-	node := h.Select(context.Background(), hop.HeaderSelectOption(http.Header{"X-Openai-Subagent": {"review"}}))
+	node := h.Select(context.Background(), hop.HeaderSelectOption(http.Header{}))
 	if got := configNodeID(node); got != "n_0000000002" {
 		t.Fatalf("selected node = %q, want the unconditional second binding %q", got, "n_0000000002")
 	}

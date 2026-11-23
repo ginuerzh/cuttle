@@ -29,8 +29,10 @@ type Route struct {
 
 // Entrypoint is the binding health of one entrypoint. ID identifies the
 // entrypoint and Name is its display label. Active is the binding that will
-// serve the next request; Bindings is ordered by selection priority: probed
-// bindings in configuration order, then probe-less ones in configuration order.
+// serve the next request without a subagent marker; Bindings is ordered by the
+// data plane's selection priority: class-conditioned bindings first, then
+// unconditional ones, and inside each tier probed bindings before probe-less
+// ones, each in configuration order.
 type Entrypoint struct {
 	ID       string        `json:"entrypointId"`
 	Name     string        `json:"entrypointName"`
@@ -38,10 +40,12 @@ type Entrypoint struct {
 	Bindings []Binding     `json:"bindings"`
 }
 
-// ActiveBinding names the binding that will serve the next request. Fallback is
-// true when at least one binding carries a probe and no probed binding is
-// eligible: the first probe-less binding then serves, or the first probed one
-// when there is no probe-less binding.
+// ActiveBinding names the binding that will serve the next request without a
+// subagent marker. Only unconditional bindings are candidates. Fallback is true
+// when at least one unconditional binding carries a probe and none of them is
+// eligible: the first probe-less unconditional binding then serves, or the first
+// probed one when there is no probe-less binding. A conditioned binding never
+// contributes to Fallback, because lead traffic never reaches it.
 type ActiveBinding struct {
 	RouteID  string `json:"routeId"`
 	Fallback bool   `json:"fallback"`

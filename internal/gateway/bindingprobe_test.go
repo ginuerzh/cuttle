@@ -639,6 +639,9 @@ func TestOrderAgreement(t *testing.T) {
 	cases := [][]gwconfig.RouteBinding{
 		{{Route: "r_0000000001"}, {Route: "r_0000000002"}},
 		{{Route: "r_0000000001", Probe: probe("x")}, {Route: "r_0000000002"}},
+		// The two arrangements the class tier exists for, and the two a
+		// probe-less entrypoint would skip if probePriorityOrder bailed out
+		// early on "nothing probes".
 		{{Route: "r_0000000001", When: "subagent"}, {Route: "r_0000000002"}},
 		{{Route: "r_0000000001"}, {Route: "r_0000000002", When: "subagent"}},
 		{
@@ -659,22 +662,19 @@ func TestOrderAgreement(t *testing.T) {
 			}
 			probes = append(probes, &bindingProbe{index: j, command: cmd, when: b.When})
 		}
+
 		order, _ := bindingOrder(bindings)
 		got := probePriorityOrder(probes, hasProbe)
-		if !hasProbe {
-			// probePriorityOrder returns nil when nothing probes: config order.
+		if got == nil {
+			// The nil return means "configuration order is already the
+			// priority order"; materialize it so the two can be compared.
+			if hasConditioned(probes) {
+				t.Fatalf("case %d: probePriorityOrder returned nil for a conditioned entrypoint", i)
+			}
 			got = make([]int, len(bindings))
 			for j := range bindings {
 				got[j] = j
 			}
-			want := make([]int, len(bindings))
-			for j := range bindings {
-				want[j] = j
-			}
-			if !slices.Equal(got, want) {
-				t.Fatalf("case %d: probe-less order = %v, want %v", i, got, want)
-			}
-			continue
 		}
 		if !slices.Equal(order, got) {
 			t.Fatalf("case %d: bindingOrder = %v but probePriorityOrder = %v", i, order, got)
@@ -710,4 +710,73 @@ func TestBindingHealthCarriesWhen(t *testing.T) {
 	if got := snap[0].Active.RouteID; got != "r_0000000002" {
 		t.Fatalf("active route = %q, want the unconditional route %q", got, "r_0000000002")
 	}
+}
+
+// TestFallbackScopedToUnconditional pins Fallback to the unconditional subset,
+// the same subset Active is drawn from. Both directions matter:
+//
+//   - a healthy conditioned binding must not hide a dead unconditional one
+//     (false negative: the console would call a degraded lead path normal);
+//   - a dead conditioned binding must not mark lead as falling back (false
+//     positive: the console would claim a path lead never takes).
+func TestFallbackScopedToUnconditional(t *testing.T) {
+	build := func(bindings []gwconfig.RouteBinding, marked []int) health.Entrypoint {
+		t.Helper()
+		set := testProbeSet()
+		for i, b := range bindings {
+			set.add(gwconfig.Entrypoint{ID: "e_0000000001", Name: "all"}, b, i, probeEntries(1), 10*time.Second)
+		}
+		for _, i := range marked {
+			set.probes[i].entries[0].Marker().Mark()
+		}
+		snap := set.Snapshot()
+		if len(snap) != 1 {
+			t.Fatalf("snapshot rows = %d, want 1", len(snap))
+		}
+		return snap[0]
+	}
+	probed := func(route, when string) gwconfig.RouteBinding {
+		return gwconfig.RouteBinding{Route: route, When: when, Probe: &gwconfig.Probe{Command: "true"}}
+	}
+	plain := func(route, when string) gwconfig.RouteBinding {
+		return gwconfig.RouteBinding{Route: route, When: when}
+	}
+
+	t.Run("healthy conditioned binding must not hide a dead unconditional one", func(t *testing.T) {
+		got := build([]gwconfig.RouteBinding{
+			// Both probed: the conditioned one healthy, the unconditional one
+			// dead. Lead can only reach the dead binding.
+			probed("r_0000000001", gwconfig.BindingWhenSubagent),
+			probed("r_0000000002", ""),
+		}, []int{1})
+		if got.Active.RouteID != "r_0000000002" {
+			t.Fatalf("active = %q, want the unconditional route", got.Active.RouteID)
+		}
+		if !got.Active.Fallback {
+			t.Fatal("fallback = false while lead can only reach a dead binding, want true")
+		}
+	})
+
+	t.Run("dead conditioned binding must not mark lead as fallback", func(t *testing.T) {
+		got := build([]gwconfig.RouteBinding{
+			probed("r_0000000001", gwconfig.BindingWhenSubagent), // dead, conditioned
+			plain("r_0000000002", ""),                            // unconditional, probe-less
+		}, []int{0})
+		if got.Active.RouteID != "r_0000000002" {
+			t.Fatalf("active = %q, want the unconditional route", got.Active.RouteID)
+		}
+		if got.Active.Fallback {
+			t.Fatal("fallback = true although lead never considered the conditioned binding, want false")
+		}
+	})
+
+	t.Run("an unconditional dead probe with no conditioned binding still reports fallback", func(t *testing.T) {
+		got := build([]gwconfig.RouteBinding{
+			probed("r_0000000001", ""),
+			plain("r_0000000002", ""),
+		}, []int{0})
+		if !got.Active.Fallback {
+			t.Fatal("fallback = false, want true (the pre-class behavior must survive)")
+		}
+	})
 }

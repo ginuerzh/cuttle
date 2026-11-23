@@ -44,6 +44,14 @@ export function entrypointSubtitle(
   return `${match} → ${parts.join(', ')}`;
 }
 
+/** Moves one entrypoint to another index, leaving the rest in order. */
+export function reorderEntrypoints<T>(list: readonly T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
 export function EntrypointsPage({
   config,
   onReload,
@@ -100,9 +108,7 @@ export function EntrypointsPage({
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
-    const next = [...config.entrypoints];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
+    const next = reorderEntrypoints(config.entrypoints, from, to);
     try {
       await putEntrypoints(next);
       await reload();

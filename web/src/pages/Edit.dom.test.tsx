@@ -984,3 +984,93 @@ describe('draft round trip against the panel', () => {
     );
   });
 });
+
+describe('EntrypointForm traffic class', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  it('sends the class selected on a binding row', async () => {
+    putEntrypointsMock.mockClear();
+    const entrypoint = {
+      id: 'e_0000000001',
+      name: 'all',
+      match: ['*'],
+      routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002' }],
+    };
+    const config = {
+      providers: [],
+      nodes: [],
+      routes: [
+        { id: 'r_0000000001', name: 'worker', nodes: [] },
+        { id: 'r_0000000002', name: 'lead', nodes: [] },
+      ],
+      entrypoints: [entrypoint],
+    } as unknown as ConfigResponse;
+
+    const { container } = render(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+
+    // The class select of the first binding row.
+    const input = container.querySelector('input#routes_0_when') as HTMLInputElement | null;
+    if (!input) throw new Error('class select not rendered');
+    await act(async () => {
+      input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    const option = Array.from(document.querySelectorAll('.ant-select-item-option')).find(
+      (el) => el.textContent === '子代理',
+    );
+    if (!option) throw new Error('子代理 option not found');
+    await act(async () => {
+      (option as HTMLElement).click();
+    });
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', when: 'subagent' },
+      { route: 'r_0000000002' },
+    ]);
+  });
+
+  it('keeps an existing class on save without touching the select', async () => {
+    putEntrypointsMock.mockClear();
+    const entrypoint = {
+      id: 'e_0000000001',
+      name: 'all',
+      match: ['*'],
+      routes: [{ route: 'r_0000000001', when: 'subagent' as const }, { route: 'r_0000000002' }],
+    };
+    const config = {
+      providers: [],
+      nodes: [],
+      routes: [
+        { id: 'r_0000000001', name: 'worker', nodes: [] },
+        { id: 'r_0000000002', name: 'lead', nodes: [] },
+      ],
+      entrypoints: [entrypoint],
+    } as unknown as ConfigResponse;
+
+    const { container } = render(
+      <EntrypointForm entrypoint={entrypoint} index={0} config={config} onSaved={async () => undefined} />,
+    );
+    await act(async () => {
+      buttonByText(container, '保存').click();
+    });
+
+    const [entrypoints] = putEntrypointsMock.mock.calls[0];
+    expect(entrypoints[0].routes).toEqual([
+      { route: 'r_0000000001', when: 'subagent' },
+      { route: 'r_0000000002' },
+    ]);
+  });
+});

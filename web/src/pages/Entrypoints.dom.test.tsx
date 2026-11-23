@@ -142,3 +142,35 @@ describe('EntrypointsPage marker health', () => {
     expect(container.textContent).toContain('无流量');
   });
 });
+
+describe('EntrypointsPage marker health in English', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  it('renders every marker-health string in English', async () => {
+    setActiveLang('en-US');
+    try {
+      getSubagentHealthMock.mockResolvedValue([
+        { source: 'opencode', client: 'opencode', requests: 2, marked: 0, markedPct: 0, status: 'regressed' },
+        { source: 'codex', client: 'codex', requests: 0, marked: 0, markedPct: 0, status: 'absent' },
+      ]);
+      const { container } = render(<EntrypointsPage config={config} onReload={async () => {}} />);
+      await settle();
+
+      const text = container.textContent ?? '';
+      expect(text).toContain('Marker health');
+      expect(text).toContain('No marker seen');
+      expect(text).toContain('No traffic');
+      expect(text).toContain('A marker is expected only for agent clients');
+      expect(text).not.toMatch(/[\u4e00-\u9fff]/);
+    } finally {
+      setActiveLang('zh-CN');
+    }
+  });
+});

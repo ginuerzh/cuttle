@@ -1187,9 +1187,10 @@ cheap `hasCapture` flag and never carries `attempts`.
 
 Every request row records whether the caller was a subagent and which client
 said so: `subagent` (0/1) and `subagent_source` (`claude_code`, `opencode`,
-`codex`, or empty). The class is measured only — nothing routes on it yet — and
-it is derived at record time from the client headers, so a request that fails
-before a node still carries it. No raw header value is stored on the row.
+`codex`, or empty). It is derived at record time from the client headers, so a
+request that fails before a node still carries it. No raw header value is stored
+on the row. The class can also drive routing — see "Routing subagents
+separately" below.
 
 | Client | Session identity | Subagent marker | Notes |
 | --- | --- | --- | --- |
@@ -1234,7 +1235,7 @@ entrypoints:
 Selection: conditioned bindings are tried before unconditional ones, and inside
 each tier probed bindings come before probe-less ones (the existing rule). So a
 subagent request takes its own binding whenever that binding is eligible, and
-everything else takes an unconditional bindings. A conditioned binding whose
+everything else takes an unconditional binding. A conditioned binding whose
 probe is ineligible hands its traffic to an unconditional binding; a conditioned
 binding whose **route builds to zero nodes** still answers 502 — the same as a
 probed binding today — so check the route before switching a class onto it.

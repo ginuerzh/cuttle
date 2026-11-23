@@ -243,10 +243,15 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 		// and the fallback flag must come from the same read, or a probe
 		// landing between two reads could make the payload contradict itself.
 		failed := make([]bool, len(g.probes))
+		// hasProbe/probedEligible feed Fallback, which describes the lead path
+		// only, so they are collected over unconditional bindings — the same
+		// subset Active is drawn from below. Counting a conditioned binding
+		// here would report a healthy worker launching as "lead is fine" and a
+		// dead worker probe as "lead is falling back", both wrong.
 		hasProbe, probedEligible := false, false
 		for i, p := range g.probes {
 			failed[i] = p.failed()
-			if p.command == "" {
+			if p.when == gwconfig.BindingWhenSubagent || p.command == "" {
 				continue
 			}
 			hasProbe = true
@@ -272,7 +277,7 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 			if order != nil {
 				i = order[pos]
 			}
-			if g.probes[i].when != "" {
+			if g.probes[i].when == gwconfig.BindingWhenSubagent {
 				continue
 			}
 			if active < 0 {
@@ -334,9 +339,9 @@ func probePriorityOrder(probes []*bindingProbe, hasProbe bool) []int {
 	var condProbed, condPlain, plainProbed, plainPlain []int
 	for i, p := range probes {
 		switch {
-		case p.when != "" && p.command != "":
+		case p.when == gwconfig.BindingWhenSubagent && p.command != "":
 			condProbed = append(condProbed, i)
-		case p.when != "":
+		case p.when == gwconfig.BindingWhenSubagent:
 			condPlain = append(condPlain, i)
 		case p.command != "":
 			plainProbed = append(plainProbed, i)
@@ -354,7 +359,7 @@ func probePriorityOrder(probes []*bindingProbe, hasProbe bool) []int {
 // hasConditioned reports whether any binding declares a traffic class.
 func hasConditioned(probes []*bindingProbe) bool {
 	for _, p := range probes {
-		if p.when != "" {
+		if p.when == gwconfig.BindingWhenSubagent {
 			return true
 		}
 	}

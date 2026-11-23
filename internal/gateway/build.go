@@ -248,31 +248,31 @@ func bindingFailTimeout(bindings []gwconfig.RouteBinding) time.Duration {
 // tier, probe-less bindings after the first (the first one already shadows
 // them), and the same rule inside each conditioned class.
 func bindingOrder(bindings []gwconfig.RouteBinding) (order, unreachable []int) {
-	var conditioned, plain []int
-	var conditionedPlained, plainPlained []int
+	var condProbed, plainProbed []int
+	var condPlain, plainPlain []int
 	for i, b := range bindings {
-		conditionedBinding := strings.TrimSpace(b.When) != ""
+		conditionedBinding := strings.TrimSpace(b.When) == gwconfig.BindingWhenSubagent
 		switch {
 		case conditionedBinding && bindingHasProbe(b):
-			conditioned = append(conditioned, i)
+			condProbed = append(condProbed, i)
 		case conditionedBinding:
-			conditionedPlained = append(conditionedPlained, i)
+			condPlain = append(condPlain, i)
 		case bindingHasProbe(b):
-			plain = append(plain, i)
+			plainProbed = append(plainProbed, i)
 		default:
-			plainPlained = append(plainPlained, i)
+			plainPlain = append(plainPlain, i)
 		}
 	}
-	if len(conditionedPlained) > 1 {
-		unreachable = append(unreachable, conditionedPlained[1:]...)
+	if len(condPlain) > 1 {
+		unreachable = append(unreachable, condPlain[1:]...)
 	}
-	if len(plainPlained) > 1 {
-		unreachable = append(unreachable, plainPlained[1:]...)
+	if len(plainPlain) > 1 {
+		unreachable = append(unreachable, plainPlain[1:]...)
 	}
-	order = append(order, conditioned...)
-	order = append(order, conditionedPlained...)
-	order = append(order, plain...)
-	return append(order, plainPlained...), unreachable
+	order = append(order, condProbed...)
+	order = append(order, condPlain...)
+	order = append(order, plainProbed...)
+	return append(order, plainPlain...), unreachable
 }
 
 // bindingHasProbe reports whether a binding actually runs a command probe. A

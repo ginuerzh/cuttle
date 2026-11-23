@@ -22,6 +22,11 @@ func TestStoreSubagentHealth(t *testing.T) {
 		// claude-code: two requests, both marked.
 		{ID: "c1", TS: base.Add(5 * time.Minute), Provider: "p", Model: "m", UserAgent: "claude-cli/2.1.328 (external)", Subagent: true, SubagentSource: agent.SourceClaudeCode},
 		{ID: "c2", TS: base.Add(6 * time.Minute), Provider: "p", Model: "m", UserAgent: "claude-cli/2.1.328 (external)", Subagent: true, SubagentSource: agent.SourceClaudeCode},
+		// An opencode-UA request carrying the codex marker must not count as
+		// opencode being marked: the check exists to catch opencode's own
+		// header going missing, and a fork that injects someone else's marker
+		// would otherwise mask exactly that regression.
+		{ID: "o5", TS: base.Add(8 * time.Minute), Provider: "p", Model: "m", UserAgent: "opencode/latest/2.3.2/cli", Subagent: true, SubagentSource: agent.SourceCodex},
 		// An unknown agent contributes no client row.
 		{ID: "u1", TS: base.Add(7 * time.Minute), Provider: "p", Model: "m", UserAgent: "Python-urllib/3.14"},
 	}
@@ -39,8 +44,8 @@ func TestStoreSubagentHealth(t *testing.T) {
 	for _, r := range got {
 		byClient[r.Client] = r
 	}
-	if r, ok := byClient["opencode"]; !ok || r.Requests != 4 || r.Marked != 3 {
-		t.Fatalf("opencode = %+v, want 4 requests / 3 marked", r)
+	if r, ok := byClient["opencode"]; !ok || r.Requests != 5 || r.Marked != 3 {
+		t.Fatalf("opencode = %+v, want 5 requests / 3 marked (the codex-marked one does not count)", r)
 	}
 	if r, ok := byClient["claude-code"]; !ok || r.Requests != 2 || r.Marked != 2 {
 		t.Fatalf("claude-code = %+v, want 2 requests / 2 marked", r)

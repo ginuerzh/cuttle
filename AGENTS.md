@@ -85,9 +85,11 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   draft: the entrypoint still claims its models (by specificity), but every
   matching request fails with a 5xx (x returns 502 for the zero-node hop) and is
   recorded as unrouted. `*` is an explicit catch-all.
-- A binding is `{route, probe?}` and holds a route id, never a display name.
-  Bindings are inline config: they have no id and are never addressable through
-  an API path. Duplicate route ids inside one entrypoint are rejected.
+- A binding is `{route, probe?, when?}` and holds a route id, never a display
+  name. `when` is either empty or `subagent`; it restricts the binding to one
+  traffic class. Bindings are inline config: they have no id and are never
+  addressable through an API path. Duplicate route ids inside one entrypoint
+  are rejected.
 - Selection priority is by category, then by order: probed bindings are tried
   first in declaration order, then every probe-less binding in declaration
   order. A binding without a `probe` is legal in any position and any number of
@@ -122,11 +124,15 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   inner group, which is the first probed binding. Both are accepted behavior;
   never return a 502 for this case and do not add a cuttle dispatcher to change
   it.
-- `GET /api/entrypoints/health` emits `bindings[]` in the same priority order
-  (probed in configuration order, then probe-less), keeps `index` as the
-  configuration index, and sets `fallback` only when at least one binding has a
-  probe and none of the probed bindings is eligible. An entrypoint with only
-  probe-less bindings serves the first one with `fallback: false`.
+- `GET /api/entrypoints/health` emits `bindings[]` in the same priority order as
+  the data plane (class-conditioned bindings first, then unconditional ones,
+  and inside each tier probed before probe-less, each in configuration order),
+  keeps `index` as the configuration index, and sets `fallback` only when at
+  least one **unconditional** binding has a probe and none of the unconditional
+  probed bindings is eligible. `active` is drawn from the unconditional
+  bindings only, so a conditioned binding is never active and never contributes
+  to `fallback`. An entrypoint with only probe-less bindings serves the first
+  one with `fallback: false`.
 - Entrypoint precedence and binding choice are separate decisions. The body's
   `model` field decides entrypoint precedence and never selects a binding;
   paths never affect either, they only select the upstream wire API inside a

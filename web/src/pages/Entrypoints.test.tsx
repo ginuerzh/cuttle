@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { setActiveLang } from '../i18n';
 import type { ConfigResponse, Entrypoint, EntrypointHealth } from '../api/types';
-import { EntrypointsPage } from './Entrypoints';
+import { EntrypointsPage, reorderEntrypoints } from './Entrypoints';
 import { disconnectEntrypointBinding } from './drafts';
 
 setActiveLang('zh-CN');
@@ -126,14 +126,6 @@ describe('EntrypointsPage', () => {
   });
 });
 
-/** Mirrors the page's binding reorder: splice one binding to another index. */
-function moveBinding(e: Entrypoint, from: number, to: number): Entrypoint {
-  const next = [...(e.routes ?? [])];
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved);
-  return { ...e, routes: next };
-}
-
 describe('binding class', () => {
   it('keeps the class through a reorder and a delete', () => {
     const e: Entrypoint = {
@@ -143,7 +135,7 @@ describe('binding class', () => {
         { route: 'r_0000000002' },
       ],
     };
-    const reordered = moveBinding(e, 0, 1);
+    const reordered = { ...e, routes: reorderEntrypoints(e.routes ?? [], 0, 1) };
     expect(reordered.routes.map((b) => b.when ?? '')).toEqual(['', 'subagent']);
 
     const deleted = disconnectEntrypointBinding(reordered, 'r_0000000002');
@@ -159,6 +151,6 @@ describe('binding class', () => {
         { route: 'r_0000000002', when: 'subagent' },
       ],
     };
-    expect(moveBinding(e, 1, 0).routes[0].when).toBe('subagent');
+    expect(reorderEntrypoints(e.routes ?? [], 1, 0)[0].when).toBe('subagent');
   });
 });
