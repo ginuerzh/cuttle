@@ -987,6 +987,8 @@ export function NodeForm({
 /** One binding row in the entrypoint editor: the probe is edited on the edge. */
 export interface EntrypointBindingRow {
   route?: string;
+  /** Traffic class; empty means any request. */
+  when?: '' | 'subagent';
 }
 
 /** The default probe schedule the server applies when a field is blank. */
@@ -1075,7 +1077,11 @@ export function entrypointBindingInputs(
     const route = (row?.route ?? '').trim();
     if (!route) continue;
     const probe = probes.get(route);
-    bindings.push(probe ? { route, probe } : { route });
+    const when = row?.when === 'subagent' ? ('subagent' as const) : undefined;
+    const binding: EntrypointRoute = { route };
+    if (when) binding.when = when;
+    if (probe) binding.probe = probe;
+    bindings.push(binding);
   }
   return bindings;
 }
@@ -1134,7 +1140,10 @@ export function withBindingProbe(
 
 /** The editor rows of an entrypoint; a draft shows one empty row to fill in. */
 function entrypointBindingRows(entrypoint?: Entrypoint): EntrypointBindingRow[] {
-  const rows = (entrypoint?.routes ?? []).map((binding) => ({ route: binding.route }));
+  const rows = (entrypoint?.routes ?? []).map((binding) => ({
+    route: binding.route,
+    when: binding.when === 'subagent' ? 'subagent' as const : undefined,
+  }));
   return rows.length > 0 ? rows : [{}];
 }
 
@@ -1163,6 +1172,15 @@ function EntrypointBindingsField({ routes }: { routes: Route[] }) {
                   options={routeOptions}
                   placeholder={tr('选择路由')}
                   style={{ flex: 1 }}
+                />
+              </Form.Item>
+              <Form.Item name={[field.name, 'when']} noStyle>
+                <Select
+                  allowClear
+                  aria-label={tr('流量类别')}
+                  placeholder={tr('不限')}
+                  options={[{ value: 'subagent', label: tr('子代理') }]}
+                  style={{ width: 96 }}
                 />
               </Form.Item>
               <Button

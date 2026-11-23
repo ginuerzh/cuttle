@@ -15,6 +15,7 @@ import {
   getProviderUsage,
   getRequests,
   getSeries,
+  getSubagentHealth,
   getTopologyPositions,
   listCaptureRules,
   putStatsCapture,
@@ -408,4 +409,30 @@ it('applies the subagent filter to the series too', async () => {
 
   expect(urls[0]).toContain('subagent=1');
   expect(urls[1]).not.toContain('subagent=');
+});
+
+it('requests the per-client subagent marker health', async () => {
+  vi.stubGlobal('document', { cookie: '' });
+  const urls: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      urls.push(String(url));
+      return new Response(
+        JSON.stringify([
+          { source: 'opencode', client: 'opencode', requests: 10, marked: 10, markedPct: 100, status: 'ok' },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }),
+  );
+
+  const from = new Date('2026-11-20T00:00:00Z');
+  const to = new Date('2026-11-21T00:00:00Z');
+  const rows = await getSubagentHealth({ from, to });
+  expect(urls[0]).toContain('/api/subagent/health');
+  expect(urls[0]).toContain('from=');
+  expect(rows[0]).toEqual({
+    source: 'opencode', client: 'opencode', requests: 10, marked: 10, markedPct: 100, status: 'ok',
+  });
 });

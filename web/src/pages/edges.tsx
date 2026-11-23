@@ -23,12 +23,25 @@ export interface BindingEdgeState {
    * so this is read from `entrypoints[].routes[].probe`.
    */
   hasProbe: boolean;
+  /** The binding is conditioned on one traffic class (`when`). */
+  conditioned: boolean;
   /**
    * The entrypoint has exactly one binding, so there is nothing to choose
    * between and the edge is the normal default rather than an unverified
    * alternative.
    */
   onlyBinding: boolean;
+}
+
+/** The configured bindings conditioned on a traffic class, keyed by entrypoint id + route id. */
+function configuredConditioned(entrypoints?: readonly Entrypoint[]): Set<string> {
+  const conditioned = new Set<string>();
+  for (const entrypoint of entrypoints ?? []) {
+    for (const binding of entrypoint.routes ?? []) {
+      if (binding.when) conditioned.add(`${entrypoint.id}\0${binding.route}`);
+    }
+  }
+  return conditioned;
 }
 
 /** The configured bindings that carry a probe, keyed by entrypoint id + route id. */
@@ -54,6 +67,7 @@ export function bindingEdgeHealth(
   entrypoints?: readonly Entrypoint[],
 ): Map<string, BindingEdgeState> {
   const probed = configuredProbes(entrypoints);
+  const conditioned = configuredConditioned(entrypoints);
   const rows = new Map<string, BindingEdgeState>();
   for (const entrypoint of health ?? []) {
     const current = entrypoint.active;
@@ -67,6 +81,7 @@ export function bindingEdgeHealth(
         active: isActive && !current.fallback,
         fallback: isActive && current.fallback,
         hasProbe: probed.has(`${entrypoint.entrypointId}\0${binding.routeId}`),
+        conditioned: conditioned.has(`${entrypoint.entrypointId}\0${binding.routeId}`) || !!binding.when,
         onlyBinding,
       });
     }
@@ -97,9 +112,12 @@ export interface BindingEdgeBadge {
 export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
   if (!state) return { invalid: false, dashed: false };
   const invalid = state.hasProbe && !state.eligible;
+  const labels: string[] = [];
+  if (state.fallback) labels.push(translate('回退'));
+  if (state.conditioned) labels.push(translate('子代理'));
   return {
     mark: invalid ? '✕' : undefined,
-    text: state.fallback ? translate('回退') : undefined,
+    text: labels.length > 0 ? labels.join(' ') : undefined,
     invalid,
     dashed: !state.hasProbe && !state.onlyBinding,
   };

@@ -6,6 +6,7 @@ import type { ConfigResponse, EntrypointHealth } from '../api/types';
 
 vi.mock('../api/client', () => ({
   getEntrypointHealth: vi.fn(async () => []),
+  getSubagentHealth: vi.fn(async () => []),
   putEntrypoints: vi.fn(async () => undefined),
   getProviderModels: vi.fn(async () => []),
   getPresets: vi.fn(async () => []),
@@ -23,7 +24,7 @@ vi.mock('../api/client', () => ({
   getRequest: vi.fn(async () => null),
 }));
 
-import { getEntrypointHealth, putEntrypoints } from '../api/client';
+import { getEntrypointHealth, getSubagentHealth, putEntrypoints } from '../api/client';
 import { EntrypointsPage } from './Entrypoints';
 import { setActiveLang } from '../i18n';
 
@@ -31,6 +32,7 @@ import { setActiveLang } from '../i18n';
 
 const getEntrypointHealthMock = vi.mocked(getEntrypointHealth);
 const putEntrypointsMock = vi.mocked(putEntrypoints);
+const getSubagentHealthMock = vi.mocked(getSubagentHealth);
 
 const config = {
   providers: [],
@@ -112,5 +114,31 @@ describe('EntrypointsPage binding health', () => {
     expect(putEntrypointsMock).toHaveBeenCalledTimes(1);
     expect(getEntrypointHealthMock).toHaveBeenCalledTimes(2);
     root.unmount();
+  });
+});
+
+describe('EntrypointsPage marker health', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+  });
+
+  it('flags a client that sent traffic without its marker', async () => {
+    getSubagentHealthMock.mockResolvedValue([
+      { source: 'opencode', client: 'opencode', requests: 10, marked: 10, markedPct: 100, status: 'ok' },
+      { source: 'claude_code', client: 'claude-code', requests: 5, marked: 0, markedPct: 0, status: 'regressed' },
+      { source: 'codex', client: 'codex', requests: 0, marked: 0, markedPct: 0, status: 'absent' },
+    ]);
+    const { container } = render(<EntrypointsPage config={config} onReload={async () => {}} />);
+    await settle();
+
+    expect(container.textContent).toContain('标记健康');
+    expect(container.textContent).toContain('claude-code');
+    expect(container.textContent).toContain('未见到标记');
+    expect(container.textContent).toContain('无流量');
   });
 });

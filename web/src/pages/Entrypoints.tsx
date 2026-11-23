@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Drawer, Empty, Popconfirm, Space, Typography, message } from 'antd';
-import { getEntrypointHealth, putEntrypoints } from '../api/client';
+import { Button, Card, Drawer, Empty, Popconfirm, Space, Tag, Typography, message } from 'antd';
+import { getEntrypointHealth, getSubagentHealth, putEntrypoints } from '../api/client';
 import { translate as t } from '../i18n';
-import type { ConfigResponse, Entrypoint, EntrypointHealth } from '../api/types';
+import type { ConfigResponse, Entrypoint, EntrypointHealth, SubagentHealthRow } from '../api/types';
 import { entityLabel, labelMap, type LabelMap } from '../labels';
 import { AddEntrypointModal, EntrypointForm } from './Edit';
 import { ListCard } from '../components/ListCard';
@@ -61,6 +61,7 @@ export function EntrypointsPage({
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [health, setHealth] = useState<EntrypointHealth[]>(latestHealth);
+  const [markerHealth, setMarkerHealth] = useState<SubagentHealthRow[]>([]);
   const routeNames = labelMap(config.routes);
   const healthById = new Map(health.map((h) => [h.entrypointId, h]));
 
@@ -72,16 +73,30 @@ export function EntrypointsPage({
     }
   }, []);
 
+  // Marker coverage is observation only: it says whether each client still
+  // sends its subagent header, not what any binding should do about it.
+  const refreshMarkerHealth = useCallback(async () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 24 * 3600_000);
+    try {
+      setMarkerHealth(await getSubagentHealth({ from, to }));
+    } catch {
+      setMarkerHealth([]);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshHealth();
-  }, [refreshHealth]);
+    void refreshMarkerHealth();
+  }, [refreshHealth, refreshMarkerHealth]);
 
   // Every save reloads the config; the eligibility rows must reload too, or a
   // just-saved binding keeps the verdict of the binding it replaced.
   const reload = useCallback(async () => {
     await onReload();
     await refreshHealth();
-  }, [onReload, refreshHealth]);
+    await refreshMarkerHealth();
+  }, [onReload, refreshHealth, refreshMarkerHealth]);
 
   const move = async (from: number, to: number) => {
     if (from === to) return;
@@ -136,6 +151,27 @@ export function EntrypointsPage({
           }
         />
       ))}
+
+      {markerHealth.length > 0 ? (
+        <Card size="small" style={{ marginBottom: 8 }}>
+          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <Typography.Text strong>{t('标记健康')}</Typography.Text>
+            <Typography.Text type="secondary">{t('标记仅对 agent 客户端预期')}</Typography.Text>
+            {markerHealth.map((row) => (
+              <div key={row.client} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '2px 0' }}>
+                <Typography.Text style={{ minWidth: 120 }}>{row.client}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {row.marked} / {row.requests}
+                </Typography.Text>
+                {row.status === 'regressed' ? (
+                  <Tag color="orange">{t('未见到标记')}</Tag>
+                ) : null}
+                {row.status === 'absent' ? <Tag>{t('无流量')}</Tag> : null}
+              </div>
+            ))}
+          </Space>
+        </Card>
+      ) : null}
 
       <Drawer width={380} title={editing !== null ? t('编辑入口 #{index}', { index: editing }) : ''} open={editing !== null} onClose={() => setEditing(null)} destroyOnClose>
         {editing !== null && config.entrypoints[editing] ? (

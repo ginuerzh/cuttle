@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EntrypointHealth } from '../api/types';
 import { setActiveLang } from '../i18n';
-import { bindingEdgeHealth, DotEdge } from './edges';
+import { bindingEdgeBadge, bindingEdgeHealth, DotEdge } from './edges';
 import { decorateEdge } from './Topology';
 
 beforeEach(() => setActiveLang('zh-CN'));
@@ -125,6 +125,7 @@ describe('bindingEdgeHealth', () => {
       active: false,
       fallback: false,
       hasProbe: false,
+      conditioned: false,
       onlyBinding: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
@@ -132,6 +133,7 @@ describe('bindingEdgeHealth', () => {
       active: true,
       fallback: false,
       hasProbe: false,
+      conditioned: false,
       onlyBinding: false,
     });
   });
@@ -171,6 +173,7 @@ describe('bindingEdgeHealth', () => {
       active: false,
       fallback: true,
       hasProbe: false,
+      conditioned: false,
       onlyBinding: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
@@ -178,6 +181,7 @@ describe('bindingEdgeHealth', () => {
       active: false,
       fallback: false,
       hasProbe: false,
+      conditioned: false,
       onlyBinding: false,
     });
   });
@@ -232,5 +236,23 @@ describe('bindingEdgeHealth', () => {
 
     expect(decorated.selected).toBe(true);
     expect(renderToStaticMarkup(<>{decorated.label}</>)).toContain('✕');
+  });
+});
+
+describe('bindingEdgeBadge class label', () => {
+  it('labels a conditioned binding 子代理', () => {
+    const badge = bindingEdgeBadge({
+      eligible: true, active: true, fallback: false, hasProbe: false, conditioned: true, onlyBinding: false,
+    });
+    expect(badge.text).toContain('子代理');
+    expect(badge.invalid).toBe(false);
+  });
+
+  it('joins the fallback and class labels', () => {
+    const badge = bindingEdgeBadge({
+      eligible: false, active: true, fallback: true, hasProbe: true, conditioned: true, onlyBinding: false,
+    });
+    expect(badge.text).toBe('回退 子代理');
+    expect(badge.mark).toBe('✕');
   });
 });
