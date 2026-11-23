@@ -26,6 +26,7 @@ import (
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 
+	"github.com/ginuerzh/cuttle/internal/agent"
 	"github.com/ginuerzh/cuttle/internal/capture"
 	gwconfig "github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/provider"
@@ -236,25 +237,42 @@ func bindingFailTimeout(bindings []gwconfig.RouteBinding) time.Duration {
 	return timeout
 }
 
-// bindingOrder returns the selection order of one entrypoint's route bindings:
-// probed bindings first, then probe-less ones, each in configuration order.
-// unreachable lists the probe-less bindings after the first one: they are legal
-// but can never serve, because the first probe-less binding already shadows them
-// whenever every probe fails.
+// bindingOrder returns the selection order of one entrypoint's route bindings.
+// The class tier comes first: conditioned bindings (`when`) before the
+// unconditional ones, so a request of the conditioned class prefers its own
+// lane, while every other request falls through to an unconditional binding.
+// Inside each tier the existing rule holds: probed bindings before probe-less
+// ones, then configuration order.
+//
+// unreachable lists the bindings that can never serve: within the unconditional
+// tier, probe-less bindings after the first (the first one already shadows
+// them), and the same rule inside each conditioned class.
 func bindingOrder(bindings []gwconfig.RouteBinding) (order, unreachable []int) {
-	order = make([]int, 0, len(bindings))
-	plain := make([]int, 0, len(bindings))
+	var conditioned, plain []int
+	var conditionedPlained, plainPlained []int
 	for i, b := range bindings {
-		if bindingHasProbe(b) {
-			order = append(order, i)
-			continue
+		conditionedBinding := strings.TrimSpace(b.When) != ""
+		switch {
+		case conditionedBinding && bindingHasProbe(b):
+			conditioned = append(conditioned, i)
+		case conditionedBinding:
+			conditionedPlained = append(conditionedPlained, i)
+		case bindingHasProbe(b):
+			plain = append(plain, i)
+		default:
+			plainPlained = append(plainPlained, i)
 		}
-		plain = append(plain, i)
 	}
-	if len(plain) > 1 {
-		unreachable = append(unreachable, plain[1:]...)
+	if len(conditionedPlained) > 1 {
+		unreachable = append(unreachable, conditionedPlained[1:]...)
 	}
-	return append(order, plain...), unreachable
+	if len(plainPlained) > 1 {
+		unreachable = append(unreachable, plainPlained[1:]...)
+	}
+	order = append(order, conditioned...)
+	order = append(order, conditionedPlained...)
+	order = append(order, plain...)
+	return append(order, plainPlained...), unreachable
 }
 
 // bindingHasProbe reports whether a binding actually runs a command probe. A
@@ -284,6 +302,9 @@ func buildBindingsHop(entrypointID string, bindings []gwconfig.RouteBinding, pla
 
 	variant := variantKey(api)
 	entries := make([]*xhop.HopEntry, 0, len(bindings))
+	// One immutable matcher serves every conditioned binding of this build: the
+	// rule is generated from the marker table, not per binding.
+	var subagentMatcher corerouting.Matcher
 	for i, b := range bindings {
 		plan := plans[strings.TrimSpace(b.Route)]
 		if plan == nil {
@@ -296,7 +317,18 @@ func buildBindingsHop(entrypointID string, bindings []gwconfig.RouteBinding, pla
 		if h == nil {
 			return nil, nil, fmt.Errorf("entrypoint %q: routes[%d]: route %q has no hop", entrypointID, i, b.Route)
 		}
-		entries = append(entries, xhop.NewHopEntry(h, nil, nil))
+		var m corerouting.Matcher
+		if strings.TrimSpace(b.When) == gwconfig.BindingWhenSubagent {
+			if subagentMatcher == nil {
+				compiled, err := xrouting.NewMatcher(agent.SubagentRule())
+				if err != nil {
+					return nil, nil, fmt.Errorf("entrypoint %q: subagent rule: %w", entrypointID, err)
+				}
+				subagentMatcher = compiled
+			}
+			m = subagentMatcher
+		}
+		entries = append(entries, xhop.NewHopEntry(h, m, nil))
 	}
 
 	// The group is fed probed bindings first, then the probe-less ones: FIFO +
