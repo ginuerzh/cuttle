@@ -14,12 +14,13 @@ Phasing decided 2026-11-19 (§1); see Decisions 1-14.
 ## Intent
 
 Antigravity's Orchestrator made the industry pattern explicit: a long agent task
-needs a frontier model for planning and review and a cheap fast model for
-execution, and the split has to happen inside one session (see
+runs planner and executor work under different models inside one session (see
 `.memory/notes/cuttle-orchestrator-borrow-eval.md`). A transparent gateway cannot
 own that control loop — it does not see tool execution or phase boundaries — but
 it can see one thing the harness tells it on the wire: **whether a request comes
-from a subagent**.
+from a subagent**. That is enough for the gateway to make the two classes
+independently routable, which is a scheduling decision: the operator decides what
+each route carries.
 
 Two questions follow, and they are deliberately separated into two phases:
 
@@ -28,9 +29,15 @@ Two questions follow, and they are deliberately separated into two phases:
    the request row nor on the capture allowlist, and `user_agent` is identical
    for a subagent and its lead because the same process sends both. Nothing in
    existing data stands in for the marker.
-2. **Should that traffic take a cheaper route?** (Phase 2, dispatch.) Only
-   worth the machinery if the measured share is significant, which is why
-   Phase 1 ships first and Phase 2 is designed but unscheduled.
+2. **Should the two classes be routed separately?** (Phase 2, dispatch.)
+   Routing is a **scheduling** capability, not a cost-trick: it lets the
+   operator give lead and subagent traffic different routes so each tier can
+   carry a different model, a different provider, or a different quota pool.
+   Cost saving is one use of that capability and depends on upstream price
+   differences; quality matching, blast-radius isolation, quota separation
+   and per-tier attribution do not, and hold at equal price. Phase 1 ships
+   first because the size of the split decides how much the capability is
+   worth building out, not whether the capability is sound.
 
 Phase 1 additionally supplies the diagnosis surface Phase 2 will need: per
 request, which class it was and which client marker said so.
@@ -55,11 +62,15 @@ request, which class it was and which client marker said so.
 **Phase 2**
 
 - A route binding may carry `when: subagent`; absent means any request. Unknown
-  values are rejected at load, naming the entrypoint and binding index.
+  values are rejected at load, naming the entrypoint and binding index. This is
+  the whole feature: **the two classes become independently routable.**
 - Selection happens inside the existing x hop group (`routing.Matcher` on
   `xhop.HopEntry`), per request, with no new selector, dispatcher, goroutine or
   reload. A conditioned binding is preferred for subagent traffic and the
   unconditional binding serves everything else and absorbs failures.
+- The two routes are ordinary routes. Whatever they point at — the same model
+  and provider (isolation), a cheap model (cost), a frontier model (quality), a
+  free pool (capacity) — is configuration, not code.
 - `GET /api/entrypoints/health` rows carry `when`; the console lets the operator
   pick the class on both binding editors.
 - Docs: README gains the schema, the client/version matrix and the
@@ -100,7 +111,8 @@ request, which class it was and which client marker said so.
 - A cuttle-owned dispatcher in front of the x hop group.
 - Treating the marker headers as authenticated. They are client-controlled
   (Decision 4): any holder of a gateway key can claim `subagent` and reach the
-  cheap route. Accepted for a self-hosted gateway; documented in README.
+  subagent route, whatever it carries. Accepted for a self-hosted gateway;
+  documented in README.
 
 ## Constraints
 
@@ -165,8 +177,12 @@ that are stable, documented wire contracts.
 
 **C. Measure first, then decide (chosen sequencing).** Store the class, look at
 real traffic, then build dispatch. Chosen after the grill: the maintenance cost
-of `when` (three-client table, class tier, health/admin/web) is only justified
-by a measured share, and the share cannot be recovered from existing data.
+of `when` (three-client table, class tier, health/admin/web) is a real cost, the
+split cannot be recovered from existing data, and the measured share tells the
+operator how much the scheduling capability buys them. The measurement gates the
+investment, not the validity of the idea — separating lead from subagent traffic
+is useful at equal price (isolation, quota, attribution) and more useful once a
+tier carries a stronger model.
 
 **D. Two entrypoints per client model (one per class), selected by
 specificity.** Rejected: entrypoint match is the body `model` glob only; two
@@ -184,13 +200,30 @@ target-model attribution, catalog limits and per-node stats and health.
 | | Phase 1 — observability | Phase 2 — dispatch |
 | --- | --- | --- |
 | Delivers | `subagent` + `subagent_source` columns, `?subagent=` filter, detail fields, capture allowlist, `internal/agent` table + classifier, Sessions filter | `when: subagent` on bindings, matcher compilation, class tier in the binding order, health `when`, console selects, README/AGENTS updates |
-| Gate to start | none | measured share is significant (judgement, no preset threshold — Decision 13) |
+| Gate to start | none | the operator wants the two classes on different routes (judgement, no preset threshold — Decision 13); the measured share says how much it buys, not whether the mechanism is sound |
 | Behavior change | none for any existing config | only for configs that set `when` |
 | Depends on | nothing | Phase 1's table and classifier |
 
-Phase 1 ships first because it is the only way to learn whether Phase 2 is worth
-it (Decision 1). Phase 2's design is kept here, unscheduled, so the axis,
-rationale and table stay in one place (Decision 10).
+Phase 1 ships first because the size of the split is the only evidence that
+says how much Phase 2 buys (Decision 1). Phase 2's design is kept here,
+unscheduled, so the axis, rationale and table stay in one place (Decision 10).
+
+**Mechanism vs. use.** `when: subagent` is the mechanism: it makes the two
+classes independently routable and nothing more. What sits on each route is a
+configuration choice, and every one of these is the same mechanism used
+differently:
+
+- **Equal-price isolation** — two routes over the same model and provider, so a
+  subagent burst cannot exhaust the lead conversation's quota or trip its
+  `maxFails` markers.
+- **Tiered model** — lead on a frontier route, subagents on a cheap one. Saves
+  money only when the two tiers differ in price; that is the use, not the
+  feature.
+- **Tiered fallback** — subagents on a free or capacity-limited route while lead
+  traffic keeps a guaranteed one.
+
+So B is not a separate design from A; it is A pointed at a more expensive
+target.
 
 ### 2. Marker table and classifier (Phase 1)
 
@@ -264,7 +297,7 @@ entrypoints:
     name: claude
     match: [claude-*]
     routes:
-      - route: r_worker          # subagents: cheap and fast
+      - route: r_worker          # subagents: any route you want them on
         when: subagent
         probe:
           command: /usr/local/bin/cuttle-quota cheap
@@ -443,10 +476,12 @@ binding. Source strings stay Chinese; both locales get every new string.
 
 ## Decisions (settled 2026-11-19)
 
-1. Split the work: Phase 1 observability ships first, Phase 2 dispatch only
-   after the measured share justifies it. Existing data cannot answer the
-   question (verified: the markers are neither on the request row nor on the
-   capture allowlist, and UA cannot distinguish a subagent from its lead).
+1. Split the work: Phase 1 observability ships first so the split can be
+   measured before the dispatch machinery is built. Existing data could not
+   answer the question (verified: the markers are neither on the request row
+   nor on the capture allowlist, and UA cannot distinguish a subagent from its
+   lead). Measurement informs the investment; it is not a precondition for the
+   mechanism being worthwhile.
 2. No `when: lead`. The class-first ordering already produces identical behavior
    without a negation rule, a lead class or a silent-downgrade failure mode.
 3. Class tier above the probe tier: a conditioned binding outranks a probed
@@ -471,9 +506,11 @@ binding. Source strings stay Chinese; both locales get every new string.
     dependency appear early.
 12. The config field is `when: subagent`, not a boolean: it can grow into
     value-level matching without a schema break.
-13. No preset threshold for starting Phase 2. The document records the two
-    metrics to inspect — share of requests and share of tokens — and the owner
-    judges.
+13. No preset threshold for starting Phase 2, and no requirement that a
+    frontier model already be configured. The two metrics to inspect — share of
+    requests and share of tokens — say how much the split buys; whether to
+    build it is the operator's call, since separation is useful at equal price
+    too. Measured 2026-11-23: 61% of requests and 36% of tokens are subagent.
 14. The Phase 1 filter is boolean only; a source filter is deferred.
 
 ## Deferred
