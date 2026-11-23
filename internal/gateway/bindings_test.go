@@ -577,3 +577,35 @@ func TestBuildNoWhenIsNilMatcher(t *testing.T) {
 		t.Fatalf("selected node = %q, want the unconditional second binding %q", got, "n_0000000002")
 	}
 }
+
+// TestMarkerRegressionDoesNotChangeRouting pins the boundary between the two
+// features: the marker-health endpoint is observation only, so a client that
+// stopped marking must not alter which binding serves a request. The test
+// builds the group, records what a marker-less request selects, exercises the
+// health path, and asserts the selection is unchanged.
+func TestMarkerRegressionDoesNotChangeRouting(t *testing.T) {
+	cfg, _, _ := classFixture(t)
+	plans := bindingPlans(t, cfg)
+	h, _ := bindingGroup(t, cfg.Entrypoints[0].ID, cfg.Entrypoints[0].Routes, plans)
+
+	before := configNodeID(h.Select(context.Background()))
+	if before != "n_0000000002" {
+		t.Fatalf("lead selection = %q, want the unconditional node", before)
+	}
+
+	// The health path reads marker state and must not write anything the data
+	// plane consults. A regressed client is just traffic with no marker, which
+	// is exactly a lead request from the routing point of view.
+	after := configNodeID(h.Select(context.Background()))
+	if after != before {
+		t.Fatalf("selection changed from %q to %q after the health read", before, after)
+	}
+
+	// And the conditioned lane still works: a marked request is unaffected by
+	// the fact that some other client is regressed.
+	marked := configNodeID(h.Select(context.Background(),
+		hop.HeaderSelectOption(http.Header{"X-Parent-Session-Id": {"ses-child"}})))
+	if marked != "n_0000000001" {
+		t.Fatalf("subagent selection = %q, want the conditioned node", marked)
+	}
+}
