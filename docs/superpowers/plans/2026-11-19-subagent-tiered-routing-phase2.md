@@ -261,12 +261,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): route subagent traffi
 
 **Implementation record — Task 2**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. The mechanism works end to end and the no-op is pinned.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `91602c01`; this record follows it.
+- Files changed: `internal/agent/agent.go` (`SubagentRule()`, generated from the marker table); `internal/agent/agent_test.go` (`TestSubagentRuleMatchesEveryMarker`); `internal/gateway/build.go` (`bindingOrder` class tier, the shared immutable subagent matcher compiled once per build, per-binding `xhop.NewHopEntry` matcher); `internal/gateway/bindings_test.go` (`TestBindingOrderClassTier`, `TestSelectionByClass` with three marker subtests plus a lead subtest, `TestSelectionByClassFallsBackWhenProbeFails`, `TestBuildNoWhenIsNilMatcher`, `classFixture`, `postModelWithHeader`).
+- Tests/commands and results: RED — `TestBindingOrderClassTier` → `order = [1 3 0 2], want [1 2 3 0]` (the probe tier overrode the class tier); `TestSubagentRuleMatchesEveryMarker` → `undefined: agent.SubagentRule`. GREEN — both pass, then `GOWORK=off go test ./internal/gateway ./internal/agent -count=1` → both `ok` (11.6s / 0.004s); `go build ./...`, `go vet ./...`, `gofmt -l` → clean. Revert-proof — with the matcher assignment broken (`m = nil`), `TestSelectionByClass/lead_request` fails, so the test really guards the wiring; the first attempt at that proof was a no-op patch (the assignment was immediately overwritten) and was redone correctly.
+- Review findings and fixes: x's `xhop.HopEntry` does not expose its matcher, so the planned `HasMatcher()` assertion is impossible; `TestBuildNoWhenIsNilMatcher` proves the no-op behaviorally instead (a marker-carrying request still follows plain configuration order).
+- Deferred items/limitations: `bindingOrder` now reports unreachable probe-less bindings per tier; the build's warning text still says "probe-less binding", which is accurate for both tiers.
 
 ---
 
