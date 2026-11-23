@@ -545,12 +545,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): edit the binding traffic 
 
 **Implementation record — Task 6**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. The console edits the class, labels conditioned edges, and shows marker health.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `c2de7914`; this record follows it.
+- Files changed: `web/src/api/types.ts` (`EntrypointRoute.when`, `EntrypointHealthBinding.when`, `SubagentHealthRow`); `web/src/api/client.ts` (`getSubagentHealth`); `web/src/pages/Edit.tsx` (`EntrypointBindingRow.when`, the class select, rows and inputs carrying the class); `web/src/pages/edges.tsx` (`BindingEdgeState.conditioned`, class label joined with the fallback label); `web/src/pages/Entrypoints.tsx` (marker-health card and its polling); `web/src/locales/en-US.ts` (six strings); tests in `client.test.ts`, `Entrypoints.test.tsx`, `Entrypoints.dom.test.tsx`, `edges.test.tsx`, `Edit.test.tsx`.
+- Tests/commands and results: RED — `getSubagentHealth` missing, `moveBinding` missing, the edges fixtures failing on the new `conditioned` key, `Edit.test.tsx` failing its no-CJK guard on the untranslated `流量类别`/`不限`. GREEN — `npm test` → 51 files / 502 tests pass; `npx tsc --noEmit` clean; `npm run build` → built in 9.39s. Revert-proof — removing the `regressed` branch makes the DOM test fail (`expected … to contain '未见到标记'`).
+- Review findings and fixes: `ListCard` accepts no children, so the marker-health block is a `Card`; the class select needed its own `流量类别` label string in both locales or the repo's no-CJK-in-English guard fails; the two existing `edges.test.tsx` fixtures assert the whole state object, so they were updated with `conditioned: false` rather than weakening the assertion.
+- Deferred items/limitations: no browser visual regression suite exists; the console is verified by Vitest, TypeScript and the production build only. The topology edge panel edits the class through the shared `EntrypointBindingsField`, not through a separate edge form.
 
 ---
 
