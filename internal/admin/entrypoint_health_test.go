@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ginuerzh/cuttle/internal/config"
 	"github.com/ginuerzh/cuttle/internal/health"
 )
 
@@ -133,5 +134,70 @@ func TestEntrypointHealthDraftEntrypoint(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(body)); got != "[]" {
 		t.Fatalf("body = %s, want []", got)
+	}
+}
+
+// TestEntrypointWhenRoundTrip pins the config path: `when` survives PUT then
+// GET, and a second PUT that omits it makes every binding unconditional.
+func TestEntrypointWhenRoundTrip(t *testing.T) {
+	base, client, csrf := setupRouteFixtures(t)
+	fastID := routeID(t, client, base, "fast")
+	defaultID := routeID(t, client, base, "default")
+
+	body := `[{"name":"claude","match":["*"],"routes":[{"route":"` + fastID + `","when":"subagent"},{"route":"` + defaultID + `"}]}]`
+	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", body, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("put entrypoints = %d", resp.StatusCode)
+	}
+
+	list := doJSON(t, client, http.MethodGet, base+"/api/entrypoints", "", "")
+	var got []config.Entrypoint
+	if err := jsonDecode(list.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || len(got[0].Routes) != 2 {
+		t.Fatalf("entrypoints = %+v, want one entry with two bindings", got)
+	}
+	if got[0].Routes[0].When != config.BindingWhenSubagent {
+		t.Fatalf("routes[0].When = %q, want %q", got[0].Routes[0].When, config.BindingWhenSubagent)
+	}
+	if got[0].Routes[1].When != "" {
+		t.Fatalf("routes[1].When = %q, want empty", got[0].Routes[1].When)
+	}
+
+	plain := `[{"name":"claude","match":["*"],"routes":[{"route":"` + fastID + `"},{"route":"` + defaultID + `"}]}]`
+	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", plain, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("put entrypoints (plain) = %d", resp.StatusCode)
+	}
+	list = doJSON(t, client, http.MethodGet, base+"/api/entrypoints", "", "")
+	got = nil
+	if err := jsonDecode(list.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	for i, b := range got[0].Routes {
+		if b.When != "" {
+			t.Fatalf("routes[%d].When = %q after an omitting PUT, want empty", i, b.When)
+		}
+	}
+}
+
+// TestEntrypointWhenJSONKey pins the wire name: the console reads `when`, so a
+// struct tag regression to `When` would silently break the binding editor.
+func TestEntrypointWhenJSONKey(t *testing.T) {
+	base, client, csrf := setupRouteFixtures(t)
+	fastID := routeID(t, client, base, "fast")
+	defaultID := routeID(t, client, base, "default")
+
+	body := `[{"name":"claude","match":["*"],"routes":[{"route":"` + fastID + `","when":"subagent"},{"route":"` + defaultID + `"}]}]`
+	if resp := doJSON(t, client, http.MethodPut, base+"/api/entrypoints", body, csrf); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("put entrypoints = %d", resp.StatusCode)
+	}
+
+	list := doJSON(t, client, http.MethodGet, base+"/api/entrypoints", "", "")
+	raw, err := io.ReadAll(list.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"when":"subagent"`) {
+		t.Fatalf("payload = %s, want a lowercase when key", raw)
 	}
 }
