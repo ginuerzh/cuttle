@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { setActiveLang } from '../i18n';
-import type { ConfigResponse, EntrypointHealth } from '../api/types';
-import { EntrypointsPage } from './Entrypoints';
+import type { ConfigResponse, Entrypoint, EntrypointHealth } from '../api/types';
+import { EntrypointsPage, reorderEntrypoints } from './Entrypoints';
+import { disconnectEntrypointBinding } from './drafts';
 
 setActiveLang('zh-CN');
 
@@ -122,5 +123,34 @@ describe('EntrypointsPage', () => {
     expect(fallbackHtml).toContain('Fallback');
     expect(fallbackHtml).toContain('● manual');
     expect(healthyHtml + fallbackHtml).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+});
+
+describe('binding class', () => {
+  it('keeps the class through a reorder and a delete', () => {
+    const e: Entrypoint = {
+      id: 'e_0000000001', name: 'claude', match: ['*'],
+      routes: [
+        { route: 'r_0000000001', when: 'subagent' },
+        { route: 'r_0000000002' },
+      ],
+    };
+    const reordered = { ...e, routes: reorderEntrypoints(e.routes ?? [], 0, 1) };
+    expect(reordered.routes.map((b) => b.when ?? '')).toEqual(['', 'subagent']);
+
+    const deleted = disconnectEntrypointBinding(reordered, 'r_0000000002');
+    expect(deleted.routes).toHaveLength(1);
+    expect(deleted.routes[0].when).toBe('subagent');
+  });
+
+  it('keeps the class when a binding is reordered back', () => {
+    const e: Entrypoint = {
+      id: 'e_0000000001', name: 'claude', match: ['*'],
+      routes: [
+        { route: 'r_0000000001' },
+        { route: 'r_0000000002', when: 'subagent' },
+      ],
+    };
+    expect(reorderEntrypoints(e.routes ?? [], 1, 0)[0].when).toBe('subagent');
   });
 });

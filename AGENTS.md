@@ -85,9 +85,11 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   draft: the entrypoint still claims its models (by specificity), but every
   matching request fails with a 5xx (x returns 502 for the zero-node hop) and is
   recorded as unrouted. `*` is an explicit catch-all.
-- A binding is `{route, probe?}` and holds a route id, never a display name.
-  Bindings are inline config: they have no id and are never addressable through
-  an API path. Duplicate route ids inside one entrypoint are rejected.
+- A binding is `{route, probe?, when?}` and holds a route id, never a display
+  name. `when` is either empty or `subagent`; it restricts the binding to one
+  traffic class. Bindings are inline config: they have no id and are never
+  addressable through an API path. Duplicate route ids inside one entrypoint
+  are rejected.
 - Selection priority is by category, then by order: probed bindings are tried
   first in declaration order, then every probe-less binding in declaration
   order. A binding without a `probe` is legal in any position and any number of
@@ -122,15 +124,40 @@ Entrypoint -> ordered route bindings -> Route -> Node -> Provider model
   inner group, which is the first probed binding. Both are accepted behavior;
   never return a 502 for this case and do not add a cuttle dispatcher to change
   it.
-- `GET /api/entrypoints/health` emits `bindings[]` in the same priority order
-  (probed in configuration order, then probe-less), keeps `index` as the
-  configuration index, and sets `fallback` only when at least one binding has a
-  probe and none of the probed bindings is eligible. An entrypoint with only
-  probe-less bindings serves the first one with `fallback: false`.
-- Only the request body's `model` field is matched for routing. Paths never
-  affect entrypoint precedence or binding choice; they only select the upstream
-  wire API inside a matched entrypoint. There is no host matching and no
-  client-model pass-through.
+- `GET /api/entrypoints/health` emits `bindings[]` in the same priority order as
+  the data plane (class-conditioned bindings first, then unconditional ones,
+  and inside each tier probed before probe-less, each in configuration order),
+  keeps `index` as the configuration index, and sets `fallback` only when at
+  least one **unconditional** binding has a probe and none of the unconditional
+  probed bindings is eligible. `active` is drawn from the unconditional
+  bindings only, so a conditioned binding is never active and never contributes
+  to `fallback`. An entrypoint with only probe-less bindings serves the first
+  one with `fallback: false`.
+- Entrypoint precedence and binding choice are separate decisions. The body's
+  `model` field decides entrypoint precedence and never selects a binding;
+  paths never affect either, they only select the upstream wire API inside a
+  matched entrypoint. There is no host matching and no client-model
+  pass-through.
+- Binding choice consults the subagent marker table in `internal/agent` in
+  addition to probe eligibility. A binding may carry `when: subagent` (the only
+  non-empty value); it then serves only requests carrying one of the marker
+  headers (`x-claude-code-agent-id`, `x-parent-session-id`,
+  `x-openai-subagent`), and every other request uses the bindings without
+  `when`. The rule is generated from the same table `stats` uses to record the
+  class, so the decision and the record cannot drift.
+- The class tier outranks the probe tier: `bindingOrder` feeds conditioned
+  bindings before unconditional ones, and `probePriorityOrder` mirrors it so the
+  health payload cannot disagree with the data plane. Inside each tier the
+  existing rule holds (probed before probe-less, then configuration order).
+- An entrypoint with bindings must keep at least one without `when`, or lead
+  traffic would have no eligible binding and x would answer 502; validation
+  rejects it. A draft (zero bindings) stays valid. A conditioned binding whose
+  probe is ineligible degrades to an unconditional binding; one whose route
+  builds to zero nodes still 502s, exactly as a probed binding does today.
+- `GET /api/subagent/health` is observation only. It cross-tabulates per-client
+  traffic against marker coverage by reading `requests`; it never touches the
+  hop group, the config or any marker the data plane reads, and a `regressed`
+  client changes no routing decision.
 - A route contains only nodes and a strategy (`fifo`, `round`, `random`,
   `sticky`), plus its retry budget (`retries`/`retryCodes`). It does not match
   anything itself.

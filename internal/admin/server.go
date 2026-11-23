@@ -183,6 +183,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/routes/{id}", s.handleDeleteRoute)
 	api.HandleFunc("GET /api/entrypoints", s.handleGetEntrypoints)
 	api.HandleFunc("GET /api/entrypoints/health", s.handleEntrypointHealth)
+	api.HandleFunc("GET /api/subagent/health", s.handleSubagentHealth)
 	api.HandleFunc("PUT /api/entrypoints", s.handlePutEntrypoints)
 	api.HandleFunc("GET /api/gateway-keys", s.handleListGatewayKeys)
 	api.HandleFunc("POST /api/gateway-keys", s.handleCreateGatewayKey)

@@ -1,4 +1,4 @@
-import type { Alert, AttemptRow, CaptureRule, ConfigResponse, Entrypoint, EntrypointHealth, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, SeriesResponse, TopologyPosition } from './types';
+import type { Alert, AttemptRow, CaptureRule, ConfigResponse, Entrypoint, EntrypointHealth, ErrorSummary, GatewayKey, GatewayKeySecret, GatewayKeyUsageResponse, GraphMetrics, Health, Node, Preset, ProbeResult, Provider, ProviderKeyInput, ProviderModel, ProviderUsageResponse, RequestRow, Route, RouteHealth, SeriesResponse, SubagentHealthRow, TopologyPosition } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -385,4 +385,15 @@ export function clearAuthFailures(): Promise<void> {
 
 export function changePassword(oldPassword: string, newPassword: string): Promise<void> {
   return request<void>('PUT', '/api/admin/password', { oldPassword, newPassword });
+}
+
+/** Per-client subagent marker coverage; observation only, never a routing input. */
+export function getSubagentHealth(q: { from: Date; to: Date }): Promise<SubagentHealthRow[]> {
+  const params = new URLSearchParams({
+    from: q.from.toISOString(),
+    to: q.to.toISOString(),
+  });
+  return request<SubagentHealthRow[] | null>('GET', `/api/subagent/health?${params.toString()}`).then(
+    (rows) => rows ?? [],
+  );
 }

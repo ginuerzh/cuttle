@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/go-gost/core/routing"
+	xrouting "github.com/go-gost/x/routing"
+
 	"github.com/ginuerzh/cuttle/internal/agent"
 )
 
@@ -45,5 +48,27 @@ func TestClassifyPrecedence(t *testing.T) {
 	h.Set("x-claude-code-agent-id", "agent-7")
 	if got, _ := agent.Classify(h); got != agent.SourceClaudeCode {
 		t.Fatalf("Classify = %q want %q (table order)", got, agent.SourceClaudeCode)
+	}
+}
+
+func TestSubagentRuleMatchesEveryMarker(t *testing.T) {
+	m, err := xrouting.NewMatcher(agent.SubagentRule())
+	if err != nil {
+		t.Fatalf("rule does not parse: %v", err)
+	}
+	for _, h := range []string{"x-claude-code-agent-id", "x-parent-session-id", "x-openai-subagent"} {
+		req := &routing.Request{Header: http.Header{}}
+		req.Header.Set(h, "v")
+		if !m.Match(req) {
+			t.Fatalf("rule missed %q", h)
+		}
+	}
+	if m.Match(&routing.Request{Header: http.Header{}}) {
+		t.Fatal("rule matched a marker-less request")
+	}
+	// An empty-valued marker must match: x tests map-key presence.
+	req := &routing.Request{Header: http.Header{"X-Openai-Subagent": {""}}}
+	if !m.Match(req) {
+		t.Fatal("rule missed an empty-valued marker")
 	}
 }

@@ -1187,9 +1187,10 @@ cheap `hasCapture` flag and never carries `attempts`.
 
 Every request row records whether the caller was a subagent and which client
 said so: `subagent` (0/1) and `subagent_source` (`claude_code`, `opencode`,
-`codex`, or empty). The class is measured only — nothing routes on it yet — and
-it is derived at record time from the client headers, so a request that fails
-before a node still carries it. No raw header value is stored on the row.
+`codex`, or empty). It is derived at record time from the client headers, so a
+request that fails before a node still carries it. No raw header value is stored
+on the row. The class can also drive routing — see "Routing subagents
+separately" below.
 
 | Client | Session identity | Subagent marker | Notes |
 | --- | --- | --- | --- |
@@ -1202,10 +1203,68 @@ shows the value that produced the class. The request row never stores them; the
 detail drawer shows `标记来源` when a request carried one, and the Sessions page
 has a `子代理` filter.
 
-Workflow: filter Sessions by `subagent=1` for a week and compare the request and
-token shares against the totals. Only if the share is significant is it worth
-splitting traffic by class (the `when` design in
-`docs/superpowers/specs/2026-11-19-subagent-tiered-routing-design.md`, phase 2).
+Workflow: filter Sessions by `subagent=1` and compare the request and token
+shares against the totals. The measured split tells you how much routability
+buys; it does not decide whether the mechanism is worth having.
+
+`GET /api/subagent/health?from=&to=` reports, per known client, how much traffic
+it sent and how much carried its marker: `{"source","client","requests",
+"marked","markedPct","status"}`. `status` is `ok` (traffic and markers),
+`absent` (no traffic in the window) or `regressed` (traffic but no marker — a
+harness that stopped sending it, such as OpenCode #42694). A non-agent client
+that legitimately sends no marker also reads `regressed`; the marker is expected
+only for agent clients. An unparsable `from`/`to` is a `400`. This endpoint is
+observation only and never changes a routing decision.
+
+### Routing subagents separately
+
+A route binding may carry `when: subagent`. The value is the only non-empty one;
+a binding without it serves every request.
+
+```yaml
+entrypoints:
+  - id: e_7h2kq9v3xa
+    name: claude
+    match: [claude-*]
+    routes:
+      - route: r_worker          # subagents
+        when: subagent
+      - route: r_lead            # everything else, and the fallback
+```
+
+Selection: conditioned bindings are tried before unconditional ones, and inside
+each tier probed bindings come before probe-less ones (the existing rule). So a
+subagent request takes its own binding whenever that binding is eligible, and
+everything else takes an unconditional binding. A conditioned binding whose
+probe is ineligible hands its traffic to an unconditional binding; a conditioned
+binding whose **route builds to zero nodes** still answers 502 — the same as a
+probed binding today — so check the route before switching a class onto it.
+
+An entrypoint with bindings must keep at least one without `when`; otherwise lead
+traffic would have nothing eligible and every request would 502, so validation
+rejects it. A draft entrypoint (no bindings at all) stays valid.
+
+**What this is, and what it is not.** `when` makes the two classes independently
+routable — a scheduling capability. What each route carries is your choice, and
+all of these use the same mechanism:
+
+| Use | The two routes carry |
+| --- | --- |
+| Isolation | the same model and provider, so a subagent burst cannot exhaust the lead conversation's quota or trip its failure markers |
+| Tiered model | a frontier model for lead, a cheap one for subagents |
+| Tiered capacity | a free or capacity-limited pool for subagents, a guaranteed one for lead |
+
+Saving money depends on the two tiers differing in price; isolation, quota
+separation and per-tier attribution hold at equal price.
+
+Two caveats. **Prompt cache**: a cache is per model, so alternating models
+between adjacent requests invalidates both sides. Route by class (long
+stretches), not per turn, or the savings can be eaten by cache misses — the
+observed baseline is a ~97.5% cache hit rate on both classes, so there is
+something to lose. **Marker trust**: the marker headers are client-controlled,
+so any holder of a gateway key can claim `subagent`. That is accepted for a
+self-hosted gateway; do not hand a key to someone who must not reach the
+subagent route.
 
 `GET /api/stats/series` returns the session trend for a window as
 `{"bucket":"<duration>","points":[{"bucket":"<RFC3339>","requests":n,"errors":m}]}`.

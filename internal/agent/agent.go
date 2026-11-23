@@ -4,7 +4,10 @@
 // work compiles its matcher from the same table, so the two cannot drift.
 package agent
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 // Source labels identify which client's marker a request carried. They are
 // stored as stats.subagent_source and must stay stable.
@@ -40,4 +43,15 @@ func Classify(h http.Header) (source string, subagent bool) {
 		}
 	}
 	return "", false
+}
+
+// SubagentRule returns the x routing rule that matches any subagent marker. It
+// is generated from the same table Classify uses, so the dispatch decision and
+// the recorded class cannot drift.
+func SubagentRule() string {
+	clauses := make([]string, 0, len(markers))
+	for _, m := range markers {
+		clauses = append(clauses, `Header("`+m.header+`")`)
+	}
+	return strings.Join(clauses, " || ")
 }

@@ -2502,3 +2502,60 @@ func TestApplyDefaultsUsageSampleInterval(t *testing.T) {
 		})
 	}
 }
+
+// bindingsFixture is topologyFixture with a second route and the given route
+// bindings on its single entrypoint.
+func bindingsFixture(bindings []RouteBinding) *Config {
+	c := topologyFixture()
+	second := Route{
+		ID: fixtureID(identity.Route, "route2"), Name: "route2",
+		Nodes: []string{fixtureID(identity.Node, "node")},
+	}
+	c.Routes = append(c.Routes, second)
+	c.Entrypoints[0].Routes = bindings
+	return c
+}
+
+func TestValidateUnknownWhen(t *testing.T) {
+	cfg := bindingsFixture([]RouteBinding{
+		{Route: fixtureID(identity.Route, "route"), When: "lead"},
+		{Route: fixtureID(identity.Route, "route2")},
+	})
+	err := Validate(cfg)
+	if err == nil || !strings.Contains(err.Error(), `when must be "" or "subagent"`) {
+		t.Fatalf("err = %v, want a when rejection", err)
+	}
+	if !strings.Contains(err.Error(), `routes[0]`) {
+		t.Fatalf("err = %v, want the binding index", err)
+	}
+}
+
+func TestValidateServability(t *testing.T) {
+	cfg := bindingsFixture([]RouteBinding{
+		{Route: fixtureID(identity.Route, "route"), When: "subagent"},
+	})
+	err := Validate(cfg)
+	if err == nil || !strings.Contains(err.Error(), "at least one binding without when") {
+		t.Fatalf("err = %v, want a servability rejection", err)
+	}
+	if !strings.Contains(err.Error(), `"entry"`) {
+		t.Fatalf("err = %v, want the entrypoint name", err)
+	}
+}
+
+func TestValidateDraftExempt(t *testing.T) {
+	cfg := bindingsFixture(nil)
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("draft entrypoint must stay valid, got %v", err)
+	}
+}
+
+func TestValidateWhenAccepted(t *testing.T) {
+	cfg := bindingsFixture([]RouteBinding{
+		{Route: fixtureID(identity.Route, "route"), When: "subagent"},
+		{Route: fixtureID(identity.Route, "route2")},
+	})
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+}

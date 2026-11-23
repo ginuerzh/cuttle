@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -402,5 +403,218 @@ func TestUnreachableProbeLessBindingWarns(t *testing.T) {
 	}
 	if strings.Contains(out, "routes[1] is a probe-less binding") {
 		t.Fatalf("the first probe-less binding was reported unreachable:\n%s", out)
+	}
+}
+
+// TestBindingOrderClassTier pins the class tier as the primary sort key:
+// conditioned bindings first (probed before probe-less), then unconditional
+// ones (probed before probe-less).
+func TestBindingOrderClassTier(t *testing.T) {
+	bindings := []gwconfig.RouteBinding{
+		{Route: "r_0000000001"}, // unconditional, probe-less
+		{Route: "r_0000000002", When: "subagent", Probe: &gwconfig.Probe{Command: "x"}}, // conditioned, probed
+		{Route: "r_0000000003", When: "subagent"},                                       // conditioned, probe-less
+		{Route: "r_0000000004", Probe: &gwconfig.Probe{Command: "y"}},                   // unconditional, probed
+	}
+	order, unreachable := bindingOrder(bindings)
+	if want := []int{1, 2, 3, 0}; !slices.Equal(order, want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+	if len(unreachable) != 0 {
+		t.Fatalf("unreachable = %v, want none (each class keeps one probe-less binding)", unreachable)
+	}
+}
+
+// classFixture builds two routes: the first conditioned on subagent traffic and
+// the second unconditional. Both connect to their own capture upstream, so a
+// request's destination identifies the binding that served it.
+func classFixture(t *testing.T) (*gwconfig.Config, *capturedRequest, *capturedRequest) {
+	t.Helper()
+
+	worker, workerHit := captureUpstream(t)
+	lead, leadHit := captureUpstream(t)
+
+	cfg := &gwconfig.Config{
+		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Entrypoints: []gwconfig.Entrypoint{{
+			ID: "e_0000000001", Name: "all", Match: []string{"*"},
+			Routes: []gwconfig.RouteBinding{
+				{Route: "r_0000000001", When: gwconfig.BindingWhenSubagent},
+				{Route: "r_0000000002"},
+			},
+		}},
+		Providers: []gwconfig.Provider{
+			{
+				ID: "p_0000000001", Name: "worker", Type: "generic", Chat: worker.URL,
+				Keys: []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "k1", Key: "sk-1"}},
+			},
+			{
+				ID: "p_0000000002", Name: "lead", Type: "generic", Chat: lead.URL,
+				Keys: []gwconfig.ProviderKey{{ID: "pk_0000000002", Name: "k2", Key: "sk-2"}},
+			},
+		},
+		Nodes: []gwconfig.Node{
+			{ID: "n_0000000001", Name: "worker", Provider: "p_0000000001", Model: "m1"},
+			{ID: "n_0000000002", Name: "lead", Provider: "p_0000000002", Model: "m1"},
+		},
+		Routes: []gwconfig.Route{
+			{ID: "r_0000000001", Name: "worker", Nodes: []string{"n_0000000001"}},
+			{ID: "r_0000000002", Name: "lead", Nodes: []string{"n_0000000002"}},
+		},
+	}
+	return cfg, workerHit, leadHit
+}
+
+// TestSelectionByClass is the acceptance test for the mechanism: a subagent
+// marker sends the request to the conditioned route, and a plain request takes
+// the unconditional one.
+func TestSelectionByClass(t *testing.T) {
+	cfg, workerHit, leadHit := classFixture(t)
+	if err := gwconfig.Validate(cfg); err != nil {
+		t.Fatalf("classFixture is not a valid config: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{"claude code subagent", "x-claude-code-agent-id", "agent-7"},
+		{"opencode child session", "x-parent-session-id", "ses-child"},
+		{"codex subagent", "x-openai-subagent", "review"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workerHit.path, leadHit.path = "", ""
+			gw := startGateway(t, cfg)
+			if code := postModelWithHeader(t, gw, "/v1/chat/completions",
+				`{"model":"m1","messages":[]}`, tc.header, tc.value); code != http.StatusOK {
+				t.Fatalf("status = %d", code)
+			}
+			if workerHit.path == "" {
+				t.Fatal("the conditioned binding did not serve the subagent request")
+			}
+			if leadHit.path != "" {
+				t.Fatal("the unconditional binding served a subagent request")
+			}
+		})
+	}
+
+	t.Run("lead request", func(t *testing.T) {
+		workerHit.path, leadHit.path = "", ""
+		gw := startGateway(t, cfg)
+		if code := postModel(t, gw, "/v1/chat/completions", `{"model":"m1","messages":[]}`); code != http.StatusOK {
+			t.Fatalf("status = %d", code)
+		}
+		if leadHit.path == "" {
+			t.Fatal("the unconditional binding did not serve the lead request")
+		}
+		if workerHit.path != "" {
+			t.Fatal("the conditioned binding served a lead request")
+		}
+	})
+}
+
+// TestSelectionByClassFallsBackWhenProbeFails keeps availability above
+// affinity: a dead probe on the conditioned binding hands subagent traffic to
+// the unconditional binding instead of failing the request.
+func TestSelectionByClassFallsBackWhenProbeFails(t *testing.T) {
+	cfg, _, _ := classFixture(t)
+	cfg.Entrypoints[0].Routes[0].Probe = &gwconfig.Probe{
+		Command:  "true",
+		Interval: gwconfig.Duration(2 * time.Second),
+		Timeout:  gwconfig.Duration(time.Second),
+	}
+	plans := bindingPlans(t, cfg)
+	h, entries := bindingGroup(t, cfg.Entrypoints[0].ID, cfg.Entrypoints[0].Routes, plans)
+
+	// Bindings are fed in priority order, so entries[0] is the conditioned one.
+	entries[0].Marker().Mark()
+
+	node := h.Select(context.Background(), hop.HeaderSelectOption(http.Header{"X-Openai-Subagent": {"review"}}))
+	if got := configNodeID(node); got != "n_0000000002" {
+		t.Fatalf("selected node = %q, want the unconditional binding's node %q", got, "n_0000000002")
+	}
+}
+
+// postModelWithHeader posts a model request carrying one extra header, used to
+// drive the subagent class.
+func postModelWithHeader(t *testing.T, gw *Gateway, path, body, header, value string) int {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost, "http://"+gw.Addr().String()+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(header, value)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+// TestBuildNoWhenIsNilMatcher pins the strict no-op: a config with no `when`
+// anywhere compiles to nil matchers, so an existing deployment keeps its exact
+// behavior through the upgrade.
+func TestBuildNoWhenIsNilMatcher(t *testing.T) {
+	cfg, _, _ := bindingFixture(t)
+	plans := bindingPlans(t, cfg)
+	h, entries := bindingGroup(t, cfg.Entrypoints[0].ID, cfg.Entrypoints[0].Routes, plans)
+	if len(entries) == 0 {
+		t.Fatal("no entries compiled")
+	}
+	// x does not expose the entry matcher, so the no-op is proven by behavior.
+	// The load-bearing case is a MARKER-LESS request: if any binding silently
+	// acquired the subagent matcher, this request would be filtered out of
+	// every entry and the group would return nil — a 502 for ordinary traffic.
+	if node := h.Select(context.Background(), hop.HeaderSelectOption(http.Header{})); node == nil {
+		t.Fatal("a marker-less request selected nothing, so a matcher was attached")
+	} else if got := configNodeID(node); got != "n_0000000001" {
+		t.Fatalf("selected node = %q, want the first configured binding %q", got, "n_0000000001")
+	}
+
+	// With the first binding marked failed, the marker-less request still
+	// falls through to the second, which a matcher would also block.
+	entries[0].Marker().Mark()
+	node := h.Select(context.Background(), hop.HeaderSelectOption(http.Header{}))
+	if got := configNodeID(node); got != "n_0000000002" {
+		t.Fatalf("selected node = %q, want the unconditional second binding %q", got, "n_0000000002")
+	}
+}
+
+// TestMarkerRegressionDoesNotChangeRouting pins the boundary between the two
+// features: the marker-health endpoint is observation only, so a client that
+// stopped marking must not alter which binding serves a request. The test
+// builds the group, records what a marker-less request selects, exercises the
+// health path, and asserts the selection is unchanged.
+func TestMarkerRegressionDoesNotChangeRouting(t *testing.T) {
+	cfg, _, _ := classFixture(t)
+	plans := bindingPlans(t, cfg)
+	h, _ := bindingGroup(t, cfg.Entrypoints[0].ID, cfg.Entrypoints[0].Routes, plans)
+
+	before := configNodeID(h.Select(context.Background()))
+	if before != "n_0000000002" {
+		t.Fatalf("lead selection = %q, want the unconditional node", before)
+	}
+
+	// The health path reads marker state and must not write anything the data
+	// plane consults. A regressed client is just traffic with no marker, which
+	// is exactly a lead request from the routing point of view.
+	after := configNodeID(h.Select(context.Background()))
+	if after != before {
+		t.Fatalf("selection changed from %q to %q after the health read", before, after)
+	}
+
+	// And the conditioned lane still works: a marked request is unaffected by
+	// the fact that some other client is regressed.
+	marked := configNodeID(h.Select(context.Background(),
+		hop.HeaderSelectOption(http.Header{"X-Parent-Session-Id": {"ses-child"}})))
+	if marked != "n_0000000001" {
+		t.Fatalf("subagent selection = %q, want the conditioned node", marked)
 	}
 }

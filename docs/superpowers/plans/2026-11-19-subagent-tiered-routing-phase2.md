@@ -45,7 +45,7 @@
 - Produces: `const BindingWhenSubagent = "subagent"` (exported, so the gateway and the admin layer name it once).
 - Produces: validation rules — unknown `when` rejected; at least one binding without `when` required unless the entrypoint has zero bindings.
 
-- [ ] **Step 1: Write the failing validation tests**
+- [x] **Step 1: Write the failing validation tests**
 
 ```go
 func TestValidateUnknownWhen(t *testing.T) {
@@ -92,12 +92,12 @@ func TestValidateWhenAccepted(t *testing.T) {
 
 `validConfigWithBindings` is a small local helper building a minimal valid config (one provider, two nodes, two routes, one entrypoint with the given bindings) in the style of the existing config tests; add it once at the bottom of the test file if a similar helper does not already exist.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/config -run 'TestValidateUnknownWhen|TestValidateServability|TestValidateDraftExempt|TestValidateWhenAccepted' -count=1`
 Expected: FAIL with `unknown field When in struct literal of type config.RouteBinding`.
 
-- [ ] **Step 3: Implement the field and the rules**
+- [x] **Step 3: Implement the field and the rules**
 
 Add to `RouteBinding`:
 
@@ -128,12 +128,12 @@ return fmt.Errorf("entrypoint %q: at least one binding without when is required"
 
 `expandEnv` must not touch `When` (it is an enum, not a reference).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/config -count=1`
 Expected: PASS (including the existing schema tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add internal/config/config.go internal/config/config_test.go
@@ -142,12 +142,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(config): add the subagent-only 
 
 **Implementation record — Task 1**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. `when` is in the schema, validated, and both failure modes are pinned.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `969b607e`; this record follows it.
+- Files changed: `internal/config/config.go` (`RouteBinding.When`, `BindingWhenSubagent`, trim in `applyDefaults`, the `when` enum check and the servability check in `Validate`); `internal/config/config_test.go` (`bindingsFixture` helper plus `TestValidateUnknownWhen`, `TestValidateServability`, `TestValidateDraftExempt`, `TestValidateWhenAccepted`).
+- Tests/commands and results: RED — `GOWORK=off go test ./internal/config -run 'TestValidateUnknownWhen|TestValidateServability|TestValidateDraftExempt|TestValidateWhenAccepted' -count=1` → FAIL (`unknown field When in struct literal of type RouteBinding`). GREEN — same command → all four PASS. Package gate — `GOWORK=off go test ./internal/config -count=1` → `ok ... 0.723s`; `gofmt -l internal/config` → no output.
+- Review findings and fixes: the plan sketched `cfg.Validate()` but this repository exposes `config.Validate(cfg)` as a function; the tests use the real signature. The servability check runs after the per-binding loop so a draft (`len(e.Routes) == 0`) is exempt, and an entrypoint whose bindings are all conditioned names itself in the error.
+- Deferred items/limitations: no `when: lead` value by design; `expandEnv` deliberately does not touch `When` (it is an enum, not a reference).
 
 ---
 
@@ -163,7 +163,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(config): add the subagent-only 
 - Produces: `agent.SubagentRule() string` — the x routing rule text, built from the same table.
 - Produces: `bindingOrder` sorts class-conditioned bindings before unconditional ones, keeping the existing probed-before-probe-less rule inside each tier.
 
-- [ ] **Step 1: Write the failing rule-generator test**
+- [x] **Step 1: Write the failing rule-generator test**
 
 ```go
 func TestSubagentRuleMatchesEveryMarker(t *testing.T) {
@@ -189,7 +189,7 @@ func TestSubagentRuleMatchesEveryMarker(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the failing order test**
+- [x] **Step 2: Write the failing order test**
 
 ```go
 func TestBindingOrderClassTier(t *testing.T) {
@@ -207,12 +207,12 @@ func TestBindingOrderClassTier(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/agent ./internal/gateway -run 'TestSubagentRule|TestBindingOrderClassTier' -count=1`
 Expected: FAIL (`undefined: agent.SubagentRule`; order mismatch).
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `internal/agent/agent.go`: add
 
@@ -229,12 +229,12 @@ building `Header("<name>")` clauses joined with ` || ` in table order.
 
 `bindingOrder`: sort by class first (conditioned before unconditional), then by the existing probed-before-probe-less rule, then configuration order within each of the four groups. Keep the `unreachable` semantics: within the **unconditional** tier only, probe-less bindings after the first are unreachable, exactly as today; conditioned probe-less bindings are unreachable only within their own class tier, and the build keeps one warning per unreachable binding.
 
-- [ ] **Step 5: Run the tests and the package gate**
+- [x] **Step 5: Run the tests and the package gate**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/agent ./internal/gateway -count=1`
 Expected: PASS. Then `GOWORK=off go build ./... && GOWORK=off go vet ./...` → clean.
 
-- [ ] **Step 6: Write the no-op regression test**
+- [x] **Step 6: Write the no-op regression test**
 
 ```go
 func TestBuildNoWhenIsNilMatcher(t *testing.T) {
@@ -245,11 +245,11 @@ func TestBuildNoWhenIsNilMatcher(t *testing.T) {
 
 Assert it through the compiled group's entries (an exported accessor or an in-package test that inspects `entries`). This test protects the fleet during rollout.
 
-- [ ] **Step 7: Write the selection test**
+- [x] **Step 7: Write the selection test**
 
 Using two `httptest` upstreams and the existing gateway fixture style: a request with `x-openai-subagent` reaches the conditioned upstream; a request without it reaches the unconditional upstream; a dead probe on the conditioned binding falls back to the unconditional one. Name it `TestSelectionByClass`.
 
-- [ ] **Step 8: Run the tests and commit**
+- [x] **Step 8: Run the tests and commit**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway ./internal/agent -count=1`
 Expected: PASS.
@@ -261,12 +261,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): route subagent traffi
 
 **Implementation record — Task 2**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. The mechanism works end to end and the no-op is pinned.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `91602c01`; this record follows it.
+- Files changed: `internal/agent/agent.go` (`SubagentRule()`, generated from the marker table); `internal/agent/agent_test.go` (`TestSubagentRuleMatchesEveryMarker`); `internal/gateway/build.go` (`bindingOrder` class tier, the shared immutable subagent matcher compiled once per build, per-binding `xhop.NewHopEntry` matcher); `internal/gateway/bindings_test.go` (`TestBindingOrderClassTier`, `TestSelectionByClass` with three marker subtests plus a lead subtest, `TestSelectionByClassFallsBackWhenProbeFails`, `TestBuildNoWhenIsNilMatcher`, `classFixture`, `postModelWithHeader`).
+- Tests/commands and results: RED — `TestBindingOrderClassTier` → `order = [1 3 0 2], want [1 2 3 0]` (the probe tier overrode the class tier); `TestSubagentRuleMatchesEveryMarker` → `undefined: agent.SubagentRule`. GREEN — both pass, then `GOWORK=off go test ./internal/gateway ./internal/agent -count=1` → both `ok` (11.6s / 0.004s); `go build ./...`, `go vet ./...`, `gofmt -l` → clean. Revert-proof — with the matcher assignment broken (`m = nil`), `TestSelectionByClass/lead_request` fails, so the test really guards the wiring; the first attempt at that proof was a no-op patch (the assignment was immediately overwritten) and was redone correctly.
+- Review findings and fixes: x's `xhop.HopEntry` does not expose its matcher, so the planned `HasMatcher()` assertion is impossible; `TestBuildNoWhenIsNilMatcher` proves the no-op behaviorally instead (a marker-carrying request still follows plain configuration order).
+- Deferred items/limitations: `bindingOrder` now reports unreachable probe-less bindings per tier; the build's warning text still says "probe-less binding", which is accurate for both tiers.
 
 ---
 
@@ -282,7 +282,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): route subagent traffi
 - Produces: `health.Binding.When string` with `json:"when,omitempty"`.
 - Produces: `probePriorityOrder` applies the same class tier as `bindingOrder`.
 
-- [ ] **Step 1: Write the failing agreement test**
+- [x] **Step 1: Write the failing agreement test**
 
 ```go
 func TestOrderAgreement(t *testing.T) {
@@ -295,7 +295,7 @@ func TestOrderAgreement(t *testing.T) {
 
 Derive the probe slice from the same bindings (one `bindingProbe` per binding, `command` empty when the binding has no probe) so the two functions see the same input shape.
 
-- [ ] **Step 2: Write the failing health-field test**
+- [x] **Step 2: Write the failing health-field test**
 
 ```go
 func TestBindingHealthCarriesWhen(t *testing.T) {
@@ -306,12 +306,12 @@ func TestBindingHealthCarriesWhen(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -run 'TestOrderAgreement|TestBindingHealthCarriesWhen' -count=1`
 Expected: FAIL (order differs; `When` field missing).
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `bindingprobe.go`: `probePriorityOrder` takes the binding class into account. Since a `bindingProbe` does not know its binding's `when`, add the field to `bindingProbe` when the set is built (in `buildHopGroup`/the probe-set constructor) and sort by class first, mirroring `bindingOrder`.
 
@@ -319,12 +319,12 @@ Expected: FAIL (order differs; `When` field missing).
 
 `health.go`: add `When string \`json:"when,omitempty"\`` to `Binding`, and extend the type doc to say a conditioned binding is not a candidate for `active` (which stays lead-scoped).
 
-- [ ] **Step 5: Run the package gate**
+- [x] **Step 5: Run the package gate**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/gateway -count=1 && GOWORK=off go build ./...`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add internal/gateway/bindingprobe.go internal/gateway/bindingprobe_test.go internal/health/health.go
@@ -333,12 +333,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): keep entrypoint healt
 
 **Implementation record — Task 3**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. Health order matches the data plane and `active` is lead-scoped.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `160b8ec1`; this record follows it.
+- Files changed: `internal/gateway/bindingprobe.go` (`bindingProbe.when`, populated in `add`, the class tier in `probePriorityOrder` plus `hasConditioned`, `health.Binding.When` in the snapshot, and `active` restricted to unconditional bindings); `internal/health/health.go` (`Binding.When` with the lead-scoped `Active` doc); `internal/gateway/bindingprobe_test.go` (`TestOrderAgreement` across five binding arrangements, `TestBindingHealthCarriesWhen`).
+- Tests/commands and results: RED — build failed first (`unknown field when in struct literal of type bindingProbe`, `byIndex[0].When undefined`), then after adding the field `TestBindingHealthCarriesWhen` failed on behavior: `active route = "r_0000000001", want the unconditional route "r_0000000002"`. GREEN — both pass; `GOWORK=off go test ./internal/gateway ./internal/admin -count=1` → `ok` (13.6s / 19.4s); `go build ./...`, `go vet ./...`, `gofmt -l` → clean.
+- Review findings and fixes: `probePriorityOrder` returned `nil` whenever no binding probed, which would have hidden the class tier in a probe-less entrypoint; it now also reorders when any binding is conditioned (`hasConditioned`). `active` needed its own lead-only scan rather than reading the head of the priority order, since the head is now the conditioned binding. **Correction (final review): `fallback` was NOT scoped to the unconditional subset in this task** — `hasProbe`/`probedEligible` still counted conditioned bindings, so health misreported lead availability in both directions. Fixed in the final-review pass (see below).
+- Deferred items/limitations: when every binding is conditioned — a state validation rejects — the snapshot still reports an `active` rather than panicking, so a hand-built config degrades instead of crashing.
 
 ---
 
@@ -352,7 +352,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): keep entrypoint healt
 - Consumes: `config.RouteBinding.When`.
 - Produces: `GET /api/entrypoints`, `PUT /api/entrypoints`, `PUT /api/config` and the `entrypointHealth` snapshot carry `when` verbatim.
 
-- [ ] **Step 1: Write the failing round-trip test**
+- [x] **Step 1: Write the failing round-trip test**
 
 ```go
 func TestEntrypointWhenRoundTrip(t *testing.T) {
@@ -364,16 +364,16 @@ func TestEntrypointWhenRoundTrip(t *testing.T) {
 
 Also assert `PUT /api/config` preserves `when` (the adopt-or-mint path must not drop a field it does not know).
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/admin -run TestEntrypointWhenRoundTrip -count=1`
 Expected: FAIL (`when` absent from the response).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 The field rides the config struct; if the admin layer builds its own binding payload, add `when` there. Check `handlers_events.go`'s entrypoint health snapshot uses `health.Binding`, which already carries `When` after Task 3.
 
-- [ ] **Step 4: Run the package gate and commit**
+- [x] **Step 4: Run the package gate and commit**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/admin -count=1`
 Expected: PASS.
@@ -385,12 +385,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(admin): round-trip the binding 
 
 **Implementation record — Task 4**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. `when` round-trips through the admin API and the wire key is pinned.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), commit `b51a9938` (tests only — the admin layer needed no production change); this record follows it.
+- Files changed: `internal/admin/entrypoint_health_test.go` (`TestEntrypointWhenRoundTrip`, `TestEntrypointWhenJSONKey`).
+- Tests/commands and results: `GOWORK=off go test ./internal/admin -run 'TestEntrypointWhen' -count=1` → both PASS; package gate `GOWORK=off go test ./internal/admin -count=1` → `ok ... 18.269s`. Revert-proof — removing `json:"when,omitempty"` makes `TestEntrypointWhenJSONKey` fail (`want a lowercase when key`), so the wire name is genuinely guarded.
+- Review findings and fixes: **no production change was needed.** The admin layer marshals `config.Entrypoint` directly, so `when` rode along; the plan's step 3 assumed a separate payload might exist. The first test written (a round-trip through decoded structs) passed even with the JSON tag removed, because Go matches JSON keys case-insensitively — it proved nothing, so `TestEntrypointWhenJSONKey` was added to assert the raw payload contains `"when":"subagent"`.
+- Deferred items/limitations: `PUT /api/config` round-trip is covered by the same shared type; the events snapshot carries `when` via `health.Binding` from Task 3.
 
 ---
 
@@ -409,7 +409,7 @@ git -C /root/code/go-gost/cuttle commit -m "feat(admin): round-trip the binding 
 - Produces: `stats.SubagentHealthRow{Source, Client string; Requests, Marked int64}`.
 - Produces: `GET /api/subagent/health?from=&to=` → `[{"source","client","requests","marked","markedPct","status"}]`, `status ∈ {ok, absent, regressed}`.
 
-- [ ] **Step 1: Write the failing user-agent test**
+- [x] **Step 1: Write the failing user-agent test**
 
 ```go
 func TestClientOf(t *testing.T) {
@@ -428,7 +428,7 @@ func TestClientOf(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the failing store test**
+- [x] **Step 2: Write the failing store test**
 
 ```go
 func TestStoreSubagentHealth(t *testing.T) {
@@ -441,7 +441,7 @@ func TestStoreSubagentHealth(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Write the failing API test**
+- [x] **Step 3: Write the failing API test**
 
 ```go
 func TestSubagentHealthStatus(t *testing.T) {
@@ -451,12 +451,12 @@ func TestSubagentHealthStatus(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they fail**
+- [x] **Step 4: Run the tests to verify they fail**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/agent ./internal/stats ./internal/admin -run 'TestClientOf|TestStoreSubagentHealth|TestSubagentHealthStatus' -count=1`
 Expected: FAIL (`undefined: agent.ClientOf`, etc.).
 
-- [ ] **Step 5: Implement**
+- [x] **Step 5: Implement**
 
 `internal/agent/ua.go`: a small ordered table of `{source, uaPrefix}` (`claude_cli→claude-cli`, `opencode→opencode`, `codex→codex`) and `ClientOf` doing a case-insensitive prefix match on the trimmed UA.
 
@@ -466,12 +466,12 @@ Expected: FAIL (`undefined: agent.ClientOf`, etc.).
 
 **Explicitly**: this handler must not touch the hop group or the config. It is observation only.
 
-- [ ] **Step 6: Run the package gate**
+- [x] **Step 6: Run the package gate**
 
 Run: `cd cuttle && GOWORK=off go test ./internal/agent ./internal/stats ./internal/admin -count=1 && GOWORK=off go build ./... && GOWORK=off go vet ./...`
 Expected: PASS.
 
-- [ ] **Step 7: Write the routing-independence test**
+- [x] **Step 7: Write the routing-independence test**
 
 ```go
 func TestMarkerRegressionDoesNotChangeRouting(t *testing.T) {
@@ -481,7 +481,7 @@ func TestMarkerRegressionDoesNotChangeRouting(t *testing.T) {
 }
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add internal/agent internal/stats internal/admin
@@ -490,12 +490,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(admin): report per-client subag
 
 **Implementation record — Task 5**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. Marker health reports `ok`/`absent`/`regressed` per client and provably does not affect routing.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `ab78adce`; this record follows it.
+- Files changed: `internal/agent/ua.go` (UA→client table, `ClientOf`, `KnownClients`, `SourceOfClient`); `internal/agent/ua_test.go`; `internal/stats/subagenthealth.go` (`SubagentHealthRow`, `Store.SubagentHealth`, grouping by `(user_agent, subagent_source)` and folding labels in Go); `internal/stats/subagenthealth_test.go`; `internal/admin/handlers_subagent.go` (status classification, window validation, union with the marker table); `internal/admin/subagent_test.go`; `internal/admin/server.go` (route registration); `internal/gateway/bindings_test.go` (`TestMarkerRegressionDoesNotChangeRouting`).
+- Tests/commands and results: RED — `undefined: agent.ClientOf` / `agent.KnownClients`, then `s.SubagentHealth undefined` / `undefined: SubagentHealthRow`. GREEN — `GOWORK=off go test ./internal/agent ./internal/stats ./internal/admin ./internal/gateway -count=1` → all four `ok` (0.007s / 31.2s / 21.0s / 19.3s); `go build`, `go vet`, `gofmt -l internal/` → clean.
+- Review findings and fixes: the shared `parseRange` silently falls back to 24h on an unparsable value, which would let a regression check measure a window the operator did not ask for; the new handler validates `from`/`to` itself and answers 400. The store routes through `agent.ClientOf` rather than a SQL `LIKE`, keeping the UA→client mapping in one place.
+- Deferred items/limitations: a legitimately non-agent client (a plain SDK script with traffic) also reports `regressed`; that is accepted and the console wording carries the caveat. Sessions cannot be counted per conversation (`sid` is per request), so this measures requests, not sessions.
 
 ---
 
@@ -511,19 +511,19 @@ git -C /root/code/go-gost/cuttle commit -m "feat(admin): report per-client subag
 - Consumes: `RouteBinding.when`, `BindingHealth.when`, `GET /api/subagent/health`.
 - Produces: a class select (不限 / 子代理) per binding row, a `when` badge on the topology edge label, and one marker-health line per client on the Entrypoints page.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 - `client.test.ts`: `getSubagentHealth` sends `from`/`to` and returns the rows unchanged.
 - `Entrypoints.test.tsx`: the binding editor state carries `when` through a reorder and a delete (pure helper, same style as the existing route-order tests).
 - `Entrypoints.dom.test.tsx`: selecting 子代理 on a binding row and saving sends `when: 'subagent'` in the `PUT /api/entrypoints` body; the marker-health section renders a `regressed` row in the amber state and an `absent` row without it.
 - `i18n.test.ts`: `子代理`, `不限`, `标记健康`, `未见到标记` translate.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd cuttle/web && npm test -- --run src/api/client.test.ts src/pages/Entrypoints.test.tsx src/pages/Entrypoints.dom.test.tsx src/i18n.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `types.ts`: `RouteBinding.when?: '' | 'subagent'`; `BindingHealth.when?: string`; `SubagentHealthRow { source, client, requests, marked, markedPct, status }`.
 `client.ts`: `getSubagentHealth(q)`.
@@ -531,12 +531,12 @@ Expected: FAIL.
 `Topology.tsx`: the `entrypoint → route` edge panel gains the same select; the monitor edge label marks a conditioned binding.
 `locales/en-US.ts`: both sides for every new string.
 
-- [ ] **Step 4: Run the web gate**
+- [x] **Step 4: Run the web gate**
 
 Run: `cd cuttle/web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS, no type errors, bundle builds.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add web/src
@@ -545,12 +545,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): edit the binding traffic 
 
 **Implementation record — Task 6**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. The console edits the class, labels conditioned edges, and shows marker health.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `c2de7914`; this record follows it.
+- Files changed: `web/src/api/types.ts` (`EntrypointRoute.when`, `EntrypointHealthBinding.when`, `SubagentHealthRow`); `web/src/api/client.ts` (`getSubagentHealth`); `web/src/pages/Edit.tsx` (`EntrypointBindingRow.when`, the class select, rows and inputs carrying the class); `web/src/pages/edges.tsx` (`BindingEdgeState.conditioned`, class label joined with the fallback label); `web/src/pages/Entrypoints.tsx` (marker-health card and its polling); `web/src/locales/en-US.ts` (six strings); tests in `client.test.ts`, `Entrypoints.test.tsx`, `Entrypoints.dom.test.tsx`, `edges.test.tsx`, `Edit.test.tsx`.
+- Tests/commands and results: RED — `getSubagentHealth` missing, `moveBinding` missing, the edges fixtures failing on the new `conditioned` key, `Edit.test.tsx` failing its no-CJK guard on the untranslated `流量类别`/`不限`. GREEN — `npm test` → 51 files / 502 tests pass; `npx tsc --noEmit` clean; `npm run build` → built in 9.39s. Revert-proof — removing the `regressed` branch makes the DOM test fail (`expected … to contain '未见到标记'`).
+- Review findings and fixes: `ListCard` accepts no children, so the marker-health block is a `Card`; the class select needed its own `流量类别` label string in both locales or the repo's no-CJK-in-English guard fails; the two existing `edges.test.tsx` fixtures assert the whole state object, so they were updated with `conditioned: false` rather than weakening the assertion.
+- Deferred items/limitations: no browser visual regression suite exists; the console is verified by Vitest, TypeScript and the production build only. The topology edge panel edits the class through the shared `EntrypointBindingsField`, not through a separate edge form.
 
 ---
 
@@ -563,29 +563,29 @@ git -C /root/code/go-gost/cuttle commit -m "feat(web): edit the binding traffic 
 **Interfaces:**
 - Consumes: everything above.
 
-- [ ] **Step 1: Amend the routing invariants in `AGENTS.md`**
+- [x] **Step 1: Amend the routing invariants in `AGENTS.md`**
 
 Replace the sentence that says only the request body's `model` field is matched, with the three-part statement: entrypoint precedence is the body `model` glob; binding choice consults the fixed cuttle-owned subagent marker table in addition to probe eligibility; paths still only select the upstream wire API. Also state the class-tier order and the servability rule.
 
-- [ ] **Step 2: Document the feature in `README.md`**
+- [x] **Step 2: Document the feature in `README.md`**
 
 A `when: subagent` section: the field, the semantics (conditioned bindings first, unconditional always serves, degradation on probe failure only), **what the mechanism is and what it is not** — the two routes are ordinary routes and the operator chooses what each carries (equal-price isolation, tiered model, tiered capacity) — the servability requirement, the cache caveat (route by class and phase shape, never per turn), and the marker-health endpoint including its false-positive behavior for non-agent clients.
 
-- [ ] **Step 3: Add a commented two-class entrypoint to `example.yaml`**
+- [x] **Step 3: Add a commented two-class entrypoint to `example.yaml`**
 
 Keeping the file loadable: it must still pass `config.Load` with the current schema.
 
-- [ ] **Step 4: Verify end-to-end with the equal-price isolation scenario**
+- [x] **Step 4: Verify end-to-end with the equal-price isolation scenario**
 
 The acceptance scenario from the spec: two routes over the **same** model and provider, one bound with `when: subagent` and one unconditional. Drive a real subagent request (opencode child session) and a lead request; confirm each lands on its own route (check the recorded `route` on the request row), that `GET /api/entrypoints/health` reports the conditioned binding with `when: subagent` and `active` naming the unconditional one, and that `GET /api/subagent/health` reports `ok` for opencode. Record the actual route ids and request ids.
 
-- [ ] **Step 5: Run both full gates**
+- [x] **Step 5: Run both full gates**
 
 Run: `cd cuttle && GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1`
 Run: `cd cuttle/web && npm test && npx tsc --noEmit && npm run build`
 Expected: PASS both.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /root/code/go-gost/cuttle add README.md example.yaml AGENTS.md
@@ -594,12 +594,12 @@ git -C /root/code/go-gost/cuttle commit -m "docs: document subagent route bindin
 
 **Implementation record — Task 7**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-23, DONE. Docs updated and the equal-price isolation scenario verified end to end against a real binary.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), this commit (its SHA is in the ledger line).
+- Files changed: `AGENTS.md` (the "only the body model matches" invariant replaced by six clauses covering precedence vs. binding choice, the marker table, the class tier, the servability rule, degradation, and the observation-only boundary); `README.md` (marker-health endpoint plus a "Routing subagents separately" section with the mechanism-vs-use table, the two caveats and the servability rule); `example.yaml` (a commented `when: subagent` binding that keeps the file loadable); this record.
+- Tests/commands and results: `GOWORK=off go build ./... && go vet ./... && go test ./... -count=1` → 15 packages `ok`; `cd web && npm test` → 502 tests, `tsc --noEmit` clean, build 5.13s. **End-to-end (equal-price isolation)**: two `generic` providers over two local echo upstreams on the *same* model, one route bound `when: subagent`, one unconditional, one `*` entrypoint. Result: all three marker headers (`x-claude-code-agent-id`, `x-parent-session-id`, `x-openai-subagent`) reached the worker upstream (3 hits) and the marker-less request reached the lead upstream (1 hit); the rows read `route=r_0000000001 / subagent=1 / source=claude_code|opencode|codex` for the three marked requests and `route=r_0000000002 / subagent=0` for the lead one. `GET /api/entrypoints/health` reported the conditioned row with `when: "subagent"` first in the list, `active.routeId` naming the unconditional route and `fallback:false`. `GET /api/subagent/health` returned `opencode ok (1/1, 100%)`, `claude-code regressed (1 request, 0 marked)` and `codex absent`; `?from=nope` → 400.
+- Review findings and fixes: the admin API is disabled when `admin.passwordHash` is empty, so the local acceptance run had to generate a hash first; an earlier acceptance run had already written rows without a UA, which is why the first `/api/subagent/health` read all three clients as `absent` — the endpoint is correct, the probe was not sending a user agent.
+- Deferred items/limitations: the acceptance used curl with hand-set marker headers, not a live OpenCode/Claude Code session; the marker headers themselves were already verified against real traffic in Phase 1. Cache behaviour under a tiered model was not measured (equal-price isolation has one model). No push.
 
 ---
 

@@ -170,6 +170,8 @@ export interface RouteBindingProbe {
 export interface EntrypointRoute {
   /** Route id this binding points at; it is never a display name. */
   route: string;
+  /** Traffic class this binding serves; absent means any request. */
+  when?: '' | 'subagent';
   /** Optional eligibility probe; absent means the binding only serves when every probe fails. */
   probe?: RouteBindingProbe;
 }
@@ -201,6 +203,8 @@ export interface EntrypointHealthBinding {
   index: number;
   routeId: string;
   routeName: string;
+  /** Traffic class of the binding, absent when unconditional. */
+  when?: string;
   /** Marker state read with the same rule the data plane uses. */
   eligible: boolean;
   last?: EntrypointHealthProbe;
@@ -605,4 +609,17 @@ export interface GatewayKeyUsageResponse {
   to: string;
   totals: KeyUsageCounts;
   keys: GatewayKeyUsage[];
+}
+
+/** One client's subagent marker coverage inside a window. `status` is `ok`,
+ * `absent` (no traffic) or `regressed` (traffic but no marker). */
+export interface SubagentHealthRow {
+  /** Marker source constant, empty when the client has no known marker. */
+  source: string;
+  /** Client label mined from the user agent. */
+  client: string;
+  requests: number;
+  marked: number;
+  markedPct: number;
+  status: 'ok' | 'absent' | 'regressed';
 }
