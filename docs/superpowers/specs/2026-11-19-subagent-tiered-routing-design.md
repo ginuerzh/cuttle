@@ -22,6 +22,57 @@ from a subagent**. That is enough for the gateway to make the two classes
 independently routable, which is a scheduling decision: the operator decides what
 each route carries.
 
+### Subagents are the mainstream shape, so this axis is structural
+
+Every agent harness cuttle serves reaches parallel work through subagents, not
+through a mid-turn model switch:
+
+| Harness | Subagent surface | Wire marker |
+| --- | --- | --- |
+| Claude Code | subagent sessions | `x-claude-code-agent-id` |
+| OpenCode | `subagent` tool, `mode: primary/subagent/all`, built-in Explore/General | `x-parent-session-id` |
+| Codex | `SubAgentSource` (`review`, `compact`, `memory_consolidation`, `collab_spawn`) | `x-openai-subagent` |
+| Antigravity | subagents, `/swarm`, `/teamwork`, `/boost` | (not observed at the gateway) |
+
+The concept is uniform; the header names are not, and there is no sign of
+standardization. `internal/agent` is therefore an **adapter table**: one row per
+harness, maintained as harnesses appear. That cost is real and permanent, and it
+is why the table is the single source of truth rather than a matcher string in
+config.
+
+It also means the split is **structural, not incidental**: subagent traffic grows
+with parallelism (`/swarm`-style fan-out produces more child requests per parent),
+so the share measured today is a floor, not a peak.
+
+Measured on this deployment on 2026-11-23, four days after Phase 1 went live:
+
+| Metric | Subagent share |
+| --- | --- |
+| Requests | **61.0%** (12,779 of 20,958) |
+| Tokens | **36.1%** (1.05B of 2.90B) |
+
+**That asymmetry is the whole argument for calling this scheduling rather than
+saving.** The axis covers six tenths of request volume but only three and a half
+tenths of token volume, because a lead request averages 226k tokens against a
+subagent's 82k — an agent's main session carries the long history that its
+children deliberately start without.
+
+The consequences follow directly:
+
+- For any **per-request** pressure — quota, concurrency, rate limits, `429`
+  storms, blast radius — this axis is strong: it isolates six tenths of the
+  traffic.
+- For **per-token** cost, it is weak today: the token mass sits on the lead side,
+  which is exactly where a stronger (pricier) model belongs. Cost saving appears
+  once a tier actually carries a price difference; it is a use of the axis, never
+  its definition.
+
+A second, quieter consequence: `subagent_source = ''` currently conflates "this
+was a lead request" with "this client sent no marker at all" (OpenCode silently
+dropped all session headers in v1.18.16–v1.18.18, #42694). Phase 2 therefore
+carries a per-client marker-health check, so a harness regression reads as a
+regression instead of as a client that simply never had subagents.
+
 Two questions follow, and they are deliberately separated into two phases:
 
 1. **How much subagent traffic is there?** (Phase 1, observability.) Today the
@@ -73,6 +124,12 @@ request, which class it was and which client marker said so.
   free pool (capacity) — is configuration, not code.
 - `GET /api/entrypoints/health` rows carry `when`; the console lets the operator
   pick the class on both binding editors.
+- **Marker health per client**: `GET /api/subagent/health` reports, per known
+  client, how many requests it sent in the window and how many carried its
+  marker, so a harness that stops sending it (OpenCode #42694, a fork that
+  predates the restore) reads as a regression rather than as "no subagents".
+  A client whose marker count is zero while its request count is not gets a
+  visible warning in the console.
 - Docs: README gains the schema, the client/version matrix and the
   measure-then-enable workflow; `AGENTS.md` amends its "only the body model
   matches" invariant.
@@ -389,7 +446,43 @@ intentional:
 - Validation lives in `config.Validate` next to the existing binding rules, all
   messages naming the entrypoint and binding index.
 
-### 7. Web console
+### 7. Marker health per client (Phase 2)
+
+`subagent_source = ''` cannot currently distinguish a lead request from a client
+that stopped sending its marker. `user_agent` already separates the clients, so
+the gateway can compute the cross-tabulation itself without a new column:
+
+```text
+GET /api/subagent/health?from=&to=
+[{"source":"opencode","client":"opencode","requests":12651,"marked":12651,
+  "markedPct":100,"status":"ok"},
+ {"source":"claude_code","client":"claude-code","requests":1514,"marked":128,
+  "markedPct":8.5,"status":"ok"},
+ {"source":"codex","client":"codex","requests":0,"marked":0,
+  "markedPct":0,"status":"absent"}]
+```
+
+- Grouped by the client inferred from `user_agent` (the existing
+  `parseClientTool`-style prefix match), not by marker source: the question is
+  "does this client mark at all", and a client that never marks has no source
+  rows to group by.
+- `marked` counts rows whose `subagent_source` maps to that client.
+- `status`: `ok` when `requests == 0` or `marked > 0`; `absent` when the client
+  sent no traffic in the window; **`regressed` when `requests > 0 && marked ==
+  0`** — the case that matters.
+- A client that legitimately sends no marker (a plain SDK client, a batch
+  script) also reports `regressed`. That is accepted and the console wording says
+  "no marker seen — expected only for agent clients", because the check exists to
+  catch harness regressions and a false warning is cheaper than a silent one.
+- The window defaults to 24h, is bounded like the other stats endpoints, and
+  reads `requests` only (no rollup change). The console shows it on the
+  Entrypoints page beside the binding list, one line per client, with the
+  `regressed` case in amber.
+- Deliberately **not** a routing input: a regressed marker changes no dispatch,
+  because routing on an unreliable signal would be worse than not routing.
+  Availability of a class is already handled by the binding fallback.
+
+### 8. Web console
 
 **Phase 1**: Sessions page gains a `子代理` filter (全部 / 是 / 否) and the
 request detail shows `标记来源 · <kind>` when the request carries a marker.
@@ -398,7 +491,7 @@ request detail shows `标记来源 · <kind>` when the request carries a marker.
 panel gain a class select (不限 / 子代理); monitor mode labels a conditioned
 binding. Source strings stay Chinese; both locales get every new string.
 
-### 8. Files
+### 9. Files
 
 | File | Phase | Change |
 | --- | --- | --- |
@@ -417,12 +510,15 @@ binding. Source strings stay Chinese; both locales get every new string.
 | `internal/gateway/health` | 2 | `Binding.When`; `active` over unconditional bindings |
 | `internal/gateway/build_test.go` | 2 | matcher wiring, feed order, nil-matcher no-op, order agreement |
 | `internal/admin/handlers.go`, `server.go`, tests | 2 | `when` in payloads, health rows |
-| `web/src/pages/Entrypoints.tsx`, `Topology.tsx`, `types.ts`, `locales` | 2 | class selects, labels |
+| `internal/stats/subagenthealth.go` | 2 | per-client marker cross-tabulation (new) |
+| `internal/admin/handlers_subagent.go` | 2 | `GET /api/subagent/health` (new) |
+| `internal/agent/ua.go` | 2 | user-agent → client label (`claude-code/`, `opencode/`, `codex/`), beside `Classify` |
+| `web/src/pages/Entrypoints.tsx`, `Topology.tsx`, `types.ts`, `locales` | 2 | class selects, marker-health lines |
 | `example.yaml`, `README.md` | 1, 2 | Phase 1 columns and capture note; Phase 2 schema, matrix, workflow |
 | `AGENTS.md` | 2 | amend the "only the body model matches" invariant |
 | this document | 1 | design record |
 
-### 9. Documentation changes
+### 10. Documentation changes
 
 - README (Phase 1): what the two columns mean, that they are measured and not
   routed on, the client/version matrix, and the measurement workflow (filter
@@ -472,6 +568,11 @@ binding. Source strings stay Chinese; both locales get every new string.
   nodes still 502s (documented behavior, asserted so it cannot change silently).
 - Admin/health: `when` in payloads and rows; `active` refers to the first
   eligible unconditional binding.
+- Marker health: a client with traffic and zero marked rows reports
+  `regressed`; a client with traffic and marked rows reports `ok`; a client with
+  no traffic reports `absent`; the window defaults to 24h and an unparsable
+  range is a 400; a marker regression changes no routing decision (assert the
+  compiled hop is identical before and after).
 - Web: class select round-trip, labels, i18n.
 
 ## Decisions (settled 2026-11-19)
@@ -512,6 +613,14 @@ binding. Source strings stay Chinese; both locales get every new string.
     build it is the operator's call, since separation is useful at equal price
     too. Measured 2026-11-23: 61% of requests and 36% of tokens are subagent.
 14. The Phase 1 filter is boolean only; a source filter is deferred.
+15. The axis is **subagents**, which is the mainstream harness shape, so the
+    split is structural (parallel fan-out increases child requests) rather than
+    tied to one vendor. Needing one adapter row per harness is accepted and is
+    why the table is central rather than a config matcher.
+16. Phase 2 carries a per-client marker-health check. A client with traffic and
+    zero marked rows reports `regressed`, including a plain non-agent client
+    that legitimately sends no marker; the console wording says the marker is
+    expected only for agent clients. A regression never changes routing.
 
 ## Deferred
 
