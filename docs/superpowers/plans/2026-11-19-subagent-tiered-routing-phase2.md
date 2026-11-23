@@ -490,12 +490,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(admin): report per-client subag
 
 **Implementation record — Task 5**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. Marker health reports `ok`/`absent`/`regressed` per client and provably does not affect routing.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `ab78adce`; this record follows it.
+- Files changed: `internal/agent/ua.go` (UA→client table, `ClientOf`, `KnownClients`, `SourceOfClient`); `internal/agent/ua_test.go`; `internal/stats/subagenthealth.go` (`SubagentHealthRow`, `Store.SubagentHealth`, grouping by `(user_agent, subagent_source)` and folding labels in Go); `internal/stats/subagenthealth_test.go`; `internal/admin/handlers_subagent.go` (status classification, window validation, union with the marker table); `internal/admin/subagent_test.go`; `internal/admin/server.go` (route registration); `internal/gateway/bindings_test.go` (`TestMarkerRegressionDoesNotChangeRouting`).
+- Tests/commands and results: RED — `undefined: agent.ClientOf` / `agent.KnownClients`, then `s.SubagentHealth undefined` / `undefined: SubagentHealthRow`. GREEN — `GOWORK=off go test ./internal/agent ./internal/stats ./internal/admin ./internal/gateway -count=1` → all four `ok` (0.007s / 31.2s / 21.0s / 19.3s); `go build`, `go vet`, `gofmt -l internal/` → clean.
+- Review findings and fixes: the shared `parseRange` silently falls back to 24h on an unparsable value, which would let a regression check measure a window the operator did not ask for; the new handler validates `from`/`to` itself and answers 400. The store routes through `agent.ClientOf` rather than a SQL `LIKE`, keeping the UA→client mapping in one place.
+- Deferred items/limitations: a legitimately non-agent client (a plain SDK script with traffic) also reports `regressed`; that is accepted and the console wording carries the caveat. Sessions cannot be counted per conversation (`sid` is per request), so this measures requests, not sessions.
 
 ---
 
