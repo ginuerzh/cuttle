@@ -333,12 +333,12 @@ git -C /root/code/go-gost/cuttle commit -m "feat(gateway): keep entrypoint healt
 
 **Implementation record — Task 3**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-19, DONE. Health order matches the data plane and `active` is lead-scoped.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), implementation commit `160b8ec1`; this record follows it.
+- Files changed: `internal/gateway/bindingprobe.go` (`bindingProbe.when`, populated in `add`, the class tier in `probePriorityOrder` plus `hasConditioned`, `health.Binding.When` in the snapshot, and `active` restricted to unconditional bindings); `internal/health/health.go` (`Binding.When` with the lead-scoped `Active` doc); `internal/gateway/bindingprobe_test.go` (`TestOrderAgreement` across five binding arrangements, `TestBindingHealthCarriesWhen`).
+- Tests/commands and results: RED — build failed first (`unknown field when in struct literal of type bindingProbe`, `byIndex[0].When undefined`), then after adding the field `TestBindingHealthCarriesWhen` failed on behavior: `active route = "r_0000000001", want the unconditional route "r_0000000002"`. GREEN — both pass; `GOWORK=off go test ./internal/gateway ./internal/admin -count=1` → `ok` (13.6s / 19.4s); `go build ./...`, `go vet ./...`, `gofmt -l` → clean.
+- Review findings and fixes: `probePriorityOrder` returned `nil` whenever no binding probed, which would have hidden the class tier in a probe-less entrypoint; it now also reorders when any binding is conditioned (`hasConditioned`). `active` needed its own lead-only scan rather than reading the head of the priority order, since the head is now the conditioned binding.
+- Deferred items/limitations: when every binding is conditioned — a state validation rejects — the snapshot still reports an `active` rather than panicking, so a hand-built config degrades instead of crashing.
 
 ---
 
