@@ -56,8 +56,12 @@ type Binding struct {
 	Index     int    `json:"index"`
 	RouteID   string `json:"routeId"`
 	RouteName string `json:"routeName"`
-	Eligible  bool   `json:"eligible"`
-	Last      *Probe `json:"last,omitempty"`
+	// When is the binding's traffic class, empty for an unconditional binding.
+	// A conditioned binding is never a candidate for Active, which stays
+	// lead-scoped.
+	When     string `json:"when,omitempty"`
+	Eligible bool   `json:"eligible"`
+	Last     *Probe `json:"last,omitempty"`
 }
 
 // Probe is one command probe result. ExitCode is -1 when the command could not

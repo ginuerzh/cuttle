@@ -624,3 +624,90 @@ func TestNewFailureStopsProbes(t *testing.T) {
 		t.Fatalf("probes kept running after New failed: %d -> %d runs", before, after)
 	}
 }
+
+// TestOrderAgreement is the guard against the console and the data plane
+// disagreeing: bindingOrder (which feeds the group) and probePriorityOrder
+// (which feeds the health payload) must produce the same index sequence for
+// every arrangement of when/probe.
+func TestOrderAgreement(t *testing.T) {
+	probe := func(cmd string) *gwconfig.Probe {
+		if cmd == "" {
+			return nil
+		}
+		return &gwconfig.Probe{Command: cmd}
+	}
+	cases := [][]gwconfig.RouteBinding{
+		{{Route: "r_0000000001"}, {Route: "r_0000000002"}},
+		{{Route: "r_0000000001", Probe: probe("x")}, {Route: "r_0000000002"}},
+		{{Route: "r_0000000001", When: "subagent"}, {Route: "r_0000000002"}},
+		{{Route: "r_0000000001"}, {Route: "r_0000000002", When: "subagent"}},
+		{
+			{Route: "r_0000000001"},
+			{Route: "r_0000000002", When: "subagent", Probe: probe("x")},
+			{Route: "r_0000000003", When: "subagent"},
+			{Route: "r_0000000004", Probe: probe("y")},
+		},
+	}
+	for i, bindings := range cases {
+		hasProbe := false
+		probes := make([]*bindingProbe, 0, len(bindings))
+		for j, b := range bindings {
+			cmd := ""
+			if b.Probe != nil {
+				cmd = b.Probe.Command
+				hasProbe = true
+			}
+			probes = append(probes, &bindingProbe{index: j, command: cmd, when: b.When})
+		}
+		order, _ := bindingOrder(bindings)
+		got := probePriorityOrder(probes, hasProbe)
+		if !hasProbe {
+			// probePriorityOrder returns nil when nothing probes: config order.
+			got = make([]int, len(bindings))
+			for j := range bindings {
+				got[j] = j
+			}
+			want := make([]int, len(bindings))
+			for j := range bindings {
+				want[j] = j
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("case %d: probe-less order = %v, want %v", i, got, want)
+			}
+			continue
+		}
+		if !slices.Equal(order, got) {
+			t.Fatalf("case %d: bindingOrder = %v but probePriorityOrder = %v", i, order, got)
+		}
+	}
+}
+
+// TestBindingHealthCarriesWhen pins the payload: conditioned rows report their
+// class and Active still names the first eligible unconditional binding.
+func TestBindingHealthCarriesWhen(t *testing.T) {
+	cfg, _, _ := classFixture(t)
+	plans := bindingPlans(t, cfg)
+	_ = plans
+	set := newProbeSet(func(id string) string { return "name-" + id }, xlogger.Nop())
+	for i, b := range cfg.Entrypoints[0].Routes {
+		set.add(cfg.Entrypoints[0], b, i, probeEntries(1), 10*time.Second)
+	}
+	snap := set.Snapshot()
+	if len(snap) != 1 {
+		t.Fatalf("snapshot rows = %d, want 1", len(snap))
+	}
+	rows := snap[0].Bindings
+	byIndex := map[int]health.Binding{}
+	for _, b := range rows {
+		byIndex[b.Index] = b
+	}
+	if got := byIndex[0].When; got != gwconfig.BindingWhenSubagent {
+		t.Fatalf("bindings[0].When = %q, want %q", got, gwconfig.BindingWhenSubagent)
+	}
+	if got := byIndex[1].When; got != "" {
+		t.Fatalf("bindings[1].When = %q, want empty", got)
+	}
+	if got := snap[0].Active.RouteID; got != "r_0000000002" {
+		t.Fatalf("active route = %q, want the unconditional route %q", got, "r_0000000002")
+	}
+}

@@ -75,12 +75,16 @@ type bindingProbe struct {
 	index          int
 	routeID        string
 	routeName      string
-	command        string
-	interval       time.Duration
-	timeout        time.Duration
-	failTimeout    time.Duration
-	entries        []*xhop.HopEntry
-	log            logger.Logger
+	// when mirrors the binding's traffic class. The health order has to apply
+	// the same class tier as bindingOrder, or the console would highlight a
+	// binding the data plane does not use.
+	when        string
+	command     string
+	interval    time.Duration
+	timeout     time.Duration
+	failTimeout time.Duration
+	entries     []*xhop.HopEntry
+	log         logger.Logger
 
 	mu    sync.Mutex
 	state probeState
@@ -135,6 +139,7 @@ func (s *probeSet) add(e gwconfig.Entrypoint, b gwconfig.RouteBinding, index int
 		index:          index,
 		routeID:        strings.TrimSpace(b.Route),
 		routeName:      s.routeName(strings.TrimSpace(b.Route)),
+		when:           strings.TrimSpace(b.When),
 		command:        command,
 		interval:       interval,
 		timeout:        timeout,
@@ -258,18 +263,33 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 		if order != nil {
 			n = len(order)
 		}
-		active := 0
-		if order != nil {
-			active = order[0]
-		}
+		// Active stays lead-scoped: it names the binding the next request
+		// without a subagent marker will use, so a conditioned binding is
+		// never a candidate. fallback keeps its meaning over that subset only.
+		active := -1
 		for pos := 0; pos < n; pos++ {
 			i := pos
 			if order != nil {
 				i = order[pos]
 			}
+			if g.probes[i].when != "" {
+				continue
+			}
+			if active < 0 {
+				active = i
+			}
 			if !failed[i] {
 				active = i
 				break
+			}
+		}
+		if active < 0 {
+			// Every binding is conditioned, which validation rejects; a build
+			// that bypassed the loader still reports something rather than
+			// panicking.
+			active = 0
+			if order != nil {
+				active = order[0]
 			}
 		}
 		he.Active = health.ActiveBinding{
@@ -287,6 +307,7 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 				Index:     p.index,
 				RouteID:   p.routeID,
 				RouteName: p.routeName,
+				When:      p.when,
 				Eligible:  !failed[i],
 			}
 			if last := p.last(); last != nil {
@@ -306,19 +327,38 @@ func (s *probeSet) Snapshot() []health.Entrypoint {
 // which cannot be reused here because the probe set does not see the configured
 // bindings.
 func probePriorityOrder(probes []*bindingProbe, hasProbe bool) []int {
-	if !hasProbe {
+	conditioned := hasConditioned(probes)
+	if !hasProbe && !conditioned {
 		return nil
 	}
-	order := make([]int, 0, len(probes))
-	plain := make([]int, 0, len(probes))
+	var condProbed, condPlain, plainProbed, plainPlain []int
 	for i, p := range probes {
-		if p.command == "" {
-			plain = append(plain, i)
-			continue
+		switch {
+		case p.when != "" && p.command != "":
+			condProbed = append(condProbed, i)
+		case p.when != "":
+			condPlain = append(condPlain, i)
+		case p.command != "":
+			plainProbed = append(plainProbed, i)
+		default:
+			plainPlain = append(plainPlain, i)
 		}
-		order = append(order, i)
 	}
-	return append(order, plain...)
+	order := make([]int, 0, len(probes))
+	order = append(order, condProbed...)
+	order = append(order, condPlain...)
+	order = append(order, plainProbed...)
+	return append(order, plainPlain...)
+}
+
+// hasConditioned reports whether any binding declares a traffic class.
+func hasConditioned(probes []*bindingProbe) bool {
+	for _, p := range probes {
+		if p.when != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *probeSet) groups() []probeGroup {
