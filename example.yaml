@@ -56,6 +56,13 @@ entrypoints:
       - "claude-opus*"
       - "gpt-5.5*"
     routes:
+      # A binding may be restricted to one traffic class with `when: subagent`.
+      # Conditioned bindings are tried first for their class; the binding
+      # without `when` serves every other request and absorbs a failure.
+      # `subagent` is the only value, and at least one binding per entrypoint
+      # must stay unconditional. See README for the uses and the cache caveat.
+      # - route: r_7d2n5v8b1e
+      #   when: subagent
       - route: r_f3k9x2m4qa
   - id: e_2v8n5b1c7f
     name: fast

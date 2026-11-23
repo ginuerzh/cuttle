@@ -594,12 +594,12 @@ git -C /root/code/go-gost/cuttle commit -m "docs: document subagent route bindin
 
 **Implementation record — Task 7**
 
-- Date/status:
-- Repository/commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-23, DONE. Docs updated and the equal-price isolation scenario verified end to end against a real binary.
+- Repository/commit: `cuttle` (`/root/code/go-gost/cuttle/.worktrees/feat-phase2`, branch `feat/subagent-routing-phase2`), this commit (its SHA is in the ledger line).
+- Files changed: `AGENTS.md` (the "only the body model matches" invariant replaced by six clauses covering precedence vs. binding choice, the marker table, the class tier, the servability rule, degradation, and the observation-only boundary); `README.md` (marker-health endpoint plus a "Routing subagents separately" section with the mechanism-vs-use table, the two caveats and the servability rule); `example.yaml` (a commented `when: subagent` binding that keeps the file loadable); this record.
+- Tests/commands and results: `GOWORK=off go build ./... && go vet ./... && go test ./... -count=1` → 15 packages `ok`; `cd web && npm test` → 502 tests, `tsc --noEmit` clean, build 5.13s. **End-to-end (equal-price isolation)**: two `generic` providers over two local echo upstreams on the *same* model, one route bound `when: subagent`, one unconditional, one `*` entrypoint. Result: all three marker headers (`x-claude-code-agent-id`, `x-parent-session-id`, `x-openai-subagent`) reached the worker upstream (3 hits) and the marker-less request reached the lead upstream (1 hit); the rows read `route=r_0000000001 / subagent=1 / source=claude_code|opencode|codex` for the three marked requests and `route=r_0000000002 / subagent=0` for the lead one. `GET /api/entrypoints/health` reported the conditioned row with `when: "subagent"` first in the list, `active.routeId` naming the unconditional route and `fallback:false`. `GET /api/subagent/health` returned `opencode ok (1/1, 100%)`, `claude-code regressed (1 request, 0 marked)` and `codex absent`; `?from=nope` → 400.
+- Review findings and fixes: the admin API is disabled when `admin.passwordHash` is empty, so the local acceptance run had to generate a hash first; an earlier acceptance run had already written rows without a UA, which is why the first `/api/subagent/health` read all three clients as `absent` — the endpoint is correct, the probe was not sending a user agent.
+- Deferred items/limitations: the acceptance used curl with hand-set marker headers, not a live OpenCode/Claude Code session; the marker headers themselves were already verified against real traffic in Phase 1. Cache behaviour under a tiered model was not measured (equal-price isolation has one model). No push.
 
 ---
 
