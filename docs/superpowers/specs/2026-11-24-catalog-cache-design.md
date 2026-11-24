@@ -1,7 +1,7 @@
 # Catalog limits cache design
 
 Date: 2026-11-24
-Status: proposed
+Status: implemented
 
 ## Intent
 
@@ -92,4 +92,5 @@ than necessary.
 
 ## Implementation record
 
-No implementation yet.
+Implemented in cuttle `d84a760b` and `6502cb0b`, with final-review fixes
+recorded in the plan `docs/superpowers/plans/2026-11-24-catalog-cache.md`.

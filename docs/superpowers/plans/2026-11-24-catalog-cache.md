@@ -106,7 +106,7 @@ git commit -m "perf(gateway): cache catalog limits outside reloads"
 
 - [x] **Step 1: Write the failing reload-latency test**
 
-Add `TestReloadDoesNotWaitForCatalogRefresh` to `internal/gateway/reload_test.go`. Use a catalog server that succeeds during `New`/prime and blocks on later calls. Expire the cache with its test clock, call `gw.Reload(cfg)`, and assert the reload returns in under 250 ms while the refresh remains outstanding until `gw.Close`.
+Add `TestReloadDoesNotWaitForCatalogRefresh` to `internal/gateway/reload_test.go`. Use a catalog server that succeeds during `New`/prime and blocks on later calls. Reload a config that introduces a new provider id so the missing cache entry triggers the background path, then assert the reload returns in under 250 ms while the refresh remains outstanding until `gw.Close`.
 
 - [x] **Step 2: Run the new test and verify it fails**
 
@@ -163,7 +163,7 @@ git commit -m "perf(admin): keep catalog refresh off the save path"
 ### Task 1: Add the last-good catalog limits cache
 
 - Date/status: 2026-11-24 complete
-- Repository + commit SHA: `cuttle` `4ac8a694` (implementation commit; plan record amended afterward)
+- Repository + commit SHA: `cuttle` `d84a760b`
 - Files actually changed: `internal/gateway/catalog_cache.go`, `internal/gateway/catalog_cache_test.go`, `internal/gateway/catalog_limits.go`, `docs/superpowers/specs/2026-11-24-catalog-cache-design.md`, `docs/superpowers/plans/2026-11-24-catalog-cache.md`
 - Tests/commands and results: cache tests failed RED with undefined `newCatalogLimitsCache`; focused cache/catalog tests PASS; `CGO_ENABLED=1 GOWORK=off go test -race ./internal/gateway -run TestCatalogLimitsCache -count=1` PASS; full `GOWORK=off go test ./... -count=1` PASS.
 - Review findings and fixes: self-review confirmed deep-copy boundaries, per-provider in-flight coalescing, retry backoff, last-good retention, cancellation, and idempotent close; no defects found.
@@ -172,8 +172,17 @@ git commit -m "perf(admin): keep catalog refresh off the save path"
 ### Task 2: Move gateway builds onto the cache
 
 - Date/status: 2026-11-24 complete
-- Repository + commit SHA: `cuttle` `c0d6bebf` (implementation commit; plan record amended afterward)
+- Repository + commit SHA: `cuttle` `6502cb0b`
 - Files actually changed: `internal/gateway/build.go`, `internal/gateway/gateway.go`, `internal/gateway/build_cap_test.go`, `internal/gateway/gateway_test.go`, `internal/gateway/bindings_test.go`, `internal/gateway/reload_test.go`, `docs/superpowers/specs/2026-11-24-catalog-cache-design.md`, `docs/superpowers/plans/2026-11-24-catalog-cache.md`
 - Tests/commands and results: reload latency test failed RED at 5.004s; after cache wiring it passed under 250ms. `TestGatewayUsesCachedCatalogLimits` failed when cache wiring was mutated to nil (`max_tokens = 256000, want 131072`) and passed after restore. Focused gateway tests, `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, full `GOWORK=off go test ./... -count=1`, `npm test -- --run` (505 tests), `npx tsc --noEmit`, and `npm run build` all PASS.
 - Review findings and fixes: added production-path cap coverage beyond the latency test; verified deep-copy/cache wiring and shutdown lifecycle; no remaining defects found in self-review.
 - Deferred items/limitations: a brand-new provider can lack a cap until its first background refresh completes and a later reload consumes it; offline provider type/base-URL edits can retain old caps until the cache TTL expires because the admin API forbids those edits.
+
+## Final review fixes
+
+- Date/status: 2026-11-24 complete (task code commits `d84a760b`, `6502cb0b`; fix commit recorded below)
+- Repository + commit SHA: `cuttle` `ed6f8fb1` (review-fix implementation commit; plan record amended afterward)
+- Files actually changed: `internal/gateway/catalog_cache.go`, `internal/gateway/catalog_cache_test.go`, `internal/gateway/catalog_limits.go`, design, plan
+- Findings fixed: a newly published model on an already-cached provider now triggers a refresh even while the entry is fresh; a provider fetch fingerprint (type, base URLs, keys/auth/headers, excluding display name and local model overrides) invalidates stale limits after live edits such as a generic provider base-URL change; Prime no longer arms the retry gate for providers skipped after the shared startup budget expired.
+- Tests/commands and results: three review tests failed RED first (`TestCatalogLimitsCacheRefreshesForNewModel`, `TestCatalogLimitsCacheInvalidatesOnProviderChange`, `TestCatalogLimitsCachePrimeDoesNotGateUnqueriedProvider`); after fixes, focused cache tests and `CGO_ENABLED=1 GOWORK=off go test -race ./internal/gateway -run TestCatalogLimitsCache -count=1` PASS.
+- Deferred minors: Prime closed guard, post-close read diagnostic, deep-copy/retry-gate unit tests, `fetchCatalogLimits` test-seam cleanup, pre-existing stats-store leak on `h.Init` failure.

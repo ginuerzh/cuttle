@@ -2,6 +2,9 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 
@@ -17,9 +20,10 @@ import (
 type catalogLimits map[string]map[string]int
 
 type catalogRequest struct {
-	id       string
-	provider gwconfig.Provider
-	models   map[string]bool
+	id          string
+	fingerprint string
+	provider    gwconfig.Provider
+	models      map[string]bool
 }
 
 // fetchCatalogLimits reads each referenced provider's catalog once and collects
@@ -36,7 +40,7 @@ func fetchCatalogLimits(ctx context.Context, cfg *gwconfig.Config, log logger.Lo
 
 	requests, missing := catalogRequests(cfg)
 	for _, request := range requests {
-		got, missingModels, err := fetchCatalogRequest(ctx, request)
+		got, _, missingModels, err := fetchCatalogRequest(ctx, request)
 		logCatalogResult(request, missingModels, err, log)
 		if err != nil {
 			continue
@@ -82,41 +86,59 @@ func catalogRequests(cfg *gwconfig.Config) ([]catalogRequest, map[string]map[str
 			continue
 		}
 		delete(wanted, providerID)
-		requests = append(requests, catalogRequest{id: providerID, provider: p, models: models})
+		requests = append(requests, catalogRequest{
+			id:          providerID,
+			fingerprint: catalogProviderFingerprint(p),
+			provider:    p,
+			models:      models,
+		})
 	}
 	return requests, wanted
 }
 
-func fetchCatalogRequest(ctx context.Context, request catalogRequest) (map[string]int, []string, error) {
+// catalogProviderFingerprint identifies the parts of a provider that can change
+// its upstream catalog. The display name and local model overrides do not.
+func catalogProviderFingerprint(p gwconfig.Provider) string {
+	p.Name = ""
+	p.Models = nil
+	data, err := json.Marshal(p)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func fetchCatalogRequest(ctx context.Context, request catalogRequest) (map[string]int, map[string]bool, []string, error) {
 	prov, err := provider.New(request.provider)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	catalog, err := prov.Models(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	limits := make(map[string]int)
-	available := make(map[string]bool, len(catalog))
+	known := make(map[string]bool, len(catalog))
 	for _, m := range catalog {
 		modelID := strings.TrimSpace(m.ID)
 		if modelID == "" {
 			continue
 		}
-		available[modelID] = true
+		known[modelID] = true
 		if m.Output > 0 {
 			limits[modelID] = m.Output
 		}
 	}
 	missing := make([]string, 0)
 	for modelID := range request.models {
-		if !available[modelID] {
+		if !known[modelID] {
 			missing = append(missing, modelID)
 		}
 	}
 	sort.Strings(missing)
-	return limits, missing, nil
+	return limits, known, missing, nil
 }
 
 func logCatalogResult(request catalogRequest, missing []string, err error, log logger.Logger) {
