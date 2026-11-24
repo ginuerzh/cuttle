@@ -181,7 +181,7 @@ git commit -m "perf(admin): keep catalog refresh off the save path"
 ## Final review fixes
 
 - Date/status: 2026-11-24 complete (task code commits `d84a760b`, `6502cb0b`; fix commit recorded below)
-- Repository + commit SHA: `cuttle` `ed6f8fb1` (review-fix implementation commit; plan record amended afterward)
+- Repository + commit SHA: `cuttle` `138dcc6a`
 - Files actually changed: `internal/gateway/catalog_cache.go`, `internal/gateway/catalog_cache_test.go`, `internal/gateway/catalog_limits.go`, design, plan
 - Findings fixed: a newly published model on an already-cached provider now triggers a refresh even while the entry is fresh; a provider fetch fingerprint (type, base URLs, keys/auth/headers, excluding display name and local model overrides) invalidates stale limits after live edits such as a generic provider base-URL change; Prime no longer arms the retry gate for providers skipped after the shared startup budget expired.
 - Tests/commands and results: three review tests failed RED first (`TestCatalogLimitsCacheRefreshesForNewModel`, `TestCatalogLimitsCacheInvalidatesOnProviderChange`, `TestCatalogLimitsCachePrimeDoesNotGateUnqueriedProvider`); after fixes, focused cache tests and `CGO_ENABLED=1 GOWORK=off go test -race ./internal/gateway -run TestCatalogLimitsCache -count=1` PASS.
