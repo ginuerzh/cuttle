@@ -1,7 +1,7 @@
 import { Position, type Edge, type EdgeProps } from '@xyflow/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { EntrypointHealth } from '../api/types';
+import type { Entrypoint, EntrypointHealth } from '../api/types';
 import { setActiveLang } from '../i18n';
 import { bindingEdgeBadge, bindingEdgeHealth, DotEdge } from './edges';
 import { decorateEdge } from './Topology';
@@ -99,15 +99,16 @@ describe('bindingEdgeHealth', () => {
   const health = (
     entrypointId: string,
     active: { routeId: string; fallback: boolean },
-    bindings: [string, boolean][],
+    bindings: [string, boolean, string?][],
   ): EntrypointHealth => ({
     entrypointId,
     entrypointName: entrypointId,
     active,
-    bindings: bindings.map(([routeId, eligible], index) => ({
+    bindings: bindings.map(([routeId, eligible, when], index) => ({
       index,
       routeId,
       routeName: routeId,
+      when,
       eligible,
     })),
   });
@@ -126,7 +127,7 @@ describe('bindingEdgeHealth', () => {
       fallback: false,
       hasProbe: false,
       conditioned: false,
-      onlyBinding: false,
+      soleInClass: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
       eligible: true,
@@ -134,7 +135,7 @@ describe('bindingEdgeHealth', () => {
       fallback: false,
       hasProbe: false,
       conditioned: false,
-      onlyBinding: false,
+      soleInClass: false,
     });
   });
 
@@ -174,7 +175,7 @@ describe('bindingEdgeHealth', () => {
       fallback: true,
       hasProbe: false,
       conditioned: false,
-      onlyBinding: false,
+      soleInClass: false,
     });
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toEqual({
       eligible: false,
@@ -182,7 +183,7 @@ describe('bindingEdgeHealth', () => {
       fallback: false,
       hasProbe: false,
       conditioned: false,
-      onlyBinding: false,
+      soleInClass: false,
     });
   });
 
@@ -201,7 +202,7 @@ describe('bindingEdgeHealth', () => {
     expect(bindingEdgeHealth(undefined).size).toBe(0);
   });
 
-  it('marks a lone binding as the entrypoint only one', () => {
+  it('marks a lone binding as the only candidate in its traffic class', () => {
     const rows = bindingEdgeHealth([
       health('e_0000000001', { routeId: 'r_0000000001', fallback: false }, [['r_0000000001', true]]),
     ]);
@@ -209,8 +210,85 @@ describe('bindingEdgeHealth', () => {
     expect(rows.get('entrypoint:e_0000000001->route:r_0000000001')).toMatchObject({
       eligible: true,
       active: true,
-      onlyBinding: true,
+      soleInClass: true,
     });
+  });
+
+  it('keeps probe-less class lanes solid when each class has one candidate', () => {
+    const entrypoints: Entrypoint[] = [
+      {
+        id: 'e_0000000001',
+        name: 'sonnet',
+        match: ['claude-sonnet*'],
+        routes: [{ route: 'r_0000000001' }, { route: 'r_0000000002', when: 'subagent' }],
+      },
+    ];
+    const rows = bindingEdgeHealth(
+      [
+        health('e_0000000001', { routeId: 'r_0000000001', fallback: false }, [
+          ['r_0000000001', true],
+          ['r_0000000002', true, 'subagent'],
+        ]),
+      ],
+      entrypoints,
+    );
+
+    for (const routeId of ['r_0000000001', 'r_0000000002']) {
+      const decorated = decorateEdge(
+        {
+          id: `entrypoint:e_0000000001->route:${routeId}`,
+          source: 'entrypoint:e_0000000001',
+          target: `route:${routeId}`,
+        } as Edge,
+        null,
+        undefined,
+        true,
+        undefined,
+        rows,
+      );
+      expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBeUndefined();
+    }
+    expect(rows.get('entrypoint:e_0000000001->route:r_0000000001')).toMatchObject({ soleInClass: true });
+    expect(rows.get('entrypoint:e_0000000001->route:r_0000000002')).toMatchObject({ soleInClass: true });
+  });
+
+  it('draws probe-less alternatives inside one traffic class dashed', () => {
+    const entrypoints: Entrypoint[] = [
+      {
+        id: 'e_0000000001',
+        name: 'sonnet',
+        match: ['claude-sonnet*'],
+        routes: [
+          { route: 'r_0000000001', when: 'subagent' },
+          { route: 'r_0000000002', when: 'subagent' },
+        ],
+      },
+    ];
+    const rows = bindingEdgeHealth(
+      [
+        health('e_0000000001', { routeId: 'r_0000000001', fallback: false }, [
+          ['r_0000000001', true, 'subagent'],
+          ['r_0000000002', true, 'subagent'],
+        ]),
+      ],
+      entrypoints,
+    );
+
+    for (const routeId of ['r_0000000001', 'r_0000000002']) {
+      const decorated = decorateEdge(
+        {
+          id: `entrypoint:e_0000000001->route:${routeId}`,
+          source: 'entrypoint:e_0000000001',
+          target: `route:${routeId}`,
+        } as Edge,
+        null,
+        undefined,
+        true,
+        undefined,
+        rows,
+      );
+      expect((decorated.style as { strokeDasharray?: string }).strokeDasharray).toBe('6 4');
+    }
   });
 
   it('preserves the selected flag when re-decorating an edge', () => {
@@ -242,7 +320,7 @@ describe('bindingEdgeHealth', () => {
 describe('bindingEdgeBadge class label', () => {
   it('labels a conditioned binding 子代理', () => {
     const badge = bindingEdgeBadge({
-      eligible: true, active: true, fallback: false, hasProbe: false, conditioned: true, onlyBinding: false,
+      eligible: true, active: true, fallback: false, hasProbe: false, conditioned: true, soleInClass: false,
     });
     expect(badge.text).toContain('子代理');
     expect(badge.invalid).toBe(false);
@@ -250,7 +328,7 @@ describe('bindingEdgeBadge class label', () => {
 
   it('joins the fallback and class labels', () => {
     const badge = bindingEdgeBadge({
-      eligible: false, active: true, fallback: true, hasProbe: true, conditioned: true, onlyBinding: false,
+      eligible: false, active: true, fallback: true, hasProbe: true, conditioned: true, soleInClass: false,
     });
     expect(badge.text).toBe('回退 子代理');
     expect(badge.mark).toBe('✕');

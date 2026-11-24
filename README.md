@@ -513,8 +513,10 @@ and binding edges show the latest probe state by their shape: a binding whose
 probe fails is drawn solid amber with a `✕` mark, and the binding that serves
 only because every probe failed adds `回退` (fallback), so a probed fallback
 reads `✕ 回退` and a probe-less one reads `回退`. A binding without a probe is
-drawn dashed, because nothing checks it, and an eligible binding is solid and
-unlabelled. Probe `command`, `interval` and `timeout` are edited in the
+drawn dashed only when another binding competes in the same traffic class,
+because it is then an unchecked alternative; a class lane with a single binding
+stays solid. An eligible binding is solid and unlabelled. Probe `command`,
+`interval` and `timeout` are edited in the
 `entrypoint → route` edge panel; an empty command removes the probe. In edit
 mode you can drag an entrypoint onto a route, a route onto a node or a node onto
 a provider to change the configuration. Dragging onto a route adds a probe-less

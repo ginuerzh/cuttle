@@ -26,33 +26,29 @@ export interface BindingEdgeState {
   /** The binding is conditioned on one traffic class (`when`). */
   conditioned: boolean;
   /**
-   * The entrypoint has exactly one binding, so there is nothing to choose
-   * between and the edge is the normal default rather than an unverified
-   * alternative.
+   * No other binding competes in this binding's traffic class, so the edge is
+   * the normal path for that class rather than an unverified alternative.
    */
-  onlyBinding: boolean;
+  soleInClass: boolean;
 }
 
-/** The configured bindings conditioned on a traffic class, keyed by entrypoint id + route id. */
-function configuredConditioned(entrypoints?: readonly Entrypoint[]): Set<string> {
-  const conditioned = new Set<string>();
-  for (const entrypoint of entrypoints ?? []) {
-    for (const binding of entrypoint.routes ?? []) {
-      if (binding.when) conditioned.add(`${entrypoint.id}\0${binding.route}`);
-    }
-  }
-  return conditioned;
+interface ConfiguredBinding {
+  hasProbe: boolean;
+  when: string;
 }
 
-/** The configured bindings that carry a probe, keyed by entrypoint id + route id. */
-function configuredProbes(entrypoints?: readonly Entrypoint[]): Set<string> {
-  const probed = new Set<string>();
+/** The configured bindings, keyed by entrypoint id + route id. */
+function configuredBindings(entrypoints?: readonly Entrypoint[]): Map<string, ConfiguredBinding> {
+  const configured = new Map<string, ConfiguredBinding>();
   for (const entrypoint of entrypoints ?? []) {
     for (const binding of entrypoint.routes ?? []) {
-      if (binding.probe) probed.add(`${entrypoint.id}\0${binding.route}`);
+      configured.set(`${entrypoint.id}\0${binding.route}`, {
+        hasProbe: !!binding.probe,
+        when: binding.when ?? '',
+      });
     }
   }
-  return probed;
+  return configured;
 }
 
 /**
@@ -66,13 +62,23 @@ export function bindingEdgeHealth(
   health?: readonly EntrypointHealth[],
   entrypoints?: readonly Entrypoint[],
 ): Map<string, BindingEdgeState> {
-  const probed = configuredProbes(entrypoints);
-  const conditioned = configuredConditioned(entrypoints);
+  const configured = configuredBindings(entrypoints);
   const rows = new Map<string, BindingEdgeState>();
   for (const entrypoint of health ?? []) {
     const current = entrypoint.active;
-    const onlyBinding = entrypoint.bindings?.length === 1;
-    for (const binding of entrypoint.bindings ?? []) {
+    const bindings = (entrypoint.bindings ?? []).map((binding) => {
+      const cfg = configured.get(`${entrypoint.entrypointId}\0${binding.routeId}`);
+      return {
+        binding,
+        hasProbe: cfg?.hasProbe ?? false,
+        when: cfg?.when ?? binding.when ?? '',
+      };
+    });
+    const classSizes = new Map<string, number>();
+    for (const { when } of bindings) {
+      classSizes.set(when, (classSizes.get(when) ?? 0) + 1);
+    }
+    for (const { binding, hasProbe, when } of bindings) {
       const id = `entrypoint:${entrypoint.entrypointId}->route:${binding.routeId}`;
       if (rows.has(id)) continue;
       const isActive = current.routeId === binding.routeId;
@@ -80,9 +86,9 @@ export function bindingEdgeHealth(
         eligible: binding.eligible,
         active: isActive && !current.fallback,
         fallback: isActive && current.fallback,
-        hasProbe: probed.has(`${entrypoint.entrypointId}\0${binding.routeId}`),
-        conditioned: conditioned.has(`${entrypoint.entrypointId}\0${binding.routeId}`) || !!binding.when,
-        onlyBinding,
+        hasProbe,
+        conditioned: when !== '',
+        soleInClass: (classSizes.get(when) ?? 0) === 1,
       });
     }
   }
@@ -96,18 +102,18 @@ export interface BindingEdgeBadge {
   text?: string;
   /** Style the edge amber, because a probe is failing. */
   invalid: boolean;
-  /** Draw the edge dashed, because nothing checks this binding and it is not the entrypoint's only one. */
+  /** Draw the edge dashed because an unchecked binding competes inside its traffic class. */
   dashed: boolean;
 }
 
 /**
  * The badge an edge carries. A probed binding whose probe fails is solid amber
  * with a `✕`; the fallback binding adds `回退` (`✕ 回退` when probed). A binding
- * without a probe is dashed and neutral, because nothing checks it, and carries
- * no state label unless it serves the fallback. The exception is an entrypoint
- * with a single binding: there is nothing to choose between, so that is the
- * normal case and stays solid. An eligible active binding and a binding without
- * health stay solid and unlabelled.
+ * without a probe is dashed and neutral only when another binding competes in
+ * the same traffic class, because that is an unchecked alternative. A class
+ * lane with a single binding is the normal case and stays solid. It carries no
+ * state label unless it serves the fallback. An eligible active binding and a
+ * binding without health stay solid and unlabelled.
  */
 export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
   if (!state) return { invalid: false, dashed: false };
@@ -119,7 +125,7 @@ export function bindingEdgeBadge(state?: BindingEdgeState): BindingEdgeBadge {
     mark: invalid ? '✕' : undefined,
     text: labels.length > 0 ? labels.join(' ') : undefined,
     invalid,
-    dashed: !state.hasProbe && !state.onlyBinding,
+    dashed: !state.hasProbe && !state.soleInClass,
   };
 }
 
