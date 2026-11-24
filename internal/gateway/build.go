@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -58,16 +57,10 @@ func nextBuildGeneration() string {
 // The returned probe set is unstarted; the caller starts and stops it.
 // The returned names are the rewriters registered for this build; the caller
 // owns their lifecycle.
-func buildHopGroup(cfg *gwconfig.Config, build string, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, *probeSet, []string, *countTokensPolicy, error) {
+func buildHopGroup(cfg *gwconfig.Config, build string, limits catalogLimits, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, *probeSet, []string, *countTokensPolicy, error) {
 	if err := registerHeaderRewriter(); err != nil {
 		return nil, nil, nil, nil, err
 	}
-
-	// One bounded context covers every catalog lookup for this build. Failures
-	// are best-effort: fetchCatalogLimits logs them and returns no cap.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	limits := fetchCatalogLimits(ctx, cfg, log)
 
 	probes := newProbeSet(func(id string) string {
 		if r, ok := cfg.Route(id); ok {

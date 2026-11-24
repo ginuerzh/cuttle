@@ -52,6 +52,7 @@ type Gateway struct {
 	facts        *stats.Facts
 	store        *stats.Store
 	capture      *capture.Manager
+	catalogs     *catalogLimitsCache
 	authFailures *authfail.Tracker
 	cancel       context.CancelFunc
 	// statsMigrationDone records the one identity-migration attempt this
@@ -104,6 +105,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		facts:        facts,
 		store:        store,
 		capture:      capMgr,
+		catalogs:     newCatalogLimitsCache(),
 		authFailures: authfail.New(authfail.DefaultLimit),
 	}
 
@@ -119,6 +121,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		"http.keepalive": false,
 		"clientID":       clientIDFromRequest,
 	})); err != nil {
+		g.catalogs.Close()
 		return nil, err
 	}
 
@@ -128,7 +131,9 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 	}
 	g.handler = h
 	g.forwarder = fwd
+	g.catalogs.Prime(context.Background(), cfg, log)
 	if err := g.apply(cfg); err != nil {
+		g.catalogs.Close()
 		if store != nil {
 			store.Close()
 		}
@@ -375,7 +380,11 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	defer g.buildMu.Unlock()
 
 	build := nextBuildGeneration()
-	group, probes, rewriters, policy, err := buildHopGroup(cfg, build, g.log, g.facts, g.capture)
+	var limits catalogLimits
+	if g.catalogs != nil {
+		limits = g.catalogs.Limits(cfg, g.log)
+	}
+	group, probes, rewriters, policy, err := buildHopGroup(cfg, build, limits, g.log, g.facts, g.capture)
 	if err != nil {
 		// The old hop is untouched; drop the rewriters this failed build
 		// registered so they cannot leak.
@@ -502,6 +511,9 @@ func (g *Gateway) Close() error {
 	}
 	if g.cancel != nil {
 		g.cancel()
+	}
+	if g.catalogs != nil {
+		g.catalogs.Close()
 	}
 	if g.store != nil {
 		g.store.Close()

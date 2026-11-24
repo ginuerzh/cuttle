@@ -104,24 +104,24 @@ git commit -m "perf(gateway): cache catalog limits outside reloads"
   - `buildHopGroup(cfg *gwconfig.Config, build string, limits catalogLimits, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, *probeSet, []string, *countTokensPolicy, error)`
   - `Gateway.catalogs *catalogLimitsCache`
 
-- [ ] **Step 1: Write the failing reload-latency test**
+- [x] **Step 1: Write the failing reload-latency test**
 
 Add `TestReloadDoesNotWaitForCatalogRefresh` to `internal/gateway/reload_test.go`. Use a catalog server that succeeds during `New`/prime and blocks on later calls. Expire the cache with its test clock, call `gw.Reload(cfg)`, and assert the reload returns in under 250 ms while the refresh remains outstanding until `gw.Close`.
 
-- [ ] **Step 2: Run the new test and verify it fails**
+- [x] **Step 2: Run the new test and verify it fails**
 
 Run: `GOWORK=off go test ./internal/gateway -run TestReloadDoesNotWaitForCatalogRefresh -count=1`
 Expected: FAIL because production `buildHopGroup` still performs the blocking catalog fetch.
 
-- [ ] **Step 3: Make builds consume resolved limits**
+- [x] **Step 3: Make builds consume resolved limits**
 
 Change `buildHopGroup` to the signature above and remove its catalog context/fetch. Thread the supplied `limits` into the existing `buildRoutePlan` calls. Update the three direct test callers: cap test fetches or supplies its known limit map; unrelated builds pass `nil`.
 
-- [ ] **Step 4: Own the cache in Gateway lifecycle**
+- [x] **Step 4: Own the cache in Gateway lifecycle**
 
 Add `catalogs *catalogLimitsCache` to `Gateway`, initialize it in `New`, call `Prime(context.Background(), cfg, log)` before the first `apply`, use `Limits(cfg, g.log)` in `apply`, and close the cache in `Close`. Close the cache on `New` error paths that do not otherwise call `Gateway.Close`.
 
-- [ ] **Step 5: Run focused gateway tests**
+- [x] **Step 5: Run focused gateway tests**
 
 Run:
 
@@ -131,7 +131,7 @@ GOWORK=off go test ./internal/gateway -run 'TestReloadDoesNotWaitForCatalogRefre
 
 Expected: PASS.
 
-- [ ] **Step 6: Run the full Go and web gates**
+- [x] **Step 6: Run the full Go and web gates**
 
 Run:
 
@@ -147,7 +147,7 @@ npm run build
 
 Expected: all PASS. Rebuild the embedded web bundle before the final Go build if it changed.
 
-- [ ] **Step 7: Record and commit Task 2**
+- [x] **Step 7: Record and commit Task 2**
 
 Fill the Task 2 Implementation record, then commit all Task 2 files and the updated plan with:
 
@@ -171,9 +171,9 @@ git commit -m "perf(admin): keep catalog refresh off the save path"
 
 ### Task 2: Move gateway builds onto the cache
 
-- Date/status: pending
-- Repository + commit SHA: pending
-- Files actually changed: pending
-- Tests/commands and results: pending
-- Review findings and fixes: pending
-- Deferred items/limitations: a brand-new provider can lack a cap until its first background refresh completes and a later reload consumes it.
+- Date/status: 2026-11-24 complete
+- Repository + commit SHA: `cuttle` `c0d6bebf` (implementation commit; plan record amended afterward)
+- Files actually changed: `internal/gateway/build.go`, `internal/gateway/gateway.go`, `internal/gateway/build_cap_test.go`, `internal/gateway/gateway_test.go`, `internal/gateway/bindings_test.go`, `internal/gateway/reload_test.go`, `docs/superpowers/specs/2026-11-24-catalog-cache-design.md`, `docs/superpowers/plans/2026-11-24-catalog-cache.md`
+- Tests/commands and results: reload latency test failed RED at 5.004s; after cache wiring it passed under 250ms. `TestGatewayUsesCachedCatalogLimits` failed when cache wiring was mutated to nil (`max_tokens = 256000, want 131072`) and passed after restore. Focused gateway tests, `GOWORK=off go build ./...`, `GOWORK=off go vet ./...`, full `GOWORK=off go test ./... -count=1`, `npm test -- --run` (505 tests), `npx tsc --noEmit`, and `npm run build` all PASS.
+- Review findings and fixes: added production-path cap coverage beyond the latency test; verified deep-copy/cache wiring and shutdown lifecycle; no remaining defects found in self-review.
+- Deferred items/limitations: a brand-new provider can lack a cap until its first background refresh completes and a later reload consumes it; offline provider type/base-URL edits can retain old caps until the cache TTL expires because the admin API forbids those edits.

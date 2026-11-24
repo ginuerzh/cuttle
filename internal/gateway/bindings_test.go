@@ -393,7 +393,7 @@ func TestUnreachableProbeLessBindingWarns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, _, err := buildHopGroup(cfg, "warn-test", log, nil, nil); err != nil {
+	if _, _, _, _, err := buildHopGroup(cfg, "warn-test", nil, log, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 

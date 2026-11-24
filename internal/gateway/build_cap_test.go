@@ -51,7 +51,8 @@ func TestBuildCapReachesRegisteredRewriter(t *testing.T) {
 		}},
 	}
 
-	_, _, names, _, err := buildHopGroup(cfg, "cap-build", xlogger.Nop(), stats.NewFacts(), nil)
+	limits := fetchCatalogLimits(context.Background(), cfg, xlogger.Nop())
+	_, _, names, _, err := buildHopGroup(cfg, "cap-build", limits, xlogger.Nop(), stats.NewFacts(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +63,55 @@ func TestBuildCapReachesRegisteredRewriter(t *testing.T) {
 		t.Fatalf("rewriter %q is not registered", name)
 	}
 	rw := registry.RewriterRegistry().Get(name)
+	out, err := rw.Rewrite(context.Background(),
+		[]byte(`{"model":"claude-opus-5-5","max_tokens":256000,"messages":[{"role":"user","content":"hi"}]}`),
+		corerewriter.MetadataRewriteOption(map[string]any{"sid": "s1", "direction": "request", "uri": "/v1/chat/completions"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nestedInt(t, out, []string{"max_tokens"}); got != 131072 {
+		t.Fatalf("max_tokens = %d, want 131072; body = %s", got, out)
+	}
+}
+
+// TestGatewayUsesCachedCatalogLimits proves the production Gateway passes the
+// catalog cache into the build instead of only making reload faster.
+func TestGatewayUsesCachedCatalogLimits(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"glm-5.3","limit":{"output":131072}}]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	const (
+		routeID    = "r_0000000001"
+		providerID = "p_0000000001"
+		nodeID     = "n_0000000001"
+	)
+	cfg := &gwconfig.Config{
+		Gateway: gwconfig.Gateway{Listen: "127.0.0.1:0"},
+		Entrypoints: []gwconfig.Entrypoint{{
+			ID: "e_0000000001", Name: "opus", Match: []string{"claude-opus*"},
+			Routes: []gwconfig.RouteBinding{{Route: routeID}},
+		}},
+		Providers: []gwconfig.Provider{{
+			ID: providerID, Name: "catalog", Type: "generic", Chat: srv.URL,
+			Keys: []gwconfig.ProviderKey{{ID: "pk_0000000001", Name: "k1", Key: "sk-1"}},
+		}},
+		Nodes: []gwconfig.Node{{
+			ID: nodeID, Name: "glm", Provider: providerID, Model: "glm-5.3",
+		}},
+		Routes: []gwconfig.Route{{
+			ID: routeID, Name: "capped", Nodes: []string{nodeID},
+		}},
+	}
+	gw := startGateway(t, cfg)
+	if len(gw.rewriters) == 0 {
+		t.Fatal("gateway registered no rewriters")
+	}
+	rw := registry.RewriterRegistry().Get(gw.rewriters[0])
+	if rw == nil {
+		t.Fatalf("rewriter %q is not registered", gw.rewriters[0])
+	}
 	out, err := rw.Rewrite(context.Background(),
 		[]byte(`{"model":"claude-opus-5-5","max_tokens":256000,"messages":[{"role":"user","content":"hi"}]}`),
 		corerewriter.MetadataRewriteOption(map[string]any{"sid": "s1", "direction": "request", "uri": "/v1/chat/completions"}))

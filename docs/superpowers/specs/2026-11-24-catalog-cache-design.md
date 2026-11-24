@@ -25,6 +25,9 @@ Configuration management must not depend on upstream catalog availability.
 - No change to request rewriting or the cap semantics.
 - No guarantee that a brand-new provider has a cap before its first background
   refresh completes and a later reload consumes it.
+- No cache fingerprint for offline provider type/base-URL edits; those edits can
+  retain the previous provider's limits until the TTL expires. The admin API
+  already forbids those edits.
 - No attempt to make startup independent of catalogs; startup may perform one
   bounded synchronous prime so the first served build has caps.
 

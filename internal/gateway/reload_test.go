@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,6 +83,42 @@ func TestReloadKeepsInflightStreamAndSwitchesNewRequests(t *testing.T) {
 	if body := getBody(t, gw); body != "B" {
 		t.Fatalf("after failed reload body = %q, want B (old hop must keep serving)", body)
 	}
+}
+
+func TestReloadDoesNotWaitForCatalogRefresh(t *testing.T) {
+	var calls atomic.Int32
+	refreshStarted := make(chan struct{})
+	catalog := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			fmt.Fprint(w, `{"data":[{"id":"deepseek-chat","limit":{"output":8192}}]}`)
+			return
+		}
+		close(refreshStarted)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(catalog.Close)
+
+	cfg := testConfig(catalog.URL)
+	gw, err := New(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = gw.Close() })
+
+	// A new provider has no cached catalog. Reload must build with no cap and
+	// refresh in the background instead of waiting for the blocked endpoint.
+	next := testConfig(catalog.URL)
+	next.Providers[0].ID = "p_0000000002"
+	next.Nodes[0].Provider = next.Providers[0].ID
+
+	started := time.Now()
+	if err := gw.Reload(next); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("Reload() with blocked catalog refresh took %s, want <= 250ms", elapsed)
+	}
+	waitForCatalogSignal(t, refreshStarted, "background catalog refresh")
 }
 
 func getBody(t *testing.T, gw *Gateway) string {
