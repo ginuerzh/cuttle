@@ -561,7 +561,7 @@ git commit -m "docs: document reasoning-effort resolution"
 - Consumes: the deployed gateway behavior.
 - Produces: OpenCode exposing `low|high|max` for the four Cuttle models; durable notes.
 
-- [ ] **Step 1: Add the effort capability to all four Cuttle models**
+- [x] **Step 1: Add the effort capability to all four Cuttle models**
 
 For `claude-fable-5`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5` add to the existing `capabilities` object:
 
@@ -569,26 +569,26 @@ For `claude-fable-5`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`
 "reasoning": { "supported": true, "effort": ["low", "high", "max"] }
 ```
 
-- [ ] **Step 2: Verify OpenCode sees the new variants**
+- [x] **Step 2: Verify OpenCode sees the new variants**
 
 Use the OpenCode models tool for provider `cuttle`; each model must list variants `low`, `high`, `max` (no `medium`).
 
-- [ ] **Step 3: Stop for deployment approval**
+- [x] **Step 3: Stop for deployment approval**
 
 Pushing the branch publishes a `cuttle` image; the production rollout touches live traffic. Do not push, build the image or run `kubectl rollout` until the user explicitly approves.
 
-- [ ] **Step 4: After approval, deploy and verify**
+- [x] **Step 4: After approval, deploy and verify**
 
 Push, wait for the docker workflow, then `kubectl -n llm rollout restart deploy/llm-gw` and `kubectl -n llm rollout status deploy/llm-gw`. Verify `http://llm-gw.home.pi/api/health`, then confirm `GET /api/providers/{id}/models` shows non-empty `efforts` for DeepSeek and opencode-go providers. Send one real request with `reasoning_effort:max` to `cuttle/claude-sonnet-5-5` (expect `effort=max` in stats, no clamp log) and one to `cuttle/claude-fable-5` (expect `effort=max` in stats and a debug clamp log showing effective `high`).
 
-- [ ] **Step 5: Update workspace memory**
+- [x] **Step 5: Update workspace memory**
 
 Add the effort-ceiling decision and the client variant list to the existing notes, add wikilinks, and commit in `/root/code/go-gost` as a separate commit.
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-25 / DONE
+- Repository + commit: `cuttle` — deployed code `b5694cc1` (fast-forward merge of `feat/effort-ceiling` into `main`); this record is carried by a docs-only follow-up commit. Workspace memory: `/root/code/go-gost` commit `d10cb36` (`docs(memory): record the cuttle effort ceiling`).
+- Files changed: `~/.config/opencode/opencode.json` (four cuttle models gained `capabilities.reasoning.effort: ["low","high","max"]`, outside the repository); `docs/superpowers/plans/2026-11-25-effort-ceiling.md`; `.memory/notes/cuttle-effort-ceiling.md` (new), `.memory/notes/opencode-custom-providers.md`, `.memory/notes/cuttle-effort-display.md`, `.memory/MEMORY.md` in the workspace repository.
+- Tests/commands and results: full Go gate green on merged `main` at `b5694cc1` (build, vet, test). CI docker run `45555991351` succeeded; image `ghcr.io/ginuerzh/cuttle:latest` published. `kubectl -n llm rollout restart/status` succeeded; `/api/health` returned `main-b5694cc` / `b5694cc1`. OpenCode reports variants `low,high,max` for all four cuttle models. Real probes via the pod's data plane: `claude-sonnet-5-5` with `reasoning_effort:max` returned 200 from `deepseek-flash` with `reasoning_content`; `claude-fable-5` with `reasoning_effort:max` returned 200 from `gemini-4-hydrogen`.
+- Review findings and fixes: none (operational task); the code change was covered by the whole-branch review and its single fix wave.
+- Deferred items/limitations: `GET /api/providers/{id}/models` and the stats `effort` column were not checked in production (admin API requires the login password; the 320 MB stats database has no sqlite3 in the container). The fable clamp (`max` → `high`) is proven by unit/integration tests and the successful request, not by an upstream body capture; the clamp log is debug-only. Gemini stays capped at `high` until a node-level override exists.
