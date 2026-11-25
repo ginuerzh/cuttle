@@ -765,6 +765,42 @@ func TestModelsMergeMetadataAcrossAPIs(t *testing.T) {
 	}
 }
 
+func TestModelsMergeEffortsAcrossThreeAPIs(t *testing.T) {
+	chatSrv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"shared-model","effort":["low"]}]}`)
+	})
+	responsesSrv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"shared-model","effort":["high"]}]}`)
+	})
+	anthropicSrv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"shared-model","effort":["low"]}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name:      "p",
+		Type:      "generic",
+		Chat:      chatSrv.URL,
+		Responses: responsesSrv.URL,
+		Anthropic: anthropicSrv.URL,
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("models = %+v, want one merged entry", models)
+	}
+	if !slices.Equal(models[0].APIs, []API{Chat, Responses, Anthropic}) {
+		t.Fatalf("APIs = %v, want [chat responses anthropic]", models[0].APIs)
+	}
+	if models[0].Efforts == nil {
+		t.Fatal("efforts = nil, want a known empty intersection after low ∩ high ∩ low")
+	}
+	if len(models[0].Efforts) != 0 {
+		t.Fatalf("efforts = %v, want an empty intersection after low ∩ high ∩ low", models[0].Efforts)
+	}
+}
+
 func TestNormalizeModalities(t *testing.T) {
 	got := normalizeModalities([]string{" Text ", "image/jpeg", "", "IMAGE/PNG", "text", "audio/"})
 	want := []string{"text", "image", "audio"}

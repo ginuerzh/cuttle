@@ -53,9 +53,15 @@ func Ceiling(values []string) string {
 }
 
 // Intersect returns recognized levels present in both lists, sorted from
-// lowest to highest. If either list has no recognized levels, it returns the
-// other normalized list.
+// lowest to highest. A list that normalizes to empty adopts the other list
+// unless it was explicitly empty (non-nil and zero-length). Disjoint known
+// lists and explicit empty lists return a non-nil empty slice so later merges
+// cannot repopulate a known empty intersection.
 func Intersect(a, b []string) []string {
+	if (a != nil && len(a) == 0) || (b != nil && len(b) == 0) {
+		return []string{}
+	}
+
 	a = Normalize(a)
 	b = Normalize(b)
 	if len(a) == 0 {
@@ -75,6 +81,9 @@ func Intersect(a, b []string) []string {
 		if _, ok := allowed[level]; ok {
 			common = append(common, level)
 		}
+	}
+	if len(common) == 0 {
+		return []string{}
 	}
 	return common
 }

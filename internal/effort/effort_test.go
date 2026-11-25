@@ -43,16 +43,27 @@ func TestCeiling(t *testing.T) {
 }
 
 func TestIntersect(t *testing.T) {
-	if got := Intersect([]string{"low", "high", "max"}, []string{"low", "high"}); !reflect.DeepEqual(got, []string{"low", "high"}) {
-		t.Fatalf("intersection = %v", got)
+	cases := []struct {
+		name string
+		a    []string
+		b    []string
+		want []string
+	}{
+		{name: "normalized overlap", a: []string{"max", "LOW", "high", "max"}, b: []string{"high", "low", "extreme"}, want: []string{"low", "high"}},
+		{name: "nil left", a: nil, b: []string{"high", "LOW"}, want: []string{"low", "high"}},
+		{name: "nil right", a: []string{"low"}, b: nil, want: []string{"low"}},
+		{name: "unknown left", a: []string{"extreme"}, b: []string{"low"}, want: []string{"low"}},
+		{name: "unknown right", a: []string{"low"}, b: []string{"extreme"}, want: []string{"low"}},
+		{name: "disjoint", a: []string{"low"}, b: []string{"high"}, want: []string{}},
+		{name: "known empty left", a: []string{}, b: []string{"low"}, want: []string{}},
+		{name: "known empty right", a: []string{"low"}, b: []string{}, want: []string{}},
+		{name: "both absent", a: nil, b: nil, want: nil},
 	}
-	if got := Intersect(nil, []string{"high", "low"}); !reflect.DeepEqual(got, []string{"low", "high"}) {
-		t.Fatalf("one-sided = %v", got)
-	}
-	if got := Intersect([]string{"low"}, nil); !reflect.DeepEqual(got, []string{"low"}) {
-		t.Fatalf("one-sided = %v", got)
-	}
-	if got := Intersect([]string{"low"}, []string{"high"}); got != nil {
-		t.Fatalf("disjoint = %v; want nil", got)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Intersect(c.a, c.b); !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("Intersect(%#v, %#v) = %#v, want %#v", c.a, c.b, got, c.want)
+			}
+		})
 	}
 }

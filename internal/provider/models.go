@@ -679,9 +679,11 @@ func mergeAPIs(a, b []API) []API {
 	return normalizeAPIs(merged)
 }
 
-// mergeModelMetadata fills empty metadata on dst from src. The first API that
+// mergeModelMetadata fills absent metadata on dst from src. The first API that
 // reports a field wins, so a later listing cannot overwrite richer earlier
-// data. Effort lists from multiple APIs are intersected instead.
+// data. Effort lists from multiple APIs are intersected instead; a nil slice
+// means no metadata, while a non-nil empty slice is a known empty intersection
+// that later listings must not repopulate.
 func mergeModelMetadata(dst *Model, src Model) {
 	if dst.Name == "" {
 		dst.Name = src.Name
@@ -701,7 +703,7 @@ func mergeModelMetadata(dst *Model, src Model) {
 	if len(dst.Outputs) == 0 {
 		dst.Outputs = src.Outputs
 	}
-	if len(dst.Efforts) == 0 {
+	if dst.Efforts == nil {
 		dst.Efforts = src.Efforts
 	} else {
 		dst.Efforts = effort.Intersect(dst.Efforts, src.Efforts)
