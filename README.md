@@ -1390,9 +1390,9 @@ skills and conversation fragments.
 ## Reasoning effort
 
 Cuttle caps the reasoning effort a request asks for at what the target model
-advertises. The recognized explicit levels `low`, `medium`, `high`, `xhigh` and
-`max` are read from `reasoning_effort`, `reasoning.effort`, `output_config.effort`
-and `generationConfig.thinkingConfig.thinkingLevel`.
+advertises. It reads explicit levels from `reasoning_effort`, `reasoning.effort`,
+`output_config.effort` and `generationConfig.thinkingConfig.thinkingLevel`,
+including `low`, `medium`, `high`, `xhigh` and `max`.
 
 The ceiling is the highest level in the target model's provider catalog:
 
