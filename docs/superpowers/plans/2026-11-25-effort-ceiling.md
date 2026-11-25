@@ -43,7 +43,7 @@ Inputs and conditions the spec implies but does not enumerate; each gets its tes
 - Consumes: nothing.
 - Produces: `effort.Normalize(values []string) []string`, `effort.Rank(level string) (int, bool)`, `effort.Ceiling(values []string) string`, `effort.Intersect(a, b []string) []string`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package effort
@@ -106,12 +106,12 @@ func TestIntersect(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `GOWORK=off go test ./internal/effort -count=1`
 Expected: build failure, `undefined: Rank` (and the other functions).
 
-- [ ] **Step 3: Implement `internal/effort/effort.go`**
+- [x] **Step 3: Implement `internal/effort/effort.go`**
 
 ```go
 package effort
@@ -130,12 +130,12 @@ func Intersect(a, b []string) []string   // nil-safe; empty side returns the oth
 
 Use a map built from `levelOrder` for ranks. `Ceiling` must return `DefaultCeiling` when `Normalize` yields nothing.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `GOWORK=off go test ./internal/effort -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/effort/effort.go internal/effort/effort_test.go docs/superpowers/plans/2026-11-25-effort-ceiling.md
@@ -143,12 +143,12 @@ git commit -m "feat(effort): add the reasoning-effort level ladder"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-25 / DONE
+- Repository + commit: `cuttle` — this commit (`feat(effort): add the reasoning-effort level ladder`); the final SHA is recorded in `task-1-report.md`
+- Files changed: `internal/effort/effort.go` (new), `internal/effort/effort_test.go` (new), `docs/superpowers/plans/2026-11-25-effort-ceiling.md` (this record)
+- Tests/commands and results: `GOWORK=off go test ./internal/effort -count=1` failed before implementation with `undefined: Rank`, `Normalize`, `Ceiling`, and `Intersect`; the same command passed after implementation (`ok`, 0.003s). `GOWORK=off go test ./internal/effort ./internal/rewriter ./internal/provider -count=1` passed all three packages (0.002s / 0.006s / 0.048s). `gofmt -l internal/effort` produced no output.
+- Review findings and fixes: None; the implementation uses the exact fixed ladder, returns fresh normalized slices, preserves nil for disjoint intersections, and defaults empty or unknown-only ceilings to `high`.
+- Deferred items/limitations: None for Task 1; provider catalog parsing and rewriter clamping are covered by later tasks.
 
 ---
 
