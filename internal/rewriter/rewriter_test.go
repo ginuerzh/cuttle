@@ -264,6 +264,64 @@ func TestRewritePassesAttemptToCapture(t *testing.T) {
 	}
 }
 
+func TestRewriteCapturesOriginalEffort(t *testing.T) {
+	capMgr := capture.NewManager(capture.Policy{Mode: "errors", MaxBytes: 1 << 20})
+	eng := engine.New(engine.Options{ResolveModel: func(string, string) (string, string, string) {
+		return "deepseek-v4.1-flash", "openai", ""
+	}})
+	rw := New(eng, Options{
+		Capture: capMgr, Protocol: "chat", Route: "r",
+		UpstreamEfforts: []string{"low", "high", "xhigh"},
+	})
+	body := []byte(`{"model":"claude-sonnet-5-5","reasoning_effort":"max","messages":[{"role":"user","content":"hi"}]}`)
+	out, err := rw.Rewrite(context.Background(), body, requestMeta("/v1/chat/completions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nestedString(t, out, []string{"reasoning_effort"}); got != "xhigh" {
+		t.Fatalf("reasoning_effort = %q, want xhigh; body = %s", got, out)
+	}
+	cap, ok := capMgr.Finish("s1")
+	if !ok {
+		t.Fatal("no capture recorded")
+	}
+	if got := cap.RequestOriginal; got != string(body) {
+		t.Fatalf("requestOriginal = %q, want the pre-clamp client body %q", got, body)
+	}
+	if got := nestedString(t, []byte(cap.RequestRewritten), []string{"reasoning_effort"}); got != "xhigh" {
+		t.Fatalf("captured reasoning_effort = %q, want xhigh; body = %s", got, cap.RequestRewritten)
+	}
+}
+
+func TestRewriteCapturesOriginalEffortOnEngineError(t *testing.T) {
+	capMgr := capture.NewManager(capture.Policy{Mode: "errors", MaxBytes: 1 << 20})
+	eng := engine.New(engine.Options{ResolveModel: func(string, string) (string, string, string) {
+		return "deepseek-v4.1-flash", "responses", ""
+	}})
+	rw := New(eng, Options{
+		Capture: capMgr, Protocol: "responses", Route: "r",
+		UpstreamEfforts: []string{"low", "high", "xhigh"},
+	})
+	body := []byte(`{"model":"claude-sonnet-5-5","reasoning_effort":"max","messages":[{"role":"user","content":"hi"}]}`)
+	out, err := rw.Rewrite(context.Background(), body, requestMeta("/v1/chat/completions"))
+	if err == nil {
+		t.Fatal("Rewrite error = nil, want an unsupported chat-to-responses conversion error")
+	}
+	if string(out) != string(body) {
+		t.Fatalf("Rewrite error body = %s, want the pre-clamp client body %s", out, body)
+	}
+	cap, ok := capMgr.Finish("s1")
+	if !ok {
+		t.Fatal("no capture recorded")
+	}
+	if got := cap.RequestOriginal; got != string(body) {
+		t.Fatalf("requestOriginal = %q, want the pre-clamp client body %q", got, body)
+	}
+	if cap.RequestRewritten != "" {
+		t.Fatalf("requestRewritten = %q, want empty after engine failure", cap.RequestRewritten)
+	}
+}
+
 func TestRewriteClampsEffortAndKeepsClientLevel(t *testing.T) {
 	sink := &sinkStub{}
 	eng := engine.New(engine.Options{ResolveModel: func(string, string) (string, string, string) {

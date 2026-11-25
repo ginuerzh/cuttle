@@ -80,6 +80,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 	isRequest := strings.EqualFold(meta.Direction, "request")
 	ceiling := effort.Ceiling(r.opts.UpstreamEfforts)
 	clientEffort := requestEffort(meta.Direction, b)
+	original := b
 	inbound := inboundProtocol(meta.URI)
 	if inbound != "" && r.opts.Sink != nil {
 		r.opts.Sink.AddInboundProtocol(meta.SID, inbound)
@@ -110,7 +111,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		}
 	}
 	if err != nil {
-		r.captureRewrite(meta, b, nil, res, attempt)
+		r.captureRewrite(meta, original, nil, res, attempt)
 		stage := rewriteStage(meta.Direction, meta.SSEPhase)
 		if r.opts.Sink != nil {
 			r.opts.Sink.AddRewriteError(meta.SID, stage, meta.Direction, meta.SSEPhase, meta.EventIndex)
@@ -128,7 +129,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 			"sse_phase":        meta.SSEPhase,
 			"event_index":      meta.EventIndex,
 		}).Errorf("rewrite %s: %v", meta.Direction, err)
-		return b, err
+		return original, err
 	}
 	if isRequest && !isCountTokensURI(meta.URI) {
 		res.Data = r.clampRequestEffort(meta, res.Data, ceiling)
@@ -149,7 +150,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 			res.Data = clamped
 		}
 	}
-	r.captureRewrite(meta, b, res.Data, res, attempt)
+	r.captureRewrite(meta, original, res.Data, res, attempt)
 	if clientEffort != "" {
 		res.Effort = clientEffort
 	}
