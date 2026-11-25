@@ -144,7 +144,7 @@ git commit -m "feat(effort): add the reasoning-effort level ladder"
 
 **Implementation record**
 - Date/status: 2026-11-25 / DONE
-- Repository + commit: `cuttle` — this commit (`feat(effort): add the reasoning-effort level ladder`); the final SHA is recorded in `task-1-report.md`
+- Repository + commit: `cuttle` — commit `60a6940f` (`feat(effort): add the reasoning-effort level ladder`)
 - Files changed: `internal/effort/effort.go` (new), `internal/effort/effort_test.go` (new), `docs/superpowers/plans/2026-11-25-effort-ceiling.md` (this record)
 - Tests/commands and results: `GOWORK=off go test ./internal/effort -count=1` failed before implementation with `undefined: Rank`, `Normalize`, `Ceiling`, and `Intersect`; the same command passed after implementation (`ok`, 0.003s). `GOWORK=off go test ./internal/effort ./internal/rewriter ./internal/provider -count=1` passed all three packages (0.002s / 0.006s / 0.048s). `gofmt -l internal/effort` produced no output.
 - Review findings and fixes: None; the implementation uses the exact fixed ladder, returns fresh normalized slices, preserves nil for disjoint intersections, and defaults empty or unknown-only ceilings to `high`.
@@ -162,7 +162,7 @@ git commit -m "feat(effort): add the reasoning-effort level ladder"
 - Consumes: `effort.Normalize`, `effort.Intersect` (Task 1).
 - Produces: `modelItem.Efforts []string`; `Model.Efforts` populated by `Models()`; `parseEfforts(raw json.RawMessage) []string`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestToItemParsesEfforts(t *testing.T) {
@@ -206,12 +206,12 @@ Add `TestModelsPopulatesEfforts`: an `httptest` catalog server returning
 `{"data":[{"id":"m","effort":{"supported_levels":["low","high","max"]}}]}`
 whose `Models()` result has `Efforts == []string{"low","high","max"}`.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/provider -run 'Effort' -count=1`
 Expected: build failure, `m.toItem().Efforts undefined` and `Model.Efforts` not merged (or undefined field).
 
-- [ ] **Step 3: Implement the parsing**
+- [x] **Step 3: Implement the parsing**
 
 - Add `Efforts []string` to `modelItem`.
 - Extend `openAIModelJSON` with `Effort json.RawMessage `json:"effort"`` and `Capabilities openAIModelCapabilitiesJSON `json:"capabilities"``, where the new type is `struct { Reasoning struct { Effort []string `json:"effort"` } `json:"reasoning"` }`.
@@ -221,12 +221,12 @@ Expected: build failure, `m.toItem().Efforts undefined` and `Model.Efforts` not 
 - In `mergeModelMetadata`, set a missing `dst.Efforts` from `src`, and otherwise set `dst.Efforts = effort.Intersect(dst.Efforts, src.Efforts)`.
 - `decodeGeminiPage` stays unchanged (no effort metadata).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/provider -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/provider/models.go internal/provider/models_test.go docs/superpowers/plans/2026-11-25-effort-ceiling.md
@@ -234,12 +234,12 @@ git commit -m "feat(provider): parse effort levels from model catalogs"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-25 / DONE
+- Repository + commit: `cuttle` — this commit (`feat(provider): parse effort levels from model catalogs`); the final SHA is recorded in `task-2-report.md`
+- Files changed: `internal/provider/models.go`, `internal/provider/models_test.go`, `docs/superpowers/plans/2026-11-25-effort-ceiling.md` (Task 1 commit correction and this record)
+- Tests/commands and results: `GOWORK=off go test ./internal/provider -run 'Effort' -count=1` failed before implementation with `m.toItem().Efforts undefined`; it passed after implementation. Self-review added malformed-capabilities cases, which failed on `json: cannot unmarshal ...`, then passed after the lenient decoder. `GOWORK=off go test ./internal/provider -count=1` and the required `GOWORK=off go test ./internal/provider ./internal/effort ./internal/gateway -count=1` passed (0.099s / 0.003s / 11.839s). The full gate `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./... -count=1` passed. The web gate (`npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`) passed 507 tests; it emitted existing React/Ant Design deprecation/act warnings and the Vite chunk-size warning. `gofmt -l` and `git diff --check` were clean.
+- Review findings and fixes: Self-review found malformed optional `capabilities` metadata could fail the whole catalog, violating the design's leniency requirement; added a custom lenient `UnmarshalJSON` plus three regression cases. No other findings.
+- Deferred items/limitations: None for Task 2; gateway catalog propagation and rewriter clamping remain in Tasks 3–4.
 
 ---
 

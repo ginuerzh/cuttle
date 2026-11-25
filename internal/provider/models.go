@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+
+	"github.com/ginuerzh/cuttle/internal/effort"
 )
 
 // modelsTimeout bounds model-list requests so a stalled provider cannot hold
@@ -67,6 +70,7 @@ func (p *baseProvider) Models(ctx context.Context) ([]Model, error) {
 				Output:  item.Output,
 				Inputs:  item.Inputs,
 				Outputs: item.Outputs,
+				Efforts: item.Efforts,
 				Price:   item.Price,
 			}
 			if len(item.APIs) > 0 {
@@ -170,6 +174,7 @@ type modelItem struct {
 	Output         int
 	Inputs         []string
 	Outputs        []string
+	Efforts        []string
 	Price          *Price
 	APIs           []API
 	EndpointsKnown bool
@@ -278,21 +283,23 @@ func ModelsURL(base string, api API) string {
 // metadata is kept raw so a malformed metadata block cannot fail the whole
 // catalog.
 type openAIModelJSON struct {
-	ID               string                 `json:"id"`
-	Name             string                 `json:"name"`
-	DisplayName      string                 `json:"display_name"`
-	ContextLength    int                    `json:"context_length"`
-	ContextWindow    int                    `json:"context_window"`
-	MaxOutputTokens  int                    `json:"max_output_tokens"`
-	InputModalities  []string               `json:"input_modalities"`
-	OutputModalities []string               `json:"output_modalities"`
-	Modalities       json.RawMessage        `json:"modalities"`
-	Limit            json.RawMessage        `json:"limit"`
-	Cost             json.RawMessage        `json:"cost"`
-	Architecture     openAIArchitectureJSON `json:"architecture"`
-	Pricing          openAIPricingJSON      `json:"pricing"`
-	TopProvider      openAITopProviderJSON  `json:"top_provider"`
-	Endpoints        []string               `json:"endpoints"`
+	ID               string                      `json:"id"`
+	Name             string                      `json:"name"`
+	DisplayName      string                      `json:"display_name"`
+	ContextLength    int                         `json:"context_length"`
+	ContextWindow    int                         `json:"context_window"`
+	MaxOutputTokens  int                         `json:"max_output_tokens"`
+	InputModalities  []string                    `json:"input_modalities"`
+	OutputModalities []string                    `json:"output_modalities"`
+	Modalities       json.RawMessage             `json:"modalities"`
+	Limit            json.RawMessage             `json:"limit"`
+	Cost             json.RawMessage             `json:"cost"`
+	Effort           json.RawMessage             `json:"effort"`
+	Capabilities     openAIModelCapabilitiesJSON `json:"capabilities"`
+	Architecture     openAIArchitectureJSON      `json:"architecture"`
+	Pricing          openAIPricingJSON           `json:"pricing"`
+	TopProvider      openAITopProviderJSON       `json:"top_provider"`
+	Endpoints        []string                    `json:"endpoints"`
 }
 
 type openAIArchitectureJSON struct {
@@ -308,6 +315,32 @@ type openAIPricingJSON struct {
 type openAITopProviderJSON struct {
 	ContextLength       int `json:"context_length"`
 	MaxCompletionTokens int `json:"max_completion_tokens"`
+}
+
+type openAIModelCapabilitiesJSON struct {
+	Reasoning struct {
+		Effort []string `json:"effort"`
+	} `json:"reasoning"`
+}
+
+// UnmarshalJSON keeps malformed optional capabilities metadata from failing the
+// whole catalog.
+func (c *openAIModelCapabilitiesJSON) UnmarshalJSON(data []byte) error {
+	*c = openAIModelCapabilitiesJSON{}
+	var capabilities struct {
+		Reasoning json.RawMessage `json:"reasoning"`
+	}
+	if err := json.Unmarshal(data, &capabilities); err != nil {
+		return nil
+	}
+	var reasoning struct {
+		Effort []string `json:"effort"`
+	}
+	if err := json.Unmarshal(capabilities.Reasoning, &reasoning); err != nil {
+		return nil
+	}
+	c.Reasoning.Effort = reasoning.Effort
+	return nil
 }
 
 type openAIModalitiesJSON struct {
@@ -381,6 +414,11 @@ func (m openAIModelJSON) toItem() modelItem {
 	}
 	if item.Name == "" {
 		item.Name = item.ID
+	}
+	if len(m.Capabilities.Reasoning.Effort) > 0 {
+		item.Efforts = effort.Normalize(m.Capabilities.Reasoning.Effort)
+	} else {
+		item.Efforts = parseEfforts(m.Effort)
 	}
 
 	var modalities openAIModalitiesJSON
@@ -459,6 +497,28 @@ func (m openAIModelJSON) toItem() modelItem {
 	item.APIs = normalizeAPIs(item.APIs)
 	item.EndpointsKnown = len(m.Endpoints) > 0
 	return item
+}
+
+func parseEfforts(raw json.RawMessage) []string {
+	var object struct {
+		SupportedLevels []string `json:"supported_levels"`
+	}
+	if err := json.Unmarshal(raw, &object); err == nil && len(object.SupportedLevels) > 0 {
+		return effort.Normalize(object.SupportedLevels)
+	}
+
+	var levels []string
+	if err := json.Unmarshal(raw, &levels); err == nil {
+		return effort.Normalize(levels)
+	}
+
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return effort.Normalize(strings.FieldsFunc(value, func(r rune) bool {
+			return r == ',' || unicode.IsSpace(r)
+		}))
+	}
+	return nil
 }
 
 // apiFromEndpoint maps an OpenRouter endpoint path to the gateway's wire API.
@@ -621,7 +681,7 @@ func mergeAPIs(a, b []API) []API {
 
 // mergeModelMetadata fills empty metadata on dst from src. The first API that
 // reports a field wins, so a later listing cannot overwrite richer earlier
-// data.
+// data. Effort lists from multiple APIs are intersected instead.
 func mergeModelMetadata(dst *Model, src Model) {
 	if dst.Name == "" {
 		dst.Name = src.Name
@@ -640,6 +700,11 @@ func mergeModelMetadata(dst *Model, src Model) {
 	}
 	if len(dst.Outputs) == 0 {
 		dst.Outputs = src.Outputs
+	}
+	if len(dst.Efforts) == 0 {
+		dst.Efforts = src.Efforts
+	} else {
+		dst.Efforts = effort.Intersect(dst.Efforts, src.Efforts)
 	}
 	if dst.Price == nil {
 		dst.Price = src.Price

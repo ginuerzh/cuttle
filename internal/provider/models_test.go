@@ -1038,3 +1038,64 @@ func TestModelsGeminiChatOnlyFailsLoudly(t *testing.T) {
 		t.Fatalf("models = %+v, want zero models on a failed listing", models)
 	}
 }
+
+func TestToItemParsesEfforts(t *testing.T) {
+	cases := []struct{ name, body, want string }{
+		{"deepseek object", `{"id":"m","effort":{"supported_levels":["low","high","max"],"default_level":"high"}}`, "low,high,max"},
+		{"capabilities", `{"id":"m","capabilities":{"reasoning":{"supported":true,"effort":["low","high","max"]}}}`, "low,high,max"},
+		{"bare array", `{"id":"m","effort":["high","low"]}`, "low,high"},
+		{"string", `{"id":"m","effort":"low, HIGH"}`, "low,high"},
+		{"malformed", `{"id":"m","effort":{}}`, ""},
+		{"malformed capabilities", `{"id":"m","capabilities":[],"effort":["low"]}`, "low"},
+		{"malformed reasoning", `{"id":"m","capabilities":{"reasoning":[]},"effort":["low"]}`, "low"},
+		{"malformed capabilities effort", `{"id":"m","capabilities":{"reasoning":{"effort":"high"}},"effort":["low"]}`, "low"},
+		{"unknown only", `{"id":"m","effort":["extreme"]}`, ""},
+		{"capabilities win", `{"id":"m","effort":["low"],"capabilities":{"reasoning":{"effort":["high","max"]}}}`, "high,max"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var m openAIModelJSON
+			if err := json.Unmarshal([]byte(c.body), &m); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(m.toItem().Efforts, ","); got != c.want {
+				t.Fatalf("efforts = %q; want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestMergeModelMetadataIntersectsEfforts(t *testing.T) {
+	dst := Model{Efforts: []string{"low", "high", "max"}}
+	mergeModelMetadata(&dst, Model{Efforts: []string{"low", "high"}})
+	if got := strings.Join(dst.Efforts, ","); got != "low,high" {
+		t.Fatalf("merged = %q", got)
+	}
+	empty := Model{}
+	mergeModelMetadata(&empty, Model{Efforts: []string{"max"}})
+	if got := strings.Join(empty.Efforts, ","); got != "max" {
+		t.Fatalf("empty dst = %q", got)
+	}
+}
+
+func TestModelsPopulatesEfforts(t *testing.T) {
+	srv := newModelServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"m","effort":{"supported_levels":["low","high","max"]}}]}`)
+	})
+	p := mustProvider(t, config.Provider{
+		Name: "p",
+		Type: "generic",
+		Chat: srv.URL,
+	})
+
+	models, err := p.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("models = %+v, want one", models)
+	}
+	if got := models[0].Efforts; !slices.Equal(got, []string{"low", "high", "max"}) {
+		t.Fatalf("efforts = %v, want [low high max]", got)
+	}
+}
