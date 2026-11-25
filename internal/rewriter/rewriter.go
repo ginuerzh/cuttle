@@ -3,6 +3,7 @@
 package rewriter
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	xlogger "github.com/go-gost/x/logger"
 
 	"github.com/ginuerzh/cuttle/internal/capture"
+	"github.com/ginuerzh/cuttle/internal/effort"
 
 	"github.com/ginuerzh/llm-api-converter/engine"
 )
@@ -75,12 +77,18 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		EventIndex: intValue(md["event_index"]),
 	}
 	attempt := intValue(md["attempt"])
+	isRequest := strings.EqualFold(meta.Direction, "request")
+	ceiling := effort.Ceiling(r.opts.UpstreamEfforts)
+	clientEffort := requestEffort(meta.Direction, b)
 	inbound := inboundProtocol(meta.URI)
 	if inbound != "" && r.opts.Sink != nil {
 		r.opts.Sink.AddInboundProtocol(meta.SID, inbound)
 	}
 	if meta.Direction == "request" && r.opts.Protocol == "anthropic" && r.opts.TargetModel != "" && isCountTokensURI(meta.URI) {
 		b = replaceModelField(b, r.opts.TargetModel)
+	}
+	if isRequest && !isCountTokensURI(meta.URI) {
+		b = r.clampRequestEffort(meta, b, ceiling)
 	}
 
 	if strings.EqualFold(meta.Direction, "response") &&
@@ -122,6 +130,9 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		}).Errorf("rewrite %s: %v", meta.Direction, err)
 		return b, err
 	}
+	if isRequest && !isCountTokensURI(meta.URI) {
+		res.Data = r.clampRequestEffort(meta, res.Data, ceiling)
+	}
 	if strings.EqualFold(meta.Direction, "request") && r.opts.MaxOutputTokens > 0 && !isCountTokensURI(meta.URI) {
 		clamped, err := clampMaxTokens(res.Data, r.opts.Protocol, r.opts.MaxOutputTokens)
 		if err != nil {
@@ -139,13 +150,36 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		}
 	}
 	r.captureRewrite(meta, b, res.Data, res, attempt)
-	if level := requestEffort(meta.Direction, b); level != "" {
-		res.Effort = level
+	if clientEffort != "" {
+		res.Effort = clientEffort
 	}
 	if r.opts.Sink != nil {
 		r.opts.Sink.Add(meta.SID, r.opts.Provider, r.opts.Protocol, res)
 	}
 	return res.Data, nil
+}
+
+func (r *Rewriter) clampRequestEffort(meta engine.Meta, body []byte, ceiling string) []byte {
+	clamped, err := clampEffort(body, ceiling)
+	if err != nil {
+		r.opts.Logger.WithFields(map[string]any{
+			"sid":   meta.SID,
+			"route": r.opts.Route,
+			"node":  r.opts.Node,
+		}).Debugf("clamp effort: %v", err)
+		return body
+	}
+	if bytes.Equal(clamped, body) {
+		return body
+	}
+	r.opts.Logger.WithFields(map[string]any{
+		"sid":       meta.SID,
+		"route":     r.opts.Route,
+		"node":      r.opts.Node,
+		"requested": requestEffort("request", body),
+		"effective": requestEffort("request", clamped),
+	}).Debugf("clamp effort")
+	return clamped
 }
 
 func (r *Rewriter) captureRewrite(meta engine.Meta, original, rewritten []byte, res engine.Result, attempt int) {

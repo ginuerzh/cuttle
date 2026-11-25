@@ -264,6 +264,66 @@ func TestRewritePassesAttemptToCapture(t *testing.T) {
 	}
 }
 
+func TestRewriteClampsEffortAndKeepsClientLevel(t *testing.T) {
+	sink := &sinkStub{}
+	eng := engine.New(engine.Options{ResolveModel: func(string, string) (string, string, string) {
+		return "deepseek-v4.1-flash", "openai", ""
+	}})
+	rw := New(eng, Options{
+		Sink: sink, Protocol: "chat",
+		UpstreamEfforts: []string{"low", "high", "xhigh"},
+	})
+	out, err := rw.Rewrite(context.Background(),
+		[]byte(`{"model":"claude-sonnet-5-5","reasoning_effort":"max","messages":[{"role":"user","content":"hi"}]}`), requestMeta("/v1/chat/completions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nestedString(t, out, []string{"reasoning_effort"}); got != "xhigh" {
+		t.Fatalf("reasoning_effort = %q, want xhigh; body = %s", got, out)
+	}
+	if sink.effort != "max" {
+		t.Fatalf("sink effort = %q, want the client level max", sink.effort)
+	}
+}
+
+func TestRewriteClampsAfterConversion(t *testing.T) {
+	eng := engine.New(engine.Options{ResolveModel: func(string, string) (string, string, string) {
+		return "deepseek-v4.1-flash", "openai", ""
+	}})
+	rw := New(eng, Options{Protocol: "chat", UpstreamEfforts: []string{"low", "high", "xhigh"}})
+	out, err := rw.Rewrite(context.Background(),
+		[]byte(`{"model":"claude-sonnet-5-5","output_config":{"effort":"xhigh"},"thinking":{"type":"enabled","budget_tokens":16000},"messages":[{"role":"user","content":"hi"}],"max_tokens":64}`),
+		requestMeta("/v1/messages"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nestedString(t, out, []string{"reasoning_effort"}); got != "xhigh" {
+		t.Fatalf("converted reasoning_effort = %q, want xhigh; body = %s", got, out)
+	}
+}
+
+func TestRewriteSkipsCountTokensEffort(t *testing.T) {
+	rw := New(engine.New(engine.Options{}), Options{
+		Protocol: "anthropic", UpstreamEfforts: []string{"low", "high"},
+	})
+	in := []byte(`{"model":"claude-sonnet-5-5","reasoning_effort":"max"}`)
+	out, err := rw.Rewrite(context.Background(), in, requestMeta("/v1/messages/count_tokens"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != string(in) {
+		t.Fatalf("count_tokens body changed: %s", out)
+	}
+}
+
+func requestMeta(uri string) corerewriter.RewriteOption {
+	return corerewriter.MetadataRewriteOption(map[string]any{
+		"sid":       "s1",
+		"direction": "request",
+		"uri":       uri,
+	})
+}
+
 func TestIsCountTokensURI(t *testing.T) {
 	for _, uri := range []string{"/v1/messages/count_tokens", "/v1/messages/count_tokens?beta=true"} {
 		if !isCountTokensURI(uri) {
