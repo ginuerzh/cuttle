@@ -542,7 +542,7 @@ git commit -m "docs: document reasoning-effort resolution"
 
 **Implementation record**
 - Date/status: 2026-11-25 / DONE
-- Repository + commit: `cuttle` — documentation commit `docs: document reasoning-effort resolution`; record-only follow-up `docs: record task 5 implementation` will record the documentation SHA.
+- Repository + commit: `cuttle` — documentation commit `d086683b` (`docs: document reasoning-effort resolution`); record-only follow-up `docs: record task 5 implementation`.
 - Files changed: `README.md` and this record.
 - Tests/commands and results: `grep -n "Reasoning effort" README.md` returned `1390:## Reasoning effort`; re-reading the section confirmed it sits after `## Token counting` and before `## Connection warming`. `git diff --check` exited 0 with no output. Every behavioral claim was checked against `internal/effort/effort.go`, `internal/rewriter/effort.go`, the pre/post-conversion call sites and debug logging in `internal/rewriter/rewriter.go`, and catalog propagation in `internal/gateway/build.go`. No Go or web tests were run because this task changes documentation only; Tasks 1–4 already cover the behavior.
 - Review findings and fixes: Self-review found no behavioral inaccuracies. Wording scopes the no-injection claim to the clamp and the stats claim to an explicitly client-selected level, matching the converter/engine fallback behavior.
