@@ -1,8 +1,10 @@
 package rewriter
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	corerewriter "github.com/go-gost/core/rewriter"
 
 	"github.com/ginuerzh/cuttle/internal/capture"
+	cuttlelogging "github.com/ginuerzh/cuttle/internal/logging"
 )
 
 type sinkStub struct {
@@ -322,25 +325,126 @@ func TestRewriteCapturesOriginalEffortOnEngineError(t *testing.T) {
 	}
 }
 
-func TestRewriteClampsEffortAndKeepsClientLevel(t *testing.T) {
-	sink := &sinkStub{}
+func TestRewriteLogsChangedEffortPaths(t *testing.T) {
+	var buf bytes.Buffer
+	log, err := cuttlelogging.NewWithWriter("debug", "json", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rw := New(engine.New(engine.Options{}), Options{
+		Logger: log, Protocol: "chat",
+		UpstreamEfforts: []string{"low", "high", "xhigh"},
+	})
+	body := []byte(`{"model":"m","reasoning_effort":"low","output_config":{"effort":"max"}}`)
+	if _, err := rw.Rewrite(context.Background(), body, requestMeta("/custom")); err != nil {
+		t.Fatal(err)
+	}
+	entries := clampLogEntries(t, &buf)
+	if len(entries) != 1 {
+		t.Fatalf("clamp log entries = %d, want 1; logs = %s", len(entries), buf.String())
+	}
+	if got := entries[0]["client_effort"]; got != "low" {
+		t.Fatalf("client_effort = %v, want low; log = %s", got, buf.String())
+	}
+	assertEffortChange(t, entries[0], "output_config.effort", "max", "xhigh")
+}
+
+func TestRewriteLogsClientEffortAfterConversion(t *testing.T) {
+	var buf bytes.Buffer
+	log, err := cuttlelogging.NewWithWriter("debug", "json", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	eng := engine.New(engine.Options{ResolveModel: func(string, string) (string, string, string) {
 		return "deepseek-v4.1-flash", "openai", ""
 	}})
 	rw := New(eng, Options{
-		Sink: sink, Protocol: "chat",
+		Logger: log, Protocol: "chat",
 		UpstreamEfforts: []string{"low", "high", "xhigh"},
 	})
-	out, err := rw.Rewrite(context.Background(),
-		[]byte(`{"model":"claude-sonnet-5-5","reasoning_effort":"max","messages":[{"role":"user","content":"hi"}]}`), requestMeta("/v1/chat/completions"))
-	if err != nil {
+	body := []byte(`{"model":"claude-sonnet-5-5","output_config":{"effort":"xhigh"},"thinking":{"type":"enabled","budget_tokens":16000},"messages":[{"role":"user","content":"hi"}],"max_tokens":64}`)
+	if _, err := rw.Rewrite(context.Background(), body, requestMeta("/v1/messages")); err != nil {
 		t.Fatal(err)
 	}
-	if got := nestedString(t, out, []string{"reasoning_effort"}); got != "xhigh" {
-		t.Fatalf("reasoning_effort = %q, want xhigh; body = %s", got, out)
+	entries := clampLogEntries(t, &buf)
+	if len(entries) != 1 {
+		t.Fatalf("clamp log entries = %d, want 1; logs = %s", len(entries), buf.String())
 	}
-	if sink.effort != "max" {
-		t.Fatalf("sink effort = %q, want the client level max", sink.effort)
+	if got := entries[0]["client_effort"]; got != "xhigh" {
+		t.Fatalf("client_effort = %v, want xhigh; log = %s", got, buf.String())
+	}
+	assertEffortChange(t, entries[0], "reasoning_effort", "max", "xhigh")
+}
+
+func clampLogEntries(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var entries []map[string]any
+	dec := json.NewDecoder(bytes.NewReader(buf.Bytes()))
+	for {
+		var entry map[string]any
+		if err := dec.Decode(&entry); err == io.EOF {
+			return entries
+		} else if err != nil {
+			t.Fatalf("decode clamp logs %q: %v", buf.String(), err)
+		}
+		if entry["msg"] == "clamp effort" {
+			entries = append(entries, entry)
+		}
+	}
+}
+
+func assertEffortChange(t *testing.T, entry map[string]any, path, requested, effective string) {
+	t.Helper()
+	if _, ok := entry["requested"]; ok {
+		t.Fatalf("clamp log still has ambiguous requested field: %#v", entry)
+	}
+	if _, ok := entry["effective"]; ok {
+		t.Fatalf("clamp log still has ambiguous effective field: %#v", entry)
+	}
+	changes, ok := entry["changes"].([]any)
+	if !ok || len(changes) != 1 {
+		t.Fatalf("changes = %#v, want one field-level change; log = %#v", entry["changes"], entry)
+	}
+	change, ok := changes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("change = %#v, want object", changes[0])
+	}
+	if change["path"] != path || change["requested"] != requested || change["effective"] != effective {
+		t.Fatalf("change = %#v, want path=%q requested=%q effective=%q", change, path, requested, effective)
+	}
+}
+
+func TestRewriteClampsEffortAndKeepsClientLevel(t *testing.T) {
+	cases := []struct {
+		name    string
+		efforts []string
+		want    string
+	}{
+		{"declared ceiling", []string{"low", "high", "xhigh"}, "xhigh"},
+		{"silent catalog", nil, "high"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &sinkStub{}
+			eng := engine.New(engine.Options{ResolveModel: func(string, string) (string, string, string) {
+				return "deepseek-v4.1-flash", "openai", ""
+			}})
+			rw := New(eng, Options{
+				Sink: sink, Protocol: "chat",
+				UpstreamEfforts: tc.efforts,
+			})
+			out, err := rw.Rewrite(context.Background(),
+				[]byte(`{"model":"claude-sonnet-5-5","reasoning_effort":"max","messages":[{"role":"user","content":"hi"}]}`), requestMeta("/v1/chat/completions"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := nestedString(t, out, []string{"reasoning_effort"}); got != tc.want {
+				t.Fatalf("reasoning_effort = %q, want %q; body = %s", got, tc.want, out)
+			}
+			if sink.effort != "max" {
+				t.Fatalf("sink effort = %q, want the client level max", sink.effort)
+			}
+		})
 	}
 }
 
@@ -361,16 +465,21 @@ func TestRewriteClampsAfterConversion(t *testing.T) {
 }
 
 func TestRewriteSkipsCountTokensEffort(t *testing.T) {
+	const targetModel = "deepseek-v4.1-flash"
 	rw := New(engine.New(engine.Options{}), Options{
-		Protocol: "anthropic", UpstreamEfforts: []string{"low", "high"},
+		Protocol: "anthropic", TargetModel: targetModel,
+		UpstreamEfforts: []string{"low", "high"},
 	})
 	in := []byte(`{"model":"claude-sonnet-5-5","reasoning_effort":"max"}`)
 	out, err := rw.Rewrite(context.Background(), in, requestMeta("/v1/messages/count_tokens"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(out) != string(in) {
-		t.Fatalf("count_tokens body changed: %s", out)
+	if got := nestedString(t, out, []string{"model"}); got != targetModel {
+		t.Fatalf("count_tokens model = %q, want %q; body = %s", got, targetModel, out)
+	}
+	if got := nestedString(t, out, []string{"reasoning_effort"}); got != "max" {
+		t.Fatalf("count_tokens reasoning_effort = %q, want max; body = %s", got, out)
 	}
 }
 

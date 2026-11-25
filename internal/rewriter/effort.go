@@ -7,53 +7,65 @@ import (
 	"github.com/ginuerzh/cuttle/internal/effort"
 )
 
+type effortChange struct {
+	Path      string `json:"path"`
+	Requested string `json:"requested"`
+	Effective string `json:"effective"`
+}
+
 // clampEffort lowers explicit reasoning-effort fields above ceiling. It never
 // injects a missing field, changes a lower value, or rewrites a body that does
 // not need clamping.
 func clampEffort(body []byte, ceiling string) ([]byte, error) {
+	clamped, _, err := clampEffortDetails(body, ceiling)
+	return clamped, err
+}
+
+func clampEffortDetails(body []byte, ceiling string) ([]byte, []effortChange, error) {
 	ceilingRank, ok := effort.Rank(ceiling)
 	if !ok || len(body) == 0 {
-		return body, nil
+		return body, nil, nil
 	}
 	if !bytes.Contains(body, []byte("effort")) && !bytes.Contains(body, []byte("thinkingLevel")) {
-		return body, nil
+		return body, nil, nil
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
 		// Non-JSON request bodies, including SSE-framed bodies, pass through.
-		return body, nil
+		return body, nil, nil
 	}
 
-	changed, err := clampStringEffort(raw, "reasoning_effort", ceiling, ceilingRank)
+	var changes []effortChange
+	changed, err := clampStringEffort(raw, "reasoning_effort", "reasoning_effort", ceiling, ceilingRank, &changes)
 	if err != nil {
-		return body, err
+		return body, nil, err
 	}
 	anyChanged := changed
 	for _, parent := range []string{"reasoning", "output_config"} {
-		changed, err = clampNestedStringEffort(raw, parent, "effort", ceiling, ceilingRank)
+		changed, err = clampNestedStringEffort(raw, parent, "effort", parent+".effort", ceiling, ceilingRank, &changes)
 		if err != nil {
-			return body, err
+			return body, nil, err
 		}
 		anyChanged = anyChanged || changed
 	}
-	changed, err = clampGeminiEffort(raw, ceiling, ceilingRank)
+	changed, err = clampGeminiEffort(raw, ceiling, ceilingRank, &changes)
 	if err != nil {
-		return body, err
+		return body, nil, err
 	}
 	anyChanged = anyChanged || changed
 	if !anyChanged {
-		return body, nil
+		return body, nil, nil
 	}
 
 	out, err := json.Marshal(raw)
 	if err != nil {
-		return body, err
+		return body, nil, err
 	}
-	return out, nil
+	return out, changes, nil
 }
 
-func clampStringEffort(fields map[string]json.RawMessage, field, ceiling string, ceilingRank int) (bool, error) {
+func clampStringEffort(fields map[string]json.RawMessage, field, path, ceiling string, ceilingRank int, changes *[]effortChange) (bool, error) {
 	value, ok := fields[field]
 	if !ok {
 		return false, nil
@@ -71,10 +83,11 @@ func clampStringEffort(fields map[string]json.RawMessage, field, ceiling string,
 		return false, err
 	}
 	fields[field] = clamped
+	*changes = append(*changes, effortChange{Path: path, Requested: level, Effective: ceiling})
 	return true, nil
 }
 
-func clampNestedStringEffort(fields map[string]json.RawMessage, parent, field, ceiling string, ceilingRank int) (bool, error) {
+func clampNestedStringEffort(fields map[string]json.RawMessage, parent, field, path, ceiling string, ceilingRank int, changes *[]effortChange) (bool, error) {
 	value, ok := fields[parent]
 	if !ok {
 		return false, nil
@@ -83,7 +96,7 @@ func clampNestedStringEffort(fields map[string]json.RawMessage, parent, field, c
 	if err := json.Unmarshal(value, &nested); err != nil {
 		return false, err
 	}
-	changed, err := clampStringEffort(nested, field, ceiling, ceilingRank)
+	changed, err := clampStringEffort(nested, field, path, ceiling, ceilingRank, changes)
 	if err != nil || !changed {
 		return false, err
 	}
@@ -95,7 +108,7 @@ func clampNestedStringEffort(fields map[string]json.RawMessage, parent, field, c
 	return true, nil
 }
 
-func clampGeminiEffort(fields map[string]json.RawMessage, ceiling string, ceilingRank int) (bool, error) {
+func clampGeminiEffort(fields map[string]json.RawMessage, ceiling string, ceilingRank int, changes *[]effortChange) (bool, error) {
 	value, ok := fields["generationConfig"]
 	if !ok {
 		return false, nil
@@ -104,7 +117,7 @@ func clampGeminiEffort(fields map[string]json.RawMessage, ceiling string, ceilin
 	if err := json.Unmarshal(value, &config); err != nil {
 		return false, err
 	}
-	changed, err := clampNestedStringEffort(config, "thinkingConfig", "thinkingLevel", ceiling, ceilingRank)
+	changed, err := clampNestedStringEffort(config, "thinkingConfig", "thinkingLevel", "generationConfig.thinkingConfig.thinkingLevel", ceiling, ceilingRank, changes)
 	if err != nil || !changed {
 		return false, err
 	}

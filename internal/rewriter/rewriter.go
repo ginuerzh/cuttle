@@ -3,7 +3,6 @@
 package rewriter
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -89,7 +88,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		b = replaceModelField(b, r.opts.TargetModel)
 	}
 	if isRequest && !isCountTokensURI(meta.URI) {
-		b = r.clampRequestEffort(meta, b, ceiling)
+		b = r.clampRequestEffort(meta, b, ceiling, clientEffort)
 	}
 
 	if strings.EqualFold(meta.Direction, "response") &&
@@ -132,7 +131,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 		return original, err
 	}
 	if isRequest && !isCountTokensURI(meta.URI) {
-		res.Data = r.clampRequestEffort(meta, res.Data, ceiling)
+		res.Data = r.clampRequestEffort(meta, res.Data, ceiling, clientEffort)
 	}
 	if strings.EqualFold(meta.Direction, "request") && r.opts.MaxOutputTokens > 0 && !isCountTokensURI(meta.URI) {
 		clamped, err := clampMaxTokens(res.Data, r.opts.Protocol, r.opts.MaxOutputTokens)
@@ -160,8 +159,8 @@ func (r *Rewriter) Rewrite(ctx context.Context, b []byte, opts ...corerewriter.R
 	return res.Data, nil
 }
 
-func (r *Rewriter) clampRequestEffort(meta engine.Meta, body []byte, ceiling string) []byte {
-	clamped, err := clampEffort(body, ceiling)
+func (r *Rewriter) clampRequestEffort(meta engine.Meta, body []byte, ceiling, clientEffort string) []byte {
+	clamped, changes, err := clampEffortDetails(body, ceiling)
 	if err != nil {
 		r.opts.Logger.WithFields(map[string]any{
 			"sid":   meta.SID,
@@ -170,15 +169,15 @@ func (r *Rewriter) clampRequestEffort(meta engine.Meta, body []byte, ceiling str
 		}).Debugf("clamp effort: %v", err)
 		return body
 	}
-	if bytes.Equal(clamped, body) {
+	if len(changes) == 0 {
 		return body
 	}
 	r.opts.Logger.WithFields(map[string]any{
-		"sid":       meta.SID,
-		"route":     r.opts.Route,
-		"node":      r.opts.Node,
-		"requested": requestEffort("request", body),
-		"effective": requestEffort("request", clamped),
+		"sid":           meta.SID,
+		"route":         r.opts.Route,
+		"node":          r.opts.Node,
+		"client_effort": clientEffort,
+		"changes":       changes,
 	}).Debugf("clamp effort")
 	return clamped
 }
