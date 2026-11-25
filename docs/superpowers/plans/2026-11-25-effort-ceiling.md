@@ -258,7 +258,7 @@ git commit -m "feat(provider): parse effort levels from model catalogs"
 - Consumes: `provider.Model.Efforts` (Task 2).
 - Produces: `catalogInfo map[string]map[string]catalogModel`, `catalogModel{Output int; Efforts []string}`; `catalogCache.Catalog(cfg, log) catalogInfo`; `upstreamTarget.efforts []string`; `rewriter.Options.UpstreamEfforts []string`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestFetchCatalogInfoCollectsEfforts(t *testing.T) {
@@ -295,12 +295,12 @@ func TestCompileNodeTargetsCarriesEfforts(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `GOWORK=off go test ./internal/gateway -run 'Effort|Catalog' -count=1`
 Expected: build failure, `catalogInfo`/`fetchCatalogInfo` undefined.
 
-- [ ] **Step 3: Implement the plumbing**
+- [x] **Step 3: Implement the plumbing**
 
 - Define `catalogModel` and `catalogInfo`; rename `fetchCatalogLimits`→`fetchCatalogInfo`, `mergeCatalogLimits`→`mergeCatalogInfo`; `fetchCatalogRequest` returns `map[string]catalogModel` and fills both fields.
 - Rename the cache to `catalogCache` with entry field `models map[string]catalogModel`; rename `Limits`→`Catalog`, `catalogLimitsEntry`→`catalogEntry`, and clone helpers to deep-copy `Efforts` slices (use `slices.Clone`).
@@ -310,12 +310,12 @@ Expected: build failure, `catalogInfo`/`fetchCatalogInfo` undefined.
 - Add the `UpstreamEfforts []string` field to `rewriter.Options` (no behavior yet).
 - Update existing tests mechanically for the renamed types.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `GOWORK=off go test ./internal/gateway -count=1`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/gateway internal/rewriter/rewriter.go docs/superpowers/plans/2026-11-25-effort-ceiling.md
@@ -323,12 +323,12 @@ git commit -m "feat(gateway): carry target effort tiers into the rewriter"
 ```
 
 **Implementation record**
-- Date/status:
-- Repository + commit:
-- Files changed:
-- Tests/commands and results:
-- Review findings and fixes:
-- Deferred items/limitations:
+- Date/status: 2026-11-25 / DONE
+- Repository + commit: `cuttle` — code commit `7129dbd2` (`feat(gateway): carry target effort tiers into the rewriter`); record-only follow-up commit subject: `docs: record task 3 implementation`
+- Files changed: `internal/gateway/catalog_limits.go`, `internal/gateway/catalog_cache.go`, `internal/gateway/gateway.go`, `internal/gateway/build.go`, `internal/gateway/upstream.go`, `internal/rewriter/rewriter.go`, and the tests in `internal/gateway/catalog_limits_test.go`, `internal/gateway/catalog_cache_test.go`, `internal/gateway/upstream_target_test.go`, `internal/gateway/build_cap_test.go`
+- Tests/commands and results: RED: `GOWORK=off go test ./internal/gateway -run 'Effort|Catalog' -count=1` failed to build with `undefined: newCatalogCache`, `undefined: fetchCatalogInfo`, `undefined: catalogInfo`, and `targets.defaultTarget.efforts undefined`. GREEN: the same command passed (`ok`, 0.420s), then `GOWORK=off go test ./internal/gateway -count=1` passed (11.889s). The required gate `GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./internal/gateway ./internal/provider ./internal/rewriter -count=1` passed (`gateway` 11.897s, `provider` 0.056s, `rewriter` 0.009s). The full Go gate `GOWORK=off go test ./... -count=1` passed every package (`gateway` 18.055s, `admin` 21.314s, `stats` 29.501s). `gofmt` and `git diff --check` were clean.
+- Review findings and fixes: Self-review found no functional issues. The implementation deep-copies effort slices at the catalog fetch, merge, cache snapshot, and cache return boundaries, preserves nil versus known-empty effort metadata, and keeps catalog TTL, retry, coalescing, prime and last-good behavior unchanged. Self-review added two coverage cases beyond the brief: efforts without an output limit and a known-empty effort intersection surviving the catalog fetch.
+- Deferred items/limitations: Actual effort clamping, logging and stats ordering are Task 4; this task only adds `Options.UpstreamEfforts` and plumbs the value into `registerRewriter`, so the end-to-end registered-rewriter assertion is intentionally left to Task 4's build test. Documentation is Task 5.
 
 ---
 
