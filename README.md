@@ -1387,6 +1387,27 @@ skills and conversation fragments.
   `count_tokens` requests.
 - Locally answered requests are not recorded in stats or captures.
 
+## Reasoning effort
+
+Cuttle caps the reasoning effort a request asks for at what the target model
+advertises. The recognized explicit levels `low`, `medium`, `high`, `xhigh` and
+`max` are read from `reasoning_effort`, `reasoning.effort`, `output_config.effort`
+and `generationConfig.thinkingConfig.thinkingLevel`.
+
+The ceiling is the highest level in the target model's provider catalog:
+
+- The ceiling is `max` when the catalog declares it, otherwise `xhigh` when
+  declared, otherwise `high`.
+- If the catalog's highest level is below `high`, that lower level is the
+  ceiling.
+- A catalog with no effort-level metadata is treated as `high`.
+
+The clamp runs on the request body before and after protocol conversion. The
+clamp never adds an effort field when the client sends none, and it leaves
+values at or below the ceiling unchanged. When the client selected a level,
+statistics keep that client-selected level; the requested and effective levels
+of a clamp are only logged at debug.
+
 ## Connection warming
 
 Claude Code sends `HEAD /api/hello` and `GET /api/hello` to
