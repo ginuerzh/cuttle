@@ -13,26 +13,26 @@ import (
 )
 
 const (
-	catalogLimitsCacheTTL       = 10 * time.Minute
-	catalogLimitsRetryInterval  = time.Minute
-	catalogLimitsRefreshTimeout = 5 * time.Second
+	catalogCacheTTL       = 10 * time.Minute
+	catalogRetryInterval  = time.Minute
+	catalogRefreshTimeout = 5 * time.Second
 )
 
-type catalogLimitsEntry struct {
+type catalogEntry struct {
 	fingerprint string
-	limits      map[string]int
+	models      map[string]catalogModel
 	known       map[string]bool
 	attempted   map[string]bool
 	fetchedAt   time.Time
 	lastAttempt time.Time
 }
 
-// catalogLimitsCache owns the last good output limits for each provider. Reads
-// are safe for concurrent use. Limits may schedule background refreshes, so
+// catalogCache owns the last good catalog metadata for each provider. Reads
+// are safe for concurrent use. Catalog may schedule background refreshes, so
 // callers must Close the cache when the gateway shuts down.
-type catalogLimitsCache struct {
+type catalogCache struct {
 	mu       sync.Mutex
-	entries  map[string]catalogLimitsEntry
+	entries  map[string]catalogEntry
 	inflight map[string]struct{}
 	closed   bool
 
@@ -47,24 +47,24 @@ type catalogLimitsCache struct {
 	timeout       time.Duration
 }
 
-func newCatalogLimitsCache() *catalogLimitsCache {
+func newCatalogCache() *catalogCache {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &catalogLimitsCache{
-		entries:       make(map[string]catalogLimitsEntry),
+	return &catalogCache{
+		entries:       make(map[string]catalogEntry),
 		inflight:      make(map[string]struct{}),
 		ctx:           ctx,
 		cancel:        cancel,
 		now:           time.Now,
-		ttl:           catalogLimitsCacheTTL,
-		retryInterval: catalogLimitsRetryInterval,
-		timeout:       catalogLimitsRefreshTimeout,
+		ttl:           catalogCacheTTL,
+		retryInterval: catalogRetryInterval,
+		timeout:       catalogRefreshTimeout,
 	}
 }
 
 // Prime synchronously fills the cache before the first gateway build. The
 // caller's context bounds the whole prime, matching startup's previous catalog
 // lookup budget.
-func (c *catalogLimitsCache) Prime(ctx context.Context, cfg *gwconfig.Config, log logger.Logger) {
+func (c *catalogCache) Prime(ctx context.Context, cfg *gwconfig.Config, log logger.Logger) {
 	if c == nil || cfg == nil {
 		return
 	}
@@ -81,12 +81,12 @@ func (c *catalogLimitsCache) Prime(ctx context.Context, cfg *gwconfig.Config, lo
 		if ctx.Err() != nil {
 			continue
 		}
-		limits, known, missingModels, err := fetchCatalogRequest(ctx, request)
+		info, known, missingModels, err := fetchCatalogRequest(ctx, request)
 		now := c.now()
 		c.mu.Lock()
 		entry := c.entries[request.id]
 		if err == nil {
-			entry.limits = cloneCatalogLimits(limits)
+			entry.models = cloneCatalogModels(info)
 			entry.known = cloneCatalogKnown(known)
 			entry.fetchedAt = now
 		}
@@ -100,11 +100,11 @@ func (c *catalogLimitsCache) Prime(ctx context.Context, cfg *gwconfig.Config, lo
 	warnMissingProviders(missing, log)
 }
 
-// Limits returns a deep copy of the cached limits without waiting for network
-// I/O. Missing, stale, or retryable providers are refreshed in the background;
-// a failed refresh keeps the previous good limits.
-func (c *catalogLimitsCache) Limits(cfg *gwconfig.Config, log logger.Logger) catalogLimits {
-	out := make(catalogLimits)
+// Catalog returns a deep copy of the cached metadata without waiting for
+// network I/O. Missing, stale, or retryable providers are refreshed in the
+// background; a failed refresh keeps the previous good metadata.
+func (c *catalogCache) Catalog(cfg *gwconfig.Config, log logger.Logger) catalogInfo {
+	out := make(catalogInfo)
 	if c == nil || cfg == nil {
 		return out
 	}
@@ -124,10 +124,10 @@ func (c *catalogLimitsCache) Limits(cfg *gwconfig.Config, log logger.Logger) cat
 		entry, ok := c.entries[request.id]
 		if ok && entry.fingerprint != request.fingerprint {
 			delete(c.entries, request.id)
-			entry = catalogLimitsEntry{}
+			entry = catalogEntry{}
 			ok = false
 		}
-		mergeCatalogLimits(out, request.id, entry.limits)
+		mergeCatalogInfo(out, request.id, entry.models)
 		if !c.shouldRefresh(entry, ok, request, now) {
 			continue
 		}
@@ -149,7 +149,7 @@ func (c *catalogLimitsCache) Limits(cfg *gwconfig.Config, log logger.Logger) cat
 
 // Close cancels outstanding refreshes and waits for their goroutines. It is
 // idempotent.
-func (c *catalogLimitsCache) Close() {
+func (c *catalogCache) Close() {
 	if c == nil {
 		return
 	}
@@ -162,7 +162,7 @@ func (c *catalogLimitsCache) Close() {
 	})
 }
 
-func (c *catalogLimitsCache) shouldRefresh(entry catalogLimitsEntry, ok bool, request catalogRequest, now time.Time) bool {
+func (c *catalogCache) shouldRefresh(entry catalogEntry, ok bool, request catalogRequest, now time.Time) bool {
 	if ok && now.Sub(entry.fetchedAt) < c.ttl && catalogModelsKnown(entry.known, request.models) {
 		return false
 	}
@@ -182,8 +182,8 @@ func catalogModelsAttempted(attempted map[string]bool, wanted map[string]bool) b
 }
 
 // catalogModelsKnown reports whether every requested model appeared in the
-// last successful catalog. A model absent from both limits and this set is new
-// upstream and needs another fetch before its cap can be resolved.
+// last successful catalog. A model absent from both this set and the cached
+// metadata is new upstream and needs another fetch before it can be resolved.
 func catalogModelsKnown(known map[string]bool, wanted map[string]bool) bool {
 	for modelID := range wanted {
 		if !known[modelID] {
@@ -193,12 +193,12 @@ func catalogModelsKnown(known map[string]bool, wanted map[string]bool) bool {
 	return true
 }
 
-func (c *catalogLimitsCache) refresh(request catalogRequest, log logger.Logger) {
+func (c *catalogCache) refresh(request catalogRequest, log logger.Logger) {
 	defer c.wg.Done()
 	ctx, cancel := context.WithTimeout(c.ctx, c.timeout)
 	defer cancel()
 
-	limits, known, missingModels, err := fetchCatalogRequest(ctx, request)
+	info, known, missingModels, err := fetchCatalogRequest(ctx, request)
 	now := c.now()
 	c.mu.Lock()
 	entry := c.entries[request.id]
@@ -210,7 +210,7 @@ func (c *catalogLimitsCache) refresh(request catalogRequest, log logger.Logger) 
 		return
 	}
 	if err == nil {
-		entry.limits = cloneCatalogLimits(limits)
+		entry.models = cloneCatalogModels(info)
 		entry.known = cloneCatalogKnown(known)
 		entry.fetchedAt = now
 	}
@@ -224,17 +224,6 @@ func (c *catalogLimitsCache) refresh(request catalogRequest, log logger.Logger) 
 		return
 	}
 	logCatalogResult(request, missingModels, err, log)
-}
-
-func cloneCatalogLimits(limits map[string]int) map[string]int {
-	if len(limits) == 0 {
-		return nil
-	}
-	out := make(map[string]int, len(limits))
-	for modelID, limit := range limits {
-		out[modelID] = limit
-	}
-	return out
 }
 
 func cloneCatalogKnown(known map[string]bool) map[string]bool {

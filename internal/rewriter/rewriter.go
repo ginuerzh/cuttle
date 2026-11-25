@@ -37,6 +37,9 @@ type Options struct {
 	TargetModel string
 	// MaxOutputTokens caps oversized output-token fields on requests; 0 disables it.
 	MaxOutputTokens int
+	// UpstreamEfforts lists the effort levels the target model accepts; nil
+	// means the catalog reported no level metadata.
+	UpstreamEfforts []string
 	Sink            Sink
 	Capture         *capture.Manager
 	Logger          logger.Logger

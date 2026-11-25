@@ -52,7 +52,7 @@ type Gateway struct {
 	facts        *stats.Facts
 	store        *stats.Store
 	capture      *capture.Manager
-	catalogs     *catalogLimitsCache
+	catalogs     *catalogCache
 	authFailures *authfail.Tracker
 	cancel       context.CancelFunc
 	// statsMigrationDone records the one identity-migration attempt this
@@ -105,7 +105,7 @@ func New(cfg *gwconfig.Config, log logger.Logger) (*Gateway, error) {
 		facts:        facts,
 		store:        store,
 		capture:      capMgr,
-		catalogs:     newCatalogLimitsCache(),
+		catalogs:     newCatalogCache(),
 		authFailures: authfail.New(authfail.DefaultLimit),
 	}
 
@@ -380,11 +380,11 @@ func (g *Gateway) apply(cfg *gwconfig.Config) error {
 	defer g.buildMu.Unlock()
 
 	build := nextBuildGeneration()
-	var limits catalogLimits
+	var catalog catalogInfo
 	if g.catalogs != nil {
-		limits = g.catalogs.Limits(cfg, g.log)
+		catalog = g.catalogs.Catalog(cfg, g.log)
 	}
-	group, probes, rewriters, policy, err := buildHopGroup(cfg, build, limits, g.log, g.facts, g.capture)
+	group, probes, rewriters, policy, err := buildHopGroup(cfg, build, catalog, g.log, g.facts, g.capture)
 	if err != nil {
 		// The old hop is untouched; drop the rewriters this failed build
 		// registered so they cannot leak.

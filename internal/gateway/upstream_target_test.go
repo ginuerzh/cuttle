@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -165,12 +166,29 @@ func TestCompileNodeTargetsDisabledModel(t *testing.T) {
 	}
 }
 
+func TestCompileNodeTargetsCarriesEfforts(t *testing.T) {
+	p := gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: "https://gw.example/v1", Anthropic: "https://gw.example/anthropic"}
+	n := gwconfig.Node{ID: "n1", Name: "n1", Provider: "p1", Model: "glm-5.3"}
+	catalog := catalogInfo{"p1": {"glm-5.3": {Output: 131072, Efforts: []string{"low", "xhigh"}}}}
+
+	targets, err := compileNodeTargets(p, n, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := targets.defaultTarget.efforts; !slices.Equal(got, []string{"low", "xhigh"}) {
+		t.Fatalf("default efforts = %v, want [low xhigh]", got)
+	}
+	if got := targets.variants[provider.Anthropic].efforts; !slices.Equal(got, []string{"low", "xhigh"}) {
+		t.Fatalf("anthropic variant efforts = %v, want [low xhigh]", got)
+	}
+}
+
 func TestCompileNodeTargetsCarriesCatalogCap(t *testing.T) {
 	p := gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: "https://gw.example/v1", Anthropic: "https://gw.example/anthropic"}
 	n := gwconfig.Node{ID: "n1", Name: "n1", Provider: "p1", Model: "glm-5.3"}
-	limits := catalogLimits{"p1": {"glm-5.3": 131072}}
+	catalog := catalogInfo{"p1": {"glm-5.3": {Output: 131072}}}
 
-	targets, err := compileNodeTargets(p, n, limits)
+	targets, err := compileNodeTargets(p, n, catalog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +199,6 @@ func TestCompileNodeTargetsCarriesCatalogCap(t *testing.T) {
 		t.Fatalf("anthropic variant cap = %d, want 131072", got)
 	}
 	if targets2, err := compileNodeTargets(p, n, nil); err != nil || targets2.defaultTarget.maxOutputTokens != 0 {
-		t.Fatalf("nil limits = %+v, %v; want no cap", targets2, err)
+		t.Fatalf("nil catalog = %+v, %v; want no cap", targets2, err)
 	}
 }

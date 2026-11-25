@@ -51,8 +51,8 @@ func TestBuildCapReachesRegisteredRewriter(t *testing.T) {
 		}},
 	}
 
-	limits := fetchCatalogLimits(context.Background(), cfg, xlogger.Nop())
-	_, _, names, _, err := buildHopGroup(cfg, "cap-build", limits, xlogger.Nop(), stats.NewFacts(), nil)
+	catalog := fetchCatalogInfo(context.Background(), cfg, xlogger.Nop())
+	_, _, names, _, err := buildHopGroup(cfg, "cap-build", catalog, xlogger.Nop(), stats.NewFacts(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

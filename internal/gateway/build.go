@@ -57,7 +57,7 @@ func nextBuildGeneration() string {
 // The returned probe set is unstarted; the caller starts and stops it.
 // The returned names are the rewriters registered for this build; the caller
 // owns their lifecycle.
-func buildHopGroup(cfg *gwconfig.Config, build string, limits catalogLimits, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, *probeSet, []string, *countTokensPolicy, error) {
+func buildHopGroup(cfg *gwconfig.Config, build string, catalog catalogInfo, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (hop.Hop, *probeSet, []string, *countTokensPolicy, error) {
 	if err := registerHeaderRewriter(); err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -111,7 +111,7 @@ func buildHopGroup(cfg *gwconfig.Config, build string, limits catalogLimits, log
 			if _, ok := routePlans[r.ID]; ok {
 				continue
 			}
-			plan, err := buildRoutePlan(cfg, build, *r, limits, log, facts, captureMgr)
+			plan, err := buildRoutePlan(cfg, build, *r, catalog, log, facts, captureMgr)
 			if plan != nil {
 				rewriters = append(rewriters, plan.rewriters...)
 			}
@@ -387,7 +387,7 @@ type nodePlan struct {
 	keys     []gwconfig.ProviderKey
 }
 
-func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, limits catalogLimits, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
+func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, catalog catalogInfo, log logger.Logger, facts *stats.Facts, captureMgr *capture.Manager) (*routePlan, error) {
 	var plans []nodePlan
 	for _, ref := range r.Nodes {
 		n, ok := cfg.Node(ref)
@@ -414,7 +414,7 @@ func buildRoutePlan(cfg *gwconfig.Config, build string, r gwconfig.Route, limits
 		if strings.TrimSpace(provider.UserAgent) == "" {
 			provider.UserAgent = cfg.Gateway.UserAgent
 		}
-		targets, err := compileNodeTargets(provider, *n, limits)
+		targets, err := compileNodeTargets(provider, *n, catalog)
 		if err != nil {
 			if errors.Is(err, errModelDisabled) {
 				log.Warnf("route %s node %s: %v", r.Name, n.Name, err)
@@ -798,6 +798,7 @@ func registerRewriter(name string, p gwconfig.Provider, n gwconfig.Node, target 
 		Node:            n.ID,
 		TargetModel:     target.targetModel,
 		MaxOutputTokens: target.maxOutputTokens,
+		UpstreamEfforts: target.efforts,
 		Sink:            facts,
 		Capture:         captureMgr,
 		Logger:          log,

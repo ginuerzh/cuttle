@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,7 +37,54 @@ func waitForCatalogSignal(t *testing.T, ch <-chan struct{}, what string) {
 	}
 }
 
-func TestCatalogLimitsCacheServesLastGoodWithoutWaiting(t *testing.T) {
+func TestCatalogCacheKeepsEffortsAfterRefreshFailure(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			fmt.Fprint(w, `{"data":[{"id":"glm-5.3","limit":{"output":131072},"effort":{"supported_levels":["low","high","xhigh"]}}]}`)
+			return
+		}
+		http.Error(w, "down", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := catalogCacheConfig(gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL})
+	cache := newCatalogCache()
+	t.Cleanup(cache.Close)
+	cache.Prime(context.Background(), cfg, xlogger.Nop())
+	cache.now = func() time.Time { return time.Now().Add(11 * time.Minute) }
+
+	cache.Catalog(cfg, xlogger.Nop())
+	cache.wg.Wait()
+	got := cache.Catalog(cfg, xlogger.Nop())["p1"]["glm-5.3"]
+	if got.Output != 131072 || !slices.Equal(got.Efforts, []string{"low", "high", "xhigh"}) {
+		t.Fatalf("catalog after failed refresh = %+v, want output 131072 and efforts [low high xhigh]", got)
+	}
+	if gotCalls := calls.Load(); gotCalls != 2 {
+		t.Fatalf("catalog calls after retry backoff = %d, want 2", gotCalls)
+	}
+}
+
+func TestCatalogCacheCopiesEfforts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"glm-5.3","effort":{"supported_levels":["low","high"]}}]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := catalogCacheConfig(gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL})
+	cache := newCatalogCache()
+	t.Cleanup(cache.Close)
+	cache.Prime(context.Background(), cfg, xlogger.Nop())
+
+	first := cache.Catalog(cfg, xlogger.Nop())
+	first["p1"]["glm-5.3"].Efforts[0] = "max"
+	second := cache.Catalog(cfg, xlogger.Nop())
+	if got := second["p1"]["glm-5.3"].Efforts; !slices.Equal(got, []string{"low", "high"}) {
+		t.Fatalf("catalog efforts after caller mutation = %v, want [low high]", got)
+	}
+}
+
+func TestCatalogCacheServesLastGoodWithoutWaiting(t *testing.T) {
 	var calls atomic.Int32
 	refreshStarted := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,23 +98,23 @@ func TestCatalogLimitsCacheServesLastGoodWithoutWaiting(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg := catalogCacheConfig(gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL})
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
 	cache.Prime(context.Background(), cfg, xlogger.Nop())
 	cache.now = func() time.Time { return time.Now().Add(11 * time.Minute) }
 
 	started := time.Now()
-	got := cache.Limits(cfg, xlogger.Nop())
+	got := cache.Catalog(cfg, xlogger.Nop())
 	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
-		t.Fatalf("Limits() with blocked refresh took %s, want <= 100ms", elapsed)
+		t.Fatalf("Catalog() with blocked refresh took %s, want <= 100ms", elapsed)
 	}
-	if cap := got["p1"]["glm-5.3"]; cap != 131072 {
-		t.Fatalf("Limits() cap = %d, want 131072; limits = %v", cap, got)
+	if cap := got["p1"]["glm-5.3"].Output; cap != 131072 {
+		t.Fatalf("Catalog() cap = %d, want 131072; catalog = %v", cap, got)
 	}
 	waitForCatalogSignal(t, refreshStarted, "background refresh")
 }
 
-func TestCatalogLimitsCacheKeepsLastGoodAfterRefreshFailure(t *testing.T) {
+func TestCatalogCacheKeepsLastGoodAfterRefreshFailure(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
@@ -78,23 +126,23 @@ func TestCatalogLimitsCacheKeepsLastGoodAfterRefreshFailure(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg := catalogCacheConfig(gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL})
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
 	cache.Prime(context.Background(), cfg, xlogger.Nop())
 	cache.now = func() time.Time { return time.Now().Add(11 * time.Minute) }
 
-	cache.Limits(cfg, xlogger.Nop())
+	cache.Catalog(cfg, xlogger.Nop())
 	cache.wg.Wait()
-	got := cache.Limits(cfg, xlogger.Nop())
-	if cap := got["p1"]["glm-5.3"]; cap != 131072 {
-		t.Fatalf("Limits() cap after failed refresh = %d, want 131072; limits = %v", cap, got)
+	got := cache.Catalog(cfg, xlogger.Nop())
+	if cap := got["p1"]["glm-5.3"].Output; cap != 131072 {
+		t.Fatalf("Catalog() cap after failed refresh = %d, want 131072; catalog = %v", cap, got)
 	}
 	if gotCalls := calls.Load(); gotCalls != 2 {
 		t.Fatalf("catalog calls after retry backoff = %d, want 2", gotCalls)
 	}
 }
 
-func TestCatalogLimitsCacheCoalescesRefreshes(t *testing.T) {
+func TestCatalogCacheCoalescesRefreshes(t *testing.T) {
 	var calls atomic.Int32
 	started := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,18 +154,18 @@ func TestCatalogLimitsCacheCoalescesRefreshes(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg := catalogCacheConfig(gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL})
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
 
-	cache.Limits(cfg, xlogger.Nop())
-	cache.Limits(cfg, xlogger.Nop())
+	cache.Catalog(cfg, xlogger.Nop())
+	cache.Catalog(cfg, xlogger.Nop())
 	waitForCatalogSignal(t, started, "coalesced catalog refresh")
 	if got := calls.Load(); got != 1 {
-		t.Fatalf("catalog calls for two Limits() calls = %d, want 1", got)
+		t.Fatalf("catalog calls for two Catalog() calls = %d, want 1", got)
 	}
 }
 
-func TestCatalogLimitsCacheRefreshesProvidersIndependently(t *testing.T) {
+func TestCatalogCacheRefreshesProvidersIndependently(t *testing.T) {
 	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}))
@@ -131,21 +179,21 @@ func TestCatalogLimitsCacheRefreshesProvidersIndependently(t *testing.T) {
 		gwconfig.Provider{ID: "p1", Name: "blocked", Type: "generic", Chat: blocked.URL},
 		gwconfig.Provider{ID: "p2", Name: "live", Type: "generic", Chat: live.URL},
 	)
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
 	cache.timeout = 50 * time.Millisecond
 
-	cache.Limits(cfg, xlogger.Nop())
+	cache.Catalog(cfg, xlogger.Nop())
 	cache.wg.Wait()
 	cache.mu.Lock()
-	got := cache.entries["p2"].limits["glm-5.3"]
+	got := cache.entries["p2"].models["glm-5.3"].Output
 	cache.mu.Unlock()
 	if got != 8192 {
 		t.Fatalf("independent provider cap = %d, want 8192", got)
 	}
 }
 
-func TestCatalogLimitsCacheRefreshesForNewModel(t *testing.T) {
+func TestCatalogCacheRefreshesForNewModel(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
@@ -157,26 +205,26 @@ func TestCatalogLimitsCacheRefreshesForNewModel(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	provider := gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL}
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
 	cache.Prime(context.Background(), catalogCacheConfig(provider), xlogger.Nop())
 
 	next := catalogCacheConfig(provider)
 	next.Nodes[0].Model = "glm-7"
-	if got := cache.Limits(next, xlogger.Nop()); got["p1"]["glm-7"] != 0 {
-		t.Fatalf("Limits() before refresh cap = %d, want 0; limits = %v", got["p1"]["glm-7"], got)
+	if got := cache.Catalog(next, xlogger.Nop()); got["p1"]["glm-7"].Output != 0 {
+		t.Fatalf("Catalog() before refresh cap = %d, want 0; catalog = %v", got["p1"]["glm-7"].Output, got)
 	}
 	cache.wg.Wait()
-	got := cache.Limits(next, xlogger.Nop())
-	if cap := got["p1"]["glm-7"]; cap != 65536 {
-		t.Fatalf("Limits() cap for newly published model = %d, want 65536; limits = %v", cap, got)
+	got := cache.Catalog(next, xlogger.Nop())
+	if cap := got["p1"]["glm-7"].Output; cap != 65536 {
+		t.Fatalf("Catalog() cap for newly published model = %d, want 65536; catalog = %v", cap, got)
 	}
 	if gotCalls := calls.Load(); gotCalls != 2 {
 		t.Fatalf("catalog calls for new model = %d, want 2", gotCalls)
 	}
 }
 
-func TestCatalogLimitsCacheInvalidatesOnProviderChange(t *testing.T) {
+func TestCatalogCacheInvalidatesOnProviderChange(t *testing.T) {
 	var callsA, callsB atomic.Int32
 	oldProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callsA.Add(1)
@@ -189,7 +237,7 @@ func TestCatalogLimitsCacheInvalidatesOnProviderChange(t *testing.T) {
 	}))
 	t.Cleanup(newProvider.Close)
 
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
 	cache.Prime(context.Background(), catalogCacheConfig(
 		gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: oldProvider.URL},
@@ -198,20 +246,20 @@ func TestCatalogLimitsCacheInvalidatesOnProviderChange(t *testing.T) {
 	next := catalogCacheConfig(
 		gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: newProvider.URL},
 	)
-	if got := cache.Limits(next, xlogger.Nop()); got["p1"]["glm-5.3"] != 0 {
-		t.Fatalf("Limits() after provider change cap = %d, want 0; limits = %v", got["p1"]["glm-5.3"], got)
+	if got := cache.Catalog(next, xlogger.Nop()); got["p1"]["glm-5.3"].Output != 0 {
+		t.Fatalf("Catalog() after provider change cap = %d, want 0; catalog = %v", got["p1"]["glm-5.3"].Output, got)
 	}
 	cache.wg.Wait()
-	got := cache.Limits(next, xlogger.Nop())
-	if cap := got["p1"]["glm-5.3"]; cap != 8192 {
-		t.Fatalf("Limits() cap after provider change = %d, want 8192; limits = %v", cap, got)
+	got := cache.Catalog(next, xlogger.Nop())
+	if cap := got["p1"]["glm-5.3"].Output; cap != 8192 {
+		t.Fatalf("Catalog() cap after provider change = %d, want 8192; catalog = %v", cap, got)
 	}
 	if gotA, gotB := callsA.Load(), callsB.Load(); gotA != 1 || gotB != 1 {
 		t.Fatalf("catalog calls old/new = %d/%d, want 1/1", gotA, gotB)
 	}
 }
 
-func TestCatalogLimitsCachePrimeDoesNotGateUnqueriedProvider(t *testing.T) {
+func TestCatalogCachePrimeDoesNotGateUnqueriedProvider(t *testing.T) {
 	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}))
@@ -227,25 +275,25 @@ func TestCatalogLimitsCachePrimeDoesNotGateUnqueriedProvider(t *testing.T) {
 		gwconfig.Provider{ID: "p1", Name: "blocked", Type: "generic", Chat: blocked.URL},
 		gwconfig.Provider{ID: "p2", Name: "live", Type: "generic", Chat: live.URL},
 	)
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
 	cache.timeout = 50 * time.Millisecond
 	cache.Prime(context.Background(), cfg, xlogger.Nop())
 
-	if got := cache.Limits(cfg, xlogger.Nop()); got["p2"]["glm-5.3"] != 0 {
-		t.Fatalf("Limits() immediately after prime cap = %d, want 0; limits = %v", got["p2"]["glm-5.3"], got)
+	if got := cache.Catalog(cfg, xlogger.Nop()); got["p2"]["glm-5.3"].Output != 0 {
+		t.Fatalf("Catalog() immediately after prime cap = %d, want 0; catalog = %v", got["p2"]["glm-5.3"].Output, got)
 	}
 	cache.wg.Wait()
-	got := cache.Limits(cfg, xlogger.Nop())
-	if cap := got["p2"]["glm-5.3"]; cap != 8192 {
-		t.Fatalf("Limits() cap for provider skipped by prime = %d, want 8192; limits = %v", cap, got)
+	got := cache.Catalog(cfg, xlogger.Nop())
+	if cap := got["p2"]["glm-5.3"].Output; cap != 8192 {
+		t.Fatalf("Catalog() cap for provider skipped by prime = %d, want 8192; catalog = %v", cap, got)
 	}
 	if gotCalls := liveCalls.Load(); gotCalls != 1 {
 		t.Fatalf("live catalog calls after prime = %d, want 1", gotCalls)
 	}
 }
 
-func TestCatalogLimitsCacheCloseCancelsRefresh(t *testing.T) {
+func TestCatalogCacheCloseCancelsRefresh(t *testing.T) {
 	started := make(chan struct{})
 	canceled := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -256,9 +304,9 @@ func TestCatalogLimitsCacheCloseCancelsRefresh(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg := catalogCacheConfig(gwconfig.Provider{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL})
-	cache := newCatalogLimitsCache()
+	cache := newCatalogCache()
 	t.Cleanup(cache.Close)
-	cache.Limits(cfg, xlogger.Nop())
+	cache.Catalog(cfg, xlogger.Nop())
 	waitForCatalogSignal(t, started, "blocked catalog refresh")
 
 	closed := make(chan struct{})

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 
@@ -15,9 +16,17 @@ import (
 	"github.com/ginuerzh/cuttle/internal/provider"
 )
 
-// catalogLimits maps a provider ID to the output limit of each of its models.
-// A missing entry means the model has no usable catalog output limit.
-type catalogLimits map[string]map[string]int
+// catalogModel is the catalog metadata the gateway carries for one model.
+// A nil Efforts slice means the listing reported no effort metadata.
+type catalogModel struct {
+	Output  int
+	Efforts []string
+}
+
+// catalogInfo maps a provider ID to the catalog metadata of each of its models.
+// A missing entry means the listing reported neither an output limit nor effort
+// metadata.
+type catalogInfo map[string]map[string]catalogModel
 
 type catalogRequest struct {
 	id          string
@@ -26,13 +35,14 @@ type catalogRequest struct {
 	models      map[string]bool
 }
 
-// fetchCatalogLimits reads each referenced provider's catalog once and collects
-// positive output limits. Catalog failures are non-fatal: they are logged and
-// leave the affected models without a cap, so a gateway build can still proceed.
-func fetchCatalogLimits(ctx context.Context, cfg *gwconfig.Config, log logger.Logger) catalogLimits {
-	limits := make(catalogLimits)
+// fetchCatalogInfo reads each referenced provider's catalog once and collects
+// per-model output limits and effort tiers. Catalog failures are non-fatal:
+// they are logged and leave the affected models without metadata, so a gateway
+// build can still proceed.
+func fetchCatalogInfo(ctx context.Context, cfg *gwconfig.Config, log logger.Logger) catalogInfo {
+	info := make(catalogInfo)
 	if cfg == nil {
-		return limits
+		return info
 	}
 	if log == nil {
 		log = xlogger.Nop()
@@ -45,10 +55,10 @@ func fetchCatalogLimits(ctx context.Context, cfg *gwconfig.Config, log logger.Lo
 		if err != nil {
 			continue
 		}
-		mergeCatalogLimits(limits, request.id, got)
+		mergeCatalogInfo(info, request.id, got)
 	}
 	warnMissingProviders(missing, log)
-	return limits
+	return info
 }
 
 // catalogRequests selects enabled providers referenced by enabled nodes. The
@@ -109,7 +119,7 @@ func catalogProviderFingerprint(p gwconfig.Provider) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func fetchCatalogRequest(ctx context.Context, request catalogRequest) (map[string]int, map[string]bool, []string, error) {
+func fetchCatalogRequest(ctx context.Context, request catalogRequest) (map[string]catalogModel, map[string]bool, []string, error) {
 	prov, err := provider.New(request.provider)
 	if err != nil {
 		return nil, nil, nil, err
@@ -119,7 +129,7 @@ func fetchCatalogRequest(ctx context.Context, request catalogRequest) (map[strin
 		return nil, nil, nil, err
 	}
 
-	limits := make(map[string]int)
+	info := make(map[string]catalogModel)
 	known := make(map[string]bool, len(catalog))
 	for _, m := range catalog {
 		modelID := strings.TrimSpace(m.ID)
@@ -127,9 +137,10 @@ func fetchCatalogRequest(ctx context.Context, request catalogRequest) (map[strin
 			continue
 		}
 		known[modelID] = true
-		if m.Output > 0 {
-			limits[modelID] = m.Output
+		if m.Output <= 0 && m.Efforts == nil {
+			continue
 		}
+		info[modelID] = catalogModel{Output: m.Output, Efforts: slices.Clone(m.Efforts)}
 	}
 	missing := make([]string, 0)
 	for modelID := range request.models {
@@ -138,7 +149,7 @@ func fetchCatalogRequest(ctx context.Context, request catalogRequest) (map[strin
 		}
 	}
 	sort.Strings(missing)
-	return limits, known, missing, nil
+	return info, known, missing, nil
 }
 
 func logCatalogResult(request catalogRequest, missing []string, err error, log logger.Logger) {
@@ -159,14 +170,30 @@ func warnMissingProviders(missing map[string]map[string]bool, log logger.Logger)
 	}
 }
 
-func mergeCatalogLimits(dst catalogLimits, providerID string, src map[string]int) {
+func mergeCatalogInfo(dst catalogInfo, providerID string, src map[string]catalogModel) {
 	if len(src) == 0 {
 		return
 	}
 	if dst[providerID] == nil {
-		dst[providerID] = make(map[string]int, len(src))
+		dst[providerID] = make(map[string]catalogModel, len(src))
 	}
-	for modelID, limit := range src {
-		dst[providerID][modelID] = limit
+	for modelID, model := range src {
+		dst[providerID][modelID] = cloneCatalogModel(model)
 	}
+}
+
+func cloneCatalogModel(model catalogModel) catalogModel {
+	model.Efforts = slices.Clone(model.Efforts)
+	return model
+}
+
+func cloneCatalogModels(models map[string]catalogModel) map[string]catalogModel {
+	if len(models) == 0 {
+		return nil
+	}
+	out := make(map[string]catalogModel, len(models))
+	for modelID, model := range models {
+		out[modelID] = cloneCatalogModel(model)
+	}
+	return out
 }

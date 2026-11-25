@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -27,7 +28,67 @@ func (l *warnLogger) Warnf(format string, args ...any) {
 	l.warns = append(l.warns, fmt.Sprintf(format, args...))
 }
 
-func TestFetchCatalogLimitsDeduplicatesProviders(t *testing.T) {
+func TestFetchCatalogInfoCollectsEfforts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"glm-5.3","limit":{"output":1000},"effort":{"supported_levels":["low","high","max"]}}]}`)
+	}))
+	defer srv.Close()
+
+	cfg := &gwconfig.Config{
+		Providers: []gwconfig.Provider{{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL}},
+		Nodes:     []gwconfig.Node{{ID: "n1", Name: "n1", Provider: "p1", Model: "glm-5.3"}},
+	}
+	info := fetchCatalogInfo(context.Background(), cfg, xlogger.Nop())
+	got := info["p1"]["glm-5.3"]
+	if got.Output != 1000 || !slices.Equal(got.Efforts, []string{"low", "high", "max"}) {
+		t.Fatalf("catalog = %+v, want output 1000 and efforts [low high max]", got)
+	}
+}
+
+func TestFetchCatalogInfoKeepsEffortsWithoutOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"glm-5.3","effort":{"supported_levels":["low","xhigh"]}}]}`)
+	}))
+	defer srv.Close()
+
+	cfg := &gwconfig.Config{
+		Providers: []gwconfig.Provider{{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL}},
+		Nodes:     []gwconfig.Node{{ID: "n1", Name: "n1", Provider: "p1", Model: "glm-5.3"}},
+	}
+	got, ok := fetchCatalogInfo(context.Background(), cfg, xlogger.Nop())["p1"]["glm-5.3"]
+	if !ok {
+		t.Fatal("model with efforts but no output limit is missing from catalog info")
+	}
+	if got.Output != 0 || !slices.Equal(got.Efforts, []string{"low", "xhigh"}) {
+		t.Fatalf("catalog = %+v, want output 0 and efforts [low xhigh]", got)
+	}
+}
+
+func TestFetchCatalogInfoPreservesKnownEmptyEfforts(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			fmt.Fprint(w, `{"data":[{"id":"glm-5.3","effort":["low"]}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"data":[{"id":"glm-5.3","effort":["max"]}]}`)
+	}))
+	defer srv.Close()
+
+	cfg := &gwconfig.Config{
+		Providers: []gwconfig.Provider{{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL, Responses: srv.URL}},
+		Nodes:     []gwconfig.Node{{ID: "n1", Name: "n1", Provider: "p1", Model: "glm-5.3"}},
+	}
+	got, ok := fetchCatalogInfo(context.Background(), cfg, xlogger.Nop())["p1"]["glm-5.3"]
+	if !ok {
+		t.Fatal("model with a known empty effort intersection is missing from catalog info")
+	}
+	if got.Efforts == nil || len(got.Efforts) != 0 {
+		t.Fatalf("efforts = %#v, want a non-nil empty slice", got.Efforts)
+	}
+}
+
+func TestFetchCatalogInfoDeduplicatesProviders(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -45,8 +106,8 @@ func TestFetchCatalogLimitsDeduplicatesProviders(t *testing.T) {
 			{ID: "n2", Name: "n2", Provider: "p1", Model: "glm-5.3"},
 		},
 	}
-	limits := fetchCatalogLimits(context.Background(), cfg, xlogger.Nop())
-	if got := limits["p1"]["glm-5.3"]; got != 131072 {
+	info := fetchCatalogInfo(context.Background(), cfg, xlogger.Nop())
+	if got := info["p1"]["glm-5.3"].Output; got != 131072 {
 		t.Fatalf("cap = %d, want 131072", got)
 	}
 	if got := calls.Load(); got != 1 {
@@ -54,7 +115,7 @@ func TestFetchCatalogLimitsDeduplicatesProviders(t *testing.T) {
 	}
 }
 
-func TestFetchCatalogLimitsBestEffort(t *testing.T) {
+func TestFetchCatalogInfoBestEffort(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "down", http.StatusInternalServerError)
 	}))
@@ -64,13 +125,13 @@ func TestFetchCatalogLimitsBestEffort(t *testing.T) {
 		Providers: []gwconfig.Provider{{ID: "p1", Name: "p1", Type: "generic", Chat: srv.URL}},
 		Nodes:     []gwconfig.Node{{ID: "n1", Name: "n1", Provider: "p1", Model: "glm-5.3"}},
 	}
-	limits := fetchCatalogLimits(context.Background(), cfg, xlogger.Nop())
-	if len(limits) != 0 {
-		t.Fatalf("limits = %v, want empty", limits)
+	info := fetchCatalogInfo(context.Background(), cfg, xlogger.Nop())
+	if len(info) != 0 {
+		t.Fatalf("info = %v, want empty", info)
 	}
 }
 
-func TestFetchCatalogLimitsSkipsModelsWithoutOutput(t *testing.T) {
+func TestFetchCatalogInfoSkipsModelsWithoutOutput(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"data":[{"id":"glm-5.3"},{"id":"capped","limit":{"context":1000,"output":8192}},{"id":"zero","limit":{"output":0}},{"id":"unreferenced","limit":{"output":4096}}]}`)
 	}))
@@ -84,22 +145,22 @@ func TestFetchCatalogLimitsSkipsModelsWithoutOutput(t *testing.T) {
 			{ID: "n3", Name: "n3", Provider: "p1", Model: "zero"},
 		},
 	}
-	limits := fetchCatalogLimits(context.Background(), cfg, xlogger.Nop())
-	if _, ok := limits["p1"]["glm-5.3"]; ok {
-		t.Fatalf("model without output got a cap: %v", limits["p1"])
+	info := fetchCatalogInfo(context.Background(), cfg, xlogger.Nop())
+	if _, ok := info["p1"]["glm-5.3"]; ok {
+		t.Fatalf("model without output got a cap: %v", info["p1"])
 	}
-	if _, ok := limits["p1"]["zero"]; ok {
-		t.Fatalf("zero output got a cap: %v", limits["p1"])
+	if _, ok := info["p1"]["zero"]; ok {
+		t.Fatalf("zero output got a cap: %v", info["p1"])
 	}
-	if got := limits["p1"]["capped"]; got != 8192 {
+	if got := info["p1"]["capped"].Output; got != 8192 {
 		t.Fatalf("cap = %d, want 8192", got)
 	}
-	if got := limits["p1"]["unreferenced"]; got != 4096 {
+	if got := info["p1"]["unreferenced"].Output; got != 4096 {
 		t.Fatalf("unreferenced cap = %d, want 4096", got)
 	}
 }
 
-func TestFetchCatalogLimitsSkipsDisabledNode(t *testing.T) {
+func TestFetchCatalogInfoSkipsDisabledNode(t *testing.T) {
 	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}))
@@ -123,13 +184,13 @@ func TestFetchCatalogLimitsSkipsDisabledNode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	limits := fetchCatalogLimits(ctx, cfg, xlogger.Nop())
-	if got := limits["p-live"]["glm-5.3"]; got != 131072 {
-		t.Fatalf("enabled model cap = %d, want 131072; limits = %v", got, limits)
+	info := fetchCatalogInfo(ctx, cfg, xlogger.Nop())
+	if got := info["p-live"]["glm-5.3"].Output; got != 131072 {
+		t.Fatalf("enabled model cap = %d, want 131072; info = %v", got, info)
 	}
 }
 
-func TestFetchCatalogLimitsSkipsDisabledProvider(t *testing.T) {
+func TestFetchCatalogInfoSkipsDisabledProvider(t *testing.T) {
 	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}))
@@ -153,13 +214,13 @@ func TestFetchCatalogLimitsSkipsDisabledProvider(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	limits := fetchCatalogLimits(ctx, cfg, xlogger.Nop())
-	if got := limits["p-live"]["glm-5.3"]; got != 131072 {
-		t.Fatalf("enabled model cap = %d, want 131072; limits = %v", got, limits)
+	info := fetchCatalogInfo(ctx, cfg, xlogger.Nop())
+	if got := info["p-live"]["glm-5.3"].Output; got != 131072 {
+		t.Fatalf("enabled model cap = %d, want 131072; info = %v", got, info)
 	}
 }
 
-func TestFetchCatalogLimitsWarnsOnceAndContinues(t *testing.T) {
+func TestFetchCatalogInfoWarnsOnceAndContinues(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"data":[{"id":"other","limit":{"output":1234}}]}`)
 	}))
@@ -236,9 +297,9 @@ func TestFetchCatalogLimitsWarnsOnceAndContinues(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			log := &warnLogger{Logger: xlogger.Nop()}
-			limits := fetchCatalogLimits(tc.ctx, tc.cfg, log)
-			if len(limits) != 0 {
-				t.Fatalf("limits = %v, want empty", limits)
+			info := fetchCatalogInfo(tc.ctx, tc.cfg, log)
+			if len(info) != 0 {
+				t.Fatalf("info = %v, want empty", info)
 			}
 			if len(log.warns) != 1 {
 				t.Fatalf("warnings = %q, want exactly one", log.warns)

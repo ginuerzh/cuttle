@@ -22,13 +22,15 @@ var errModelDisabled = errors.New("target model is disabled")
 // upstreamTarget is the result of compiling one route against one provider: a
 // single base URL, wire API and provider model. A route has exactly one
 // target, so its URL rewrites stay static. maxOutputTokens is the catalog cap
-// for the target model, or 0 when no cap is available.
+// for the target model, or 0 when no cap is available. efforts carries the
+// target model's catalog effort tiers; nil means no metadata was reported.
 type upstreamTarget struct {
 	baseURL         string
 	api             provider.API
 	targetModel     string
 	auth            gwconfig.Auth
 	maxOutputTokens int
+	efforts         []string
 }
 
 // nodeTargets is the compiled API plan for one node. defaultTarget is used for
@@ -42,12 +44,12 @@ type nodeTargets struct {
 // for one node. A pinned API bypasses default selection entirely; otherwise the
 // default follows the model's static classification and each protocol variant
 // is used only when the provider can serve that protocol for this model.
-func compileNodeTargets(p gwconfig.Provider, n gwconfig.Node, limits catalogLimits) (nodeTargets, error) {
+func compileNodeTargets(p gwconfig.Provider, n gwconfig.Node, catalog catalogInfo) (nodeTargets, error) {
 	targetModel := strings.TrimSpace(n.Model)
 	if targetModel == "" {
 		return nodeTargets{}, fmt.Errorf("node %q: model is required", n.Name)
 	}
-	maxOutputTokens := limits[p.ID][targetModel]
+	info := catalog[p.ID][targetModel]
 	prov, err := provider.New(p)
 	if err != nil {
 		return nodeTargets{}, err
@@ -57,7 +59,7 @@ func compileNodeTargets(p gwconfig.Provider, n gwconfig.Node, limits catalogLimi
 	}
 
 	if pinned := strings.TrimSpace(n.API); pinned != "" {
-		target, err := compileTarget(prov, p, n, maxOutputTokens, provider.API(pinned))
+		target, err := compileTarget(prov, p, n, info.Output, info.Efforts, provider.API(pinned))
 		if err != nil {
 			return nodeTargets{}, err
 		}
@@ -68,7 +70,7 @@ func compileNodeTargets(p gwconfig.Provider, n gwconfig.Node, limits catalogLimi
 	if err != nil {
 		return nodeTargets{}, err
 	}
-	def, err := compileTarget(prov, p, n, maxOutputTokens, api)
+	def, err := compileTarget(prov, p, n, info.Output, info.Efforts, api)
 	if err != nil {
 		return nodeTargets{}, err
 	}
@@ -83,7 +85,7 @@ func compileNodeTargets(p gwconfig.Provider, n gwconfig.Node, limits catalogLimi
 		if len(model.APIs) > 0 && !containsAPI(model.APIs, inbound) {
 			continue
 		}
-		target, err := compileTarget(prov, p, n, maxOutputTokens, inbound)
+		target, err := compileTarget(prov, p, n, info.Output, info.Efforts, inbound)
 		if err != nil {
 			return nodeTargets{}, err
 		}
@@ -96,7 +98,7 @@ func compileNodeTargets(p gwconfig.Provider, n gwconfig.Node, limits catalogLimi
 }
 
 // compileTarget builds one concrete upstream target for api.
-func compileTarget(prov provider.Provider, _ gwconfig.Provider, n gwconfig.Node, maxOutputTokens int, api provider.API) (upstreamTarget, error) {
+func compileTarget(prov provider.Provider, _ gwconfig.Provider, n gwconfig.Node, maxOutputTokens int, efforts []string, api provider.API) (upstreamTarget, error) {
 	baseURL, ok := prov.BaseURL(api)
 	if !ok {
 		return upstreamTarget{}, fmt.Errorf("node %q: API %q has no base URL", n.Name, api)
@@ -107,6 +109,7 @@ func compileTarget(prov provider.Provider, _ gwconfig.Provider, n gwconfig.Node,
 		targetModel:     strings.TrimSpace(n.Model),
 		auth:            prov.Auth(api),
 		maxOutputTokens: maxOutputTokens,
+		efforts:         efforts,
 	}, nil
 }
 
